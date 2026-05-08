@@ -1555,6 +1555,66 @@ function UsersTab({currentUser}){
 // ══════════════════════════════════════════════════════════
 // CATEGORY → PRODUCT SELECTOR
 // ══════════════════════════════════════════════════════════
+// Searchable product selector component
+function ProductSearch({prods, value, onChange, disabled}){
+  const [query,setQuery]=useState(value||"");
+  const [open,setOpen]=useState(false);
+  const ref=useRef(null);
+
+  // Sync display when value changes externally
+  useEffect(()=>{ setQuery(value||""); },[value]);
+
+  // Close on outside click
+  useEffect(()=>{
+    const handler=(e)=>{ if(ref.current&&!ref.current.contains(e.target))setOpen(false); };
+    document.addEventListener("mousedown",handler);
+    return()=>document.removeEventListener("mousedown",handler);
+  },[]);
+
+  const filtered=prods.filter(p=>{
+    const n=gpn(p).toLowerCase();
+    return !query||n.includes(query.toLowerCase());
+  });
+
+  const select=(p)=>{
+    const n=gpn(p);
+    setQuery(n); setOpen(false); onChange(p);
+  };
+
+  return <div ref={ref} style={{position:"relative"}}>
+    <div style={{position:"relative"}}>
+      <input style={{...inp,paddingRight:"30px",cursor:disabled?"not-allowed":"text",opacity:disabled?0.5:1}}
+        value={query} disabled={disabled}
+        onChange={e=>{setQuery(e.target.value);setOpen(true);onChange(null);}}
+        onFocus={()=>!disabled&&setOpen(true)}
+        placeholder={disabled?"← select category first":"Search or type product name…"}/>
+      <span onClick={()=>!disabled&&setOpen(o=>!o)}
+        style={{position:"absolute",right:"10px",top:"50%",transform:"translateY(-50%)",cursor:"pointer",color:"#475569",fontSize:"12px",pointerEvents:disabled?"none":"auto"}}>
+        {open?"▲":"▼"}
+      </span>
+    </div>
+    {open&&!disabled&&<div style={{position:"absolute",zIndex:500,top:"100%",left:0,right:0,background:"#0f172a",border:"1px solid #3b82f6",borderTop:"none",borderRadius:"0 0 8px 8px",maxHeight:"200px",overflowY:"auto",boxShadow:"0 8px 24px rgba(0,0,0,0.5)"}}>
+      {filtered.length===0
+        ?<div style={{padding:"10px 14px",fontSize:"12.5px",color:"#475569",fontStyle:"italic"}}>No products match "{query}"</div>
+        :filtered.map(p=>{
+          const n=gpn(p); const u=gpu(p);
+          const isSelected=n===value;
+          return <div key={n} onClick={()=>select(p)}
+            style={{padding:"9px 14px",cursor:"pointer",fontSize:"13px",
+              color:isSelected?"#22c55e":"#e2e8f0",
+              background:isSelected?"#052e16":"transparent",
+              borderTop:"1px solid #1e293b",
+              display:"flex",justifyContent:"space-between",alignItems:"center"}}
+            onMouseEnter={e=>e.currentTarget.style.background=isSelected?"#052e16":"#1e293b"}
+            onMouseLeave={e=>e.currentTarget.style.background=isSelected?"#052e16":"transparent"}>
+            <span>{n}</span>
+            <span style={{fontSize:"11px",color:isSelected?"#22c55e":"#475569",background:"#0b1220",padding:"1px 7px",borderRadius:"99px",border:"1px solid #1e293b"}}>{u}</span>
+          </div>;
+        })}
+    </div>}
+  </div>;
+}
+
 function CategoryProductSelect({category,setCategory,productName,setProductName,products,onUnitChange,catUnits}){
   const cats = Object.keys(products||DEFAULT_PRODUCTS);
   const prods = (products||DEFAULT_PRODUCTS)[category] || [];
@@ -1570,15 +1630,14 @@ function CategoryProductSelect({category,setCategory,productName,setProductName,
       </select>
     </Field>
     <Field label="Product *">
-      <select style={sl} value={productName} onChange={e=>{
-        setProductName(e.target.value);
-        // Auto-fill unit from product's unit field
-        const prod=prods.find(p=>gpn(p)===e.target.value);
-        if(prod&&onUnitChange)onUnitChange(gpu(prod));
-      }} disabled={!category}>
-        <option value="">— Select Product —</option>
-        {prods.map(p=>{const n=gpn(p);const u=gpu(p);return <option key={n} value={n}>{n} ({u})</option>;})}
-      </select>
+      <ProductSearch prods={prods} value={productName} disabled={!category} onChange={p=>{
+        if(p){
+          setProductName(gpn(p));
+          if(onUnitChange)onUnitChange(gpu(p));
+        }else{
+          setProductName("");
+        }
+      }}/>
     </Field>
   </Grid2>;
 }
@@ -1700,17 +1759,17 @@ function OldStockCard({s,canEdit,onToggle,onDelete}){
 // ══════════════════════════════════════════════════════════
 // SETTINGS TAB (Admin only)
 // ══════════════════════════════════════════════════════════
-function SettingsTab({showToast}){
+function SettingsTab({showToast, initialProducts, initialQcParams, initialPackSizes, initialCatUnits, onSaved}){
   const [subTab,setSubTab]=useState("products");
-  const [settings,setSettings]=useState(null);
   const [saving,setSaving]=useState(false);
-  const [prodData,setProdData]=useState(JSON.parse(JSON.stringify(DEFAULT_PRODUCTS)));
-  const [qcData,setQcData]=useState(JSON.parse(JSON.stringify(DEFAULT_QC_PARAMS)));
-  const [packSizeData,setPackSizeData]=useState(JSON.parse(JSON.stringify(DEFAULT_PACK_SIZES_BY_CAT)));
-  const [catUnits,setCatUnits]=useState({...CATEGORY_UNITS});
+  // Initialize from parent's already-loaded data — no separate Firestore load needed
+  const [prodData,setProdData]=useState(()=>JSON.parse(JSON.stringify(initialProducts||DEFAULT_PRODUCTS)));
+  const [qcData,setQcData]=useState(()=>JSON.parse(JSON.stringify(initialQcParams||DEFAULT_QC_PARAMS)));
+  const [packSizeData,setPackSizeData]=useState(()=>JSON.parse(JSON.stringify(initialPackSizes||DEFAULT_PACK_SIZES_BY_CAT)));
+  const [catUnits,setCatUnits]=useState(()=>({...CATEGORY_UNITS,...(initialCatUnits||{})}));
   const [newPackSize,setNewPackSize]=useState("");
   const [newPackQty,setNewPackQty]=useState("");
-  const [selCat,setSelCat]=useState(Object.keys(DEFAULT_PRODUCTS)[0]);
+  const [selCat,setSelCat]=useState(Object.keys(initialProducts||DEFAULT_PRODUCTS)[0]);
   const [newProduct,setNewProduct]=useState("");
   const [newProductUnit,setNewProductUnit]=useState("L");
   const [newParam,setNewParam]=useState("");
@@ -1924,19 +1983,6 @@ function SettingsTab({showToast}){
   };
 
   useEffect(()=>{
-    // Load saved settings from Firestore
-    C("settings").doc("products").get().then(snap=>{
-      if(snap.exists){const d=snap.data();
-        if(d.products)setProdData(d.products);
-        if(d.qcParams)setQcData(d.qcParams);
-        if(d.catUnits)setCatUnits(d.catUnits);
-        if(d.packSizes){
-          // Handle both old flat array and new per-category object
-          if(Array.isArray(d.packSizes)){setPackSizeData({...DEFAULT_PACK_SIZES_BY_CAT,_default:d.packSizes});}
-          else{setPackSizeData(d.packSizes);}
-        }
-      }
-    }).catch(()=>{});
     // Load SheetJS if not already loaded
     if(!window.XLSX){
       const s=document.createElement("script");
@@ -1949,6 +1995,8 @@ function SettingsTab({showToast}){
     setSaving(true);
     try{
       await C("settings").doc("products").set({products:prodData,qcParams:qcData,packSizes:packSizeData,catUnits,updatedAt:ts()});
+      // Notify MainApp so its sysProducts etc. update immediately without re-login
+      if(onSaved)onSaved({products:prodData,qcParams:qcData,packSizes:packSizeData,catUnits});
       showToast("Settings saved ✓");
     }catch(e){showToast("Error saving","error");}
     setSaving(false);
@@ -2259,16 +2307,18 @@ function MainApp({user,role}){
         if(d.catUnits)setSysCatUnits(u=>({...u,...d.catUnits}));
         if(d.packSizes){
           const ps=d.packSizes;
-          // Normalize: convert old string arrays to {size,qty} objects
           const normalize=(arr)=>(arr||[]).map(p=>typeof p==="string"?{size:p,qty:""}:p);
           if(Array.isArray(ps))setSysPackSizes({...DEFAULT_PACK_SIZES_BY_CAT,_default:normalize(ps)});
           else{const norm={};Object.keys(ps).forEach(k=>norm[k]=normalize(ps[k]));setSysPackSizes(norm);}
         }
       }else{
-        // First time — no settings saved yet, use defaults
+        // No settings saved yet — use defaults
         setSysProducts(DEFAULT_PRODUCTS);
       }
-    }).catch(()=>{});
+    }).catch(()=>{
+      // Firestore error — fall back to defaults so app doesn't hang
+      setSysProducts(DEFAULT_PRODUCTS);
+    });
     // Old stock for batch-capable roles
     if(CAN_SEE.batches.includes(role)){
       subs.push(C("old_stock").orderBy("_createdAt","desc").onSnapshot(s=>setOldStocks(s.docs.map(d=>({id:d.id,...d.data()}))),
@@ -2505,7 +2555,19 @@ function MainApp({user,role}){
       {tab==="users"&&<UsersTab currentUser={user}/>}
 
       {/* SETTINGS */}
-      {tab==="settings"&&<SettingsTab showToast={showToast}/>}
+      {tab==="settings"&&<SettingsTab
+        showToast={showToast}
+        initialProducts={sysProducts}
+        initialQcParams={sysQcParams}
+        initialPackSizes={sysPackSizes}
+        initialCatUnits={sysCatUnits}
+        onSaved={({products,qcParams,packSizes,catUnits})=>{
+          setSysProducts(products);
+          setSysQcParams(qcParams);
+          setSysPackSizes(packSizes);
+          setSysCatUnits(catUnits);
+        }}
+      />}
     </div>
 
     {/* ══ MODALS ══ */}
