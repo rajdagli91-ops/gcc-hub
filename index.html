@@ -608,19 +608,27 @@ function BatchWorkspace({batch,role,onClose,showToast,qcParams,packSizes}){
         const updSz=(idx,fld,v)=>{const sizes=packForm.sizes.map((s,i)=>i===idx?{...s,[fld]:v}:s);setPackForm({...packForm,sizes});};
         const totalQty=packForm.sizes.reduce((sum,s)=>sum+((parseFloat(s.qty)||0)*(parseInt(s.pcs)||0)),0);
         return <div>
+          {!packForm.sizes.some(s=>s.qty&&s.qty!=="0")&&<div style={{background:"#422006",border:"1px solid #f59e0b40",borderRadius:"8px",padding:"9px 14px",marginBottom:"10px",fontSize:"12px",color:"#f59e0b"}}>
+            ⚙️ Qty/Pack not configured yet. Go to <strong>Settings → 📦 Pack Sizes</strong> to set it once — it will auto-fill here every time.
+          </div>}
           <div style={{marginBottom:"14px"}}>
             <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"8px"}}>Pack Sizes & Quantities</div>
             <div style={{border:"1px solid #1e293b",borderRadius:"8px",overflow:"hidden"}}>
               <div style={{display:"grid",gridTemplateColumns:"2fr 1.2fr 1.2fr 1.5fr",background:"#0b1220",padding:"8px 12px",gap:"8px"}}>
-                {["Pack Size","Qty/Pack (fixed)","No. of Packs","Total"].map(h=><div key={h} style={{fontSize:"10px",fontWeight:"700",color:"#334155",textTransform:"uppercase",letterSpacing:"0.07em"}}>{h}</div>)}
+                {["Pack Size","Qty/Pack","No. of Packs","Total"].map(h=><div key={h} style={{fontSize:"10px",fontWeight:"700",color:"#334155",textTransform:"uppercase",letterSpacing:"0.07em"}}>{h}</div>)}
               </div>
               {packForm.sizes.map((row,i)=>{const lt=((parseFloat(row.qty)||0)*(parseInt(row.pcs)||0));
+                const hasQty=row.qty&&row.qty!=="0"&&row.qty!=="";
                 return <div key={row.size} style={{display:"grid",gridTemplateColumns:"2fr 1.2fr 1.2fr 1.5fr",padding:"7px 12px",gap:"8px",borderTop:"1px solid #1e293b",background:i%2===0?"#080d18":"#0b1220",alignItems:"center"}}>
                   <div style={{fontSize:"12.5px",color:"#e2e8f0",fontWeight:"500"}}>{row.size}</div>
-                  {/* Qty per pack — locked, pre-filled from settings */}
-                  <div style={{...sml,background:"#060b16",cursor:"default",color:"#22c55e",fontWeight:"600",textAlign:"center",border:"1px solid #166534",display:"flex",alignItems:"center",justifyContent:"center",borderRadius:"6px",padding:"6px"}}>
-                    {row.qty||"—"}
-                  </div>
+                  {/* Qty/Pack: locked green if pre-configured, editable orange if not */}
+                  {hasQty
+                    ?<div title="Pre-configured in Settings" style={{background:"#052e16",border:"1px solid #166534",borderRadius:"6px",padding:"6px 8px",color:"#22c55e",fontWeight:"700",textAlign:"center",fontSize:"13px",cursor:"default"}}>
+                      {row.qty}
+                    </div>
+                    :<input style={{...sml,textAlign:"center",borderColor:"#f59e0b50",color:"#f59e0b"}} type="number" min="0" step="0.1"
+                      value={row.qty} onChange={e=>updSz(i,"qty",e.target.value)} placeholder="qty"/>
+                  }
                   <input style={{...sml,textAlign:"center"}} type="number" min="0" value={row.pcs} onChange={e=>updSz(i,"pcs",e.target.value)} placeholder="0"/>
                   <div style={{fontSize:"12px",color:lt>0?"#22c55e":"#334155",fontWeight:"600"}}>{lt>0?`${lt.toFixed(1)} ${live.unit||""}`:"-"}</div>
                 </div>;
@@ -1766,22 +1774,41 @@ function SettingsTab({showToast}){
       wsRem["!cols"]=[{wch:26},{wch:24},{wch:50}];
       XLSX.utils.book_append_sheet(wb,wsRem,"🗑 Remove Categories");
 
-      // ── Instructions ────────────────────────────────
+      // ── Pack Sizes sheet ────────────────────────────
+      const packRows=[["CATEGORY","PACK SIZE LABEL","QTY PER PACK","HINT"]];
+      const packCats=Object.keys(packSizeData).filter(k=>k!=="Other"&&k!=="_default");
+      packCats.forEach(cat=>{
+        (packSizeData[cat]||[]).forEach((ps,i)=>{
+          const s=gps(ps);
+          packRows.push([cat,s.size,s.qty||"",i===0?"← edit qty, add/delete rows":""]);
+        });
+        packRows.push(["","","",""]);
+      });
+      // Default sizes
+      packRows.push(["_default (fallback for all categories)","","",""]);
+      (packSizeData._default||DEFAULT_PACK_SIZES).forEach(ps=>{
+        const s=gps(ps);
+        packRows.push(["_default",s.size,s.qty||",",""]);
+      });
+      for(let i=0;i<3;i++)packRows.push(["← category","← label e.g. 4 L tin","← qty e.g. 4",""]);
+      const wsPack=XLSX.utils.aoa_to_sheet(packRows);
+      wsPack["!cols"]=[{wch:32},{wch:22},{wch:16},{wch:22}];
+      XLSX.utils.book_append_sheet(wb,wsPack,"📦 Pack Sizes");
       const instrRows=[
         ["GCC Operations Hub — Products & QC Parameters Template"],
         ["Gujarat Colours & Coatings Pvt Ltd | Exported: "+new Date().toLocaleDateString("en-IN")],
         [""],
         ["SHEET","WHAT TO DO"],
-        ["🎨 Products","Col A = Category, Col B = Product Name, Col C = Unit (kg/L/MT/Bags). Unit auto-fills in batch issue when product is selected."],
-        ["🔬 QC Parameters","Edit parameters per category. Set Min/Max for auto pass/fail."],
-        ["⚖️ Category Units","Fallback unit per category if product has no unit set."],
-        ["🗑 Remove Categories","Type YES in column B to remove a category from both Products & QC."],
+        ["🎨 Products","Col A = Category, Col B = Product Name, Col C = Unit (kg/L/MT/Bags)."],
+        ["🔬 QC Parameters","Col A = Category, Col B = Parameter, Col C = Min, Col D = Max."],
+        ["📦 Pack Sizes","Col A = Category, Col B = Pack Size Label, Col C = Qty per Pack. This pre-fills the packing form."],
+        ["⚖️ Category Units","Fallback unit per category."],
+        ["🗑 Remove Categories","Type YES in column B to remove a category from Products & QC."],
         [""],
         ["RULES",""],
         ["• Do NOT rename the sheet tabs.",""],
         ["• Category names must match exactly across all sheets.",""],
-        ["• For Unit column: only kg, L, MT, Bags are valid. Anything else defaults to kg.",""],
-        ["• Blank rows between entries are ignored during import.",""],
+        ["• For Unit column: only kg, L, MT, Bags are valid.",""],
       ];
       const wsInstr=XLSX.utils.aoa_to_sheet(instrRows);
       wsInstr["!cols"]=[{wch:36},{wch:60}];
@@ -1864,6 +1891,22 @@ function SettingsTab({showToast}){
           const unit=(rows[ri][1]||"").toString().trim();
           if(cat&&unit&&!toRemove.has(cat))newUnits[cat]=unit;
         }
+      }
+
+      // ── Step 5: Read Pack Sizes sheet ─────────────────
+      const packSheet=wb_.Sheets["📦 Pack Sizes"];
+      if(packSheet){
+        const rows=XLSX.utils.sheet_to_json(packSheet,{header:1,defval:""});
+        const newPack={};
+        for(let ri=1;ri<rows.length;ri++){
+          const cat=(rows[ri][0]||"").toString().trim();
+          const size=(rows[ri][1]||"").toString().trim();
+          const qty=(rows[ri][2]||"").toString().trim();
+          if(!cat||!size||cat.startsWith("←"))continue;
+          if(!newPack[cat])newPack[cat]=[];
+          newPack[cat].push({size,qty});
+        }
+        if(Object.keys(newPack).length>0)setPackSizeData(p=>({...p,...newPack}));
       }
 
       if(Object.keys(newProds).length>0)setProdData(newProds);
