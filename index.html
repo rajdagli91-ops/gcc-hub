@@ -138,19 +138,22 @@ const DEFAULT_QC_PARAMS = {
 const gp = (p) => typeof p === "string" ? {name:p,min:"",max:""} : (p||{name:"",min:"",max:""});
 
 // Pack sizes per category — _default applies to any category not listed
+// Pack sizes stored as {size, qty} — qty is the volume/weight per pack (pre-fills in packing form)
 const DEFAULT_PACK_SIZES_BY_CAT = {
-  _default:        ["100 mL","500 mL","1 L","4 L","10 L","20 L","25 L"],
-  "Emulsion":      ["1 L","4 L","10 L","20 L","25 L","200 L (Drum)"],
-  "Enamel":        ["500 mL","1 L","4 L","10 L","20 L"],
-  "Primer":        ["1 L","4 L","10 L","20 L","25 kg"],
-  "Distemper":     ["1 kg","5 kg","10 kg","25 kg","50 kg"],
-  "Texture":       ["1 kg","5 kg","10 kg","25 kg"],
-  "Road Marking":  ["5 L","10 L","20 L","200 L (Drum)"],
-  "Epoxy":         ["500 mL","1 L","4 L","20 L"],
-  "PU":            ["500 mL","1 L","4 L","20 L"],
-  "Wood Finish":   ["500 mL","1 L","4 L","20 L"],
-  "Anti-corrosive":["1 L","4 L","10 L","20 L","200 L (Drum)"],
+  _default:        [{size:"100 mL",qty:"0.1"},{size:"500 mL",qty:"0.5"},{size:"1 L",qty:"1"},{size:"4 L",qty:"4"},{size:"10 L",qty:"10"},{size:"20 L",qty:"20"},{size:"25 L",qty:"25"}],
+  "Emulsion":      [{size:"1 L",qty:"1"},{size:"4 L",qty:"4"},{size:"10 L",qty:"10"},{size:"20 L",qty:"20"},{size:"25 L",qty:"25"},{size:"200 L (Drum)",qty:"200"}],
+  "Enamel":        [{size:"500 mL",qty:"0.5"},{size:"1 L",qty:"1"},{size:"4 L",qty:"4"},{size:"10 L",qty:"10"},{size:"20 L",qty:"20"}],
+  "Primer":        [{size:"1 L",qty:"1"},{size:"4 L",qty:"4"},{size:"10 L",qty:"10"},{size:"20 L",qty:"20"},{size:"25 kg",qty:"25"}],
+  "Distemper":     [{size:"1 kg",qty:"1"},{size:"5 kg",qty:"5"},{size:"10 kg",qty:"10"},{size:"25 kg",qty:"25"},{size:"50 kg",qty:"50"}],
+  "Texture":       [{size:"1 kg",qty:"1"},{size:"5 kg",qty:"5"},{size:"10 kg",qty:"10"},{size:"25 kg",qty:"25"}],
+  "Road Marking":  [{size:"5 L",qty:"5"},{size:"10 L",qty:"10"},{size:"20 L",qty:"20"},{size:"200 L (Drum)",qty:"200"}],
+  "Epoxy":         [{size:"500 mL",qty:"0.5"},{size:"1 L",qty:"1"},{size:"4 L",qty:"4"},{size:"20 L",qty:"20"}],
+  "PU":            [{size:"500 mL",qty:"0.5"},{size:"1 L",qty:"1"},{size:"4 L",qty:"4"},{size:"20 L",qty:"20"}],
+  "Wood Finish":   [{size:"500 mL",qty:"0.5"},{size:"1 L",qty:"1"},{size:"4 L",qty:"4"},{size:"20 L",qty:"20"}],
+  "Anti-corrosive":[{size:"1 L",qty:"1"},{size:"4 L",qty:"4"},{size:"10 L",qty:"10"},{size:"20 L",qty:"20"},{size:"200 L (Drum)",qty:"200"}],
 };
+// Helper: normalize pack size (handles both old string and new {size,qty} format)
+const gps = (p) => typeof p==="string" ? {size:p, qty:""} : (p||{size:"",qty:""});
 
 const PAINT_TYPES=["Emulsion","Enamel","Primer","Distemper","Texture","Road Marking","Epoxy","PU","Wood Finish","Anti-corrosive","Other"];
 const PROJECT_STATUS=["Ongoing","Completed","On Hold","Cancelled","Pending Approval"];
@@ -301,13 +304,17 @@ function BatchWorkspace({batch,role,onClose,showToast,qcParams,packSizes}){
   const [packForm,setPackForm]=useState({sizes:[],packingDate:today(),packedBy:"",labelChecked:"Yes",remarks:""});
 
   const resolvedPackSizes=(()=>{
-    if(!packSizes)return DEFAULT_PACK_SIZES_BY_CAT[live.category]||DEFAULT_PACK_SIZES;
-    if(Array.isArray(packSizes))return packSizes;
-    return packSizes[live.category]||packSizes._default||DEFAULT_PACK_SIZES;
+    let list;
+    if(!packSizes)list=DEFAULT_PACK_SIZES_BY_CAT[live.category]||DEFAULT_PACK_SIZES;
+    else if(Array.isArray(packSizes))list=packSizes;
+    else list=packSizes[live.category]||packSizes._default||DEFAULT_PACK_SIZES;
+    // Normalize: each item is either a string (old) or {size,qty} (new)
+    return list.map(p=>gps(p));
   })();
 
   useEffect(()=>{
-    const sizes=resolvedPackSizes.map(s=>({size:s,qty:"",pcs:""}));
+    // Pre-fill qty from the configured pack size qty
+    const sizes=resolvedPackSizes.map(p=>{const ps=gps(p);return {size:ps.size,qty:ps.qty||"",pcs:""};});
     setPackForm(f=>({...f,sizes}));
   },[live.category,JSON.stringify(resolvedPackSizes)]);
 
@@ -605,12 +612,15 @@ function BatchWorkspace({batch,role,onClose,showToast,qcParams,packSizes}){
             <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"8px"}}>Pack Sizes & Quantities</div>
             <div style={{border:"1px solid #1e293b",borderRadius:"8px",overflow:"hidden"}}>
               <div style={{display:"grid",gridTemplateColumns:"2fr 1.2fr 1.2fr 1.5fr",background:"#0b1220",padding:"8px 12px",gap:"8px"}}>
-                {["Pack Size","Qty/Pack","No. of Packs","Total"].map(h=><div key={h} style={{fontSize:"10px",fontWeight:"700",color:"#334155",textTransform:"uppercase",letterSpacing:"0.07em"}}>{h}</div>)}
+                {["Pack Size","Qty/Pack (fixed)","No. of Packs","Total"].map(h=><div key={h} style={{fontSize:"10px",fontWeight:"700",color:"#334155",textTransform:"uppercase",letterSpacing:"0.07em"}}>{h}</div>)}
               </div>
               {packForm.sizes.map((row,i)=>{const lt=((parseFloat(row.qty)||0)*(parseInt(row.pcs)||0));
                 return <div key={row.size} style={{display:"grid",gridTemplateColumns:"2fr 1.2fr 1.2fr 1.5fr",padding:"7px 12px",gap:"8px",borderTop:"1px solid #1e293b",background:i%2===0?"#080d18":"#0b1220",alignItems:"center"}}>
                   <div style={{fontSize:"12.5px",color:"#e2e8f0",fontWeight:"500"}}>{row.size}</div>
-                  <input style={{...sml,textAlign:"center"}} type="number" min="0" value={row.qty} onChange={e=>updSz(i,"qty",e.target.value)} placeholder="0"/>
+                  {/* Qty per pack — locked, pre-filled from settings */}
+                  <div style={{...sml,background:"#060b16",cursor:"default",color:"#22c55e",fontWeight:"600",textAlign:"center",border:"1px solid #166534",display:"flex",alignItems:"center",justifyContent:"center",borderRadius:"6px",padding:"6px"}}>
+                    {row.qty||"—"}
+                  </div>
                   <input style={{...sml,textAlign:"center"}} type="number" min="0" value={row.pcs} onChange={e=>updSz(i,"pcs",e.target.value)} placeholder="0"/>
                   <div style={{fontSize:"12px",color:lt>0?"#22c55e":"#334155",fontWeight:"600"}}>{lt>0?`${lt.toFixed(1)} ${live.unit||""}`:"-"}</div>
                 </div>;
@@ -1691,6 +1701,7 @@ function SettingsTab({showToast}){
   const [packSizeData,setPackSizeData]=useState(JSON.parse(JSON.stringify(DEFAULT_PACK_SIZES_BY_CAT)));
   const [catUnits,setCatUnits]=useState({...CATEGORY_UNITS});
   const [newPackSize,setNewPackSize]=useState("");
+  const [newPackQty,setNewPackQty]=useState("");
   const [selCat,setSelCat]=useState(Object.keys(DEFAULT_PRODUCTS)[0]);
   const [newProduct,setNewProduct]=useState("");
   const [newProductUnit,setNewProductUnit]=useState("L");
@@ -2030,33 +2041,46 @@ function SettingsTab({showToast}){
       </button>
     </div>}
 
+
     {subTab==="packsizes"&&<div>
-      <InfoBox color="#f59e0b">Pack sizes are set per category. Select a category below to manage its pack sizes. These appear in the packing entry table when filling a batch.</InfoBox>
-      {/* Use same selCat selector (already shown above) */}
-      <div style={{display:"flex",gap:"6px",marginBottom:"12px"}}>
-        <input style={{...inp,flex:1}} value={newPackSize} onChange={e=>setNewPackSize(e.target.value)}
-          placeholder={`Add pack size for ${selCat}… e.g. 5 L, 50 kg`}
-          onKeyDown={e=>{if(e.key==="Enter"&&newPackSize.trim()){const cat_arr=[...(packSizeData[selCat]||[]),newPackSize.trim()];setPackSizeData({...packSizeData,[selCat]:cat_arr});setNewPackSize("");}}}/>
-        <Btn label="+ Add" onClick={()=>{if(newPackSize.trim()){const cat_arr=[...(packSizeData[selCat]||[]),newPackSize.trim()];setPackSizeData({...packSizeData,[selCat]:cat_arr});setNewPackSize("");}}} color="#f59e0b" small/>
+      <InfoBox color="#f59e0b">Set pack sizes and their fixed quantity per pack for each category. The quantity auto-fills in the packing form — you only need to enter number of packs filled.</InfoBox>
+      {/* Add new pack size */}
+      <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 60px",gap:"6px",marginBottom:"8px"}}>
+        <input style={inp} value={newPackSize} onChange={e=>setNewPackSize(e.target.value)} placeholder={`Pack size label… e.g. 4 L tin, 25 kg`}/>
+        <input style={inp} value={newPackQty} onChange={e=>setNewPackQty(e.target.value)} placeholder="Qty (e.g. 4, 25)"/>
+        <Btn label="+ Add" onClick={()=>{
+          if(newPackSize.trim()){
+            const cat_arr=[...(packSizeData[selCat]||[]),{size:newPackSize.trim(),qty:newPackQty.trim()}];
+            setPackSizeData({...packSizeData,[selCat]:cat_arr});
+            setNewPackSize("");setNewPackQty("");
+          }
+        }} color="#f59e0b" small/>
       </div>
-      {(packSizeData[selCat]||[]).length===0&&<div style={{fontSize:"13px",color:"#334155",fontStyle:"italic",padding:"10px 0"}}>No pack sizes for {selCat}. Using defaults: {(packSizeData._default||DEFAULT_PACK_SIZES).join(", ")}</div>}
+      {/* Column headers */}
+      {(packSizeData[selCat]||[]).length>0&&<div style={{display:"grid",gridTemplateColumns:"2fr 1fr 120px 36px",gap:"6px",marginBottom:"4px",padding:"0 4px"}}>
+        {["Pack Size Label","Qty per Pack","Order",""].map(h=><div key={h} style={{fontSize:"10px",fontWeight:"700",color:"#334155",textTransform:"uppercase",letterSpacing:"0.07em"}}>{h}</div>)}
+      </div>}
+      {(packSizeData[selCat]||[]).length===0&&<div style={{fontSize:"13px",color:"#334155",fontStyle:"italic",padding:"10px 0"}}>
+        No pack sizes for {selCat}. Default sizes will be used: {(packSizeData._default||DEFAULT_PACK_SIZES).map(p=>gps(p).size).join(", ")}
+      </div>}
       <div style={{display:"flex",flexDirection:"column",gap:"6px"}}>
-        {(packSizeData[selCat]||[]).map((s,i)=>(
-          <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:"#0f172a",border:"1px solid #1e293b",borderRadius:"8px",padding:"10px 14px"}}>
-            <div style={{display:"flex",alignItems:"center",gap:"10px"}}>
-              <span style={{fontSize:"11px",fontWeight:"700",color:"#f59e0b",background:"#f59e0b18",padding:"2px 8px",borderRadius:"99px",border:"1px solid #f59e0b30"}}>#{i+1}</span>
-              <span style={{fontSize:"13px",color:"#e2e8f0",fontWeight:"500"}}>{s}</span>
-            </div>
-            <div style={{display:"flex",gap:"6px"}}>
+        {(packSizeData[selCat]||[]).map((ps,i)=>{
+          const s=gps(ps);
+          const update=(field,val)=>{
+            const d=[...(packSizeData[selCat]||[])];
+            d[i]={...s,[field]:val};
+            setPackSizeData({...packSizeData,[selCat]:d});
+          };
+          return <div key={i} style={{display:"grid",gridTemplateColumns:"2fr 1fr 120px 36px",gap:"6px",alignItems:"center"}}>
+            <input style={sml} value={s.size} onChange={e=>update("size",e.target.value)} placeholder="e.g. 4 L tin"/>
+            <input style={{...sml,borderColor:s.qty?"#22c55e30":"#f59e0b30",textAlign:"center"}} value={s.qty} onChange={e=>update("qty",e.target.value)} placeholder="qty"/>
+            <div style={{display:"flex",gap:"4px"}}>
               {i>0&&<button onClick={()=>{const d=[...(packSizeData[selCat]||[])];[d[i-1],d[i]]=[d[i],d[i-1]];setPackSizeData({...packSizeData,[selCat]:d});}} style={{background:"none",border:"1px solid #1e293b",borderRadius:"5px",color:"#64748b",cursor:"pointer",fontSize:"12px",padding:"2px 8px"}}>↑</button>}
               {i<(packSizeData[selCat]||[]).length-1&&<button onClick={()=>{const d=[...(packSizeData[selCat]||[])];[d[i],d[i+1]]=[d[i+1],d[i]];setPackSizeData({...packSizeData,[selCat]:d});}} style={{background:"none",border:"1px solid #1e293b",borderRadius:"5px",color:"#64748b",cursor:"pointer",fontSize:"12px",padding:"2px 8px"}}>↓</button>}
-              <button onClick={()=>{const d=(packSizeData[selCat]||[]).filter((_,idx)=>idx!==i);setPackSizeData({...packSizeData,[selCat]:d});}} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"16px"}}>×</button>
             </div>
-          </div>
-        ))}
-      </div>
-      <div style={{marginTop:"10px",fontSize:"12px",color:"#334155"}}>
-        Tip: If a category has no sizes defined, it uses the _default list. To reset, delete all sizes for that category.
+            <button onClick={()=>{const d=(packSizeData[selCat]||[]).filter((_,idx)=>idx!==i);setPackSizeData({...packSizeData,[selCat]:d});}} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"16px",textAlign:"center"}}>×</button>
+          </div>;
+        })}
       </div>
     </div>}
 
@@ -2190,7 +2214,13 @@ function MainApp({user,role}){
         setSysProducts(d.products||DEFAULT_PRODUCTS);
         if(d.qcParams)setSysQcParams(d.qcParams);
         if(d.catUnits)setSysCatUnits(u=>({...u,...d.catUnits}));
-        if(d.packSizes){if(Array.isArray(d.packSizes))setSysPackSizes({...DEFAULT_PACK_SIZES_BY_CAT,_default:d.packSizes});else setSysPackSizes(d.packSizes);}
+        if(d.packSizes){
+          const ps=d.packSizes;
+          // Normalize: convert old string arrays to {size,qty} objects
+          const normalize=(arr)=>(arr||[]).map(p=>typeof p==="string"?{size:p,qty:""}:p);
+          if(Array.isArray(ps))setSysPackSizes({...DEFAULT_PACK_SIZES_BY_CAT,_default:normalize(ps)});
+          else{const norm={};Object.keys(ps).forEach(k=>norm[k]=normalize(ps[k]));setSysPackSizes(norm);}
+        }
       }else{
         // First time — no settings saved yet, use defaults
         setSysProducts(DEFAULT_PRODUCTS);
