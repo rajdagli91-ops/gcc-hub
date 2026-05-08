@@ -26,16 +26,21 @@ button{font-family:'DM Sans',sans-serif;cursor:pointer}
   body{background:#fff!important;color:#000!important;font-family:Arial,sans-serif!important}
   .no-print{display:none!important}
   .print-report{display:block!important;padding:0!important;margin:0!important}
-  .print-report *{color:#000!important;background:#fff!important;border-color:#ccc!important;font-family:Arial,sans-serif!important;font-size:11pt!important}
-  .print-report .pr-title{font-size:15pt!important;font-weight:bold!important}
-  .print-report .pr-sub{font-size:10pt!important;color:#555!important}
-  .print-report .pr-section-title{font-size:10pt!important;font-weight:bold!important;border-bottom:1.5px solid #000!important;padding-bottom:3px!important;margin:10px 0 6px!important;text-transform:uppercase!important;letter-spacing:0.05em!important}
+  .print-report *{color:#000!important;background:#fff!important;border-color:#999!important;font-family:Arial,sans-serif!important;font-size:8.5pt!important}
+  .print-report .pr-co{font-size:11pt!important;font-weight:bold!important}
+  .print-report .pr-title{font-size:9pt!important;color:#444!important}
+  .print-report .pr-section-title{font-size:8pt!important;font-weight:bold!important;border-bottom:1px solid #000!important;padding-bottom:2px!important;margin:5px 0 3px!important;text-transform:uppercase!important;letter-spacing:0.05em!important}
   .print-report .pr-pass{color:#166534!important;font-weight:bold!important}
   .print-report .pr-fail{color:#991b1b!important;font-weight:bold!important}
+  .print-report .pr-result{font-size:10pt!important;font-weight:bold!important}
   .print-report table{width:100%;border-collapse:collapse}
-  .print-report td,.print-report th{border:1px solid #ccc;padding:4px 8px;font-size:10pt}
-  .print-report th{background:#f0f0f0!important;font-weight:bold!important;text-align:left}
-  @page{size:A5;margin:12mm}
+  .print-report td,.print-report th{border:1px solid #bbb;padding:2px 5px;font-size:8pt}
+  .print-report th{background:#eee!important;font-weight:bold!important;text-align:left}
+  .print-report .pr-info td{border:none!important;padding:1px 4px}
+  .print-report .pr-info td:first-child{font-weight:bold;width:32%;color:#333!important}
+  /* Two reports side by side on one A4 sheet */
+  .print-report{width:50%;float:left;box-sizing:border-box;padding:4mm}
+  @page{size:A4 landscape;margin:6mm}
 }
 .print-report{display:none}
 </style>
@@ -304,6 +309,23 @@ function BatchWorkspace({batch,role,onClose,showToast,qcParams,packSizes}){
   const [qcForm,setQcForm]=useState({other:"",result:"Pass",qcDate:today(),qcBy:"",remarks:""});
   const [packForm,setPackForm]=useState({sizes:[],packingDate:today(),packedBy:"",labelChecked:"Yes",remarks:""});
 
+  // Auto-fill QC By and Packed By with current user's name on mount
+  useEffect(()=>{
+    const name=live.issuedBy||"";
+    db.collection("userProfiles").where("email","==",role==="admin"||role==="qc"?batch.issuedBy||"":"").get().catch(()=>{});
+    // Get current user profile for auto-fill
+    const uid=window._auth?.currentUser?.uid;
+    if(uid){
+      db.collection("userProfiles").doc(uid).get().then(snap=>{
+        const displayName=snap.exists?(snap.data().displayName||snap.data().email||""):"";
+        if(displayName){
+          setQcForm(f=>({...f,qcBy:f.qcBy||displayName}));
+          setPackForm(f=>({...f,packedBy:f.packedBy||displayName}));
+        }
+      }).catch(()=>{});
+    }
+  },[]);
+
   const resolvedPackSizes=(()=>{
     let list;
     if(!packSizes)list=DEFAULT_PACK_SIZES_BY_CAT[live.category]||DEFAULT_PACK_SIZES;
@@ -367,57 +389,62 @@ function BatchWorkspace({batch,role,onClose,showToast,qcParams,packSizes}){
   const sb={editStage,setEditStage,saving};
 
   const PrintQCReport=()=><div className="print-report">
-    <div style={{borderBottom:"2px solid #000",paddingBottom:"8px",marginBottom:"10px"}}>
-      <div className="pr-title">Gujarat Colours &amp; Coatings Pvt Ltd</div>
-      <div className="pr-sub">QC Test Report — {live.batchNo}</div>
+    <div style={{borderBottom:"2px solid #000",paddingBottom:"3px",marginBottom:"5px",display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
+      <div>
+        <div className="pr-co">Gujarat Colours &amp; Coatings Pvt Ltd</div>
+        <div className="pr-title">QC Test Report | {live.batchNo} | {live.qc?.qcDate||today()}</div>
+      </div>
+      <div className={live.qc?.result==="Pass"?"pr-pass pr-result":"pr-fail pr-result"}>{live.qc?.result||"—"}</div>
     </div>
-    <table><tbody>
-      {[["Product",live.productName],["Category",live.category||"—"],["Shade",live.shade||"—"],["Batch Size",`${live.batchSize} ${live.unit}`],["QC Date",live.qc?.qcDate||"—"],["QC By",live.qc?.qcBy||"—"]].map(([l,v])=>(
-        <tr key={l}><td style={{width:"35%",fontWeight:"bold"}}>{l}</td><td>{v}</td></tr>
-      ))}
+    <table className="pr-info" style={{marginBottom:"4px",width:"100%"}}><tbody>
+      <tr><td>Product</td><td>{live.productName}</td><td>Category</td><td>{live.category||"—"}</td></tr>
+      <tr><td>Batch Size</td><td>{live.batchSize} {live.unit}</td><td>Shade</td><td>{live.shade||"—"}</td></tr>
+      <tr><td>QC By</td><td>{live.qc?.qcBy||"—"}</td><td>Date</td><td>{live.qc?.qcDate||"—"}</td></tr>
     </tbody></table>
     <div className="pr-section-title">Test Parameters</div>
-    <table><thead><tr><th>Parameter</th><th>Unit</th><th>Min</th><th>Max</th><th>Value</th><th>Status</th></tr></thead>
+    <table><thead><tr><th>Parameter</th><th>Unit</th><th>Min</th><th>Max</th><th>Value</th><th>Result</th></tr></thead>
     <tbody>
-      {params.map(p=>{
-        const val=live.qc?.[p.name]||"—";
-        const r=live.qc?.[p.name]?checkParam(p,live.qc[p.name]):null;
-        return <tr key={p.name}><td>{p.name}</td><td>{p.unit||"—"}</td><td>{p.min||"—"}</td><td>{p.max||"—"}</td><td>{val}</td>
-          <td className={r===true?"pr-pass":r===false?"pr-fail":""}>{r===true?"✓ Pass":r===false?"✗ Fail":"—"}</td></tr>;
+      {params.map(p=>{const val=live.qc?.[p.name]||"—";const r=live.qc?.[p.name]?checkParam(p,live.qc[p.name]):null;
+        return <tr key={p.name}><td>{p.name}</td><td>{p.unit||"—"}</td><td>{p.min||"—"}</td><td>{p.max||"—"}</td>
+          <td><strong>{val}</strong></td>
+          <td className={r===true?"pr-pass":r===false?"pr-fail":""}>{r===true?"✓":r===false?"✗":"—"}</td></tr>;
       })}
     </tbody></table>
-    {live.qc?.other&&<div style={{marginTop:"6px"}}><strong>Other Notes:</strong> {live.qc.other}</div>}
-    <div style={{marginTop:"8px",display:"flex",gap:"20px",alignItems:"center"}}>
-      <div className={live.qc?.result==="Pass"?"pr-pass":"pr-fail"} style={{fontSize:"13pt"}}>Overall: {live.qc?.result||"—"}</div>
-      {live.qc?.remarks&&<div style={{flex:1}}><strong>Remarks:</strong> {live.qc.remarks}</div>}
-    </div>
-    <div style={{marginTop:"14px",display:"flex",justifyContent:"space-between",borderTop:"1px solid #ccc",paddingTop:"8px",fontSize:"9pt",color:"#666"}}>
-      <span>QC Sign: ___________________</span><span>Date: {live.qc?.qcDate||"___________"}</span>
+    {(live.qc?.remarks||live.qc?.other)&&<div style={{marginTop:"3px",fontSize:"8pt"}}>
+      {live.qc?.remarks&&<span><strong>Remarks:</strong> {live.qc.remarks}&nbsp;&nbsp;</span>}
+      {live.qc?.other&&<span><strong>Other:</strong> {live.qc.other}</span>}
+    </div>}
+    <div style={{marginTop:"6px",display:"flex",justifyContent:"space-between",borderTop:"1px solid #999",paddingTop:"3px",fontSize:"8pt"}}>
+      <span>QC Sign: _______________________</span>
+      <span>Date: {live.qc?.qcDate||"____________"}</span>
     </div>
   </div>;
 
-  const PrintPackReport=()=><div className="print-report">
-    <div style={{borderBottom:"2px solid #000",paddingBottom:"8px",marginBottom:"10px"}}>
-      <div className="pr-title">Gujarat Colours &amp; Coatings Pvt Ltd</div>
-      <div className="pr-sub">Packing Report — {live.batchNo}</div>
+  const PrintPackReport=()=><div className="print-report" style={{borderLeft:"1px dashed #aaa"}}>
+    <div style={{borderBottom:"2px solid #000",paddingBottom:"3px",marginBottom:"5px",display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
+      <div>
+        <div className="pr-co">Gujarat Colours &amp; Coatings Pvt Ltd</div>
+        <div className="pr-title">Packing Report | {live.batchNo} | {live.packing?.packingDate||today()}</div>
+      </div>
+      <div style={{fontSize:"9pt",fontWeight:"bold"}}>{live.packing?.totalQty} {live.unit}</div>
     </div>
-    <table><tbody>
-      {[["Product",live.productName],["Shade",live.shade||"—"],["Batch Size",`${live.batchSize} ${live.unit}`],["Packing Date",live.packing?.packingDate||"—"],["Packed By",live.packing?.packedBy||"—"],["Label Checked",live.packing?.labelChecked||"—"]].map(([l,v])=>(
-        <tr key={l}><td style={{width:"35%",fontWeight:"bold"}}>{l}</td><td>{v}</td></tr>
-      ))}
+    <table className="pr-info" style={{marginBottom:"4px",width:"100%"}}><tbody>
+      <tr><td>Product</td><td>{live.productName}</td><td>Shade</td><td>{live.shade||"—"}</td></tr>
+      <tr><td>Batch Size</td><td>{live.batchSize} {live.unit}</td><td>Label</td><td>{live.packing?.labelChecked||"—"}</td></tr>
+      <tr><td>Packed By</td><td>{live.packing?.packedBy||"—"}</td><td>Date</td><td>{live.packing?.packingDate||"—"}</td></tr>
     </tbody></table>
     <div className="pr-section-title">Packing Details</div>
-    <table><thead><tr><th>Pack Size</th><th>No. of Packs</th><th>Qty/Pack</th><th>Total</th></tr></thead>
+    <table><thead><tr><th>Pack Size</th><th>Packs</th><th>Qty/Pack</th><th>Total</th></tr></thead>
     <tbody>
-      {(live.packing?.sizes||[]).filter(s=>parseInt(s.pcs)>0).map(s=>{
-        const lt=((parseFloat(s.qty)||0)*(parseInt(s.pcs)||0));
-        return <tr key={s.size}><td>{s.size}</td><td>{s.pcs}</td><td>{s.qty} {live.unit}</td><td>{lt.toFixed(1)} {live.unit}</td></tr>;
+      {(live.packing?.sizes||[]).filter(s=>parseInt(s.pcs)>0).map(s=>{const lt=((parseFloat(s.qty)||0)*(parseInt(s.pcs)||0));
+        return <tr key={s.size}><td>{s.size}</td><td><strong>{s.pcs}</strong></td><td>{s.qty} {live.unit}</td><td><strong>{lt.toFixed(1)} {live.unit}</strong></td></tr>;
       })}
-      <tr><td colSpan="3" style={{fontWeight:"bold",textAlign:"right"}}>Total Packed</td><td style={{fontWeight:"bold"}}>{live.packing?.totalQty} {live.unit}</td></tr>
+      <tr><td colSpan="3" style={{textAlign:"right",fontWeight:"bold"}}>Total Packed</td><td style={{fontWeight:"bold"}}>{live.packing?.totalQty} {live.unit}</td></tr>
     </tbody></table>
-    {live.packing?.remarks&&<div style={{marginTop:"6px"}}><strong>Remarks:</strong> {live.packing.remarks}</div>}
-    <div style={{marginTop:"14px",display:"flex",justifyContent:"space-between",borderTop:"1px solid #ccc",paddingTop:"8px",fontSize:"9pt",color:"#666"}}>
-      <span>Packed By: ___________________</span><span>QC Sign: ___________________</span>
+    {live.packing?.remarks&&<div style={{marginTop:"3px",fontSize:"8pt"}}><strong>Remarks:</strong> {live.packing.remarks}</div>}
+    <div style={{marginTop:"6px",display:"flex",justifyContent:"space-between",borderTop:"1px solid #999",paddingTop:"3px",fontSize:"8pt"}}>
+      <span>Packed By: _______________________</span>
+      <span>QC Sign: _______________________</span>
     </div>
   </div>;
 
@@ -1777,7 +1804,7 @@ function OldStockCard({s,canEdit,onToggle,onDelete}){
 // ══════════════════════════════════════════════════════════
 // SETTINGS TAB (Admin only)
 // ══════════════════════════════════════════════════════════
-function SettingsTab({showToast, initialProducts, initialQcParams, initialPackSizes, initialCatUnits, initialUnits, onSaved}){
+function SettingsTab({showToast, initialProducts, initialQcParams, initialPackSizes, initialCatUnits, initialUnits, initialPaintTypes, initialRmCats, onSaved}){
   const [subTab,setSubTab]=useState("products");
   const [saving,setSaving]=useState(false);
   const [prodData,setProdData]=useState(()=>JSON.parse(JSON.stringify(initialProducts||DEFAULT_PRODUCTS)));
@@ -1785,7 +1812,11 @@ function SettingsTab({showToast, initialProducts, initialQcParams, initialPackSi
   const [packSizeData,setPackSizeData]=useState(()=>JSON.parse(JSON.stringify(initialPackSizes||DEFAULT_PACK_SIZES_BY_CAT)));
   const [catUnits,setCatUnits]=useState(()=>({...CATEGORY_UNITS,...(initialCatUnits||{})}));
   const [unitsData,setUnitsData]=useState(()=>[...(initialUnits||BATCH_UNITS)]);
+  const [paintTypesData,setPaintTypesData]=useState(()=>[...(initialPaintTypes||PAINT_TYPES)]);
+  const [rmCatsData,setRmCatsData]=useState(()=>[...(initialRmCats||RM_CATEGORIES)]);
   const [newUnit,setNewUnit]=useState("");
+  const [newPaintType,setNewPaintType]=useState("");
+  const [newRmCat,setNewRmCat]=useState("");
   const [newPackSize,setNewPackSize]=useState("");
   const [newPackQty,setNewPackQty]=useState("");
   const [selCat,setSelCat]=useState(Object.keys(initialProducts||DEFAULT_PRODUCTS)[0]);
@@ -2013,8 +2044,8 @@ function SettingsTab({showToast, initialProducts, initialQcParams, initialPackSi
   const saveAll=async()=>{
     setSaving(true);
     try{
-      await C("settings").doc("products").set({products:prodData,qcParams:qcData,packSizes:packSizeData,catUnits,units:unitsData,updatedAt:ts()});
-      if(onSaved)onSaved({products:prodData,qcParams:qcData,packSizes:packSizeData,catUnits,units:unitsData});
+      await C("settings").doc("products").set({products:prodData,qcParams:qcData,packSizes:packSizeData,catUnits,units:unitsData,paintTypes:paintTypesData,rmCategories:rmCatsData,updatedAt:ts()});
+      if(onSaved)onSaved({products:prodData,qcParams:qcData,packSizes:packSizeData,catUnits,units:unitsData,paintTypes:paintTypesData,rmCategories:rmCatsData});
       showToast("Settings saved ✓");
     }catch(e){showToast("Error saving","error");}
     setSaving(false);
@@ -2049,7 +2080,7 @@ function SettingsTab({showToast, initialProducts, initialQcParams, initialPackSi
   return <div>
     <SectionHead title="⚙️ System Settings"/>
     <div style={{display:"flex",gap:"4px",marginBottom:"20px",borderBottom:"1px solid #1e293b"}}>
-      {[["products","🎨 Products"],["qcparams","🔬 QC Parameters"],["packsizes","📦 Pack Sizes"],["units","📏 Units"]].map(([key,label])=>(
+      {[["products","🎨 Products"],["qcparams","🔬 QC Parameters"],["packsizes","📦 Pack Sizes"],["units","📏 Units"],["painttypes","🖌 Paint Types"],["rmcats","🧫 RM Categories"]].map(([key,label])=>(
         <button key={key} onClick={()=>setSubTab(key)} style={{background:subTab===key?"#1e293b":"transparent",border:"none",borderBottom:subTab===key?"2px solid #3b82f6":"2px solid transparent",color:subTab===key?"#f1f5f9":"#64748b",padding:"8px 16px",cursor:"pointer",fontSize:"13px",fontWeight:"600",borderRadius:"8px 8px 0 0",transition:"all 0.15s"}}>{label}</button>
       ))}
     </div>
@@ -2223,6 +2254,47 @@ function SettingsTab({showToast, initialProducts, initialQcParams, initialPackSi
         These units appear in: Product unit dropdown, Pack size qty, Batch size, Old/Rejected material. Changes apply after 💾 Save All Settings.
       </div>
     </div>}
+    {subTab==="painttypes"&&<div>
+      <InfoBox color="#e879f9">Manage paint types used in R&amp;D Projects. Appear in the Paint Type dropdown when creating or editing a project.</InfoBox>
+      <div style={{display:"flex",gap:"6px",marginBottom:"12px"}}>
+        <input style={{...inp,flex:1}} value={newPaintType} onChange={e=>setNewPaintType(e.target.value)}
+          placeholder="Add paint type… e.g. Waterproofing, Cement Paint"
+          onKeyDown={e=>{if(e.key==="Enter"&&newPaintType.trim()&&!paintTypesData.includes(newPaintType.trim())){setPaintTypesData(d=>[...d,newPaintType.trim()]);setNewPaintType("");}}}/>
+        <Btn label="+ Add" onClick={()=>{if(newPaintType.trim()&&!paintTypesData.includes(newPaintType.trim())){setPaintTypesData(d=>[...d,newPaintType.trim()]);setNewPaintType("");}}} color="#e879f9" small/>
+      </div>
+      {paintTypesData.length===0&&<div style={{fontSize:"13px",color:"#334155",fontStyle:"italic",padding:"10px 0"}}>No paint types.</div>}
+      <div style={{display:"flex",flexDirection:"column",gap:"6px"}}>
+        {paintTypesData.map((t,i)=>(
+          <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:"#0f172a",border:"1px solid #1e293b",borderRadius:"8px",padding:"10px 14px"}}>
+            <span style={{fontSize:"13px",color:"#e2e8f0"}}>{t}</span>
+            <button onClick={()=>{if(paintTypesData.length<=1){showToast("Must keep at least one","error");return;}setPaintTypesData(paintTypesData.filter((_,j)=>j!==i));}}
+              style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"16px"}}>×</button>
+          </div>
+        ))}
+      </div>
+    </div>}
+
+    {subTab==="rmcats"&&<div>
+      <InfoBox color="#f97316">Manage raw material categories used in RM Tests. Appear in the Category dropdown when adding an RM test entry.</InfoBox>
+      <div style={{display:"flex",gap:"6px",marginBottom:"12px"}}>
+        <input style={{...inp,flex:1}} value={newRmCat} onChange={e=>setNewRmCat(e.target.value)}
+          placeholder="Add RM category… e.g. Catalyst, Hardener, Thixotrope"
+          onKeyDown={e=>{if(e.key==="Enter"&&newRmCat.trim()&&!rmCatsData.includes(newRmCat.trim())){setRmCatsData(d=>[...d,newRmCat.trim()]);setNewRmCat("");}}}/>
+        <Btn label="+ Add" onClick={()=>{if(newRmCat.trim()&&!rmCatsData.includes(newRmCat.trim())){setRmCatsData(d=>[...d,newRmCat.trim()]);setNewRmCat("");}}} color="#f97316" small/>
+      </div>
+      {rmCatsData.length===0&&<div style={{fontSize:"13px",color:"#334155",fontStyle:"italic",padding:"10px 0"}}>No RM categories.</div>}
+      <div style={{display:"flex",flexDirection:"column",gap:"6px"}}>
+        {rmCatsData.map((c,i)=>(
+          <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:"#0f172a",border:"1px solid #1e293b",borderRadius:"8px",padding:"10px 14px"}}>
+            <span style={{fontSize:"13px",color:"#e2e8f0"}}>{c}</span>
+            <button onClick={()=>{if(rmCatsData.length<=1){showToast("Must keep at least one","error");return;}setRmCatsData(rmCatsData.filter((_,j)=>j!==i));}}
+              style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"16px"}}>×</button>
+          </div>
+        ))}
+      </div>
+    </div>}
+
+    <div style={{marginTop:"20px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"10px"}}>
       <div style={{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap"}}>
         <input ref={fileRef} type="file" accept=".xlsx" onChange={importExcel} style={{display:"none"}}/>
         <Btn label={importing?"Reading…":"📥 Import from Excel"} onClick={()=>fileRef.current?.click()} disabled={importing} color="#64748b" small/>
@@ -2305,6 +2377,8 @@ function MainApp({user,role}){
   const [sysPackSizes,setSysPackSizes]=useState(DEFAULT_PACK_SIZES_BY_CAT);
   const [sysCatUnits,setSysCatUnits]=useState({});
   const [sysUnits,setSysUnits]=useState([...BATCH_UNITS]);
+  const [sysPaintTypes,setSysPaintTypes]=useState([...PAINT_TYPES]);
+  const [sysRmCats,setSysRmCats]=useState([...RM_CATEGORIES]);
   const [oldStocks,setOldStocks]=useState([]);
 
   // Data
@@ -2354,6 +2428,8 @@ function MainApp({user,role}){
         if(d.qcParams)setSysQcParams(d.qcParams);
         if(d.catUnits)setSysCatUnits(u=>({...u,...d.catUnits}));
         if(d.units&&d.units.length)setSysUnits(d.units);
+        if(d.paintTypes&&d.paintTypes.length)setSysPaintTypes(d.paintTypes);
+        if(d.rmCategories&&d.rmCategories.length)setSysRmCats(d.rmCategories);
         if(d.packSizes){
           const ps=d.packSizes;
           const normalize=(arr)=>(arr||[]).map(p=>typeof p==="string"?{size:p,qty:""}:p);
@@ -2611,12 +2687,16 @@ function MainApp({user,role}){
         initialPackSizes={sysPackSizes}
         initialCatUnits={sysCatUnits}
         initialUnits={sysUnits}
-        onSaved={({products,qcParams,packSizes,catUnits,units})=>{
+        initialPaintTypes={sysPaintTypes}
+        initialRmCats={sysRmCats}
+        onSaved={({products,qcParams,packSizes,catUnits,units,paintTypes,rmCategories})=>{
           setSysProducts(products);
           setSysQcParams(qcParams);
           setSysPackSizes(packSizes);
           setSysCatUnits(catUnits);
           if(units)setSysUnits(units);
+          if(paintTypes)setSysPaintTypes(paintTypes);
+          if(rmCategories)setSysRmCats(rmCategories);
         }}
       />}
     </div>
@@ -2705,7 +2785,7 @@ function MainApp({user,role}){
       <Field label="Project Name *"><input style={inp} value={projForm.projectName} onChange={e=>setProjForm({...projForm,projectName:e.target.value})} placeholder="e.g. Water-based Exterior Emulsion v3"/></Field>
       <Grid2>
         <Field label="Project Code"><input style={inp} value={projForm.projectCode} onChange={e=>setProjForm({...projForm,projectCode:e.target.value})} placeholder="Auto-generated if blank"/></Field>
-        <Field label="Paint Type"><select style={sl} value={projForm.paintType} onChange={e=>setProjForm({...projForm,paintType:e.target.value})}>{PAINT_TYPES.map(t=><option key={t}>{t}</option>)}</select></Field>
+        <Field label="Paint Type"><select style={sl} value={projForm.paintType} onChange={e=>setProjForm({...projForm,paintType:e.target.value})}>{(sysPaintTypes||PAINT_TYPES).map(t=><option key={t}>{t}</option>)}</select></Field>
       </Grid2>
       <Field label="Target Application"><input style={inp} value={projForm.application} onChange={e=>setProjForm({...projForm,application:e.target.value})} placeholder="e.g. Interior walls, Metal surfaces"/></Field>
       <Grid2>
@@ -2728,7 +2808,7 @@ function MainApp({user,role}){
         <Field label="Project Name *"><input style={inp} value={editProject.projectName} onChange={e=>setEditProject({...editProject,projectName:e.target.value})}/></Field>
         <Grid2>
           <Field label="Project Code"><input style={inp} value={editProject.projectCode} onChange={e=>setEditProject({...editProject,projectCode:e.target.value})}/></Field>
-          <Field label="Paint Type"><select style={sl} value={editProject.paintType} onChange={e=>setEditProject({...editProject,paintType:e.target.value})}>{PAINT_TYPES.map(t=><option key={t}>{t}</option>)}</select></Field>
+          <Field label="Paint Type"><select style={sl} value={editProject.paintType} onChange={e=>setEditProject({...editProject,paintType:e.target.value})}>{(sysPaintTypes||PAINT_TYPES).map(t=><option key={t}>{t}</option>)}</select></Field>
         </Grid2>
         <Field label="Target Application"><input style={inp} value={editProject.application||""} onChange={e=>setEditProject({...editProject,application:e.target.value})}/></Field>
         <Grid2>
@@ -2753,7 +2833,7 @@ function MainApp({user,role}){
         <Field label="Vendor / Supplier *"><input style={inp} value={rmForm.vendorName} onChange={e=>setRmForm({...rmForm,vendorName:e.target.value})}/></Field>
       </Grid2>
       <Grid2>
-        <Field label="Category"><select style={sl} value={rmForm.category} onChange={e=>setRmForm({...rmForm,category:e.target.value})}>{RM_CATEGORIES.map(c=><option key={c}>{c}</option>)}</select></Field>
+        <Field label="Category"><select style={sl} value={rmForm.category} onChange={e=>setRmForm({...rmForm,category:e.target.value})}>{(sysRmCats||RM_CATEGORIES).map(c=><option key={c}>{c}</option>)}</select></Field>
         <Field label="Date Received"><input type="date" style={inp} value={rmForm.dateReceived} onChange={e=>setRmForm({...rmForm,dateReceived:e.target.value})}/></Field>
       </Grid2>
       <Grid2>
@@ -2786,7 +2866,7 @@ function MainApp({user,role}){
           <Field label="Vendor / Supplier *"><input style={inp} value={editRM.vendorName} onChange={e=>setEditRM({...editRM,vendorName:e.target.value})}/></Field>
         </Grid2>
         <Grid2>
-          <Field label="Category"><select style={sl} value={editRM.category} onChange={e=>setEditRM({...editRM,category:e.target.value})}>{RM_CATEGORIES.map(c=><option key={c}>{c}</option>)}</select></Field>
+          <Field label="Category"><select style={sl} value={editRM.category} onChange={e=>setEditRM({...editRM,category:e.target.value})}>{(sysRmCats||RM_CATEGORIES).map(c=><option key={c}>{c}</option>)}</select></Field>
           <Field label="Date Received"><input type="date" style={inp} value={editRM.dateReceived||""} onChange={e=>setEditRM({...editRM,dateReceived:e.target.value})}/></Field>
         </Grid2>
         <Grid2>
