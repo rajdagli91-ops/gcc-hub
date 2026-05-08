@@ -122,20 +122,21 @@ const gpu = (p) => typeof p==="string" ? "kg" : (p?.unit||"kg");
 
 // Default QC parameters per category
 const DEFAULT_QC_PARAMS = {
-  "Emulsion":   [{name:"Viscosity (KU)",min:"90",max:"120"},{name:"pH",min:"7.0",max:"9.0"},{name:"Fineness (micron)",min:"",max:"50"},{name:"Density (g/cc)",min:"1.25",max:"1.45"},{name:"Touch Dry Time (min)",min:"",max:"30"},{name:"Hard Dry Time (min)",min:"",max:"120"},{name:"Spreading Rate (sq.ft/L)",min:"100",max:""}],
-  "Enamel":     [{name:"Viscosity (Ford Cup, sec)",min:"60",max:"100"},{name:"Gloss 60° (%)",min:"80",max:""},{name:"Hard Dry Time (hrs)",min:"",max:"8"},{name:"Fineness (micron)",min:"",max:"25"},{name:"Density (g/cc)",min:"1.1",max:"1.4"},{name:"Sag Resistance (micron)",min:"75",max:""}],
-  "Primer":     [{name:"Viscosity (KU)",min:"80",max:"110"},{name:"pH",min:"7.0",max:"9.5"},{name:"Fineness (micron)",min:"",max:"50"},{name:"Dry Time (min)",min:"",max:"60"},{name:"Coverage (sq.ft/L)",min:"80",max:""},{name:"Adhesion (cross cut)",min:"",max:""}],
-  "Distemper":  [{name:"Viscosity (KU)",min:"85",max:"115"},{name:"pH",min:"7.0",max:"9.0"},{name:"Fineness (micron)",min:"",max:"60"},{name:"Whiteness Index",min:"85",max:""},{name:"Spreading Rate (sq.ft/kg)",min:"90",max:""}],
-  "Texture":    [{name:"Viscosity (KU)",min:"100",max:"150"},{name:"Density (g/cc)",min:"1.3",max:"1.6"},{name:"Coverage (sq.ft/L)",min:"20",max:""},{name:"Fineness",min:"",max:""}],
-  "Road Marking":[{name:"Viscosity (KU)",min:"90",max:"130"},{name:"Drying Time (min)",min:"",max:"30"},{name:"Glass Bead %",min:"25",max:"35"},{name:"Density (g/cc)",min:"1.4",max:"1.7"}],
-  "Epoxy":      [{name:"Viscosity (cP)",min:"500",max:"2000"},{name:"Pot Life (hrs)",min:"1",max:""},{name:"Full Cure Time (hrs)",min:"",max:"24"},{name:"Gloss 60°",min:"70",max:""},{name:"Adhesion",min:"",max:""},{name:"MEK Rubs",min:"100",max:""}],
-  "PU":         [{name:"Viscosity (cP)",min:"300",max:"1500"},{name:"Pot Life (hrs)",min:"2",max:""},{name:"Gloss 60°",min:"75",max:""},{name:"Dry Time (hrs)",min:"",max:"6"},{name:"Adhesion",min:"",max:""}],
-  "Wood Finish":[{name:"Viscosity (Ford Cup, sec)",min:"50",max:"90"},{name:"Gloss 60°",min:"60",max:""},{name:"Dry Time (hrs)",min:"",max:"4"},{name:"Finish Quality",min:"",max:""}],
-  "Anti-corrosive":[{name:"Viscosity (KU)",min:"80",max:"120"},{name:"Density (g/cc)",min:"1.2",max:"1.5"},{name:"Dry Time (hrs)",min:"",max:"8"},{name:"Salt Spray Resistance (hrs)",min:"500",max:""}],
-  "Other":      [{name:"Viscosity",min:"",max:""},{name:"pH",min:"",max:""},{name:"Density",min:"",max:""},{name:"Dry Time",min:"",max:""}]
+  "Emulsion":   [{name:"Viscosity",unit:"KU",min:"90",max:"120"},{name:"pH",unit:"",min:"7.0",max:"9.0"},{name:"Fineness",unit:"micron",min:"",max:"50"},{name:"Density",unit:"g/cc",min:"1.25",max:"1.45"},{name:"Touch Dry Time",unit:"min",min:"",max:"30"},{name:"Hard Dry Time",unit:"min",min:"",max:"120"},{name:"Spreading Rate",unit:"sq.ft/L",min:"100",max:""}],
+  "Enamel":     [{name:"Viscosity",unit:"Ford Cup sec",min:"60",max:"100"},{name:"Gloss 60°",unit:"%",min:"80",max:""},{name:"Hard Dry Time",unit:"hrs",min:"",max:"8"},{name:"Fineness",unit:"micron",min:"",max:"25"},{name:"Density",unit:"g/cc",min:"1.1",max:"1.4"},{name:"Sag Resistance",unit:"micron",min:"75",max:""}],
+  "Primer":     [{name:"Viscosity",unit:"KU",min:"80",max:"110"},{name:"pH",unit:"",min:"7.0",max:"9.5"},{name:"Fineness",unit:"micron",min:"",max:"50"},{name:"Dry Time",unit:"min",min:"",max:"60"},{name:"Coverage",unit:"sq.ft/L",min:"80",max:""},{name:"Adhesion",unit:"cross cut",min:"",max:""}],
+  "Distemper":  [{name:"Viscosity",unit:"KU",min:"85",max:"115"},{name:"pH",unit:"",min:"7.0",max:"9.0"},{name:"Fineness",unit:"micron",min:"",max:"60"},{name:"Whiteness Index",unit:"",min:"85",max:""},{name:"Spreading Rate",unit:"sq.ft/kg",min:"90",max:""}],
+  "Texture":    [{name:"Viscosity",unit:"KU",min:"100",max:"150"},{name:"Density",unit:"g/cc",min:"1.3",max:"1.6"},{name:"Coverage",unit:"sq.ft/L",min:"20",max:""},{name:"Fineness",unit:"micron",min:"",max:""}],
+  "Road Marking":[{name:"Viscosity",unit:"KU",min:"90",max:"130"},{name:"Drying Time",unit:"min",min:"",max:"30"},{name:"Glass Bead",unit:"%",min:"25",max:"35"},{name:"Density",unit:"g/cc",min:"1.4",max:"1.7"}],
+  "Epoxy":      [{name:"Viscosity",unit:"cP",min:"500",max:"2000"},{name:"Pot Life",unit:"hrs",min:"1",max:""},{name:"Full Cure Time",unit:"hrs",min:"",max:"24"},{name:"Gloss 60°",unit:"",min:"70",max:""},{name:"Adhesion",unit:"",min:"",max:""},{name:"MEK Rubs",unit:"",min:"100",max:""}],
+  "PU":         [{name:"Viscosity",unit:"cP",min:"300",max:"1500"},{name:"Pot Life",unit:"hrs",min:"2",max:""},{name:"Gloss 60°",unit:"",min:"75",max:""},{name:"Dry Time",unit:"hrs",min:"",max:"6"},{name:"Adhesion",unit:"",min:"",max:""}],
+  "Wood Finish":[{name:"Viscosity",unit:"Ford Cup sec",min:"50",max:"90"},{name:"Gloss 60°",unit:"",min:"60",max:""},{name:"Dry Time",unit:"hrs",min:"",max:"4"},{name:"Finish Quality",unit:"",min:"",max:""}],
+  "Anti-corrosive":[{name:"Viscosity",unit:"KU",min:"80",max:"120"},{name:"Density",unit:"g/cc",min:"1.2",max:"1.5"},{name:"Dry Time",unit:"hrs",min:"",max:"8"},{name:"Salt Spray Resistance",unit:"hrs",min:"500",max:""}],
+  "Other":      [{name:"Viscosity",unit:"",min:"",max:""},{name:"pH",unit:"",min:"",max:""},{name:"Density",unit:"g/cc",min:"",max:""},{name:"Dry Time",unit:"",min:"",max:""}]
 };
-// Helper: parse param (old string format OR new {name,min,max} format)
-const gp = (p) => typeof p === "string" ? {name:p,min:"",max:""} : (p||{name:"",min:"",max:""});
+// Helper: parse param — handles string, {name,min,max} and new {name,unit,min,max}
+const gp = (p) => typeof p === "string" ? {name:p,unit:"",min:"",max:""} : {unit:"",...(p||{name:"",unit:"",min:"",max:""})};
+
 
 // Pack sizes per category — _default applies to any category not listed
 // Pack sizes stored as {size, qty} — qty is the volume/weight per pack (pre-fills in packing form)
@@ -376,12 +377,12 @@ function BatchWorkspace({batch,role,onClose,showToast,qcParams,packSizes}){
       ))}
     </tbody></table>
     <div className="pr-section-title">Test Parameters</div>
-    <table><thead><tr><th>Parameter</th><th>Min</th><th>Max</th><th>Value</th><th>Status</th></tr></thead>
+    <table><thead><tr><th>Parameter</th><th>Unit</th><th>Min</th><th>Max</th><th>Value</th><th>Status</th></tr></thead>
     <tbody>
       {params.map(p=>{
         const val=live.qc?.[p.name]||"—";
         const r=live.qc?.[p.name]?checkParam(p,live.qc[p.name]):null;
-        return <tr key={p.name}><td>{p.name}</td><td>{p.min||"—"}</td><td>{p.max||"—"}</td><td>{val}</td>
+        return <tr key={p.name}><td>{p.name}</td><td>{p.unit||"—"}</td><td>{p.min||"—"}</td><td>{p.max||"—"}</td><td>{val}</td>
           <td className={r===true?"pr-pass":r===false?"pr-fail":""}>{r===true?"✓ Pass":r===false?"✗ Fail":"—"}</td></tr>;
       })}
     </tbody></table>
@@ -563,10 +564,13 @@ function BatchWorkspace({batch,role,onClose,showToast,qcParams,packSizes}){
             const hint=(p.min||p.max)?`${p.min||"—"} – ${p.max||"—"}`:"";
             return <div key={p.name} style={{marginBottom:"4px"}}>
               <label style={{display:"block",fontSize:"11px",fontWeight:"600",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"4px"}}>
-                {p.name}{hint&&<span style={{fontSize:"9px",color:"#475569",fontWeight:"400",marginLeft:"5px",textTransform:"none",letterSpacing:0}}>({hint})</span>}
+                {p.name}
+                {p.unit&&<span style={{fontSize:"9px",fontWeight:"700",color:"#a855f7",background:"#a855f718",padding:"1px 6px",borderRadius:"4px",border:"1px solid #a855f730",marginLeft:"5px",textTransform:"none",letterSpacing:0}}>{p.unit}</span>}
+                {hint&&<span style={{fontSize:"9px",color:"#475569",fontWeight:"400",marginLeft:"5px",textTransform:"none",letterSpacing:0}}>({hint})</span>}
               </label>
               <div style={{position:"relative"}}>
-                <input style={{...inp,borderColor:bc,paddingRight:r!==null?"32px":"12px"}} value={val} onChange={e=>setQcForm({...qcForm,[p.name]:e.target.value})} placeholder="Enter value"/>
+                <input style={{...inp,borderColor:bc,paddingRight:r!==null?"32px":p.unit?"50px":"12px"}} value={val} onChange={e=>setQcForm({...qcForm,[p.name]:e.target.value})} placeholder={p.unit?`Enter ${p.unit}`:"Enter value"}/>
+                {p.unit&&!r&&<span style={{position:"absolute",right:"10px",top:"50%",transform:"translateY(-50%)",fontSize:"11px",color:"#a855f7",pointerEvents:"none"}}>{p.unit}</span>}
                 {r!==null&&<span style={{position:"absolute",right:"10px",top:"50%",transform:"translateY(-50%)",fontSize:"14px",pointerEvents:"none"}}>{r?"✅":"❌"}</span>}
               </div>
             </div>;
@@ -1556,29 +1560,40 @@ function UsersTab({currentUser}){
 // CATEGORY → PRODUCT SELECTOR
 // ══════════════════════════════════════════════════════════
 // Searchable product selector component
+const normalize = (s) => (s||"").toLowerCase().replace(/[\s\-_.()\/\\,&+*#@!?'"%]/g,"");
+
 function ProductSearch({prods, value, onChange, disabled}){
   const [query,setQuery]=useState(value||"");
   const [open,setOpen]=useState(false);
   const ref=useRef(null);
 
-  // Sync display when value changes externally
   useEffect(()=>{ setQuery(value||""); },[value]);
 
-  // Close on outside click
   useEffect(()=>{
     const handler=(e)=>{ if(ref.current&&!ref.current.contains(e.target))setOpen(false); };
     document.addEventListener("mousedown",handler);
     return()=>document.removeEventListener("mousedown",handler);
   },[]);
 
+  // Smart filter: ignores spaces, special chars, case
   const filtered=prods.filter(p=>{
-    const n=gpn(p).toLowerCase();
-    return !query||n.includes(query.toLowerCase());
+    if(!query)return true;
+    const nq=normalize(query);
+    const nn=normalize(gpn(p));
+    // Match if normalized name contains normalized query (contiguous or split)
+    return nn.includes(nq)||
+      // Also match initials: "IE" matches "Interior Emulsion"
+      gpn(p).split(/\s+/).map(w=>w[0]||"").join("").toLowerCase().startsWith(nq);
   });
 
-  const select=(p)=>{
-    const n=gpn(p);
-    setQuery(n); setOpen(false); onChange(p);
+  const select=(p)=>{ setQuery(gpn(p)); setOpen(false); onChange(p); };
+  const highlight=(text)=>{
+    if(!query)return text;
+    try{
+      const re=new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")})`, "gi");
+      const parts=text.split(re);
+      return parts.map((part,i)=>re.test(part)?<mark key={i} style={{background:"#f59e0b30",color:"#f59e0b",borderRadius:"2px"}}>{part}</mark>:part);
+    }catch{return text;}
   };
 
   return <div ref={ref} style={{position:"relative"}}>
@@ -1587,15 +1602,18 @@ function ProductSearch({prods, value, onChange, disabled}){
         value={query} disabled={disabled}
         onChange={e=>{setQuery(e.target.value);setOpen(true);onChange(null);}}
         onFocus={()=>!disabled&&setOpen(true)}
-        placeholder={disabled?"← select category first":"Search or type product name…"}/>
+        placeholder={disabled?"← select category first":"Type to search products…"}/>
       <span onClick={()=>!disabled&&setOpen(o=>!o)}
         style={{position:"absolute",right:"10px",top:"50%",transform:"translateY(-50%)",cursor:"pointer",color:"#475569",fontSize:"12px",pointerEvents:disabled?"none":"auto"}}>
         {open?"▲":"▼"}
       </span>
     </div>
-    {open&&!disabled&&<div style={{position:"absolute",zIndex:500,top:"100%",left:0,right:0,background:"#0f172a",border:"1px solid #3b82f6",borderTop:"none",borderRadius:"0 0 8px 8px",maxHeight:"200px",overflowY:"auto",boxShadow:"0 8px 24px rgba(0,0,0,0.5)"}}>
+    {open&&!disabled&&<div style={{position:"absolute",zIndex:500,top:"100%",left:0,right:0,background:"#0f172a",border:"1px solid #3b82f6",borderTop:"none",borderRadius:"0 0 8px 8px",maxHeight:"220px",overflowY:"auto",boxShadow:"0 8px 24px rgba(0,0,0,0.5)"}}>
+      {query&&<div style={{padding:"6px 14px",fontSize:"11px",color:"#334155",borderBottom:"1px solid #1e293b",background:"#060d1a"}}>
+        {filtered.length} result{filtered.length!==1?"s":""} — spaces & symbols ignored in search
+      </div>}
       {filtered.length===0
-        ?<div style={{padding:"10px 14px",fontSize:"12.5px",color:"#475569",fontStyle:"italic"}}>No products match "{query}"</div>
+        ?<div style={{padding:"12px 14px",fontSize:"12.5px",color:"#475569",fontStyle:"italic"}}>No products match — try fewer characters</div>
         :filtered.map(p=>{
           const n=gpn(p); const u=gpu(p);
           const isSelected=n===value;
@@ -1607,8 +1625,8 @@ function ProductSearch({prods, value, onChange, disabled}){
               display:"flex",justifyContent:"space-between",alignItems:"center"}}
             onMouseEnter={e=>e.currentTarget.style.background=isSelected?"#052e16":"#1e293b"}
             onMouseLeave={e=>e.currentTarget.style.background=isSelected?"#052e16":"transparent"}>
-            <span>{n}</span>
-            <span style={{fontSize:"11px",color:isSelected?"#22c55e":"#475569",background:"#0b1220",padding:"1px 7px",borderRadius:"99px",border:"1px solid #1e293b"}}>{u}</span>
+            <span>{highlight(n)}</span>
+            <span style={{fontSize:"11px",color:isSelected?"#22c55e":"#475569",background:"#0b1220",padding:"1px 7px",borderRadius:"99px",border:"1px solid #1e293b",flexShrink:0,marginLeft:"8px"}}>{u}</span>
           </div>;
         })}
     </div>}
@@ -1759,14 +1777,15 @@ function OldStockCard({s,canEdit,onToggle,onDelete}){
 // ══════════════════════════════════════════════════════════
 // SETTINGS TAB (Admin only)
 // ══════════════════════════════════════════════════════════
-function SettingsTab({showToast, initialProducts, initialQcParams, initialPackSizes, initialCatUnits, onSaved}){
+function SettingsTab({showToast, initialProducts, initialQcParams, initialPackSizes, initialCatUnits, initialUnits, onSaved}){
   const [subTab,setSubTab]=useState("products");
   const [saving,setSaving]=useState(false);
-  // Initialize from parent's already-loaded data — no separate Firestore load needed
   const [prodData,setProdData]=useState(()=>JSON.parse(JSON.stringify(initialProducts||DEFAULT_PRODUCTS)));
   const [qcData,setQcData]=useState(()=>JSON.parse(JSON.stringify(initialQcParams||DEFAULT_QC_PARAMS)));
   const [packSizeData,setPackSizeData]=useState(()=>JSON.parse(JSON.stringify(initialPackSizes||DEFAULT_PACK_SIZES_BY_CAT)));
   const [catUnits,setCatUnits]=useState(()=>({...CATEGORY_UNITS,...(initialCatUnits||{})}));
+  const [unitsData,setUnitsData]=useState(()=>[...(initialUnits||BATCH_UNITS)]);
+  const [newUnit,setNewUnit]=useState("");
   const [newPackSize,setNewPackSize]=useState("");
   const [newPackQty,setNewPackQty]=useState("");
   const [selCat,setSelCat]=useState(Object.keys(initialProducts||DEFAULT_PRODUCTS)[0]);
@@ -1803,17 +1822,17 @@ function SettingsTab({showToast, initialProducts, initialQcParams, initialPackSi
       XLSX.utils.book_append_sheet(wb,wsProd,"🎨 Products");
 
       // ── QC Parameters sheet ─────────────────────────
-      const qcRows=[["CATEGORY","QC PARAMETER","MIN VALUE","MAX VALUE","HINT"]];
+      const qcRows=[["CATEGORY","QC PARAMETER","UNIT","MIN VALUE","MAX VALUE","HINT"]];
       cats.forEach(cat=>{
         (qcData[cat]||[]).forEach((p,i)=>{
-          const parsed=typeof p==="string"?{name:p,min:"",max:""}:p;
-          qcRows.push([cat,parsed.name||"",parsed.min||"",parsed.max||"",i===0?"← edit or delete rows freely":""]);
+          const parsed=typeof p==="string"?{name:p,unit:"",min:"",max:""}:p;
+          qcRows.push([cat,parsed.name||"",parsed.unit||"",parsed.min||"",parsed.max||"",i===0?"← edit freely":""]);
         });
-        qcRows.push(["","","","",""]); // spacer
+        qcRows.push(["","","","","",""]); // spacer
       });
-      for(let i=0;i<5;i++)qcRows.push(["← Category","← Parameter name","← Min","← Max","← add"]);
+      for(let i=0;i<5;i++)qcRows.push(["← Category","← Parameter name","← Unit e.g. KU","← Min","← Max","← add"]);
       const wsQC=XLSX.utils.aoa_to_sheet(qcRows);
-      wsQC["!cols"]=[{wch:26},{wch:40},{wch:12},{wch:12},{wch:18}];
+      wsQC["!cols"]=[{wch:26},{wch:36},{wch:14},{wch:12},{wch:12},{wch:16}];
       XLSX.utils.book_append_sheet(wb,wsQC,"🔬 QC Parameters");
 
       // ── Units sheet ─────────────────────────────────
@@ -1932,11 +1951,11 @@ function SettingsTab({showToast, initialProducts, initialQcParams, initialPackSi
           if(cat.startsWith("←")||param.startsWith("←"))continue;
           if(toRemove.has(cat))continue;
           if(!newQc[cat])newQc[cat]=[];
-          const min=(rows[ri][2]||"").toString().trim();
-          const max=(rows[ri][3]||"").toString().trim();
-          // Store as object with range info
+          const min=(rows[ri][3]||"").toString().trim();
+          const max=(rows[ri][4]||"").toString().trim();
+          const unit=(rows[ri][2]||"").toString().trim();
           if(!newQc[cat].some(x=>(typeof x==="object"?x.name:x)===param))
-            newQc[cat].push({name:param,min,max});
+            newQc[cat].push({name:param,unit,min,max});
         }
       }
 
@@ -1994,9 +2013,8 @@ function SettingsTab({showToast, initialProducts, initialQcParams, initialPackSi
   const saveAll=async()=>{
     setSaving(true);
     try{
-      await C("settings").doc("products").set({products:prodData,qcParams:qcData,packSizes:packSizeData,catUnits,updatedAt:ts()});
-      // Notify MainApp so its sysProducts etc. update immediately without re-login
-      if(onSaved)onSaved({products:prodData,qcParams:qcData,packSizes:packSizeData,catUnits});
+      await C("settings").doc("products").set({products:prodData,qcParams:qcData,packSizes:packSizeData,catUnits,units:unitsData,updatedAt:ts()});
+      if(onSaved)onSaved({products:prodData,qcParams:qcData,packSizes:packSizeData,catUnits,units:unitsData});
       showToast("Settings saved ✓");
     }catch(e){showToast("Error saving","error");}
     setSaving(false);
@@ -2031,7 +2049,7 @@ function SettingsTab({showToast, initialProducts, initialQcParams, initialPackSi
   return <div>
     <SectionHead title="⚙️ System Settings"/>
     <div style={{display:"flex",gap:"4px",marginBottom:"20px",borderBottom:"1px solid #1e293b"}}>
-      {[["products","🎨 Products"],["qcparams","🔬 QC Parameters"],["packsizes","📦 Pack Sizes"]].map(([key,label])=>(
+      {[["products","🎨 Products"],["qcparams","🔬 QC Parameters"],["packsizes","📦 Pack Sizes"],["units","📏 Units"]].map(([key,label])=>(
         <button key={key} onClick={()=>setSubTab(key)} style={{background:subTab===key?"#1e293b":"transparent",border:"none",borderBottom:subTab===key?"2px solid #3b82f6":"2px solid transparent",color:subTab===key?"#f1f5f9":"#64748b",padding:"8px 16px",cursor:"pointer",fontSize:"13px",fontWeight:"600",borderRadius:"8px 8px 0 0",transition:"all 0.15s"}}>{label}</button>
       ))}
     </div>
@@ -2050,7 +2068,7 @@ function SettingsTab({showToast, initialProducts, initialQcParams, initialPackSi
           <Field label="Default Unit">
             <select style={{...sl,borderColor:catUnits[selCat]?"#22c55e30":"#1e293b"}} value={catUnits[selCat]||"kg"}
               onChange={e=>setCatUnits({...catUnits,[selCat]:e.target.value})}>
-              {BATCH_UNITS.map(u=><option key={u}>{u}</option>)}
+              {(unitsData||BATCH_UNITS).map(u=><option key={u}>{u}</option>)}
             </select>
           </Field>
         </div>
@@ -2059,7 +2077,7 @@ function SettingsTab({showToast, initialProducts, initialQcParams, initialPackSi
             onChange={e=>setNewCat(e.target.value)} placeholder="New category name"/>
           <select style={{...sl,width:"80px",padding:"8px 6px",fontSize:"12.5px"}} value={newCatUnit}
             onChange={e=>setNewCatUnit(e.target.value)}>
-            {BATCH_UNITS.map(u=><option key={u}>{u}</option>)}
+            {(unitsData||BATCH_UNITS).map(u=><option key={u}>{u}</option>)}
           </select>
           <Btn label="+ Add" onClick={addCategory} color="#64748b" small/>
         </div>
@@ -2075,7 +2093,7 @@ function SettingsTab({showToast, initialProducts, initialQcParams, initialPackSi
       <div style={{display:"grid",gridTemplateColumns:"1fr 90px 60px",gap:"6px",marginBottom:"12px"}}>
         <input style={inp} value={newProduct} onChange={e=>setNewProduct(e.target.value)} placeholder={`Product name in ${selCat}…`} onKeyDown={e=>e.key==="Enter"&&addProduct()}/>
         <select style={sl} value={newProductUnit} onChange={e=>setNewProductUnit(e.target.value)}>
-          {BATCH_UNITS.map(u=><option key={u}>{u}</option>)}
+          {(unitsData||BATCH_UNITS).map(u=><option key={u}>{u}</option>)}
         </select>
         <Btn label="+ Add" onClick={addProduct} color="#3b82f6" small/>
       </div>
@@ -2098,7 +2116,7 @@ function SettingsTab({showToast, initialProducts, initialQcParams, initialPackSi
               arr[i]={name,unit:e.target.value};
               setProdData({...prodData,[selCat]:arr});
             }}>
-              {BATCH_UNITS.map(u=><option key={u}>{u}</option>)}
+              {(unitsData||BATCH_UNITS).map(u=><option key={u}>{u}</option>)}
             </select>
             <button onClick={()=>removeProduct(selCat,i)} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"16px",textAlign:"center"}}>×</button>
           </div>;
@@ -2107,9 +2125,9 @@ function SettingsTab({showToast, initialProducts, initialQcParams, initialPackSi
     </div>}
 
     {subTab==="qcparams"&&<div>
-      <InfoBox color="#22c55e">Manage QC test parameters for <strong style={{color:"#86efac"}}>{selCat}</strong>. Set Min and Max values — the system will auto-flag Pass/Fail when QC data is entered. Leave blank if no limit.</InfoBox>
-      <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 36px",gap:"6px",marginBottom:"6px"}}>
-        {["Parameter Name","Min Value","Max Value",""].map(h=><div key={h} style={{fontSize:"10px",fontWeight:"700",color:"#334155",textTransform:"uppercase",letterSpacing:"0.07em",padding:"0 4px"}}>{h}</div>)}
+      <InfoBox color="#22c55e">Each QC parameter has a Name, Unit (e.g. KU, g/cc, %), Min and Max. Leave unit blank if not applicable. Min/Max trigger auto pass/fail.</InfoBox>
+      <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr 36px",gap:"6px",marginBottom:"6px"}}>
+        {["Parameter Name","Unit","Min","Max",""].map(h=><div key={h} style={{fontSize:"10px",fontWeight:"700",color:"#334155",textTransform:"uppercase",letterSpacing:"0.07em",padding:"0 4px"}}>{h}</div>)}
       </div>
       {(qcData[selCat]||[]).map((p,i)=>{
         const parsed=gp(p);
@@ -2118,15 +2136,16 @@ function SettingsTab({showToast, initialProducts, initialQcParams, initialPackSi
           arr[i]={...parsed,[field]:val};
           setQcData({...qcData,[selCat]:arr});
         };
-        return <div key={i} style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 36px",gap:"6px",marginBottom:"6px"}}>
+        return <div key={i} style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr 36px",gap:"6px",marginBottom:"6px"}}>
           <input style={sml} value={parsed.name} onChange={e=>update("name",e.target.value)} placeholder="Parameter name"/>
+          <input style={{...sml,borderColor:parsed.unit?"#a855f730":"#1e293b"}} value={parsed.unit||""} onChange={e=>update("unit",e.target.value)} placeholder="e.g. KU"/>
           <input style={{...sml,borderColor:parsed.min?"#22c55e30":"#1e293b"}} value={parsed.min} onChange={e=>update("min",e.target.value)} placeholder="Min"/>
           <input style={{...sml,borderColor:parsed.max?"#ef444430":"#1e293b"}} value={parsed.max} onChange={e=>update("max",e.target.value)} placeholder="Max"/>
           <button onClick={()=>removeParam(selCat,i)} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"16px",padding:0,alignSelf:"center"}}>×</button>
         </div>;
       })}
       {(qcData[selCat]||[]).length===0&&<div style={{fontSize:"13px",color:"#334155",fontStyle:"italic",padding:"10px 0"}}>No QC params for {selCat}.</div>}
-      <button onClick={()=>{const arr=[...(qcData[selCat]||[]),{name:"",min:"",max:""}];setQcData({...qcData,[selCat]:arr});}}
+      <button onClick={()=>{const arr=[...(qcData[selCat]||[]),{name:"",unit:"",min:"",max:""}];setQcData({...qcData,[selCat]:arr});}}
         style={{marginTop:"8px",background:"none",border:"1px dashed #1e293b",borderRadius:"7px",padding:"7px 14px",color:"#475569",cursor:"pointer",fontSize:"12px",fontWeight:"600",width:"100%"}}>
         + Add Parameter
       </button>
@@ -2175,7 +2194,35 @@ function SettingsTab({showToast, initialProducts, initialQcParams, initialPackSi
       </div>
     </div>}
 
-    <div style={{marginTop:"20px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"10px"}}>
+    {subTab==="units"&&<div>
+      <InfoBox color="#38bdf8">Manage the unit options (kg, L, MT, etc.) that appear in product unit, pack size, and batch size fields across the app. These are your company's standard units.</InfoBox>
+      <div style={{display:"flex",gap:"6px",marginBottom:"12px"}}>
+        <input style={{...inp,flex:1}} value={newUnit} onChange={e=>setNewUnit(e.target.value)}
+          placeholder="Add unit… e.g. Litre, Drum, Pail, 5 gal"
+          onKeyDown={e=>{if(e.key==="Enter"&&newUnit.trim()&&!unitsData.includes(newUnit.trim())){setUnitsData(u=>[...u,newUnit.trim()]);setNewUnit("");}}}/>
+        <Btn label="+ Add" onClick={()=>{
+          if(newUnit.trim()&&!unitsData.includes(newUnit.trim())){setUnitsData(u=>[...u,newUnit.trim()]);setNewUnit("");}
+        }} color="#38bdf8" small/>
+      </div>
+      {unitsData.length===0&&<div style={{fontSize:"13px",color:"#334155",fontStyle:"italic",padding:"10px 0"}}>No units defined. Add some above.</div>}
+      <div style={{display:"flex",flexDirection:"column",gap:"6px"}}>
+        {unitsData.map((u,i)=>(
+          <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:"#0f172a",border:"1px solid #1e293b",borderRadius:"8px",padding:"10px 14px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:"10px"}}>
+              <span style={{fontSize:"11px",fontWeight:"700",color:"#38bdf8",background:"#38bdf818",padding:"2px 8px",borderRadius:"99px",border:"1px solid #38bdf830"}}>#{i+1}</span>
+              <span style={{fontSize:"13px",color:"#e2e8f0",fontWeight:"500"}}>{u}</span>
+            </div>
+            <button onClick={()=>{
+              if(unitsData.length<=1){showToast("Must keep at least one unit","error");return;}
+              setUnitsData(unitsData.filter((_,idx)=>idx!==i));
+            }} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"16px"}}>×</button>
+          </div>
+        ))}
+      </div>
+      <div style={{marginTop:"10px",fontSize:"12px",color:"#334155"}}>
+        These units appear in: Product unit dropdown, Pack size qty, Batch size, Old/Rejected material. Changes apply after 💾 Save All Settings.
+      </div>
+    </div>}
       <div style={{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap"}}>
         <input ref={fileRef} type="file" accept=".xlsx" onChange={importExcel} style={{display:"none"}}/>
         <Btn label={importing?"Reading…":"📥 Import from Excel"} onClick={()=>fileRef.current?.click()} disabled={importing} color="#64748b" small/>
@@ -2257,6 +2304,7 @@ function MainApp({user,role}){
   const [sysQcParams,setSysQcParams]=useState(DEFAULT_QC_PARAMS);
   const [sysPackSizes,setSysPackSizes]=useState(DEFAULT_PACK_SIZES_BY_CAT);
   const [sysCatUnits,setSysCatUnits]=useState({});
+  const [sysUnits,setSysUnits]=useState([...BATCH_UNITS]);
   const [oldStocks,setOldStocks]=useState([]);
 
   // Data
@@ -2305,6 +2353,7 @@ function MainApp({user,role}){
         setSysProducts(d.products||DEFAULT_PRODUCTS);
         if(d.qcParams)setSysQcParams(d.qcParams);
         if(d.catUnits)setSysCatUnits(u=>({...u,...d.catUnits}));
+        if(d.units&&d.units.length)setSysUnits(d.units);
         if(d.packSizes){
           const ps=d.packSizes;
           const normalize=(arr)=>(arr||[]).map(p=>typeof p==="string"?{size:p,qty:""}:p);
@@ -2561,11 +2610,13 @@ function MainApp({user,role}){
         initialQcParams={sysQcParams}
         initialPackSizes={sysPackSizes}
         initialCatUnits={sysCatUnits}
-        onSaved={({products,qcParams,packSizes,catUnits})=>{
+        initialUnits={sysUnits}
+        onSaved={({products,qcParams,packSizes,catUnits,units})=>{
           setSysProducts(products);
           setSysQcParams(qcParams);
           setSysPackSizes(packSizes);
           setSysCatUnits(catUnits);
+          if(units)setSysUnits(units);
         }}
       />}
     </div>
