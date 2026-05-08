@@ -276,24 +276,22 @@ function StageBox({icon,title,done,active,children,editForm,editLabel,onEdit,onS
   </div>;
 }
 
+// Financial year helper — April 1 = new FY. Returns 2-digit year ending (e.g. 26 for FY 2025-26)
+const getFY=()=>{const d=new Date();const y=d.getFullYear()%100;return d.getMonth()>=3?y+1:y;};
+const getFYLabel=(fy)=>`${String(fy-1).padStart(2,"0")}-${String(fy).padStart(2,"0")}`;
+
 function BatchCard({b,onClick,onDelete,role}){
   const sc=BS_COL[b.status]||"#94a3b8";
-  return <div onClick={onClick} onMouseEnter={e=>e.currentTarget.style.background="#0f1f35"} onMouseLeave={e=>e.currentTarget.style.background="#0f172a"}
-    style={{background:"#0f172a",border:"1px solid #1e293b",borderLeft:`3px solid ${sc}`,borderRadius:"12px",padding:"15px 20px",cursor:"pointer",transition:"background 0.15s",boxShadow:"0 2px 10px rgba(0,0,0,0.3)",marginBottom:"10px"}}>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:"8px"}}>
-      <div style={{flex:1}}>
-        <div style={{fontSize:"14px",fontWeight:"700",color:"#f1f5f9",marginBottom:"3px",fontFamily:"'DM Serif Display',serif"}}>{b.batchNo}</div>
-        <div style={{fontSize:"11.5px",color:"#64748b",marginBottom:"6px"}}>{b.category?`${b.category} · `:""}{b.productName}{b.shade?` · ${b.shade}`:""} · {b.batchSize} {b.unit}</div>
-      </div>
-      <div style={{display:"flex",gap:"6px",alignItems:"center",flexShrink:0}}>
-        <Bdg label={b.status} color={sc}/>
-        {(role==="admin")&&<button onClick={e=>{e.stopPropagation();onDelete(b.id)}} style={{background:"none",border:"none",color:"#334155",fontSize:"15px",padding:"2px 4px"}}>🗑</button>}
-      </div>
+  return <div onClick={onClick} onMouseEnter={e=>e.currentTarget.style.background="#0f1f35"} onMouseLeave={e=>e.currentTarget.style.background="#080e1a"}
+    style={{background:"#080e1a",border:"1px solid #1e293b",borderLeft:`3px solid ${sc}`,borderRadius:"8px",padding:"8px 14px",cursor:"pointer",transition:"background 0.1s",display:"grid",gridTemplateColumns:"70px 1fr 1fr auto auto",gap:"8px",alignItems:"center",marginBottom:"4px"}}>
+    <div style={{fontSize:"13px",fontWeight:"700",color:"#f1f5f9",fontFamily:"monospace"}}>{b.batchNo}</div>
+    <div style={{minWidth:0}}>
+      <div style={{fontSize:"12.5px",fontWeight:"600",color:"#e2e8f0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{b.productName}{b.shade?` · ${b.shade}`:""}</div>
+      <div style={{fontSize:"10.5px",color:"#475569"}}>{b.category||""}</div>
     </div>
-    <div style={{display:"flex",gap:"10px",flexWrap:"wrap"}}>
-      {b.dateIssued&&<span style={{fontSize:"11px",color:"#475569"}}>📅 {b.dateIssued}</span>}
-      {b.issuedBy&&<span style={{fontSize:"11px",color:"#475569"}}>👤 {b.issuedBy}</span>}
-    </div>
+    <div style={{fontSize:"11px",color:"#64748b"}}>{b.batchSize} {b.unit} · {b.dateIssued}</div>
+    <Bdg label={b.status} color={sc}/>
+    {(role==="admin")&&<button onClick={e=>{e.stopPropagation();onDelete(b.id)}} style={{background:"none",border:"none",color:"#334155",fontSize:"14px",padding:"2px 4px"}}>🗑</button>}
   </div>;
 }
 
@@ -360,8 +358,23 @@ function BatchWorkspace({batch,role,onClose,showToast,qcParams,packSizes}){
     setSaving(true);
     try{
       await C("batches").doc(batch.id).update({...data,status:nextStatus});
+      // Auto-add to Old/Rejected Material when QC Fails
+      if(nextStatus==="QC Fail"){
+        const qty=live.production?.actualQty||live.batchSize;
+        const remarks=data.qc?.remarks||"QC Failed";
+        await C("old_stock").add({
+          productName:live.productName,category:live.category||"",
+          unit:live.unit,qty:String(qty),
+          status:"Available",batchRef:live.batchNo,
+          notes:`Auto-added: QC Fail · ${remarks}`,
+          dateAdded:today(),addedBy:"System",_createdAt:ts()
+        });
+        showToast("QC Fail — batch auto-added to Old/Rejected Material ✓");
+      }else{
+        showToast("Saved ✓");
+      }
       if(extraOps)await Promise.all(extraOps);
-      setEditStage(null);showToast("Saved ✓");
+      setEditStage(null);
     }catch(e){showToast("Error saving","error");}
     setSaving(false);
   };
@@ -957,7 +970,7 @@ function TrialCard({trial,index,onDelete,onUpdate,isAdmin}){
       <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
         {isEval&&!editing&&<span style={{fontSize:"10px",fontWeight:"700",color:"#a855f7",background:"#a855f718",border:"1px solid #a855f730",padding:"2px 8px",borderRadius:"99px",whiteSpace:"nowrap"}}>⏳ Evaluating</span>}
         <Bdg label={trial.outcome||"—"} color={oc}/>
-        {isAdmin&&!editing&&<button onClick={e=>{e.stopPropagation();setOpen(true);setEditing(true);}} style={{background:"#1e3a5f",border:"1px solid #2563eb40",borderRadius:"6px",color:"#93c5fd",cursor:"pointer",fontSize:"11.5px",fontWeight:"600",padding:"3px 10px"}}>✏️ Edit</button>}
+        {onDelete&&!editing&&<button onClick={e=>{e.stopPropagation();setOpen(true);setEditing(true);}} style={{background:"#1e3a5f",border:"1px solid #2563eb40",borderRadius:"6px",color:"#93c5fd",cursor:"pointer",fontSize:"11.5px",fontWeight:"600",padding:"3px 10px"}}>✏️ Edit</button>}
         {onDelete&&!editing&&<button onClick={e=>{e.stopPropagation();onDelete(trial.id)}} style={{background:"none",border:"none",color:"#334155",fontSize:"14px",padding:"2px 4px"}}>🗑</button>}
         {!editing&&<span style={{color:"#334155",fontSize:"12px"}}>{open?"▲":"▼"}</span>}
       </div>
@@ -2485,6 +2498,9 @@ function MainApp({user,role}){
   // Filters
   const [batchFilter,setBatchFilter]=useState("All");
   const [batchSearch,setBatchSearch]=useState("");
+  const [batchMonthFilter,setBatchMonthFilter]=useState("All");
+  const [batchCatFilter,setBatchCatFilter]=useState("All");
+  const [batchFYFilter,setBatchFYFilter]=useState(String(getFY()));
   const [complaintFilter,setComplaintFilter]=useState("All");
   const [complaintSearch,setComplaintSearch]=useState("");
   const [projSearch,setProjSearch]=useState("");
@@ -2549,11 +2565,14 @@ function MainApp({user,role}){
     if(!batchForm.productName.trim()||!batchForm.category)return showToast("Category and product required","error");
     if(saving)return;setSaving(true);
     try{
-      const cnt=(await C("batches").get()).size;
-      const d=new Date();const ym=`${String(d.getFullYear()).slice(2)}${String(d.getMonth()+1).padStart(2,"0")}`;
-      const bNo=`GCC-${ym}-${String(cnt+1).padStart(3,"0")}`;
-      await C("batches").add({...batchForm,batchNo:bNo,status:"Issued",issuedBy:batchForm.issuedBy||user.email,_createdAt:ts()});
-      setBatchForm(EB);setShowIssueBatch(false);showToast("Batch issued ✓");
+      const fy=getFY();
+      // Get highest sequence number for this financial year
+      const snap=await C("batches").where("fyYear","==",fy).get();
+      const maxSeq=snap.docs.reduce((m,d)=>{const n=parseInt(d.data().batchSeq||0);return Math.max(m,n);},0);
+      const seq=maxSeq+1;
+      const bNo=String(seq).padStart(4,"0"); // e.g. 0001, 0002
+      await C("batches").add({...batchForm,batchNo:bNo,batchSeq:seq,fyYear:fy,status:"Issued",issuedBy:batchForm.issuedBy||user.email,_createdAt:ts()});
+      setBatchForm(EB);setShowIssueBatch(false);showToast(`Batch ${bNo} issued ✓`);
     }catch(e){showToast("Error issuing batch","error");}
     setSaving(false);
   };
@@ -2619,8 +2638,12 @@ function MainApp({user,role}){
   // Filtered data
   const fb=batches.filter(b=>{
     const ms=batchFilter==="All"||b.status===batchFilter;
-    const q=batchSearch.toLowerCase();
-    return ms&&(!q||b.batchNo?.toLowerCase().includes(q)||b.productName?.toLowerCase().includes(q)||b.shade?.toLowerCase().includes(q));
+    const cs=batchCatFilter==="All"||b.category===batchCatFilter;
+    const fys=batchFYFilter==="All"||String(b.fyYear||"")===batchFYFilter;
+    const mths=batchMonthFilter==="All"||(b.dateIssued||"").startsWith(batchMonthFilter);
+    const q=normalize(batchSearch);
+    const match=!q||normalize(b.batchNo||"").includes(q)||normalize(b.productName||"").includes(q)||normalize(b.shade||"").includes(q);
+    return ms&&cs&&fys&&mths&&match;
   });
   const fc=complaints.filter(c=>{
     // Sales can only see their own complaints
@@ -2700,14 +2723,36 @@ function MainApp({user,role}){
         </div>
 
         {batchSubTab==="batches"&&<>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"14px",flexWrap:"wrap",gap:"10px"}}>
-            <div style={{display:"flex",gap:"8px",flexWrap:"wrap",alignItems:"center",flex:1}}>
-              <input placeholder="Search batch, product…" value={batchSearch} onChange={e=>setBatchSearch(e.target.value)} style={{...inp,maxWidth:"200px",padding:"8px 12px",fontSize:"13px"}}/>
-              {["All",...BATCH_STATUS].map(s=><button key={s} onClick={()=>setBatchFilter(s)} style={{background:batchFilter===s?"#1e3a5f":"transparent",border:`1px solid ${batchFilter===s?"#3b82f6":"#1e293b"}`,color:batchFilter===s?"#93c5fd":"#475569",borderRadius:"99px",padding:"5px 12px",fontSize:"11.5px",fontWeight:"600",transition:"all 0.15s",cursor:"pointer"}}>{s}</button>)}
-            </div>
-            {canIssuer&&<Btn label="+ Issue New Batch" onClick={()=>setShowIssueBatch(true)} color="#3b82f6"/>}
+          {/* Filter row */}
+          <div style={{display:"flex",gap:"6px",flexWrap:"wrap",alignItems:"center",marginBottom:"8px"}}>
+            <input placeholder="Search batch, product…" value={batchSearch} onChange={e=>setBatchSearch(e.target.value)} style={{...inp,maxWidth:"170px",padding:"7px 10px",fontSize:"12.5px"}}/>
+            {/* FY selector */}
+            <select value={batchFYFilter} onChange={e=>setBatchFYFilter(e.target.value)} style={{...sl,width:"90px",padding:"7px 6px",fontSize:"12px"}}>
+              {(()=>{const fy=getFY();const fys=[];for(let i=fy;i>=fy-3;i--)fys.push(String(i));return[<option key="All" value="All">All FY</option>,...fys.map(f=><option key={f} value={f}>FY {getFYLabel(parseInt(f))}</option>)];})()}
+            </select>
+            {/* Month selector */}
+            <select value={batchMonthFilter} onChange={e=>setBatchMonthFilter(e.target.value)} style={{...sl,width:"110px",padding:"7px 6px",fontSize:"12px"}}>
+              <option value="All">All Months</option>
+              {(()=>{const opts=[];for(let y=2025;y<=2027;y++){for(let m=1;m<=12;m++){const v=`${y}-${String(m).padStart(2,"0")}`;opts.push(<option key={v} value={v}>{new Date(y,m-1).toLocaleString("en-IN",{month:"short",year:"2-digit"})}</option>);}}return opts;})()}
+            </select>
+            {/* Category selector */}
+            <select value={batchCatFilter} onChange={e=>setBatchCatFilter(e.target.value)} style={{...sl,width:"120px",padding:"7px 6px",fontSize:"12px"}}>
+              <option value="All">All Categories</option>
+              {[...new Set(batches.map(b=>b.category).filter(Boolean))].sort().map(c=><option key={c}>{c}</option>)}
+            </select>
+            {canIssuer&&<Btn label="+ Issue New Batch" onClick={()=>setShowIssueBatch(true)} color="#3b82f6" small/>}
           </div>
-          {fb.length===0?<div style={{textAlign:"center",padding:"50px 0"}}><div style={{fontSize:"36px",marginBottom:"10px"}}>📦</div><div style={{fontSize:"13px",color:"#475569"}}>No batches found.{canIssuer?" Click + Issue New Batch.":""}</div></div>:fb.map(b=><BatchCard key={b.id} b={b} onClick={()=>setActiveBatch(b)} onDelete={async(id)=>{if(!confirm("Delete batch?"))return;await C("batches").doc(id).delete();showToast("Deleted","error");}} role={role}/>)}
+          {/* Status chips */}
+          <div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginBottom:"10px",alignItems:"center"}}>
+            {["All",...BATCH_STATUS].map(s=><button key={s} onClick={()=>setBatchFilter(s)} style={{background:batchFilter===s?"#1e3a5f":"transparent",border:`1px solid ${batchFilter===s?"#3b82f6":"#1e293b"}`,color:batchFilter===s?"#93c5fd":"#475569",borderRadius:"99px",padding:"4px 10px",fontSize:"11px",fontWeight:"600",cursor:"pointer"}}>{s}</button>)}
+            <span style={{marginLeft:"auto",fontSize:"11px",color:"#334155"}}>{fb.length} batch{fb.length!==1?"es":""}</span>
+          </div>
+          {/* Compact table header */}
+          {fb.length>0&&<div style={{display:"grid",gridTemplateColumns:"70px 1fr 1fr auto 24px",gap:"8px",padding:"4px 14px",marginBottom:"2px"}}>
+            {["Batch #","Product","Size · Date","Status",""].map(h=><div key={h} style={{fontSize:"9px",fontWeight:"700",color:"#334155",textTransform:"uppercase",letterSpacing:"0.07em"}}>{h}</div>)}
+          </div>}
+          {fb.length===0?<div style={{textAlign:"center",padding:"40px 0"}}><div style={{fontSize:"30px",marginBottom:"8px"}}>📦</div><div style={{fontSize:"13px",color:"#475569"}}>No batches match filters.{canIssuer?" Click + Issue New Batch.":""}</div></div>
+            :fb.map(b=><BatchCard key={b.id} b={b} onClick={()=>setActiveBatch(b)} onDelete={async(id)=>{if(!confirm("Delete batch?"))return;await C("batches").doc(id).delete();showToast("Deleted","error");}} role={role}/>)}
         </>}
 
         {batchSubTab==="oldstock"&&<OldStockSection role={role} user={user} showToast={showToast} products={sysProducts} catUnits={sysCatUnits}/>}
@@ -2818,7 +2863,7 @@ function MainApp({user,role}){
           <Field label="Issued By"><input style={inp} value={batchForm.issuedBy} onChange={e=>setBatchForm({...batchForm,issuedBy:e.target.value})} placeholder={user.email}/></Field>
           <Field label="Old/Rejected Material Used (if any)"><input style={inp} value={batchForm.oldStockUsed} onChange={e=>setBatchForm({...batchForm,oldStockUsed:e.target.value})} placeholder="e.g. 200kg from GCC-2501-005"/></Field>
           <Field label="Issue Notes"><textarea style={{...ta,minHeight:"56px"}} value={batchForm.issueNotes} onChange={e=>setBatchForm({...batchForm,issueNotes:e.target.value})}/></Field>
-          <InfoBox color="#3b82f6">Batch number auto-generated as GCC-YYMM-NNN</InfoBox>
+          <InfoBox color="#3b82f6">Batch number is a 4-digit sequential number (e.g. 0001, 0002…) — resets to 0001 each April 1st (new financial year). FY {getFYLabel(getFY())} current.</InfoBox>
           <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
             <Btn label="Cancel" onClick={()=>setShowIssueBatch(false)} outline color="#475569"/>
             <Btn label={saving?"Issuing…":"Issue Batch"} onClick={saveBatch} disabled={saving} color="#3b82f6"/>
