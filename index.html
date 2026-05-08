@@ -895,17 +895,39 @@ function TestReportCard({report,num,onDelete}){
   </div>;
 }
 
-function TrialCard({trial,index,onDelete,onUpdate}){
+function TrialCard({trial,index,onDelete,onUpdate,isAdmin}){
   const [open,setOpen]=useState(false);
+  const [editing,setEditing]=useState(false);
   const [showRF,setShowRF]=useState(false);
   const [showOU,setShowOU]=useState(false);
   const [newOutcome,setNewOutcome]=useState(trial.outcome);
   const [saving,setSaving]=useState(false);
   const blankR={date:today(),testedBy:"",testsPerformed:"",results:"",recommendation:"Pass",remarks:""};
   const [rForm,setRForm]=useState(blankR);
+
+  // Edit form state — pre-filled from trial
+  const blankIng=()=>({id:newId(),material:"",quantity:"",unit:"kg",notes:""});
+  const [editForm,setEditForm]=useState({
+    trialName:trial.trialName||"",date:trial.date||today(),triedBy:trial.triedBy||"",
+    outcome:trial.outcome||"Under Evaluation",
+    ingredients:trial.ingredients?.length?trial.ingredients:[blankIng()],
+    process:trial.process||"",propertiesTested:trial.propertiesTested||"",
+    observations:trial.observations||"",nextSteps:trial.nextSteps||""
+  });
+
   const reports=trial.testReports||[];
   const oc=OUTCOME_COLORS[trial.outcome]||"#94a3b8";
   const isEval=trial.outcome==="Under Evaluation";
+
+  const saveEdit=async()=>{
+    setSaving(true);
+    await onUpdate({...trial,...editForm,ingredients:editForm.ingredients.filter(r=>r.material.trim())});
+    setEditing(false);setSaving(false);
+  };
+
+  const updIng=(idx,field,val)=>setEditForm(f=>({...f,ingredients:f.ingredients.map((r,i)=>i===idx?{...r,[field]:val}:r)}));
+  const addIng=()=>setEditForm(f=>({...f,ingredients:[...f.ingredients,blankIng()]}));
+  const remIng=(idx)=>setEditForm(f=>({...f,ingredients:f.ingredients.filter((_,i)=>i!==idx)}));
 
   const addReport=async()=>{
     if(!rForm.results.trim()&&!rForm.testsPerformed.trim())return;
@@ -923,8 +945,8 @@ function TrialCard({trial,index,onDelete,onUpdate}){
     setShowOU(false);setSaving(false);
   };
 
-  return <div style={{border:`1px solid ${isEval?"#7c3aed40":"#1e293b"}`,borderRadius:"12px",overflow:"hidden",marginBottom:"10px"}}>
-    <div onClick={()=>setOpen(o=>!o)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 18px",cursor:"pointer",background:open?"#0b1626":"#0b1220",transition:"background 0.15s"}}>
+  return <div style={{border:`1px solid ${editing?"#3b82f680":isEval?"#7c3aed40":"#1e293b"}`,borderRadius:"12px",overflow:"hidden",marginBottom:"10px"}}>
+    <div onClick={()=>!editing&&setOpen(o=>!o)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 18px",cursor:editing?"default":"pointer",background:open||editing?"#0b1626":"#0b1220",transition:"background 0.15s"}}>
       <div style={{display:"flex",alignItems:"center",gap:"12px"}}>
         <div style={{background:"#1e293b",borderRadius:"8px",padding:"5px 10px",fontSize:"11px",fontWeight:"700",color:"#64748b",flexShrink:0}}>Trial {index+1}</div>
         <div>
@@ -933,13 +955,67 @@ function TrialCard({trial,index,onDelete,onUpdate}){
         </div>
       </div>
       <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
-        {isEval&&<span style={{fontSize:"10px",fontWeight:"700",color:"#a855f7",background:"#a855f718",border:"1px solid #a855f730",padding:"2px 8px",borderRadius:"99px",whiteSpace:"nowrap"}}>⏳ Evaluating</span>}
+        {isEval&&!editing&&<span style={{fontSize:"10px",fontWeight:"700",color:"#a855f7",background:"#a855f718",border:"1px solid #a855f730",padding:"2px 8px",borderRadius:"99px",whiteSpace:"nowrap"}}>⏳ Evaluating</span>}
         <Bdg label={trial.outcome||"—"} color={oc}/>
-        {onDelete&&<button onClick={e=>{e.stopPropagation();onDelete(trial.id)}} style={{background:"none",border:"none",color:"#334155",fontSize:"14px",padding:"2px 4px"}}>🗑</button>}
-        <span style={{color:"#334155",fontSize:"12px"}}>{open?"▲":"▼"}</span>
+        {isAdmin&&!editing&&<button onClick={e=>{e.stopPropagation();setOpen(true);setEditing(true);}} style={{background:"#1e3a5f",border:"1px solid #2563eb40",borderRadius:"6px",color:"#93c5fd",cursor:"pointer",fontSize:"11.5px",fontWeight:"600",padding:"3px 10px"}}>✏️ Edit</button>}
+        {onDelete&&!editing&&<button onClick={e=>{e.stopPropagation();onDelete(trial.id)}} style={{background:"none",border:"none",color:"#334155",fontSize:"14px",padding:"2px 4px"}}>🗑</button>}
+        {!editing&&<span style={{color:"#334155",fontSize:"12px"}}>{open?"▲":"▼"}</span>}
       </div>
     </div>
-    {open&&<div style={{padding:"16px 18px 20px",borderTop:"1px solid #1e293b",background:"#080d18"}}>
+
+    {/* ── EDIT MODE ── */}
+    {editing&&<div style={{padding:"16px 18px",borderTop:"1px solid #2563eb40",background:"#060d1a"}}>
+      <div style={{fontSize:"12px",fontWeight:"700",color:"#93c5fd",marginBottom:"14px",display:"flex",alignItems:"center",gap:"8px"}}>
+        ✏️ Editing Trial {index+1}
+        <span style={{fontSize:"10px",fontWeight:"400",color:"#475569"}}>Changes apply after Save</span>
+      </div>
+      <Grid3>
+        <Field label="Trial Name"><input style={inp} value={editForm.trialName} onChange={e=>setEditForm({...editForm,trialName:e.target.value})} placeholder={`Trial ${index+1}`}/></Field>
+        <Field label="Date"><input type="date" style={inp} value={editForm.date} onChange={e=>setEditForm({...editForm,date:e.target.value})}/></Field>
+        <Field label="Tried By"><input style={inp} value={editForm.triedBy} onChange={e=>setEditForm({...editForm,triedBy:e.target.value})}/></Field>
+      </Grid3>
+      <Field label="Outcome">
+        <select style={sl} value={editForm.outcome} onChange={e=>setEditForm({...editForm,outcome:e.target.value})}>
+          {TRIAL_OUTCOMES.map(o=><option key={o}>{o}</option>)}
+        </select>
+      </Field>
+      {/* Ingredients */}
+      <div style={{marginBottom:"12px"}}>
+        <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"8px"}}>Formulation / Ingredients</div>
+        <div style={{border:"1px solid #1e293b",borderRadius:"8px",overflow:"hidden",marginBottom:"6px"}}>
+          <div style={{display:"grid",gridTemplateColumns:"2fr 80px 80px 2fr 28px",background:"#0b1220",padding:"7px 12px",gap:"6px"}}>
+            {["Material / Ingredient","Qty","Unit","Notes",""].map(h=><div key={h} style={{fontSize:"10px",fontWeight:"700",color:"#334155",textTransform:"uppercase",letterSpacing:"0.07em"}}>{h}</div>)}
+          </div>
+          {editForm.ingredients.map((r,i)=>(
+            <div key={r.id} style={{display:"grid",gridTemplateColumns:"2fr 80px 80px 2fr 28px",padding:"6px 12px",gap:"6px",borderTop:"1px solid #1e293b",alignItems:"center"}}>
+              <input style={sml} value={r.material} onChange={e=>updIng(i,"material",e.target.value)} placeholder="Material name"/>
+              <input style={{...sml,textAlign:"center"}} type="number" value={r.quantity} onChange={e=>updIng(i,"quantity",e.target.value)} placeholder="0"/>
+              <select style={{...sml,padding:"6px 4px"}} value={r.unit} onChange={e=>updIng(i,"unit",e.target.value)}>
+                {ING_UNITS.map(u=><option key={u}>{u}</option>)}
+              </select>
+              <input style={sml} value={r.notes} onChange={e=>updIng(i,"notes",e.target.value)} placeholder="Notes"/>
+              <button onClick={()=>remIng(i)} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"14px",padding:0}}>×</button>
+            </div>
+          ))}
+        </div>
+        <button onClick={addIng} style={{background:"none",border:"1px dashed #1e293b",borderRadius:"6px",padding:"5px 12px",color:"#475569",cursor:"pointer",fontSize:"12px",width:"100%"}}>+ Add Row</button>
+      </div>
+      <Grid2>
+        <Field label="Process / Mixing Method"><textarea style={{...ta,minHeight:"72px"}} value={editForm.process} onChange={e=>setEditForm({...editForm,process:e.target.value})}/></Field>
+        <Field label="Properties Tested"><textarea style={{...ta,minHeight:"72px"}} value={editForm.propertiesTested} onChange={e=>setEditForm({...editForm,propertiesTested:e.target.value})}/></Field>
+      </Grid2>
+      <Grid2>
+        <Field label="Observations / Results"><textarea style={{...ta,minHeight:"72px"}} value={editForm.observations} onChange={e=>setEditForm({...editForm,observations:e.target.value})}/></Field>
+        <Field label="Next Steps"><textarea style={{...ta,minHeight:"72px"}} value={editForm.nextSteps} onChange={e=>setEditForm({...editForm,nextSteps:e.target.value})}/></Field>
+      </Grid2>
+      <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",marginTop:"4px"}}>
+        <Btn label="Cancel" onClick={()=>{setEditing(false);setEditForm({trialName:trial.trialName||"",date:trial.date||today(),triedBy:trial.triedBy||"",outcome:trial.outcome||"Under Evaluation",ingredients:trial.ingredients?.length?trial.ingredients:[blankIng()],process:trial.process||"",propertiesTested:trial.propertiesTested||"",observations:trial.observations||"",nextSteps:trial.nextSteps||""});}} outline color="#475569" small/>
+        <Btn label={saving?"Saving…":"💾 Save Changes"} onClick={saveEdit} disabled={saving} color="#2563eb" small/>
+      </div>
+    </div>}
+
+    {/* ── VIEW MODE ── */}
+    {open&&!editing&&<div style={{padding:"16px 18px 20px",borderTop:"1px solid #1e293b",background:"#080d18"}}>
       {trial.ingredients?.length>0&&<div style={{marginBottom:"14px"}}>
         <div style={{fontSize:"10px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.09em",marginBottom:"8px"}}>Formulation</div>
         <div style={{border:"1px solid #1e293b",borderRadius:"8px",overflow:"hidden"}}>
@@ -1105,7 +1181,7 @@ function ProjectWorkspace({project,isAdmin,showToast}){
     {trials.length===0&&!showForm?<div style={{textAlign:"center",padding:"24px",border:"1px dashed #1e293b",borderRadius:"10px",marginBottom:"14px"}}>
       <div style={{fontSize:"26px",marginBottom:"6px"}}>⚗️</div>
       <div style={{fontSize:"13px",color:"#475569"}}>No trials yet.</div>
-    </div>:trials.map((t,i)=><TrialCard key={t.id} trial={t} index={i} onDelete={isAdmin?deleteTrial:null} onUpdate={updateTrial}/>)}
+    </div>:trials.map((t,i)=><TrialCard key={t.id} trial={t} index={i} isAdmin={isAdmin} onDelete={isAdmin?deleteTrial:null} onUpdate={updateTrial}/>)}
     {/* Notes section */}
     <div style={{marginTop:"20px"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"10px",paddingBottom:"10px",borderBottom:"1px solid #1e293b"}}>
