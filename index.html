@@ -303,7 +303,7 @@ function BatchWorkspace({batch,role,onClose,showToast,qcParams,packSizes}){
   const [allOldStock,setAllOldStock]=useState([]);
   const [showOtherStock,setShowOtherStock]=useState(false);
   const [selectedOldStock,setSelectedOldStock]=useState([]);
-  const [prodForm,setProdForm]=useState({startDate:today(),completionDate:"",actualQty:"",oldStockUsed:"",producedBy:"",notes:""});
+  const [prodForm,setProdForm]=useState({startDate:today(),completionDate:today(),actualQty:"",oldStockUsed:"",producedBy:"",notes:""});
   const [qcForm,setQcForm]=useState({other:"",result:"Pass",qcDate:today(),qcBy:"",remarks:""});
   const [packForm,setPackForm]=useState({sizes:[],packingDate:today(),packedBy:"",labelChecked:"Yes",remarks:""});
 
