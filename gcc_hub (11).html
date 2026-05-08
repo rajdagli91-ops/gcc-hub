@@ -1,0 +1,2668 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GCC Operations Hub</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#060b16;color:#e2e8f0;font-family:'DM Sans',sans-serif;min-height:100vh}
+::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-track{background:#0b1220}::-webkit-scrollbar-thumb{background:#1e293b;border-radius:3px}
+input,select,textarea{width:100%;background:#0b1220;border:1px solid #1e293b;border-radius:8px;padding:9px 12px;color:#e2e8f0;font-size:13.5px;font-family:'DM Sans',sans-serif;outline:none;box-sizing:border-box}
+input:focus,select:focus,textarea:focus{border-color:#3b82f6!important;box-shadow:0 0 0 3px rgba(59,130,246,0.12)}
+textarea{resize:vertical;min-height:72px}select{cursor:pointer}
+button{font-family:'DM Sans',sans-serif;cursor:pointer}
+@keyframes fadeIn{from{opacity:0;transform:translateX(-50%) translateY(8px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+@keyframes slideDown{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)}}
+@media print{
+  body{background:#fff!important;color:#000!important;font-family:Arial,sans-serif!important}
+  .no-print{display:none!important}
+  .print-report{display:block!important;padding:0!important;margin:0!important}
+  .print-report *{color:#000!important;background:#fff!important;border-color:#ccc!important;font-family:Arial,sans-serif!important;font-size:11pt!important}
+  .print-report .pr-title{font-size:15pt!important;font-weight:bold!important}
+  .print-report .pr-sub{font-size:10pt!important;color:#555!important}
+  .print-report .pr-section-title{font-size:10pt!important;font-weight:bold!important;border-bottom:1.5px solid #000!important;padding-bottom:3px!important;margin:10px 0 6px!important;text-transform:uppercase!important;letter-spacing:0.05em!important}
+  .print-report .pr-pass{color:#166534!important;font-weight:bold!important}
+  .print-report .pr-fail{color:#991b1b!important;font-weight:bold!important}
+  .print-report table{width:100%;border-collapse:collapse}
+  .print-report td,.print-report th{border:1px solid #ccc;padding:4px 8px;font-size:10pt}
+  .print-report th{background:#f0f0f0!important;font-weight:bold!important;text-align:left}
+  @page{size:A5;margin:12mm}
+}
+.print-report{display:none}
+</style>
+</head>
+<body>
+<div id="root"><div style="min-height:100vh;display:flex;align-items:center;justify-content:center;color:#475569;font-size:14px">Loading GCC Hub…</div></div>
+
+<!-- ══ IMPORTANT: Update Firestore Security Rules to:
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}
+══ -->
+
+<script>
+const firebaseConfig = {
+  apiKey:"AIzaSyDGkO_exOO5fNsMMtWlYk6ame1zH9t6S6M",
+  authDomain:"r-and-d-gcc.firebaseapp.com",
+  projectId:"r-and-d-gcc",
+  storageBucket:"r-and-d-gcc.firebasestorage.app",
+  messagingSenderId:"531047693013",
+  appId:"1:531047693013:web:f4140c38b22ad1c21c005c"
+};
+firebase.initializeApp(firebaseConfig);
+window._auth=firebase.auth();
+window._db=firebase.firestore();
+window._firebaseConfig=firebaseConfig;
+
+// Show any JS errors on screen instead of silent blank page
+window.onerror=function(msg,src,line,col,err){
+  document.getElementById('root').innerHTML=
+    '<div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;background:#060b16;color:#fca5a5;font-family:monospace;gap:12px">'
+    +'<div style="font-size:18px">⚠️ App Error</div>'
+    +'<div style="font-size:13px;color:#ef4444;max-width:600px;word-break:break-all;text-align:center">'+msg+'</div>'
+    +'<div style="font-size:11px;color:#475569">Line '+line+' · '+src+'</div>'
+    +'<div style="font-size:12px;color:#64748b;margin-top:8px">Please send a screenshot of this to your developer.</div>'
+    +'</div>';
+};
+</script>
+
+<script type="text/babel">
+const {useState,useEffect,useRef} = React;
+const auth = window._auth;
+const db = window._db;
+
+// ══════════════════════════════════════════════════════════
+// CONSTANTS
+// ══════════════════════════════════════════════════════════
+const ADMIN_EMAILS = ["r-and-d-gcc@gmail.com","raj@gujaratcolours.com","rajdagli91@gmail.com","vijayddagli@gmail.com"];
+const ROLE_LABELS = {admin:"🔑 Admin",issuer:"📦 Issuer",qc:"🔬 QC",sales:"💼 Sales"};
+const ROLE_COLORS = {admin:"#3b82f6",issuer:"#f59e0b",qc:"#22c55e",sales:"#a855f7"};
+
+// Tab access per role
+const CAN_SEE = {
+  dashboard:["admin","issuer","qc","sales"],
+  batches:  ["admin","issuer","qc"],
+  complaints:["admin","issuer","qc","sales"],
+  rd:       ["admin","qc"],
+  users:    ["admin"],
+  settings: ["admin"]
+};
+
+// Default product catalogue — admin can override via Settings tab
+const DEFAULT_PRODUCTS = {
+  "Emulsion":   [{name:"Interior Emulsion White",unit:"L"},{name:"Interior Emulsion Base",unit:"L"},{name:"Exterior Emulsion White",unit:"L"},{name:"Exterior Emulsion Base",unit:"L"},{name:"Luxury Emulsion",unit:"L"},{name:"Economy Emulsion",unit:"L"}],
+  "Enamel":     [{name:"White Enamel",unit:"L"},{name:"Black Enamel",unit:"L"},{name:"Yellow Enamel",unit:"L"},{name:"Red Enamel",unit:"L"},{name:"Blue Enamel",unit:"L"},{name:"Synthetic Enamel",unit:"L"}],
+  "Primer":     [{name:"Wall Primer White",unit:"L"},{name:"Red Oxide Primer",unit:"L"},{name:"Grey Primer",unit:"L"},{name:"Zinc Phosphate Primer",unit:"L"},{name:"Wood Primer",unit:"L"}],
+  "Distemper":  [{name:"Dry Distemper White",unit:"kg"},{name:"Oil Bound Distemper White",unit:"kg"},{name:"Colour Distemper",unit:"kg"}],
+  "Texture":    [{name:"Texture Paint Fine",unit:"kg"},{name:"Texture Paint Coarse",unit:"kg"},{name:"Sand Texture",unit:"kg"},{name:"Pebble Dash",unit:"kg"}],
+  "Road Marking":[{name:"White Road Marking Paint",unit:"L"},{name:"Yellow Road Marking Paint",unit:"L"},{name:"Thermoplastic White",unit:"kg"},{name:"Thermoplastic Yellow",unit:"kg"}],
+  "Epoxy":      [{name:"Epoxy Primer",unit:"L"},{name:"Epoxy Topcoat",unit:"L"},{name:"Epoxy Floor Coating",unit:"L"},{name:"2K Epoxy",unit:"L"}],
+  "PU":         [{name:"PU Clear Coat",unit:"L"},{name:"PU Matt Finish",unit:"L"},{name:"PU Gloss Finish",unit:"L"},{name:"PU Primer",unit:"L"}],
+  "Wood Finish":[{name:"Wood Polish",unit:"L"},{name:"NC Lacquer",unit:"L"},{name:"Melamine Finish",unit:"L"},{name:"Water Based Wood Finish",unit:"L"}],
+  "Anti-corrosive":[{name:"Rust Guard Primer",unit:"L"},{name:"Cold Galvanizing Compound",unit:"L"},{name:"Aluminium Paint",unit:"L"},{name:"Heat Resistant Paint",unit:"L"}],
+  "Other":      [{name:"Custom Product",unit:"kg"}]
+};
+// Helpers: handle both old string format and new {name,unit} format
+const gpn = (p) => typeof p==="string" ? p : (p?.name||"");
+const gpu = (p) => typeof p==="string" ? "kg" : (p?.unit||"kg");
+
+// Default QC parameters per category
+const DEFAULT_QC_PARAMS = {
+  "Emulsion":   [{name:"Viscosity (KU)",min:"90",max:"120"},{name:"pH",min:"7.0",max:"9.0"},{name:"Fineness (micron)",min:"",max:"50"},{name:"Density (g/cc)",min:"1.25",max:"1.45"},{name:"Touch Dry Time (min)",min:"",max:"30"},{name:"Hard Dry Time (min)",min:"",max:"120"},{name:"Spreading Rate (sq.ft/L)",min:"100",max:""}],
+  "Enamel":     [{name:"Viscosity (Ford Cup, sec)",min:"60",max:"100"},{name:"Gloss 60° (%)",min:"80",max:""},{name:"Hard Dry Time (hrs)",min:"",max:"8"},{name:"Fineness (micron)",min:"",max:"25"},{name:"Density (g/cc)",min:"1.1",max:"1.4"},{name:"Sag Resistance (micron)",min:"75",max:""}],
+  "Primer":     [{name:"Viscosity (KU)",min:"80",max:"110"},{name:"pH",min:"7.0",max:"9.5"},{name:"Fineness (micron)",min:"",max:"50"},{name:"Dry Time (min)",min:"",max:"60"},{name:"Coverage (sq.ft/L)",min:"80",max:""},{name:"Adhesion (cross cut)",min:"",max:""}],
+  "Distemper":  [{name:"Viscosity (KU)",min:"85",max:"115"},{name:"pH",min:"7.0",max:"9.0"},{name:"Fineness (micron)",min:"",max:"60"},{name:"Whiteness Index",min:"85",max:""},{name:"Spreading Rate (sq.ft/kg)",min:"90",max:""}],
+  "Texture":    [{name:"Viscosity (KU)",min:"100",max:"150"},{name:"Density (g/cc)",min:"1.3",max:"1.6"},{name:"Coverage (sq.ft/L)",min:"20",max:""},{name:"Fineness",min:"",max:""}],
+  "Road Marking":[{name:"Viscosity (KU)",min:"90",max:"130"},{name:"Drying Time (min)",min:"",max:"30"},{name:"Glass Bead %",min:"25",max:"35"},{name:"Density (g/cc)",min:"1.4",max:"1.7"}],
+  "Epoxy":      [{name:"Viscosity (cP)",min:"500",max:"2000"},{name:"Pot Life (hrs)",min:"1",max:""},{name:"Full Cure Time (hrs)",min:"",max:"24"},{name:"Gloss 60°",min:"70",max:""},{name:"Adhesion",min:"",max:""},{name:"MEK Rubs",min:"100",max:""}],
+  "PU":         [{name:"Viscosity (cP)",min:"300",max:"1500"},{name:"Pot Life (hrs)",min:"2",max:""},{name:"Gloss 60°",min:"75",max:""},{name:"Dry Time (hrs)",min:"",max:"6"},{name:"Adhesion",min:"",max:""}],
+  "Wood Finish":[{name:"Viscosity (Ford Cup, sec)",min:"50",max:"90"},{name:"Gloss 60°",min:"60",max:""},{name:"Dry Time (hrs)",min:"",max:"4"},{name:"Finish Quality",min:"",max:""}],
+  "Anti-corrosive":[{name:"Viscosity (KU)",min:"80",max:"120"},{name:"Density (g/cc)",min:"1.2",max:"1.5"},{name:"Dry Time (hrs)",min:"",max:"8"},{name:"Salt Spray Resistance (hrs)",min:"500",max:""}],
+  "Other":      [{name:"Viscosity",min:"",max:""},{name:"pH",min:"",max:""},{name:"Density",min:"",max:""},{name:"Dry Time",min:"",max:""}]
+};
+// Helper: parse param (old string format OR new {name,min,max} format)
+const gp = (p) => typeof p === "string" ? {name:p,min:"",max:""} : (p||{name:"",min:"",max:""});
+
+// Pack sizes per category — _default applies to any category not listed
+const DEFAULT_PACK_SIZES_BY_CAT = {
+  _default:        ["100 mL","500 mL","1 L","4 L","10 L","20 L","25 L"],
+  "Emulsion":      ["1 L","4 L","10 L","20 L","25 L","200 L (Drum)"],
+  "Enamel":        ["500 mL","1 L","4 L","10 L","20 L"],
+  "Primer":        ["1 L","4 L","10 L","20 L","25 kg"],
+  "Distemper":     ["1 kg","5 kg","10 kg","25 kg","50 kg"],
+  "Texture":       ["1 kg","5 kg","10 kg","25 kg"],
+  "Road Marking":  ["5 L","10 L","20 L","200 L (Drum)"],
+  "Epoxy":         ["500 mL","1 L","4 L","20 L"],
+  "PU":            ["500 mL","1 L","4 L","20 L"],
+  "Wood Finish":   ["500 mL","1 L","4 L","20 L"],
+  "Anti-corrosive":["1 L","4 L","10 L","20 L","200 L (Drum)"],
+};
+
+const PAINT_TYPES=["Emulsion","Enamel","Primer","Distemper","Texture","Road Marking","Epoxy","PU","Wood Finish","Anti-corrosive","Other"];
+const PROJECT_STATUS=["Ongoing","Completed","On Hold","Cancelled","Pending Approval"];
+const TEST_RESULTS=["Pass","Fail","Conditional Pass","Pending","Retest Required"];
+const RM_CATEGORIES=["Resin / Binder","Pigment","Extender / Filler","Solvent / Thinner","Additive","Drier","Emulsifier","Other"];
+const TRIAL_OUTCOMES=["Promising","Needs Revision","Failed","Approved as Final","Under Evaluation"];
+const ING_UNITS=["g","kg","mL","L","%","phr","pbw","parts"];
+const BATCH_UNITS=["kg","L","MT","Bags"];
+// Default unit fallback when no category-specific unit is configured
+const CATEGORY_UNITS={"Emulsion":"L","Enamel":"L","Primer":"L","Distemper":"kg","Texture":"kg","Road Marking":"L","Epoxy":"L","PU":"L","Wood Finish":"L","Anti-corrosive":"L","Other":"kg"};
+
+const BATCH_STATUS=["Issued","In Production","QC Pending","QC Pass","QC Fail","Packed"];
+const BS_COL={Issued:"#3b82f6","In Production":"#f59e0b","QC Pending":"#a855f7","QC Pass":"#22c55e","QC Fail":"#ef4444",Packed:"#38bdf8"};
+const COMPLAINT_STATUS=["Open","Under Review","QC Responded","Resolved","Closed"];
+const CS_COL={Open:"#ef4444","Under Review":"#f59e0b","QC Responded":"#3b82f6",Resolved:"#22c55e",Closed:"#64748b"};
+
+const STATUS_COLORS={"Ongoing":"#3b82f6","Completed":"#22c55e","On Hold":"#f59e0b","Cancelled":"#ef4444","Pending Approval":"#a855f7"};
+const RESULT_COLORS={"Pass":"#22c55e","Fail":"#ef4444","Conditional Pass":"#f59e0b","Pending":"#94a3b8","Retest Required":"#f97316"};
+const OUTCOME_COLORS={"Promising":"#38bdf8","Needs Revision":"#f59e0b","Failed":"#ef4444","Approved as Final":"#22c55e","Under Evaluation":"#a855f7"};
+const PAINT_ACCENT={"Emulsion":"#e879f9","Enamel":"#38bdf8","Primer":"#fb923c","Distemper":"#a3e635","Texture":"#f472b6","Road Marking":"#facc15","Epoxy":"#34d399","PU":"#818cf8","Wood Finish":"#d97706","Anti-corrosive":"#64748b","Other":"#cbd5e1"};
+const REC_COLORS={"Pass":"#22c55e","Fail":"#ef4444","Conditional Pass":"#f59e0b","Needs Further Testing":"#a855f7"};
+const REC_TO_OUTCOME={"Pass":"Approved as Final","Fail":"Failed","Conditional Pass":"Promising","Needs Further Testing":"Under Evaluation"};
+
+// ══ STYLES
+const DEFAULT_PACK_SIZES = DEFAULT_PACK_SIZES_BY_CAT._default;
+
+const inp={width:"100%",background:"#0b1220",border:"1px solid #1e293b",borderRadius:"8px",padding:"9px 12px",color:"#e2e8f0",fontSize:"13.5px",fontFamily:"'DM Sans',sans-serif",boxSizing:"border-box",outline:"none"};
+const ta={...inp,resize:"vertical",minHeight:"72px"};
+const sl={...inp,cursor:"pointer"};
+const sml={...inp,padding:"7px 10px",fontSize:"12.5px"};
+
+// ══ HELPERS
+const newId=()=>Math.random().toString(36).slice(2,11);
+const today=()=>new Date().toISOString().slice(0,10);
+const ts=()=>firebase.firestore.FieldValue.serverTimestamp();
+const C=(name)=>db.collection(name);
+
+// ══════════════════════════════════════════════════════════
+// BASE UI COMPONENTS
+// ══════════════════════════════════════════════════════════
+function Field({label,children}){
+  return <div style={{marginBottom:"14px"}}>
+    <label style={{display:"block",fontSize:"11px",fontWeight:"600",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"6px"}}>{label}</label>
+    {children}
+  </div>;
+}
+function Grid2({children,gap="12px"}){return <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap}}>{children}</div>;}
+function Grid3({children,gap="10px"}){return <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap}}>{children}</div>;}
+function Grid4({children,gap="10px"}){return <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr",gap}}>{children}</div>;}
+
+function SectionHead({title,action}){
+  return <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"12px",paddingBottom:"10px",borderBottom:"1px solid #1e293b"}}>
+    <span style={{fontSize:"12px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.1em"}}>{title}</span>
+    {action}
+  </div>;
+}
+
+function Bdg({label,color,small}){
+  const s=small?"10px":"11px";
+  return <span style={{fontSize:s,fontWeight:"700",color,background:`${color}18`,padding:small?"2px 7px":"3px 10px",borderRadius:"99px",border:`1px solid ${color}30`,whiteSpace:"nowrap"}}>{label}</span>;
+}
+
+function Modal({open,onClose,title,wide,children}){
+  if(!open)return null;
+  return <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:"fixed",inset:0,zIndex:1000,background:"rgba(4,8,16,0.92)",display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"20px 16px",overflowY:"auto"}}>
+    <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:"16px",width:"100%",maxWidth:wide?"860px":"640px",boxShadow:"0 25px 80px rgba(0,0,0,0.85)",marginTop:"10px",animation:"slideDown 0.18s ease"}}>
+      <div style={{padding:"22px 28px 16px",borderBottom:"1px solid #1e293b",display:"flex",justifyContent:"space-between",alignItems:"center",position:"sticky",top:0,background:"#0f172a",borderRadius:"16px 16px 0 0",zIndex:1}}>
+        <span style={{fontSize:"16px",fontWeight:"700",color:"#f1f5f9",fontFamily:"'DM Serif Display',serif"}}>{title}</span>
+        <button onClick={onClose} style={{background:"none",border:"none",color:"#64748b",fontSize:"22px",lineHeight:1,padding:"0 4px"}}>×</button>
+      </div>
+      <div style={{padding:"20px 28px 28px",maxHeight:"82vh",overflowY:"auto"}}>{children}</div>
+    </div>
+  </div>;
+}
+
+function Btn({label,onClick,color="#3b82f6",disabled,small,outline}){
+  const bg=outline?"none":color;
+  const c=outline?color:"#fff";
+  const br=outline?`1px solid ${color}`:"none";
+  const p=small?"6px 14px":"9px 20px";
+  const fs=small?"12px":"13px";
+  return <button onClick={onClick} disabled={disabled} style={{background:bg,border:br,borderRadius:"8px",padding:p,color:c,fontWeight:"700",fontSize:fs,opacity:disabled?0.6:1,cursor:disabled?"not-allowed":"pointer",transition:"filter 0.15s",whiteSpace:"nowrap"}}
+    onMouseEnter={e=>!disabled&&(e.currentTarget.style.filter="brightness(1.1)")}
+    onMouseLeave={e=>e.currentTarget.style.filter="none"}>{label}</button>;
+}
+
+function InfoBox({children,color="#3b82f6"}){
+  return <div style={{background:`${color}10`,border:`1px solid ${color}30`,borderRadius:"8px",padding:"10px 14px",fontSize:"12.5px",color:"#94a3b8",marginBottom:"14px",lineHeight:1.6}}>{children}</div>;
+}
+
+// ══════════════════════════════════════════════════════════
+// BATCH MODULE
+// ══════════════════════════════════════════════════════════
+// StageBox must be defined at top level (not inside BatchWorkspace) to avoid React hook errors
+function StageBox({icon,title,done,active,children,editForm,editLabel,onEdit,onSave,saveLabel,editStage,setEditStage,saving}){
+  const [open,setOpen]=useState(!!active||!!done);
+  return <div style={{border:`1px solid ${active?"#2563eb":done?"#166534":"#1e293b"}`,borderRadius:"10px",marginBottom:"10px",overflow:"hidden"}}>
+    <div onClick={()=>setOpen(o=>!o)} style={{display:"flex",alignItems:"center",gap:"10px",padding:"12px 16px",cursor:"pointer",background:done?"#052e16":active?"#0a1626":"#0b1220"}}>
+      <span style={{fontSize:"16px"}}>{done?"✅":active?"🔄":"⏸"}</span>
+      <span style={{flex:1,fontSize:"13px",fontWeight:"700",color:done?"#22c55e":active?"#93c5fd":"#475569"}}>{icon} {title}</span>
+      <span style={{color:"#334155",fontSize:"12px"}}>{open?"▲":"▼"}</span>
+    </div>
+    {open&&<div style={{padding:"14px 16px",borderTop:`1px solid ${active?"#1e3a5f":"#1e293b"}`,background:"#080d18"}}>
+      {children}
+      {active&&editForm&&editStage!==title&&onEdit&&<div style={{marginTop:"10px"}}><Btn label={editLabel||"Fill Details"} onClick={onEdit} color="#2563eb" small/></div>}
+      {editStage===title&&editForm&&<div style={{marginTop:"12px",padding:"14px",background:"#060d1a",border:"1px solid #2563eb30",borderRadius:"8px"}}>
+        {editForm}
+        <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",marginTop:"12px"}}>
+          <Btn label="Cancel" onClick={()=>setEditStage(null)} outline color="#475569" small/>
+          <Btn label={saving?"Saving…":saveLabel||"Save"} onClick={onSave} disabled={saving} color="#2563eb" small/>
+        </div>
+      </div>}
+    </div>}
+  </div>;
+}
+
+function BatchCard({b,onClick,onDelete,role}){
+  const sc=BS_COL[b.status]||"#94a3b8";
+  return <div onClick={onClick} onMouseEnter={e=>e.currentTarget.style.background="#0f1f35"} onMouseLeave={e=>e.currentTarget.style.background="#0f172a"}
+    style={{background:"#0f172a",border:"1px solid #1e293b",borderLeft:`3px solid ${sc}`,borderRadius:"12px",padding:"15px 20px",cursor:"pointer",transition:"background 0.15s",boxShadow:"0 2px 10px rgba(0,0,0,0.3)",marginBottom:"10px"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:"8px"}}>
+      <div style={{flex:1}}>
+        <div style={{fontSize:"14px",fontWeight:"700",color:"#f1f5f9",marginBottom:"3px",fontFamily:"'DM Serif Display',serif"}}>{b.batchNo}</div>
+        <div style={{fontSize:"11.5px",color:"#64748b",marginBottom:"6px"}}>{b.category?`${b.category} · `:""}{b.productName}{b.shade?` · ${b.shade}`:""} · {b.batchSize} {b.unit}</div>
+      </div>
+      <div style={{display:"flex",gap:"6px",alignItems:"center",flexShrink:0}}>
+        <Bdg label={b.status} color={sc}/>
+        {(role==="admin")&&<button onClick={e=>{e.stopPropagation();onDelete(b.id)}} style={{background:"none",border:"none",color:"#334155",fontSize:"15px",padding:"2px 4px"}}>🗑</button>}
+      </div>
+    </div>
+    <div style={{display:"flex",gap:"10px",flexWrap:"wrap"}}>
+      {b.dateIssued&&<span style={{fontSize:"11px",color:"#475569"}}>📅 {b.dateIssued}</span>}
+      {b.issuedBy&&<span style={{fontSize:"11px",color:"#475569"}}>👤 {b.issuedBy}</span>}
+    </div>
+  </div>;
+}
+
+function BatchWorkspace({batch,role,onClose,showToast,qcParams,packSizes}){
+  const [live,setLive]=useState(batch);
+  const [editStage,setEditStage]=useState(null);
+  const [saving,setSaving]=useState(false);
+  const [availOldStock,setAvailOldStock]=useState([]);
+  const [allOldStock,setAllOldStock]=useState([]);
+  const [showOtherStock,setShowOtherStock]=useState(false);
+  const [selectedOldStock,setSelectedOldStock]=useState([]);
+  const [prodForm,setProdForm]=useState({startDate:today(),completionDate:"",actualQty:"",oldStockUsed:"",producedBy:"",notes:""});
+  const [qcForm,setQcForm]=useState({other:"",result:"Pass",qcDate:today(),qcBy:"",remarks:""});
+  const [packForm,setPackForm]=useState({sizes:[],packingDate:today(),packedBy:"",labelChecked:"Yes",remarks:""});
+
+  const resolvedPackSizes=(()=>{
+    if(!packSizes)return DEFAULT_PACK_SIZES_BY_CAT[live.category]||DEFAULT_PACK_SIZES;
+    if(Array.isArray(packSizes))return packSizes;
+    return packSizes[live.category]||packSizes._default||DEFAULT_PACK_SIZES;
+  })();
+
+  useEffect(()=>{
+    const sizes=resolvedPackSizes.map(s=>({size:s,qty:"",pcs:""}));
+    setPackForm(f=>({...f,sizes}));
+  },[live.category,JSON.stringify(resolvedPackSizes)]);
+
+  useEffect(()=>{
+    const unsub=C("batches").doc(batch.id).onSnapshot(snap=>{if(snap.exists)setLive({id:snap.id,...snap.data()});});
+    return unsub;
+  },[batch.id]);
+
+  useEffect(()=>{
+    if(!live.productName)return;
+    C("old_stock").where("status","==","Available").where("productName","==",live.productName).get()
+      .then(snap=>setAvailOldStock(snap.docs.map(d=>({id:d.id,...d.data()}))))
+      .catch(()=>C("old_stock").where("status","==","Available").get()
+        .then(snap=>setAvailOldStock(snap.docs.map(d=>({id:d.id,...d.data()})).filter(s=>s.productName===live.productName))));
+    C("old_stock").where("status","==","Available").get()
+      .then(snap=>setAllOldStock(snap.docs.map(d=>({id:d.id,...d.data()})))).catch(()=>{});
+  },[live.productName]);
+
+  const save=async(data,nextStatus,extraOps)=>{
+    setSaving(true);
+    try{
+      await C("batches").doc(batch.id).update({...data,status:nextStatus});
+      if(extraOps)await Promise.all(extraOps);
+      setEditStage(null);showToast("Saved ✓");
+    }catch(e){showToast("Error saving","error");}
+    setSaving(false);
+  };
+
+  const cat=live.category||"Other";
+  const rawParams=(qcParams||DEFAULT_QC_PARAMS)[cat]||DEFAULT_QC_PARAMS["Other"]||[];
+  const params=rawParams.map(gp);
+
+  const checkParam=(p,val)=>{
+    const v=parseFloat(val);
+    if(isNaN(v)||(!p.min&&!p.max))return null;
+    if(p.min&&v<parseFloat(p.min))return false;
+    if(p.max&&v>parseFloat(p.max))return false;
+    return true;
+  };
+  const autoResult=()=>{
+    const withRange=params.filter(p=>p.min||p.max);
+    if(!withRange.length)return null;
+    return withRange.every(p=>{const r=checkParam(p,qcForm[p.name]);return r===null||r===true;})?"Pass":"Fail";
+  };
+
+  const sc=BS_COL[live.status]||"#94a3b8";
+  const canQC=role==="admin"||role==="qc";
+  const stageIndex=["Issued","In Production","QC Pending","QC Pass","Packed"].indexOf(live.status);
+  const sb={editStage,setEditStage,saving};
+
+  const PrintQCReport=()=><div className="print-report">
+    <div style={{borderBottom:"2px solid #000",paddingBottom:"8px",marginBottom:"10px"}}>
+      <div className="pr-title">Gujarat Colours &amp; Coatings Pvt Ltd</div>
+      <div className="pr-sub">QC Test Report — {live.batchNo}</div>
+    </div>
+    <table><tbody>
+      {[["Product",live.productName],["Category",live.category||"—"],["Shade",live.shade||"—"],["Batch Size",`${live.batchSize} ${live.unit}`],["QC Date",live.qc?.qcDate||"—"],["QC By",live.qc?.qcBy||"—"]].map(([l,v])=>(
+        <tr key={l}><td style={{width:"35%",fontWeight:"bold"}}>{l}</td><td>{v}</td></tr>
+      ))}
+    </tbody></table>
+    <div className="pr-section-title">Test Parameters</div>
+    <table><thead><tr><th>Parameter</th><th>Min</th><th>Max</th><th>Value</th><th>Status</th></tr></thead>
+    <tbody>
+      {params.map(p=>{
+        const val=live.qc?.[p.name]||"—";
+        const r=live.qc?.[p.name]?checkParam(p,live.qc[p.name]):null;
+        return <tr key={p.name}><td>{p.name}</td><td>{p.min||"—"}</td><td>{p.max||"—"}</td><td>{val}</td>
+          <td className={r===true?"pr-pass":r===false?"pr-fail":""}>{r===true?"✓ Pass":r===false?"✗ Fail":"—"}</td></tr>;
+      })}
+    </tbody></table>
+    {live.qc?.other&&<div style={{marginTop:"6px"}}><strong>Other Notes:</strong> {live.qc.other}</div>}
+    <div style={{marginTop:"8px",display:"flex",gap:"20px",alignItems:"center"}}>
+      <div className={live.qc?.result==="Pass"?"pr-pass":"pr-fail"} style={{fontSize:"13pt"}}>Overall: {live.qc?.result||"—"}</div>
+      {live.qc?.remarks&&<div style={{flex:1}}><strong>Remarks:</strong> {live.qc.remarks}</div>}
+    </div>
+    <div style={{marginTop:"14px",display:"flex",justifyContent:"space-between",borderTop:"1px solid #ccc",paddingTop:"8px",fontSize:"9pt",color:"#666"}}>
+      <span>QC Sign: ___________________</span><span>Date: {live.qc?.qcDate||"___________"}</span>
+    </div>
+  </div>;
+
+  const PrintPackReport=()=><div className="print-report">
+    <div style={{borderBottom:"2px solid #000",paddingBottom:"8px",marginBottom:"10px"}}>
+      <div className="pr-title">Gujarat Colours &amp; Coatings Pvt Ltd</div>
+      <div className="pr-sub">Packing Report — {live.batchNo}</div>
+    </div>
+    <table><tbody>
+      {[["Product",live.productName],["Shade",live.shade||"—"],["Batch Size",`${live.batchSize} ${live.unit}`],["Packing Date",live.packing?.packingDate||"—"],["Packed By",live.packing?.packedBy||"—"],["Label Checked",live.packing?.labelChecked||"—"]].map(([l,v])=>(
+        <tr key={l}><td style={{width:"35%",fontWeight:"bold"}}>{l}</td><td>{v}</td></tr>
+      ))}
+    </tbody></table>
+    <div className="pr-section-title">Packing Details</div>
+    <table><thead><tr><th>Pack Size</th><th>No. of Packs</th><th>Qty/Pack</th><th>Total</th></tr></thead>
+    <tbody>
+      {(live.packing?.sizes||[]).filter(s=>parseInt(s.pcs)>0).map(s=>{
+        const lt=((parseFloat(s.qty)||0)*(parseInt(s.pcs)||0));
+        return <tr key={s.size}><td>{s.size}</td><td>{s.pcs}</td><td>{s.qty} {live.unit}</td><td>{lt.toFixed(1)} {live.unit}</td></tr>;
+      })}
+      <tr><td colSpan="3" style={{fontWeight:"bold",textAlign:"right"}}>Total Packed</td><td style={{fontWeight:"bold"}}>{live.packing?.totalQty} {live.unit}</td></tr>
+    </tbody></table>
+    {live.packing?.remarks&&<div style={{marginTop:"6px"}}><strong>Remarks:</strong> {live.packing.remarks}</div>}
+    <div style={{marginTop:"14px",display:"flex",justifyContent:"space-between",borderTop:"1px solid #ccc",paddingTop:"8px",fontSize:"9pt",color:"#666"}}>
+      <span>Packed By: ___________________</span><span>QC Sign: ___________________</span>
+    </div>
+  </div>;
+
+  return <div>
+    <PrintQCReport/><PrintPackReport/>
+    <div className="no-print">
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"16px",gap:"8px"}}>
+      <div>
+        <div style={{fontSize:"22px",fontWeight:"400",fontFamily:"'DM Serif Display',serif",color:"#f1f5f9"}}>{live.batchNo}</div>
+        <div style={{fontSize:"12px",color:"#64748b",marginTop:"3px"}}>{live.category?`${live.category} · `:""}{live.productName}{live.shade?` — ${live.shade}`:""} · {live.batchSize} {live.unit}</div>
+      </div>
+      <Bdg label={live.status} color={sc}/>
+    </div>
+
+    <StageBox {...sb} icon="📋" title="Issue Details" done={true} active={false}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px"}}>
+        {[["Product",live.productName],["Shade/Color",live.shade||"—"],["Batch Size",`${live.batchSize} ${live.unit}`],["Date Issued",live.dateIssued],["Issued By",live.issuedBy],["Old/Rejected Used",live.oldStockUsed||"—"]].map(([l,v])=><div key={l} style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"7px",padding:"8px 12px"}}>
+          <div style={{fontSize:"10px",color:"#334155",fontWeight:"600",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:"2px"}}>{l}</div>
+          <div style={{fontSize:"13px",color:"#94a3b8",fontWeight:"500"}}>{v||"—"}</div>
+        </div>)}
+      </div>
+    </StageBox>
+
+    <StageBox {...sb} icon="🏭" title="Production Details" done={stageIndex>=1&&!!live.production?.completionDate} active={live.status==="Issued"||live.status==="In Production"}
+      editLabel="Enter Production Details" onEdit={canQC?()=>setEditStage("Production Details"):null}
+      editForm={<div>
+        <Grid2>
+          <Field label="Start Date"><input type="date" style={inp} value={prodForm.startDate} onChange={e=>setProdForm({...prodForm,startDate:e.target.value})}/></Field>
+          <Field label="Completion Date"><input type="date" style={inp} value={prodForm.completionDate} onChange={e=>setProdForm({...prodForm,completionDate:e.target.value})}/></Field>
+        </Grid2>
+        <Grid2>
+          <Field label={`Actual Qty (${live.unit})`}><input style={inp} value={prodForm.actualQty} onChange={e=>setProdForm({...prodForm,actualQty:e.target.value})}/></Field>
+          <Field label="Produced By"><input style={inp} value={prodForm.producedBy} onChange={e=>setProdForm({...prodForm,producedBy:e.target.value})}/></Field>
+        </Grid2>
+
+        {/* ── SAME PRODUCT OLD/REJECTED STOCK ── */}
+        <div style={{marginBottom:"14px"}}>
+          <div style={{fontSize:"11px",fontWeight:"700",color:"#f59e0b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"8px"}}>📦 Old/Rejected Material Used — Same Product</div>
+          {availOldStock.length===0
+            ?<div style={{fontSize:"12px",color:"#334155",fontStyle:"italic",padding:"6px 0"}}>No available stock for {live.productName||"this product"}.</div>
+            :<div style={{border:"1px solid #f59e0b30",borderRadius:"8px",background:"#0a1010",padding:"10px 12px",display:"flex",flexDirection:"column",gap:"8px"}}>
+              {availOldStock.map(s=>{
+                const sel=selectedOldStock.find(x=>x.id===s.id);
+                const isSel=!!sel;
+                return <div key={s.id} style={{padding:"8px",borderRadius:"6px",background:isSel?"#422006":"transparent",border:`1px solid ${isSel?"#f59e0b30":"transparent"}`}}>
+                  <label style={{display:"flex",alignItems:"flex-start",gap:"10px",cursor:"pointer"}}>
+                    <input type="checkbox" checked={isSel} onChange={e=>{
+                      if(e.target.checked)setSelectedOldStock(p=>[...p,{...s,usedQty:s.qty}]);
+                      else setSelectedOldStock(p=>p.filter(x=>x.id!==s.id));
+                    }} style={{width:"16px",height:"16px",cursor:"pointer",marginTop:"2px",flexShrink:0}}/>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:"13px",fontWeight:"600",color:"#f1f5f9"}}>{s.productName}</div>
+                      <div style={{fontSize:"11px",color:"#64748b"}}>Available: {s.qty} {s.unit}{s.batchRef?` · Ref: ${s.batchRef}`:""}{s.notes?` · ${s.notes}`:""}</div>
+                    </div>
+                  </label>
+                  {isSel&&<div style={{marginTop:"8px",marginLeft:"26px",display:"flex",alignItems:"center",gap:"8px"}}>
+                    <span style={{fontSize:"11px",color:"#f59e0b",fontWeight:"600",flexShrink:0}}>Qty to use:</span>
+                    <input type="number" min="0.1" max={parseFloat(s.qty)||9999} step="0.1"
+                      style={{...sml,width:"100px",borderColor:"#f59e0b50"}}
+                      value={sel.usedQty}
+                      onChange={e=>setSelectedOldStock(p=>p.map(x=>x.id===s.id?{...x,usedQty:e.target.value}:x))}/>
+                    <span style={{fontSize:"11px",color:"#64748b"}}>{s.unit} (max {s.qty})</span>
+                    {parseFloat(sel.usedQty)<parseFloat(s.qty)&&<span style={{fontSize:"10px",color:"#22c55e",background:"#052e16",padding:"2px 7px",borderRadius:"99px",border:"1px solid #166534"}}>Partial</span>}
+                  </div>}
+                </div>;
+              })}
+            </div>
+          }
+        </div>
+
+        {/* ── OTHER MATERIAL (different products) ── */}
+        <div style={{marginBottom:"14px"}}>
+          <button onClick={()=>setShowOtherStock(v=>!v)} style={{background:"none",border:"1px dashed #334155",borderRadius:"7px",padding:"7px 14px",color:"#475569",cursor:"pointer",fontSize:"12px",fontWeight:"600",width:"100%",textAlign:"left"}}>
+            {showOtherStock?"▲ Hide":"▼ + Add Material from Other Products (optional)"}
+          </button>
+          {showOtherStock&&<div style={{border:"1px solid #334155",borderRadius:"8px",background:"#0a1010",padding:"10px 12px",marginTop:"8px",display:"flex",flexDirection:"column",gap:"8px",maxHeight:"240px",overflowY:"auto"}}>
+            {allOldStock.filter(s=>s.productName!==live.productName).length===0
+              ?<div style={{fontSize:"12px",color:"#334155",fontStyle:"italic"}}>No other old/rejected material available.</div>
+              :allOldStock.filter(s=>s.productName!==live.productName).map(s=>{
+                const sel=selectedOldStock.find(x=>x.id===s.id);
+                const isSel=!!sel;
+                return <div key={s.id} style={{padding:"8px",borderRadius:"6px",background:isSel?"#0c2340":"transparent",border:`1px solid ${isSel?"#2563eb30":"transparent"}`}}>
+                  <label style={{display:"flex",alignItems:"flex-start",gap:"10px",cursor:"pointer"}}>
+                    <input type="checkbox" checked={isSel} onChange={e=>{
+                      if(e.target.checked)setSelectedOldStock(p=>[...p,{...s,usedQty:s.qty}]);
+                      else setSelectedOldStock(p=>p.filter(x=>x.id!==s.id));
+                    }} style={{width:"16px",height:"16px",cursor:"pointer",marginTop:"2px",flexShrink:0}}/>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:"13px",fontWeight:"600",color:"#e2e8f0"}}>{s.productName}</div>
+                      <div style={{fontSize:"11px",color:"#64748b"}}>{s.category} · Available: {s.qty} {s.unit}{s.batchRef?` · Ref: ${s.batchRef}`:""}</div>
+                    </div>
+                  </label>
+                  {isSel&&<div style={{marginTop:"8px",marginLeft:"26px",display:"flex",alignItems:"center",gap:"8px"}}>
+                    <span style={{fontSize:"11px",color:"#93c5fd",fontWeight:"600",flexShrink:0}}>Qty to use:</span>
+                    <input type="number" min="0.1" max={parseFloat(s.qty)||9999} step="0.1"
+                      style={{...sml,width:"100px",borderColor:"#2563eb50"}}
+                      value={sel.usedQty}
+                      onChange={e=>setSelectedOldStock(p=>p.map(x=>x.id===s.id?{...x,usedQty:e.target.value}:x))}/>
+                    <span style={{fontSize:"11px",color:"#64748b"}}>{s.unit}</span>
+                  </div>}
+                </div>;
+              })
+            }
+          </div>}
+        </div>
+
+        {selectedOldStock.length>0&&<div style={{background:"#052e16",border:"1px solid #166534",borderRadius:"7px",padding:"8px 12px",marginBottom:"10px",fontSize:"12px",color:"#22c55e"}}>
+          ✓ {selectedOldStock.length} item{selectedOldStock.length!==1?"s":""} selected · Total: {selectedOldStock.map(x=>`${x.usedQty} ${x.unit} ${x.productName}`).join(", ")}
+        </div>}
+
+        <Field label="Production Notes"><textarea style={{...ta,minHeight:"56px"}} value={prodForm.notes} onChange={e=>setProdForm({...prodForm,notes:e.target.value})} placeholder="Any production notes..."/></Field>
+      </div>}
+      saveLabel="Save & Mark QC Pending"
+      onSave={()=>{
+        const desc=selectedOldStock.length>0?selectedOldStock.map(s=>`${s.usedQty||s.qty} ${s.unit} ${s.productName}`).join(", "):prodForm.notes;
+        // For partial use: update qty remaining or mark as Used
+        const markUsed=selectedOldStock.map(s=>{
+          const used=parseFloat(s.usedQty)||parseFloat(s.qty);
+          const avail=parseFloat(s.qty)||0;
+          const remaining=avail-used;
+          if(remaining<=0.01){
+            return C("old_stock").doc(s.id).update({status:"Used",usedInBatch:live.batchNo,usedDate:today()});
+          }else{
+            return C("old_stock").doc(s.id).update({qty:remaining.toFixed(2),usedInBatch:live.batchNo,lastUsedDate:today(),notes:`${s.notes||""} | Partial: ${used} used in ${live.batchNo}`.trim()});
+          }
+        });
+        save({production:{...prodForm,oldStockUsed:desc,selectedOldStockIds:selectedOldStock.map(s=>s.id)}},"QC Pending",markUsed);
+      }}>
+      {live.production?<div style={{fontSize:"13px",color:"#94a3b8"}}>
+        Produced: <strong style={{color:"#e2e8f0"}}>{live.production.actualQty} {live.unit}</strong> · Completed: {live.production.completionDate} · By: {live.production.producedBy}
+        {live.production.oldStockUsed&&<div style={{fontSize:"12px",color:"#f59e0b",marginTop:"3px"}}>📦 Old stock used: {live.production.oldStockUsed}</div>}
+        {live.production.notes&&<div style={{marginTop:"4px",fontStyle:"italic",fontSize:"12px"}}>{live.production.notes}</div>}
+      </div>:<div style={{fontSize:"12px",color:"#334155",fontStyle:"italic"}}>No production details yet.</div>}
+    </StageBox>
+
+    <StageBox {...sb} icon="🔬" title="QC Testing" done={live.status==="QC Pass"||live.status==="QC Fail"||live.status==="Packed"} active={live.status==="QC Pending"}
+      editLabel="Enter QC Results" onEdit={canQC&&live.status==="QC Pending"?()=>setEditStage("QC Testing"):null}
+      editForm={<div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"10px"}}>
+          {params.map(p=>{
+            const val=qcForm[p.name]||"";
+            const r=val?checkParam(p,val):null;
+            const bc=r===true?"#22c55e":r===false?"#ef4444":"#1e293b";
+            const hint=(p.min||p.max)?`${p.min||"—"} – ${p.max||"—"}`:"";
+            return <div key={p.name} style={{marginBottom:"4px"}}>
+              <label style={{display:"block",fontSize:"11px",fontWeight:"600",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"4px"}}>
+                {p.name}{hint&&<span style={{fontSize:"9px",color:"#475569",fontWeight:"400",marginLeft:"5px",textTransform:"none",letterSpacing:0}}>({hint})</span>}
+              </label>
+              <div style={{position:"relative"}}>
+                <input style={{...inp,borderColor:bc,paddingRight:r!==null?"32px":"12px"}} value={val} onChange={e=>setQcForm({...qcForm,[p.name]:e.target.value})} placeholder="Enter value"/>
+                {r!==null&&<span style={{position:"absolute",right:"10px",top:"50%",transform:"translateY(-50%)",fontSize:"14px",pointerEvents:"none"}}>{r?"✅":"❌"}</span>}
+              </div>
+            </div>;
+          })}
+        </div>
+        {autoResult()!==null&&<div style={{background:autoResult()==="Pass"?"#052e16":"#450a0a",border:`1px solid ${autoResult()==="Pass"?"#166534":"#991b1b"}`,borderRadius:"8px",padding:"8px 12px",marginTop:"8px",marginBottom:"10px",fontSize:"12.5px",fontWeight:"600",color:autoResult()==="Pass"?"#22c55e":"#ef4444"}}>
+          🔬 Auto result: <strong>{autoResult()}</strong> — you can override below
+        </div>}
+        <Field label="Other Parameters / Notes"><textarea style={{...ta,minHeight:"50px"}} value={qcForm.other||""} onChange={e=>setQcForm({...qcForm,other:e.target.value})} placeholder="Any additional observations..."/></Field>
+        <Grid3>
+          <Field label="Overall Result"><select style={{...sl,borderColor:qcForm.result==="Pass"?"#22c55e":"#ef4444"}} value={qcForm.result} onChange={e=>setQcForm({...qcForm,result:e.target.value})}><option>Pass</option><option>Fail</option></select></Field>
+          <Field label="QC Date"><input type="date" style={inp} value={qcForm.qcDate} onChange={e=>setQcForm({...qcForm,qcDate:e.target.value})}/></Field>
+          <Field label="QC By"><input style={inp} value={qcForm.qcBy} onChange={e=>setQcForm({...qcForm,qcBy:e.target.value})}/></Field>
+        </Grid3>
+        <Field label="Remarks"><textarea style={{...ta,minHeight:"50px"}} value={qcForm.remarks||""} onChange={e=>setQcForm({...qcForm,remarks:e.target.value})}/></Field>
+      </div>}
+      saveLabel={qcForm.result==="Pass"?"Save — QC Pass ✓":"Save — QC Fail ✗"}
+      onSave={()=>save({qc:qcForm},qcForm.result==="Pass"?"QC Pass":"QC Fail")}>
+      {live.qc?<div>
+        <div style={{display:"flex",gap:"8px",flexWrap:"wrap",marginBottom:"8px"}}>
+          {params.map(p=>{const val=live.qc[p.name];if(!val)return null;const r=checkParam(p,val);
+            return <span key={p.name} style={{fontSize:"11.5px",background:"#0b1220",border:`1px solid ${r===true?"#166534":r===false?"#991b1b":"#1e293b"}`,borderRadius:"6px",padding:"3px 9px",color:"#94a3b8"}}>
+              {p.name}: <strong style={{color:"#e2e8f0"}}>{val}</strong>{r!==null&&<span style={{marginLeft:"4px"}}>{r?"✅":"❌"}</span>}
+            </span>;
+          })}
+        </div>
+        <div style={{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap"}}>
+          <Bdg label={`Result: ${live.qc.result}`} color={live.qc.result==="Pass"?"#22c55e":"#ef4444"}/>
+          <span style={{fontSize:"11.5px",color:"#475569"}}>By {live.qc.qcBy} on {live.qc.qcDate}</span>
+          <Btn label="🖨 Print QC Report" onClick={()=>window.print()} outline color="#a855f7" small/>
+        </div>
+        {live.qc.remarks&&<div style={{marginTop:"5px",fontSize:"12px",color:"#475569",fontStyle:"italic"}}>{live.qc.remarks}</div>}
+      </div>:<div style={{fontSize:"12px",color:"#334155",fontStyle:"italic"}}>QC not started yet.</div>}
+    </StageBox>
+
+    <StageBox {...sb} icon="📦" title="Packing Details" done={live.status==="Packed"} active={live.status==="QC Pass"}
+      editLabel="Enter Packing Details" onEdit={canQC&&live.status==="QC Pass"?()=>setEditStage("Packing Details"):null}
+      editForm={(()=>{
+        const updSz=(idx,fld,v)=>{const sizes=packForm.sizes.map((s,i)=>i===idx?{...s,[fld]:v}:s);setPackForm({...packForm,sizes});};
+        const totalQty=packForm.sizes.reduce((sum,s)=>sum+((parseFloat(s.qty)||0)*(parseInt(s.pcs)||0)),0);
+        return <div>
+          <div style={{marginBottom:"14px"}}>
+            <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"8px"}}>Pack Sizes & Quantities</div>
+            <div style={{border:"1px solid #1e293b",borderRadius:"8px",overflow:"hidden"}}>
+              <div style={{display:"grid",gridTemplateColumns:"2fr 1.2fr 1.2fr 1.5fr",background:"#0b1220",padding:"8px 12px",gap:"8px"}}>
+                {["Pack Size","Qty/Pack","No. of Packs","Total"].map(h=><div key={h} style={{fontSize:"10px",fontWeight:"700",color:"#334155",textTransform:"uppercase",letterSpacing:"0.07em"}}>{h}</div>)}
+              </div>
+              {packForm.sizes.map((row,i)=>{const lt=((parseFloat(row.qty)||0)*(parseInt(row.pcs)||0));
+                return <div key={row.size} style={{display:"grid",gridTemplateColumns:"2fr 1.2fr 1.2fr 1.5fr",padding:"7px 12px",gap:"8px",borderTop:"1px solid #1e293b",background:i%2===0?"#080d18":"#0b1220",alignItems:"center"}}>
+                  <div style={{fontSize:"12.5px",color:"#e2e8f0",fontWeight:"500"}}>{row.size}</div>
+                  <input style={{...sml,textAlign:"center"}} type="number" min="0" value={row.qty} onChange={e=>updSz(i,"qty",e.target.value)} placeholder="0"/>
+                  <input style={{...sml,textAlign:"center"}} type="number" min="0" value={row.pcs} onChange={e=>updSz(i,"pcs",e.target.value)} placeholder="0"/>
+                  <div style={{fontSize:"12px",color:lt>0?"#22c55e":"#334155",fontWeight:"600"}}>{lt>0?`${lt.toFixed(1)} ${live.unit||""}`:"-"}</div>
+                </div>;
+              })}
+              <div style={{display:"grid",gridTemplateColumns:"2fr 1.2fr 1.2fr 1.5fr",padding:"8px 12px",gap:"8px",borderTop:"2px solid #1e3a5f",background:"#060d1a"}}>
+                <div style={{fontSize:"12px",fontWeight:"700",color:"#93c5fd",gridColumn:"1/4"}}>Total Packed</div>
+                <div style={{fontSize:"13px",fontWeight:"700",color:"#22c55e"}}>{totalQty>0?`${totalQty.toFixed(1)} ${live.unit||""}`:"-"}</div>
+              </div>
+            </div>
+          </div>
+          <Grid3>
+            <Field label="Packing Date"><input type="date" style={inp} value={packForm.packingDate} onChange={e=>setPackForm({...packForm,packingDate:e.target.value})}/></Field>
+            <Field label="Packed By"><input style={inp} value={packForm.packedBy} onChange={e=>setPackForm({...packForm,packedBy:e.target.value})} placeholder="Packer name"/></Field>
+            <Field label="Label Checked"><select style={sl} value={packForm.labelChecked} onChange={e=>setPackForm({...packForm,labelChecked:e.target.value})}><option>Yes</option><option>No</option><option>N/A</option></select></Field>
+          </Grid3>
+          <Field label="Remarks"><input style={inp} value={packForm.remarks} onChange={e=>setPackForm({...packForm,remarks:e.target.value})} placeholder="Any notes on packing"/></Field>
+        </div>;
+      })()}
+      saveLabel="Save & Mark Packed"
+      onSave={()=>{const totalQty=packForm.sizes.reduce((sum,s)=>sum+((parseFloat(s.qty)||0)*(parseInt(s.pcs)||0)),0);save({packing:{...packForm,totalQty:totalQty.toFixed(1)}},"Packed");}}>
+      {live.packing?<div>
+        {live.packing.sizes?.filter(s=>parseInt(s.pcs)>0).length>0&&<div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginBottom:"8px"}}>
+          {live.packing.sizes.filter(s=>parseInt(s.pcs)>0).map(s=><span key={s.size} style={{fontSize:"11.5px",background:"#0b1220",border:"1px solid #1e293b",borderRadius:"6px",padding:"3px 9px",color:"#94a3b8"}}>{s.size}: <strong style={{color:"#e2e8f0"}}>{s.pcs} packs</strong></span>)}
+        </div>}
+        <div style={{display:"flex",gap:"10px",flexWrap:"wrap",alignItems:"center"}}>
+          {live.packing.totalQty&&<span style={{fontSize:"12px",fontWeight:"700",color:"#22c55e"}}>Total: {live.packing.totalQty} {live.unit}</span>}
+          <span style={{fontSize:"11.5px",color:"#475569"}}>Packed: {live.packing.packingDate} · By: {live.packing.packedBy}</span>
+          {live.packing.labelChecked&&<Bdg label={`Label: ${live.packing.labelChecked}`} color={live.packing.labelChecked==="Yes"?"#22c55e":"#f59e0b"} small/>}
+          <Btn label="🖨 Print Packing Report" onClick={()=>window.print()} outline color="#38bdf8" small/>
+        </div>
+        {live.packing.remarks&&<div style={{marginTop:"5px",fontSize:"12px",color:"#475569",fontStyle:"italic"}}>{live.packing.remarks}</div>}
+      </div>:<div style={{fontSize:"12px",color:"#334155",fontStyle:"italic"}}>Packing not started yet.</div>}
+    </StageBox>
+
+    </div>
+  </div>;
+}
+
+// ══════════════════════════════════════════════════════════
+// COMPLAINT MODULE
+// ══════════════════════════════════════════════════════════
+function ComplaintCard({c,onClick,onDelete,role}){
+  const sc=CS_COL[c.status]||"#94a3b8";
+  return <div onClick={onClick} onMouseEnter={e=>e.currentTarget.style.background="#0f1f35"} onMouseLeave={e=>e.currentTarget.style.background="#0f172a"}
+    style={{background:"#0f172a",border:"1px solid #1e293b",borderLeft:`3px solid ${sc}`,borderRadius:"12px",padding:"15px 20px",cursor:"pointer",transition:"background 0.15s",boxShadow:"0 2px 10px rgba(0,0,0,0.3)",marginBottom:"10px"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:"8px"}}>
+      <div style={{flex:1}}>
+        <div style={{fontSize:"14px",fontWeight:"700",color:"#f1f5f9",marginBottom:"3px",fontFamily:"'DM Serif Display',serif"}}>{c.customerName}</div>
+        <div style={{fontSize:"11.5px",color:"#64748b",marginBottom:"6px"}}>{c.productName} · Batch: {c.batchNo||"—"} · {c.monthYear||"—"}</div>
+        <div style={{fontSize:"12.5px",color:"#94a3b8",lineHeight:1.5,maxHeight:"36px",overflow:"hidden"}}>{c.complaint}</div>
+      </div>
+      <div style={{display:"flex",gap:"6px",alignItems:"flex-start",flexShrink:0,flexDirection:"column",alignItems:"flex-end"}}>
+        <Bdg label={c.status} color={sc}/>
+        {(role==="admin")&&<button onClick={e=>{e.stopPropagation();onDelete(c.id)}} style={{background:"none",border:"none",color:"#334155",fontSize:"14px",padding:"2px"}}>🗑</button>}
+      </div>
+    </div>
+    <div style={{display:"flex",gap:"10px",flexWrap:"wrap",marginTop:"4px"}}>
+      {c.invoiceNo&&<span style={{fontSize:"11px",color:"#475569"}}>🧾 {c.invoiceNo}</span>}
+      {c.addedBy&&<span style={{fontSize:"11px",color:"#475569"}}>👤 {c.addedBy}</span>}
+    </div>
+  </div>;
+}
+
+function ComplaintWorkspace({complaint,role,showToast}){
+  const [live,setLive]=useState(complaint);
+  const [editStage,setEditStage]=useState(null);
+  const [saving,setSaving]=useState(false);
+  const [qcResp,setQcResp]=useState({findings:"",action:"",responseDate:today(),respondedBy:""});
+  const [salesResp,setSalesResp]=useState({feedback:"",resolved:"Yes",responseDate:today(),respondedBy:""});
+  const [newStatus,setNewStatus]=useState(complaint.status);
+
+  useEffect(()=>{
+    const unsub=C("complaints").doc(complaint.id).onSnapshot(snap=>{
+      if(snap.exists)setLive({id:snap.id,...snap.data()});
+    });
+    return unsub;
+  },[complaint.id]);
+
+  const saveQC=async()=>{
+    setSaving(true);
+    try{
+      await C("complaints").doc(complaint.id).update({qcResponse:qcResp,status:"QC Responded"});
+      setEditStage(null);showToast("QC response saved ✓");
+    }catch(e){showToast("Error","error");}
+    setSaving(false);
+  };
+
+  const saveSales=async()=>{
+    setSaving(true);
+    try{
+      const ns=salesResp.resolved==="Yes"?"Resolved":"Closed";
+      await C("complaints").doc(complaint.id).update({salesResponse:salesResp,status:ns});
+      setEditStage(null);showToast("Response saved ✓");
+    }catch(e){showToast("Error","error");}
+    setSaving(false);
+  };
+
+  const saveStatus=async()=>{
+    setSaving(true);
+    try{
+      await C("complaints").doc(complaint.id).update({status:newStatus});
+      showToast("Status updated ✓");
+    }catch(e){showToast("Error","error");}
+    setSaving(false);
+  };
+
+  const sc=CS_COL[live.status]||"#94a3b8";
+  const canQC=role==="admin"||role==="qc";
+  const canSales=role==="admin"||role==="sales";
+  const qcHasResponded=!!live.qcResponse?.findings||!!live.qcResponse?.action;
+
+  return <div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"16px",gap:"8px"}}>
+      <div>
+        <div style={{fontSize:"20px",fontWeight:"400",fontFamily:"'DM Serif Display',serif",color:"#f1f5f9"}}>{live.customerName}</div>
+        <div style={{fontSize:"12px",color:"#64748b",marginTop:"3px"}}>{live.productName} · Added by {live.addedBy}</div>
+      </div>
+      <Bdg label={live.status} color={sc}/>
+    </div>
+
+    {/* Complaint details */}
+    <div style={{background:"#0b1220",border:"1px solid #1e293b",borderLeft:"3px solid #ef4444",borderRadius:"8px",padding:"14px 16px",marginBottom:"14px"}}>
+      <div style={{fontSize:"10px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.09em",marginBottom:"8px"}}>📋 Complaint Details</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginBottom:"10px"}}>
+        {[["Product",live.productName],["Batch No",live.batchNo||"—"],["Month/Year",live.monthYear||"—"],["Invoice No",live.invoiceNo||"—"],["Material Available",live.materialAvailable||"—"],["Complaint By",live.addedBy]].map(([l,v])=><div key={l} style={{background:"#060b16",border:"1px solid #1e293b",borderRadius:"6px",padding:"7px 10px"}}>
+          <div style={{fontSize:"10px",color:"#334155",fontWeight:"600",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:"2px"}}>{l}</div>
+          <div style={{fontSize:"12.5px",color:"#94a3b8"}}>{v}</div>
+        </div>)}
+      </div>
+      <div style={{fontSize:"10px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.09em",marginBottom:"5px"}}>Complaint Description</div>
+      <div style={{fontSize:"13.5px",color:"#cbd5e1",lineHeight:1.6,whiteSpace:"pre-wrap"}}>{live.complaint}</div>
+    </div>
+
+    {/* QC Response */}
+    <div style={{border:`1px solid ${qcHasResponded?"#166534":canQC?"#2563eb30":"#1e293b"}`,borderRadius:"10px",marginBottom:"12px",overflow:"hidden"}}>
+      <div style={{padding:"12px 16px",background:qcHasResponded?"#052e16":canQC?"#060d1a":"#0b1220",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <span style={{fontSize:"13px",fontWeight:"700",color:qcHasResponded?"#22c55e":canQC?"#93c5fd":"#475569"}}>🔬 QC Response</span>
+        {canQC&&!qcHasResponded&&editStage!=="qc"&&<Btn label="Add QC Response" onClick={()=>setEditStage("qc")} color="#2563eb" small/>}
+      </div>
+      {qcHasResponded?<div style={{padding:"14px 16px",background:"#080d18"}}>
+        {[["Findings",live.qcResponse?.findings],["Action Taken",live.qcResponse?.action],["Responded By",live.qcResponse?.respondedBy],["Date",live.qcResponse?.responseDate]].filter(([,v])=>v).map(([l,v])=><div key={l} style={{marginBottom:"8px"}}>
+          <div style={{fontSize:"10px",fontWeight:"700",color:"#334155",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:"3px"}}>{l}</div>
+          <div style={{fontSize:"13px",color:"#94a3b8",whiteSpace:"pre-wrap"}}>{v}</div>
+        </div>)}
+      </div>:editStage==="qc"?<div style={{padding:"14px 16px",background:"#080d18"}}>
+        <Field label="Findings / Investigation"><textarea style={{...ta,minHeight:"80px"}} value={qcResp.findings} onChange={e=>setQcResp({...qcResp,findings:e.target.value})}/></Field>
+        <Field label="Action Taken / Recommendation"><textarea style={{...ta,minHeight:"80px"}} value={qcResp.action} onChange={e=>setQcResp({...qcResp,action:e.target.value})}/></Field>
+        <Grid2>
+          <Field label="Response Date"><input type="date" style={inp} value={qcResp.responseDate} onChange={e=>setQcResp({...qcResp,responseDate:e.target.value})}/></Field>
+          <Field label="Responded By"><input style={inp} value={qcResp.respondedBy} onChange={e=>setQcResp({...qcResp,respondedBy:e.target.value})}/></Field>
+        </Grid2>
+        <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
+          <Btn label="Cancel" onClick={()=>setEditStage(null)} outline color="#475569" small/>
+          <Btn label={saving?"Saving…":"Submit QC Response"} onClick={saveQC} disabled={saving} color="#22c55e" small/>
+        </div>
+      </div>:<div style={{padding:"12px 16px",background:"#080d18",fontSize:"12px",color:"#334155",fontStyle:"italic"}}>Awaiting QC investigation and response.</div>}
+    </div>
+
+    {/* Sales Response */}
+    {(qcHasResponded||(role==="admin"))&&<div style={{border:`1px solid ${live.salesResponse?"#166534":"#1e293b"}`,borderRadius:"10px",marginBottom:"12px",overflow:"hidden"}}>
+      <div style={{padding:"12px 16px",background:live.salesResponse?"#052e16":"#0b1220",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <span style={{fontSize:"13px",fontWeight:"700",color:live.salesResponse?"#22c55e":"#475569"}}>💼 Sales / Customer Response</span>
+        {canSales&&!live.salesResponse&&editStage!=="sales"&&qcHasResponded&&<Btn label="Add Response" onClick={()=>setEditStage("sales")} color="#a855f7" small/>}
+      </div>
+      {live.salesResponse?<div style={{padding:"14px 16px",background:"#080d18"}}>
+        {[["Customer Feedback",live.salesResponse?.feedback],["Resolved",live.salesResponse?.resolved],["Response Date",live.salesResponse?.responseDate],["By",live.salesResponse?.respondedBy]].filter(([,v])=>v).map(([l,v])=><div key={l} style={{marginBottom:"8px"}}>
+          <div style={{fontSize:"10px",fontWeight:"700",color:"#334155",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:"3px"}}>{l}</div>
+          <div style={{fontSize:"13px",color:"#94a3b8"}}>{v}</div>
+        </div>)}
+      </div>:editStage==="sales"?<div style={{padding:"14px 16px",background:"#080d18"}}>
+        <Field label="Customer Feedback"><textarea style={{...ta,minHeight:"80px"}} value={salesResp.feedback} onChange={e=>setSalesResp({...salesResp,feedback:e.target.value})}/></Field>
+        <Grid3>
+          <Field label="Is Resolved?"><select style={sl} value={salesResp.resolved} onChange={e=>setSalesResp({...salesResp,resolved:e.target.value})}><option>Yes</option><option>No — needs more action</option></select></Field>
+          <Field label="Response Date"><input type="date" style={inp} value={salesResp.responseDate} onChange={e=>setSalesResp({...salesResp,responseDate:e.target.value})}/></Field>
+          <Field label="Responded By"><input style={inp} value={salesResp.respondedBy} onChange={e=>setSalesResp({...salesResp,respondedBy:e.target.value})}/></Field>
+        </Grid3>
+        <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
+          <Btn label="Cancel" onClick={()=>setEditStage(null)} outline color="#475569" small/>
+          <Btn label={saving?"Saving…":"Submit Response"} onClick={saveSales} disabled={saving} color="#a855f7" small/>
+        </div>
+      </div>:<div style={{padding:"12px 16px",background:"#080d18",fontSize:"12px",color:"#334155",fontStyle:"italic"}}>Awaiting customer feedback from sales team.</div>}
+    </div>}
+
+    {/* Admin status override */}
+    {role==="admin"&&<div style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"8px",padding:"12px 14px"}}>
+      <div style={{fontSize:"11px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.09em",marginBottom:"8px"}}>🔑 Admin — Override Status</div>
+      <div style={{display:"flex",gap:"8px",alignItems:"center"}}>
+        <select style={{...sl,flex:1}} value={newStatus} onChange={e=>setNewStatus(e.target.value)}>{COMPLAINT_STATUS.map(s=><option key={s}>{s}</option>)}</select>
+        <Btn label={saving?"Saving…":"Update"} onClick={saveStatus} disabled={saving} color="#f59e0b" small/>
+      </div>
+    </div>}
+  </div>;
+}
+
+// ══════════════════════════════════════════════════════════
+// R&D MODULE
+// ══════════════════════════════════════════════════════════
+function IngredientTable({rows,onChange}){
+  const update=(i,f,v)=>onChange(rows.map((r,idx)=>idx===i?{...r,[f]:v}:r));
+  return <div>
+    <div style={{display:"grid",gridTemplateColumns:"2fr 80px 75px 2fr 24px",gap:"6px",marginBottom:"4px"}}>
+      {["Material / Ingredient","Qty","Unit","Notes",""].map((h,i)=><div key={i} style={{fontSize:"10px",fontWeight:"700",color:"#334155",textTransform:"uppercase",letterSpacing:"0.07em",padding:"0 2px"}}>{h}</div>)}
+    </div>
+    {rows.map((r,i)=><div key={r.id} style={{display:"grid",gridTemplateColumns:"2fr 80px 75px 2fr 24px",gap:"6px",marginBottom:"6px"}}>
+      <input style={sml} value={r.material} onChange={e=>update(i,"material",e.target.value)} placeholder="e.g. TiO2 R-902"/>
+      <input style={sml} value={r.quantity} onChange={e=>update(i,"quantity",e.target.value)} placeholder="100"/>
+      <select style={{...sml,padding:"6px 6px"}} value={r.unit} onChange={e=>update(i,"unit",e.target.value)}>{ING_UNITS.map(u=><option key={u}>{u}</option>)}</select>
+      <input style={sml} value={r.notes} onChange={e=>update(i,"notes",e.target.value)} placeholder="Optional"/>
+      <button onClick={()=>onChange(rows.filter((_,idx)=>idx!==i))} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"15px",padding:0,alignSelf:"center"}}>×</button>
+    </div>)}
+    <button onClick={()=>onChange([...rows,{id:newId(),material:"",quantity:"",unit:"g",notes:""}])} style={{marginTop:"6px",background:"none",border:"1px dashed #1e293b",borderRadius:"7px",padding:"7px 14px",color:"#475569",cursor:"pointer",fontSize:"12px",fontWeight:"600",width:"100%"}}>+ Add Ingredient Row</button>
+  </div>;
+}
+
+function TestReportCard({report,num,onDelete}){
+  const rc=REC_COLORS[report.recommendation]||"#94a3b8";
+  return <div style={{background:"#0b1220",border:"1px solid #1e293b",borderLeft:`3px solid ${rc}`,borderRadius:"8px",padding:"12px 14px",marginBottom:"8px"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"8px"}}>
+      <div style={{display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap"}}>
+        <span style={{fontSize:"11px",fontWeight:"700",color:"#475569",background:"#1e293b",padding:"2px 8px",borderRadius:"6px"}}>Report #{num}</span>
+        {report.date&&<span style={{fontSize:"11px",color:"#475569"}}>📅 {report.date}</span>}
+        {report.testedBy&&<span style={{fontSize:"11px",color:"#475569"}}>🔬 {report.testedBy}</span>}
+      </div>
+      <div style={{display:"flex",gap:"6px",alignItems:"center",flexShrink:0}}>
+        <Bdg label={report.recommendation} color={rc} small/>
+        <button onClick={()=>onDelete(report.id)} style={{background:"none",border:"none",color:"#334155",cursor:"pointer",fontSize:"13px"}}>🗑</button>
+      </div>
+    </div>
+    {[["Tests Performed",report.testsPerformed],["Results / Values",report.results],["Remarks",report.remarks]].map(([label,val])=>val&&<div key={label} style={{marginBottom:"6px"}}>
+      <div style={{fontSize:"10px",fontWeight:"700",color:"#334155",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:"3px"}}>{label}</div>
+      <div style={{fontSize:"12.5px",color:"#94a3b8",lineHeight:1.6,whiteSpace:"pre-wrap"}}>{val}</div>
+    </div>)}
+  </div>;
+}
+
+function TrialCard({trial,index,onDelete,onUpdate}){
+  const [open,setOpen]=useState(false);
+  const [showRF,setShowRF]=useState(false);
+  const [showOU,setShowOU]=useState(false);
+  const [newOutcome,setNewOutcome]=useState(trial.outcome);
+  const [saving,setSaving]=useState(false);
+  const blankR={date:today(),testedBy:"",testsPerformed:"",results:"",recommendation:"Pass",remarks:""};
+  const [rForm,setRForm]=useState(blankR);
+  const reports=trial.testReports||[];
+  const oc=OUTCOME_COLORS[trial.outcome]||"#94a3b8";
+  const isEval=trial.outcome==="Under Evaluation";
+
+  const addReport=async()=>{
+    if(!rForm.results.trim()&&!rForm.testsPerformed.trim())return;
+    setSaving(true);
+    const nr={...rForm,id:newId()};
+    await onUpdate({...trial,testReports:[...reports,nr]});
+    setRForm(blankR);setShowRF(false);
+    setNewOutcome(REC_TO_OUTCOME[nr.recommendation]||trial.outcome);
+    setShowOU(true);setSaving(false);
+  };
+
+  const applyOutcome=async()=>{
+    setSaving(true);
+    await onUpdate({...trial,outcome:newOutcome});
+    setShowOU(false);setSaving(false);
+  };
+
+  return <div style={{border:`1px solid ${isEval?"#7c3aed40":"#1e293b"}`,borderRadius:"12px",overflow:"hidden",marginBottom:"10px"}}>
+    <div onClick={()=>setOpen(o=>!o)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 18px",cursor:"pointer",background:open?"#0b1626":"#0b1220",transition:"background 0.15s"}}>
+      <div style={{display:"flex",alignItems:"center",gap:"12px"}}>
+        <div style={{background:"#1e293b",borderRadius:"8px",padding:"5px 10px",fontSize:"11px",fontWeight:"700",color:"#64748b",flexShrink:0}}>Trial {index+1}</div>
+        <div>
+          <div style={{fontSize:"13.5px",fontWeight:"600",color:"#e2e8f0"}}>{trial.trialName||`Trial ${index+1}`}</div>
+          <div style={{fontSize:"11px",color:"#475569",marginTop:"2px"}}>{trial.date}{trial.triedBy?` · ${trial.triedBy}`:""} · {trial.ingredients?.length||0} ingredients{reports.length>0?` · 📋 ${reports.length} report${reports.length!==1?"s":""}`:""}</div>
+        </div>
+      </div>
+      <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
+        {isEval&&<span style={{fontSize:"10px",fontWeight:"700",color:"#a855f7",background:"#a855f718",border:"1px solid #a855f730",padding:"2px 8px",borderRadius:"99px",whiteSpace:"nowrap"}}>⏳ Evaluating</span>}
+        <Bdg label={trial.outcome||"—"} color={oc}/>
+        {onDelete&&<button onClick={e=>{e.stopPropagation();onDelete(trial.id)}} style={{background:"none",border:"none",color:"#334155",fontSize:"14px",padding:"2px 4px"}}>🗑</button>}
+        <span style={{color:"#334155",fontSize:"12px"}}>{open?"▲":"▼"}</span>
+      </div>
+    </div>
+    {open&&<div style={{padding:"16px 18px 20px",borderTop:"1px solid #1e293b",background:"#080d18"}}>
+      {trial.ingredients?.length>0&&<div style={{marginBottom:"14px"}}>
+        <div style={{fontSize:"10px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.09em",marginBottom:"8px"}}>Formulation</div>
+        <div style={{border:"1px solid #1e293b",borderRadius:"8px",overflow:"hidden"}}>
+          <div style={{display:"grid",gridTemplateColumns:"2fr 80px 70px 2fr",background:"#0b1220",padding:"8px 14px",gap:"8px"}}>
+            {["Material","Qty","Unit","Notes"].map(h=><div key={h} style={{fontSize:"10px",fontWeight:"700",color:"#334155",textTransform:"uppercase",letterSpacing:"0.07em"}}>{h}</div>)}
+          </div>
+          {trial.ingredients.map((r,i)=><div key={r.id} style={{display:"grid",gridTemplateColumns:"2fr 80px 70px 2fr",padding:"8px 14px",gap:"8px",borderTop:"1px solid #0f1929",background:i%2===0?"transparent":"#0a1422"}}>
+            <div style={{fontSize:"13px",color:"#cbd5e1",fontWeight:"500"}}>{r.material||"—"}</div>
+            <div style={{fontSize:"13px",color:"#94a3b8"}}>{r.quantity||"—"}</div>
+            <div style={{fontSize:"13px",color:"#64748b"}}>{r.unit}</div>
+            <div style={{fontSize:"12px",color:"#475569",fontStyle:"italic"}}>{r.notes||""}</div>
+          </div>)}
+        </div>
+      </div>}
+      {[["Process / Mixing Method",trial.process],["Properties Tested",trial.propertiesTested],["Observations / Results",trial.observations],["Next Steps",trial.nextSteps]].map(([label,val])=>val&&<div key={label} style={{marginBottom:"12px"}}>
+        <div style={{fontSize:"10px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.09em",marginBottom:"5px"}}>{label}</div>
+        <div style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"7px",padding:"10px 13px",fontSize:"13px",color:"#94a3b8",lineHeight:1.65,whiteSpace:"pre-wrap"}}>{val}</div>
+      </div>)}
+      {/* Test Reports section */}
+      <div style={{marginTop:"16px",borderTop:"1px solid #1e293b",paddingTop:"16px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"12px"}}>
+          <span style={{fontSize:"11px",fontWeight:"700",color:isEval?"#a855f7":"#475569",textTransform:"uppercase",letterSpacing:"0.09em"}}>📋 Test Reports ({reports.length})</span>
+          <button onClick={()=>{setShowRF(v=>!v);setShowOU(false);}} style={{background:isEval?"#3b0764":"#1e293b",border:`1px solid ${isEval?"#7c3aed":"#334155"}`,borderRadius:"7px",padding:"5px 12px",color:isEval?"#c4b5fd":"#64748b",fontSize:"11.5px",fontWeight:"700",cursor:"pointer"}}>
+            {showRF?"▲ Cancel":"+ Add Test Report"}</button>
+        </div>
+        {reports.map((r,i)=><TestReportCard key={r.id} report={r} num={i+1} onDelete={async(id)=>await onUpdate({...trial,testReports:reports.filter(r=>r.id!==id)})}/>)}
+        {reports.length===0&&!showRF&&<div style={{textAlign:"center",padding:"12px",border:"1px dashed #1e293b",borderRadius:"8px",marginBottom:"8px"}}>
+          <div style={{fontSize:"12px",color:"#334155"}}>{isEval?"⏳ Add a test report to evaluate this trial.":"No test reports yet."}</div>
+        </div>}
+        {showRF&&<div style={{background:"#0a0f1e",border:"1px solid #7c3aed40",borderRadius:"10px",padding:"14px",marginBottom:"10px"}}>
+          <div style={{fontSize:"12px",fontWeight:"700",color:"#c4b5fd",marginBottom:"12px"}}>📋 New Test Report #{reports.length+1}</div>
+          <Grid3>
+            <Field label="Date"><input type="date" style={inp} value={rForm.date} onChange={e=>setRForm({...rForm,date:e.target.value})}/></Field>
+            <Field label="Tested By"><input style={inp} value={rForm.testedBy} onChange={e=>setRForm({...rForm,testedBy:e.target.value})}/></Field>
+            <Field label="Recommendation"><select style={{...sl,borderColor:(REC_COLORS[rForm.recommendation]||"#1e293b")+"60"}} value={rForm.recommendation} onChange={e=>setRForm({...rForm,recommendation:e.target.value})}>
+              {Object.keys(REC_COLORS).map(r=><option key={r}>{r}</option>)}</select></Field>
+          </Grid3>
+          <Grid2>
+            <Field label="Tests Performed"><textarea style={{...ta,minHeight:"70px"}} value={rForm.testsPerformed} onChange={e=>setRForm({...rForm,testsPerformed:e.target.value})} placeholder="Viscosity, pH, Gloss..."/></Field>
+            <Field label="Results / Values *"><textarea style={{...ta,minHeight:"70px"}} value={rForm.results} onChange={e=>setRForm({...rForm,results:e.target.value})} placeholder="Measured values, pass/fail vs spec..."/></Field>
+          </Grid2>
+          <Field label="Remarks"><textarea style={{...ta,minHeight:"50px"}} value={rForm.remarks} onChange={e=>setRForm({...rForm,remarks:e.target.value})}/></Field>
+          <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
+            <Btn label="Cancel" onClick={()=>setShowRF(false)} outline color="#475569" small/>
+            <Btn label={saving?"Saving…":"Save Report"} onClick={addReport} disabled={saving} color="#7c3aed" small/>
+          </div>
+        </div>}
+        {showOU&&<div style={{background:"#0c1a2e",border:"1px solid #2563eb60",borderRadius:"10px",padding:"14px",marginTop:"6px"}}>
+          <div style={{fontSize:"12px",fontWeight:"700",color:"#93c5fd",marginBottom:"6px"}}>🔄 Update Trial Outcome</div>
+          <div style={{fontSize:"12.5px",color:"#475569",marginBottom:"10px"}}>Suggested: <strong style={{color:OUTCOME_COLORS[newOutcome]||"#93c5fd"}}>{newOutcome}</strong></div>
+          <div style={{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap"}}>
+            <select style={{...sl,flex:1,minWidth:"180px"}} value={newOutcome} onChange={e=>setNewOutcome(e.target.value)}>{TRIAL_OUTCOMES.map(o=><option key={o}>{o}</option>)}</select>
+            <Btn label={saving?"Saving…":"✓ Update"} onClick={applyOutcome} disabled={saving} color="#2563eb" small/>
+            <Btn label="Keep as is" onClick={()=>setShowOU(false)} outline color="#475569" small/>
+          </div>
+        </div>}
+      </div>
+    </div>}
+  </div>;
+}
+
+function ProjectWorkspace({project,isAdmin,showToast}){
+  const [live,setLive]=useState(project);
+  const [showForm,setShowForm]=useState(false);
+  const [saving,setSaving]=useState(false);
+  const [editNotes,setEditNotes]=useState(false);
+  const [editObj,setEditObj]=useState(false);
+  const [draft,setDraft]=useState({objective:project.objective||"",formulationBase:project.formulationBase||"",notes:project.notes||""});
+  const [savingN,setSavingN]=useState(false);
+  const blank={trialName:"",date:today(),triedBy:"",outcome:"Under Evaluation",ingredients:[{id:"1",material:"",quantity:"",unit:"g",notes:""}],process:"",propertiesTested:"",observations:"",nextSteps:"",testReports:[]};
+  const [form,setForm]=useState(blank);
+  const accent=PAINT_ACCENT[live.paintType]||"#cbd5e1";
+  const sc=STATUS_COLORS[live.status]||"#94a3b8";
+  const trials=live.trials||[];
+
+  useEffect(()=>{
+    const unsub=C("rd_projects").doc(project.id).onSnapshot(snap=>{
+      if(snap.exists)setLive({id:snap.id,...snap.data()});
+    });
+    return unsub;
+  },[project.id]);
+
+  const saveNotes=async()=>{
+    setSavingN(true);
+    try{await C("rd_projects").doc(project.id).update({objective:draft.objective,formulationBase:draft.formulationBase,notes:draft.notes});setEditNotes(false);setEditObj(false);showToast("Updated ✓");}catch(e){showToast("Error","error");}
+    setSavingN(false);
+  };
+
+  const saveTrial=async()=>{
+    if(!form.observations.trim()&&!form.ingredients.some(r=>r.material.trim()))return showToast("Add ingredients or observations","error");
+    if(saving)return;setSaving(true);
+    try{await C("rd_projects").doc(project.id).update({trials:[...trials,{...form,id:newId()}]});setForm(blank);setShowForm(false);showToast("Trial saved ✓");}catch(e){showToast("Error","error");}
+    setSaving(false);
+  };
+
+  const deleteTrial=async(id)=>{
+    if(!isAdmin){showToast("Admin only","error");return;}
+    if(!confirm("Delete trial?"))return;
+    await C("rd_projects").doc(project.id).update({trials:trials.filter(t=>t.id!==id)});
+  };
+
+  const updateTrial=async(updated)=>{
+    await C("rd_projects").doc(project.id).update({trials:trials.map(t=>t.id===updated.id?updated:t)});
+  };
+
+  const approved=trials.find(t=>t.outcome==="Approved as Final");
+
+  return <div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"16px",gap:"8px"}}>
+      <div>
+        <div style={{fontSize:"22px",fontWeight:"400",fontFamily:"'DM Serif Display',serif",color:"#f1f5f9"}}>{live.projectName}</div>
+        <div style={{fontSize:"12px",color:"#64748b",marginTop:"3px"}}>#{live.projectCode} · Created {live.dateCreated}</div>
+      </div>
+      <div style={{display:"flex",gap:"8px",alignItems:"center"}}>
+        {!isAdmin&&<Bdg label="👁 View only" color="#475569" small/>}
+        <Bdg label={live.status} color={sc}/>
+      </div>
+    </div>
+    <div style={{display:"flex",gap:"8px",flexWrap:"wrap",marginBottom:"16px"}}>
+      {[["🎨",live.paintType,accent],["🏗",live.application||null,"#64748b"],["👤",live.assignedTo||null,"#64748b"],["🗓",live.targetDate||null,"#64748b"]].map(([icon,val,color])=>val&&<span key={icon} style={{fontSize:"12px",background:"#0b1220",border:"1px solid #1e293b",borderRadius:"8px",padding:"5px 12px",color}}>{icon} {val}</span>)}
+    </div>
+    {/* Objective */}
+    <div style={{background:"#0b1220",border:"1px solid #1e293b",borderLeft:`3px solid ${accent}`,borderRadius:"8px",padding:"12px 14px",marginBottom:"14px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"4px"}}>
+        <span style={{fontSize:"10px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.09em"}}>Objective</span>
+        {isAdmin&&!editObj&&<button onClick={()=>{setEditObj(true);setDraft(d=>({...d,objective:live.objective||""}))}} style={{background:"none",border:"1px solid #1e293b",borderRadius:"6px",padding:"3px 10px",color:"#475569",fontSize:"11px",cursor:"pointer"}}>✏️ Edit</button>}
+      </div>
+      {editObj?<div><textarea style={{...ta,minHeight:"70px",marginBottom:"8px"}} value={draft.objective} onChange={e=>setDraft(d=>({...d,objective:e.target.value}))}/>
+        <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
+          <Btn label="Cancel" onClick={()=>setEditObj(false)} outline color="#475569" small/>
+          <Btn label={savingN?"Saving…":"Save"} onClick={saveNotes} disabled={savingN} color="#3b82f6" small/>
+        </div>
+      </div>:<div style={{fontSize:"13.5px",color:"#94a3b8",lineHeight:1.6,whiteSpace:"pre-wrap"}}>{live.objective||<span style={{color:"#334155",fontStyle:"italic"}}>No objective set.{isAdmin?" Click Edit to add.":""}</span>}</div>}
+    </div>
+    {approved&&<div style={{background:"#052e16",border:"1px solid #166534",borderRadius:"10px",padding:"12px 16px",marginBottom:"16px",display:"flex",alignItems:"center",gap:"10px"}}>
+      <span style={{fontSize:"18px"}}>✅</span>
+      <div><div style={{fontSize:"12px",fontWeight:"700",color:"#22c55e"}}>Approved Final Formulation</div>
+      <div style={{fontSize:"12px",color:"#16a34a"}}>{approved.trialName||"A trial"} approved.</div></div>
+    </div>}
+    <SectionHead title={`Formulation Trials (${trials.length})`} action={
+      <button onClick={()=>setShowForm(v=>!v)} style={{background:"#1e3a5f",border:"1px solid #2563eb",borderRadius:"8px",padding:"6px 14px",color:"#93c5fd",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>
+        {showForm?"▲ Cancel":"+ Log New Trial"}</button>}/>
+    {showForm&&<div style={{border:"1px solid #2563eb",borderRadius:"12px",padding:"20px",background:"#060d1a",marginBottom:"14px"}}>
+      <div style={{fontSize:"13px",fontWeight:"700",color:"#93c5fd",marginBottom:"14px"}}>⚗️ Trial #{trials.length+1}</div>
+      <Grid4>
+        <Field label="Trial Name"><input style={inp} value={form.trialName} onChange={e=>setForm({...form,trialName:e.target.value})} placeholder="e.g. Low-VOC batch v1"/></Field>
+        <Field label="Date"><input type="date" style={inp} value={form.date} onChange={e=>setForm({...form,date:e.target.value})}/></Field>
+        <Field label="Tried By"><input style={inp} value={form.triedBy} onChange={e=>setForm({...form,triedBy:e.target.value})}/></Field>
+        <Field label="Outcome"><select style={sl} value={form.outcome} onChange={e=>setForm({...form,outcome:e.target.value})}>{TRIAL_OUTCOMES.map(o=><option key={o}>{o}</option>)}</select></Field>
+      </Grid4>
+      <Field label="Formulation — Ingredients"><IngredientTable rows={form.ingredients} onChange={rows=>setForm({...form,ingredients:rows})}/></Field>
+      <Grid2>
+        <Field label="Process / Mixing Method"><textarea style={{...ta,minHeight:"70px"}} value={form.process} onChange={e=>setForm({...form,process:e.target.value})} placeholder="Mixing sequence, temperature, RPM..."/></Field>
+        <Field label="Properties Tested"><textarea style={{...ta,minHeight:"70px"}} value={form.propertiesTested} onChange={e=>setForm({...form,propertiesTested:e.target.value})} placeholder="Viscosity, pH, Gloss..."/></Field>
+      </Grid2>
+      <Field label="Observations *"><textarea style={{...ta,minHeight:"70px"}} value={form.observations} onChange={e=>setForm({...form,observations:e.target.value})} placeholder="What happened? Values, appearance, issues..."/></Field>
+      <Field label="Next Steps"><textarea style={{...ta,minHeight:"50px"}} value={form.nextSteps} onChange={e=>setForm({...form,nextSteps:e.target.value})}/></Field>
+      <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
+        <Btn label="Cancel" onClick={()=>setShowForm(false)} outline color="#475569" small/>
+        <Btn label={saving?"Saving…":"Save Trial"} onClick={saveTrial} disabled={saving} color="#2563eb" small/>
+      </div>
+    </div>}
+    {trials.length===0&&!showForm?<div style={{textAlign:"center",padding:"24px",border:"1px dashed #1e293b",borderRadius:"10px",marginBottom:"14px"}}>
+      <div style={{fontSize:"26px",marginBottom:"6px"}}>⚗️</div>
+      <div style={{fontSize:"13px",color:"#475569"}}>No trials yet.</div>
+    </div>:trials.map((t,i)=><TrialCard key={t.id} trial={t} index={i} onDelete={isAdmin?deleteTrial:null} onUpdate={updateTrial}/>)}
+    {/* Notes section */}
+    <div style={{marginTop:"20px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"10px",paddingBottom:"10px",borderBottom:"1px solid #1e293b"}}>
+        <span style={{fontSize:"12px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.1em"}}>Formulation Base & Notes</span>
+        {isAdmin&&!editNotes&&<button onClick={()=>{setEditNotes(true);setDraft(d=>({...d,formulationBase:live.formulationBase||"",notes:live.notes||""}))}} style={{background:"none",border:"1px solid #1e293b",borderRadius:"6px",padding:"3px 10px",color:"#475569",fontSize:"11px",cursor:"pointer"}}>✏️ Edit</button>}
+      </div>
+      {editNotes?<div>
+        <Field label="Formulation Base"><textarea style={ta} value={draft.formulationBase} onChange={e=>setDraft(d=>({...d,formulationBase:e.target.value}))}/></Field>
+        <Field label="Notes"><textarea style={{...ta,minHeight:"56px"}} value={draft.notes} onChange={e=>setDraft(d=>({...d,notes:e.target.value}))}/></Field>
+        <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",marginBottom:"10px"}}>
+          <Btn label="Cancel" onClick={()=>setEditNotes(false)} outline color="#475569" small/>
+          <Btn label={savingN?"Saving…":"Save Changes"} onClick={saveNotes} disabled={savingN} color="#3b82f6" small/>
+        </div>
+      </div>:<>
+        {[["Formulation Base",live.formulationBase],["Notes",live.notes]].map(([label,val])=><div key={label} style={{marginBottom:"10px"}}>
+          <div style={{fontSize:"10px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.09em",marginBottom:"4px"}}>{label}</div>
+          <div style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"7px",padding:"10px 13px",fontSize:"13px",color:val?"#94a3b8":"#334155",lineHeight:1.65,whiteSpace:"pre-wrap",fontStyle:val?"normal":"italic"}}>
+            {val||(isAdmin?`No ${label.toLowerCase()} yet. Click Edit above.`:`No ${label.toLowerCase()} added yet.`)}
+          </div>
+        </div>)}
+      </>}
+    </div>
+  </div>;
+}
+
+function ProjectCard({p,onClick,onDelete,onEdit,isAdmin}){
+  const accent=PAINT_ACCENT[p.paintType]||"#cbd5e1";
+  const sc=STATUS_COLORS[p.status]||"#94a3b8";
+  const tc=(p.trials||[]).length;
+  const hasFinal=(p.trials||[]).some(t=>t.outcome==="Approved as Final");
+  return <div onClick={onClick} onMouseEnter={e=>e.currentTarget.style.background="#0f1f35"} onMouseLeave={e=>e.currentTarget.style.background="#0f172a"}
+    style={{background:"#0f172a",border:"1px solid #1e293b",borderLeft:`3px solid ${accent}`,borderRadius:"12px",padding:"15px 20px",cursor:"pointer",transition:"background 0.15s",boxShadow:"0 2px 10px rgba(0,0,0,0.3)",marginBottom:"10px"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:"8px"}}>
+      <div style={{flex:1}}>
+        <div style={{fontSize:"14px",fontWeight:"700",color:"#f1f5f9",marginBottom:"3px",fontFamily:"'DM Serif Display',serif"}}>{p.projectName}</div>
+        <div style={{fontSize:"11.5px",color:"#64748b",marginBottom:"6px"}}>#{p.projectCode} · {p.paintType} · {p.application||"—"}</div>
+      </div>
+      <div style={{display:"flex",gap:"6px",alignItems:"center",flexShrink:0}}>
+        <Bdg label={p.status} color={sc}/>
+        {isAdmin&&<button onClick={e=>{e.stopPropagation();onEdit(p)}} style={{background:"none",border:"1px solid #1e293b",borderRadius:"6px",color:"#475569",fontSize:"12px",padding:"2px 8px",cursor:"pointer"}}>✏️</button>}
+        {isAdmin&&<button onClick={e=>{e.stopPropagation();onDelete(p.id)}} style={{background:"none",border:"none",color:"#334155",fontSize:"15px",padding:"2px 4px",cursor:"pointer"}}>🗑</button>}
+      </div>
+    </div>
+    <div style={{display:"flex",gap:"10px",flexWrap:"wrap",alignItems:"center"}}>
+      <span style={{fontSize:"11px",background:"#0b1220",border:"1px solid #1e293b",borderRadius:"6px",padding:"2px 9px",color:tc>0?"#93c5fd":"#334155"}}>
+        ⚗️ {tc} Trial{tc!==1?"s":""}{hasFinal&&<span style={{color:"#22c55e",marginLeft:"5px"}}>✓ Final</span>}
+      </span>
+      {p.assignedTo&&<span style={{fontSize:"11px",color:"#475569"}}>👤 {p.assignedTo}</span>}
+    </div>
+  </div>;
+}
+
+// ══ RM MODULE
+function RMCard({r,onClick,onDelete,onEdit,isAdmin}){
+  const rc=RESULT_COLORS[r.testResult]||"#94a3b8";
+  const retestCount=(r.retests||[]).length;
+  return <div onClick={onClick} onMouseEnter={e=>e.currentTarget.style.background="#0f1f35"} onMouseLeave={e=>e.currentTarget.style.background="#0f172a"}
+    style={{background:"#0f172a",border:"1px solid #1e293b",borderLeft:`3px solid ${rc}`,borderRadius:"12px",padding:"15px 20px",cursor:"pointer",transition:"background 0.15s",boxShadow:"0 2px 10px rgba(0,0,0,0.3)",marginBottom:"10px"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:"8px"}}>
+      <div style={{flex:1}}>
+        <div style={{fontSize:"14px",fontWeight:"700",color:"#f1f5f9",marginBottom:"3px",fontFamily:"'DM Serif Display',serif"}}>{r.materialName}</div>
+        <div style={{fontSize:"11.5px",color:"#64748b",marginBottom:"6px"}}>{r.vendorName} · {r.category} · Batch: {r.batchNo||"—"}</div>
+      </div>
+      <div style={{display:"flex",gap:"6px",alignItems:"center",flexShrink:0}}>
+        {r.testResult==="Retest Required"&&<Bdg label="⚠️ Retest" color="#f97316" small/>}
+        <Bdg label={r.testResult} color={rc}/>
+        {isAdmin&&<button onClick={e=>{e.stopPropagation();onEdit(r)}} style={{background:"none",border:"1px solid #1e293b",borderRadius:"6px",color:"#475569",fontSize:"12px",padding:"2px 8px",cursor:"pointer"}}>✏️</button>}
+        {isAdmin&&<button onClick={e=>{e.stopPropagation();onDelete(r.id)}} style={{background:"none",border:"none",color:"#334155",fontSize:"15px",padding:"2px 4px",cursor:"pointer"}}>🗑</button>}
+      </div>
+    </div>
+    <div style={{display:"flex",gap:"10px",flexWrap:"wrap",alignItems:"center"}}>
+      {r.dateReceived&&<span style={{fontSize:"11px",color:"#475569"}}>📦 {r.dateReceived}</span>}
+      {r.testedBy&&<span style={{fontSize:"11px",color:"#475569"}}>🔬 {r.testedBy}</span>}
+      {retestCount>0&&<span style={{fontSize:"11px",color:"#f97316",background:"#f9731612",border:"1px solid #f9731625",borderRadius:"6px",padding:"2px 8px"}}>🔄 {retestCount} retest{retestCount!==1?"s":""}</span>}
+    </div>
+  </div>;
+}
+
+function RMDetailView({entry,showToast}){
+  const [live,setLive]=useState(entry);
+  const [showForm,setShowForm]=useState(false);
+  const [saving,setSaving]=useState(false);
+  const [showOU,setShowOU]=useState(false);
+  const [newResult,setNewResult]=useState(entry.testResult);
+  const blank={date:today(),testedBy:"",testsPerformed:"",results:"",newResult:"Pass",remarks:""};
+  const [retestForm,setRetestForm]=useState(blank);
+
+  useEffect(()=>{
+    const unsub=C("rm_tests").doc(entry.id).onSnapshot(snap=>{
+      if(snap.exists)setLive({id:snap.id,...snap.data()});
+    });
+    return unsub;
+  },[entry.id]);
+
+  const retests=live.retests||[];
+  const rc=RESULT_COLORS[live.testResult]||"#94a3b8";
+  const isRetest=live.testResult==="Retest Required";
+
+  const saveRetest=async()=>{
+    if(!retestForm.results.trim()&&!retestForm.testsPerformed.trim())return showToast("Add results or tests performed","error");
+    if(saving)return;setSaving(true);
+    try{
+      const nr={...retestForm,id:newId()};
+      await C("rm_tests").doc(entry.id).update({retests:[...retests,nr]});
+      setRetestForm(blank);setShowForm(false);
+      setNewResult(nr.newResult);setShowOU(true);showToast("Retest saved ✓");
+    }catch(e){showToast("Error","error");}
+    setSaving(false);
+  };
+
+  const applyResult=async()=>{
+    setSaving(true);
+    try{await C("rm_tests").doc(entry.id).update({testResult:newResult});setShowOU(false);showToast("Status updated ✓");}catch(e){showToast("Error","error");}
+    setSaving(false);
+  };
+
+  return <div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"14px",gap:"8px"}}>
+      <div>
+        <div style={{fontSize:"20px",fontWeight:"400",fontFamily:"'DM Serif Display',serif",color:"#f1f5f9"}}>{live.materialName}</div>
+        <div style={{fontSize:"12px",color:"#64748b"}}>{live.vendorName} · {live.category}</div>
+      </div>
+      <div style={{display:"flex",gap:"8px",alignItems:"center",flexShrink:0}}>
+        {retests.length>0&&<Bdg label={`🔄 ${retests.length} Retest${retests.length!==1?"s":""}`} color="#f97316" small/>}
+        <Bdg label={live.testResult} color={rc}/>
+      </div>
+    </div>
+    {isRetest&&<div style={{background:"#431407",border:"1px solid #ea580c50",borderRadius:"10px",padding:"10px 14px",marginBottom:"12px",display:"flex",alignItems:"center",gap:"8px"}}>
+      <span>⚠️</span><div><div style={{fontSize:"12px",fontWeight:"700",color:"#f97316"}}>Retest Required</div><div style={{fontSize:"11.5px",color:"#c2410c"}}>This sample needs retesting.</div></div>
+    </div>}
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginBottom:"12px"}}>
+      {[["Batch No",live.batchNo],["Lot No",live.lotNo],["Quantity",live.quantityReceived],["Date Received",live.dateReceived],["Tested By",live.testedBy]].map(([l,v])=>v&&<div key={l} style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"7px",padding:"8px 12px"}}>
+        <div style={{fontSize:"10px",color:"#475569",fontWeight:"600",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:"2px"}}>{l}</div>
+        <div style={{fontSize:"13px",color:"#94a3b8",fontWeight:"600"}}>{v}</div>
+      </div>)}
+    </div>
+    <div style={{border:"1px solid #1e293b",borderRadius:"10px",marginBottom:"12px",overflow:"hidden"}}>
+      <div style={{background:"#0b1220",padding:"9px 14px",fontSize:"11px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.09em",borderBottom:"1px solid #1e293b"}}>🧫 Original Test</div>
+      <div style={{padding:"12px 14px"}}>
+        {[["Tests Performed",live.testsPerformed],["Observations / Results",live.observations],["Remarks",live.remarks]].map(([l,v])=>v&&<div key={l} style={{marginBottom:"8px"}}>
+          <div style={{fontSize:"10px",fontWeight:"700",color:"#334155",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:"3px"}}>{l}</div>
+          <div style={{fontSize:"13px",color:"#94a3b8",lineHeight:1.6,whiteSpace:"pre-wrap"}}>{v}</div>
+        </div>)}
+      </div>
+    </div>
+    {/* Retests */}
+    <div style={{borderTop:"1px solid #1e293b",paddingTop:"14px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"10px"}}>
+        <span style={{fontSize:"11px",fontWeight:"700",color:isRetest?"#f97316":"#475569",textTransform:"uppercase",letterSpacing:"0.09em"}}>🔄 Retest History ({retests.length})</span>
+        <button onClick={()=>{setShowForm(v=>!v);setShowOU(false);}} style={{background:isRetest?"#431407":"#1e293b",border:`1px solid ${isRetest?"#ea580c":"#334155"}`,borderRadius:"7px",padding:"5px 12px",color:isRetest?"#fb923c":"#64748b",fontSize:"11.5px",fontWeight:"700",cursor:"pointer"}}>
+          {showForm?"▲ Cancel":"+ Add Retest"}</button>
+      </div>
+      {retests.length===0&&!showForm&&<div style={{textAlign:"center",padding:"12px",border:"1px dashed #1e293b",borderRadius:"8px",marginBottom:"8px"}}>
+        <div style={{fontSize:"12px",color:"#334155"}}>{isRetest?"⏳ Awaiting retest.":"No retests."}</div>
+      </div>}
+      {retests.map((r,i)=>{
+        const rrc=RESULT_COLORS[r.newResult]||"#94a3b8";
+        return <div key={r.id} style={{display:"flex",gap:"10px",marginBottom:"10px"}}>
+          <div style={{display:"flex",flexDirection:"column",alignItems:"center",flexShrink:0}}>
+            <div style={{width:"26px",height:"26px",borderRadius:"50%",background:`${rrc}20`,border:`2px solid ${rrc}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"11px",fontWeight:"700",color:rrc}}>{i+1}</div>
+            {i<retests.length-1&&<div style={{width:"2px",flex:1,background:"#1e293b",marginTop:"4px"}}/>}
+          </div>
+          <div style={{flex:1,background:"#0b1220",border:"1px solid #1e293b",borderLeft:`3px solid ${rrc}`,borderRadius:"8px",padding:"10px 12px",marginBottom:"4px"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"6px"}}>
+              <div style={{display:"flex",gap:"6px",flexWrap:"wrap",alignItems:"center"}}>
+                <span style={{fontSize:"11px",fontWeight:"700",color:"#475569",background:"#1e293b",padding:"2px 8px",borderRadius:"6px"}}>Retest #{i+1}</span>
+                {r.date&&<span style={{fontSize:"11px",color:"#475569"}}>📅 {r.date}</span>}
+                {r.testedBy&&<span style={{fontSize:"11px",color:"#475569"}}>🔬 {r.testedBy}</span>}
+              </div>
+              <div style={{display:"flex",gap:"5px",alignItems:"center",flexShrink:0}}>
+                <Bdg label={r.newResult} color={rrc} small/>
+                <button onClick={async()=>{if(confirm("Delete?"))await C("rm_tests").doc(entry.id).update({retests:retests.filter(x=>x.id!==r.id)});}} style={{background:"none",border:"none",color:"#334155",cursor:"pointer",fontSize:"12px"}}>🗑</button>
+              </div>
+            </div>
+            {[["Tests",r.testsPerformed],["Results",r.results],["Remarks",r.remarks]].map(([l,v])=>v&&<div key={l} style={{marginBottom:"4px"}}>
+              <div style={{fontSize:"10px",fontWeight:"700",color:"#334155",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:"2px"}}>{l}</div>
+              <div style={{fontSize:"12.5px",color:"#94a3b8",whiteSpace:"pre-wrap"}}>{v}</div>
+            </div>)}
+          </div>
+        </div>;
+      })}
+      {showForm&&<div style={{background:"#0a0f1e",border:"1px solid #ea580c40",borderRadius:"10px",padding:"14px",marginBottom:"10px"}}>
+        <div style={{fontSize:"12px",fontWeight:"700",color:"#fb923c",marginBottom:"12px"}}>🔄 Retest #{retests.length+1}</div>
+        <Grid3>
+          <Field label="Date"><input type="date" style={inp} value={retestForm.date} onChange={e=>setRetestForm({...retestForm,date:e.target.value})}/></Field>
+          <Field label="Tested By"><input style={inp} value={retestForm.testedBy} onChange={e=>setRetestForm({...retestForm,testedBy:e.target.value})}/></Field>
+          <Field label="Result"><select style={{...sl,borderColor:(RESULT_COLORS[retestForm.newResult]||"#1e293b")+"60"}} value={retestForm.newResult} onChange={e=>setRetestForm({...retestForm,newResult:e.target.value})}>{TEST_RESULTS.map(r=><option key={r}>{r}</option>)}</select></Field>
+        </Grid3>
+        <Grid2>
+          <Field label="Tests Performed"><textarea style={{...ta,minHeight:"70px"}} value={retestForm.testsPerformed} onChange={e=>setRetestForm({...retestForm,testsPerformed:e.target.value})}/></Field>
+          <Field label="Results / Values *"><textarea style={{...ta,minHeight:"70px"}} value={retestForm.results} onChange={e=>setRetestForm({...retestForm,results:e.target.value})}/></Field>
+        </Grid2>
+        <Field label="Remarks"><textarea style={{...ta,minHeight:"50px"}} value={retestForm.remarks} onChange={e=>setRetestForm({...retestForm,remarks:e.target.value})}/></Field>
+        <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
+          <Btn label="Cancel" onClick={()=>setShowForm(false)} outline color="#475569" small/>
+          <Btn label={saving?"Saving…":"Save Retest"} onClick={saveRetest} disabled={saving} color="#ea580c" small/>
+        </div>
+      </div>}
+      {showOU&&<div style={{background:"#0c1a2e",border:"1px solid #2563eb60",borderRadius:"10px",padding:"12px 14px",marginTop:"6px"}}>
+        <div style={{fontSize:"12px",fontWeight:"700",color:"#93c5fd",marginBottom:"6px"}}>🔄 Update Overall Status</div>
+        <div style={{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap"}}>
+          <select style={{...sl,flex:1,minWidth:"170px"}} value={newResult} onChange={e=>setNewResult(e.target.value)}>{TEST_RESULTS.map(r=><option key={r}>{r}</option>)}</select>
+          <Btn label={saving?"Saving…":"✓ Update"} onClick={applyResult} disabled={saving} color="#2563eb" small/>
+          <Btn label="Keep as is" onClick={()=>setShowOU(false)} outline color="#475569" small/>
+        </div>
+      </div>}
+    </div>
+  </div>;
+}
+
+// ══════════════════════════════════════════════════════════
+// DASHBOARD TAB
+// ══════════════════════════════════════════════════════════
+function DashboardTab({role}){
+  const [counts,setCounts]=useState({batches:0,activeBatches:0,openComplaints:0,rdProjects:0,rmTests:0,qcPending:0});
+  useEffect(()=>{
+    Promise.all([
+      C("batches").get(),
+      C("batches").where("status","in",["Issued","In Production","QC Pending","QC Pass","Packed"]).get(),
+      C("batches").where("status","==","QC Pending").get(),
+      C("complaints").where("status","in",["Open","Under Review"]).get(),
+      C("rd_projects").get(),
+      C("rm_tests").get()
+    ]).then(([b,ab,qc,oc,rd,rm])=>setCounts({batches:b.size,activeBatches:ab.size,qcPending:qc.size,openComplaints:oc.size,rdProjects:rd.size,rmTests:rm.size}));
+  },[]);
+
+  const tiles=[
+    {label:"Active Batches",val:counts.activeBatches,color:"#3b82f6",icon:"📦",roles:["admin","issuer","qc"]},
+    {label:"QC Pending",val:counts.qcPending,color:"#a855f7",icon:"🔬",roles:["admin","qc"]},
+    {label:"Open Complaints",val:counts.openComplaints,color:"#ef4444",icon:"⚠️",roles:["admin","issuer","qc","sales"]},
+    {label:"R&D Projects",val:counts.rdProjects,color:"#22c55e",icon:"🧪",roles:["admin","qc"]},
+    {label:"RM Tests",val:counts.rmTests,color:"#f59e0b",icon:"🧫",roles:["admin","qc"]},
+    {label:"Total Batches",val:counts.batches,color:"#64748b",icon:"📋",roles:["admin","issuer"]},
+  ].filter(t=>t.roles.includes(role));
+
+  return <div>
+    <div style={{marginBottom:"24px"}}>
+      <div style={{fontSize:"11px",fontWeight:"700",color:"#3b82f6",letterSpacing:"0.15em",textTransform:"uppercase",marginBottom:"4px"}}>Welcome back</div>
+      <h2 style={{fontSize:"22px",fontWeight:"400",fontFamily:"'DM Serif Display',serif",color:"#f1f5f9"}}>Operations <span style={{fontStyle:"italic",color:"#3b82f6"}}>Overview</span></h2>
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:"12px"}}>
+      {tiles.map(t=><div key={t.label} style={{background:"#0f172a",border:`1px solid #1e293b`,borderTop:`3px solid ${t.color}`,borderRadius:"12px",padding:"16px 18px",boxShadow:"0 2px 10px rgba(0,0,0,0.3)"}}>
+        <div style={{fontSize:"24px",marginBottom:"8px"}}>{t.icon}</div>
+        <div style={{fontSize:"28px",fontWeight:"700",color:t.color,marginBottom:"4px"}}>{t.val}</div>
+        <div style={{fontSize:"12px",color:"#475569",fontWeight:"600"}}>{t.label}</div>
+      </div>)}
+    </div>
+    <div style={{marginTop:"20px",background:"#0f172a",border:"1px solid #1e293b",borderRadius:"12px",padding:"16px 18px"}}>
+      <div style={{fontSize:"12px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:"10px"}}>Your Access Level</div>
+      <div style={{display:"flex",gap:"10px",flexWrap:"wrap"}}>
+        {[
+          {r:"admin",desc:"Full access: Create, view, edit, delete all modules. Manage user roles."},
+          {r:"issuer",desc:"Issue & track batches. View complaints."},
+          {r:"qc",desc:"Enter production, QC, packing details. Full R&D & RM test access. Respond to complaints."},
+          {r:"sales",desc:"Add complaints. View and respond after QC has investigated."},
+        ].filter(x=>x.r===role).map(x=><div key={x.r} style={{background:`${ROLE_COLORS[x.r]}12`,border:`1px solid ${ROLE_COLORS[x.r]}30`,borderRadius:"8px",padding:"10px 14px",flex:1}}>
+          <div style={{fontSize:"12px",fontWeight:"700",color:ROLE_COLORS[x.r],marginBottom:"4px"}}>{ROLE_LABELS[x.r]}</div>
+          <div style={{fontSize:"12.5px",color:"#64748b",lineHeight:1.5}}>{x.desc}</div>
+        </div>)}
+      </div>
+    </div>
+  </div>;
+}
+
+// ══════════════════════════════════════════════════════════
+// USERS TAB (Admin only)
+// ══════════════════════════════════════════════════════════
+function UsersTab({currentUser}){
+  const [profiles,setProfiles]=useState({});  // uid/email -> {email, displayName}
+  const [roles,setRoles]=useState({});         // email -> role
+  const [editingRole,setEditingRole]=useState(null);
+  const [editRoleVal,setEditRoleVal]=useState("");
+  const [saving,setSaving]=useState(null);
+  const [localToast,setLocalToast]=useState(null);
+  const showLT=(msg,type="success")=>{setLocalToast({msg,type});setTimeout(()=>setLocalToast(null),3000);};
+
+  const [createEmail,setCreateEmail]=useState("");
+  const [createPassword,setCreatePassword]=useState("");
+  const [createName,setCreateName]=useState("");
+  const [createRole,setCreateRole]=useState("sales");
+  const [creating,setCreating]=useState(false);
+  const [createError,setCreateError]=useState("");
+  const [createSuccess,setCreateSuccess]=useState("");
+  const [editPassEmail,setEditPassEmail]=useState(null);
+  const [savingPass,setSavingPass]=useState(false);
+
+  useEffect(()=>{
+    // Load profiles
+    const unsub1=C("userProfiles").onSnapshot(snap=>{
+      const p={};
+      snap.docs.forEach(d=>{const dat=d.data();if(dat.email)p[dat.email]={...dat,uid:d.id};});
+      setProfiles(p);
+    });
+    // Load roles — this is the source of truth for all users
+    const unsub2=C("roles").onSnapshot(snap=>{
+      const r={};snap.docs.forEach(d=>r[d.id]=d.data().role);setRoles(r);
+    });
+    return()=>{unsub1();unsub2();};
+  },[]);
+
+  const createUser=async()=>{
+    const isAdminRole=createRole==="admin";
+    const DOMAIN="@gcc-hub.app";
+    if(!createName.trim()&&!isAdminRole)return setCreateError("Name / Username is required.");
+    if(!createPassword.trim())return setCreateError("Password is required.");
+    if(createPassword.length<6)return setCreateError("Password must be at least 6 characters.");
+    if(isAdminRole&&!createEmail.trim())return setCreateError("Admin accounts require a real email address (for password reset).");
+    let finalEmail=createEmail.trim();
+    if(!finalEmail){
+      const username=createName.trim().toLowerCase().replace(/\s+/g,".").replace(/[^a-z0-9._]/g,"");
+      finalEmail=username+DOMAIN;
+    }
+    setCreating(true);setCreateError("");setCreateSuccess("");
+    try{
+      const res=await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${window._firebaseConfig.apiKey}`,{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({email:finalEmail,password:createPassword,returnSecureToken:false})
+      });
+      const data=await res.json();
+      if(data.error)throw new Error(data.error.message);
+      await C("roles").doc(finalEmail).set({role:createRole,assignedBy:currentUser.email,assignedAt:ts()},{merge:true});
+      if(createName.trim()){
+        await C("userProfiles").doc(data.localId||finalEmail).set({
+          email:finalEmail,displayName:createName.trim(),
+          isUsernameAccount:!createEmail.trim(),
+          createdBy:currentUser.email,createdAt:ts()
+        },{merge:true});
+      }
+      const loginInfo=createEmail.trim()?`Email: ${finalEmail}`:`Login email (auto): ${finalEmail}`;
+      setCreateSuccess(`✅ Created: ${createName.trim()||finalEmail} — ${ROLE_LABELS[createRole]} | ${loginInfo}`);
+      setCreateEmail("");setCreatePassword("");setCreateName("");setCreateRole("sales");
+    }catch(e){
+      const m=e.message;
+      setCreateError(m==="EMAIL_EXISTS"?"This username/email already exists."
+        :m.includes("WEAK_PASSWORD")?"Password must be 6+ characters.":m||"Error creating user.");
+    }
+    setCreating(false);
+  };
+
+  const saveRoleEdit=async(email)=>{
+    setSaving(email);
+    try{
+      await C("roles").doc(email).set({role:editRoleVal,assignedBy:currentUser.email,assignedAt:ts()},{merge:true});
+      setEditingRole(null);showLT(`Role updated to ${ROLE_LABELS[editRoleVal]} ✓`);
+    }catch(e){showLT("Error updating role","error");}
+    setSaving(null);
+  };
+
+  const removeAccess=async(email)=>{
+    if(!confirm(`Remove ${email}'s access? They will see "Access Pending" until re-assigned.`))return;
+    try{await C("roles").doc(email).delete();showLT("Access removed ✓");}
+    catch(e){showLT("Error","error");}
+  };
+
+  const sendReset=async(email)=>{
+    setSavingPass(true);
+    try{await auth.sendPasswordResetEmail(email);showLT(`Reset email sent to ${email} ✓`);setEditPassEmail(null);}
+    catch(e){showLT("Error: "+e.message,"error");}
+    setSavingPass(false);
+  };
+
+  // Merge roles + profiles into single list — roles is the master list
+  const allEmails=[...new Set([...Object.keys(roles),...Object.keys(profiles)])].filter(Boolean).sort();
+
+  return <div>
+    <SectionHead title="User Management"/>
+
+    {/* CREATE */}
+    <div style={{background:"#0a1628",border:"1px solid #1e3a5f",borderRadius:"12px",padding:"18px",marginBottom:"20px"}}>
+      <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"10px"}}>
+        <span style={{fontSize:"16px"}}>➕</span>
+        <span style={{fontSize:"13px",fontWeight:"700",color:"#93c5fd",textTransform:"uppercase",letterSpacing:"0.09em"}}>Create New User Account</span>
+      </div>
+      {/* Role selector first so form adapts */}
+      <Grid2>
+        <Field label="Role *">
+          <select style={sl} value={createRole} onChange={e=>setCreateRole(e.target.value)}>
+            {["admin","issuer","qc","sales"].map(r=><option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+          </select>
+        </Field>
+        <Field label={createRole==="admin"?"Full Name (optional)":"Full Name / Username *"}>
+          <input style={inp} value={createName} onChange={e=>setCreateName(e.target.value)}
+            placeholder={createRole==="admin"?"e.g. Vijay Dagli":"e.g. Ramesh (used as login)"}/>
+        </Field>
+      </Grid2>
+      {/* Email — required for admin, optional for others */}
+      <div style={{background:createRole==="admin"?"#0a1010":"#0b1220",border:`1px solid ${createRole==="admin"?"#f59e0b30":"#1e293b"}`,borderRadius:"8px",padding:"12px 14px",marginBottom:"12px"}}>
+        <div style={{fontSize:"11px",fontWeight:"700",color:createRole==="admin"?"#f59e0b":"#475569",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"6px"}}>
+          {createRole==="admin"?"🔑 Admin Email (required for password reset)":"📧 Email Address (optional — leave blank to auto-generate from name)"}
+        </div>
+        <input type="email" style={{...inp,borderColor:createRole==="admin"?"#f59e0b50":"#1e293b"}}
+          value={createEmail} onChange={e=>setCreateEmail(e.target.value)}
+          placeholder={createRole==="admin"?"admin@yourcompany.com (real email required)":"user@company.com (or leave blank)"}/>
+        {createRole!=="admin"&&!createEmail&&createName&&<div style={{fontSize:"11px",color:"#475569",marginTop:"4px"}}>
+          Login will be: <strong style={{color:"#64748b"}}>
+            {createName.trim().toLowerCase().replace(/\s+/g,".").replace(/[^a-z0-9._]/g,"")}@gcc-hub.app
+          </strong> — share this with the user
+        </div>}
+      </div>
+      <Field label="Password *">
+        <input type="password" style={inp} value={createPassword} onChange={e=>setCreatePassword(e.target.value)} placeholder="Min 6 characters"/>
+      </Field>
+      {createError&&<div style={{background:"#450a0a",border:"1px solid #7f1d1d",borderRadius:"7px",padding:"9px 12px",color:"#fca5a5",fontSize:"12.5px",marginBottom:"10px"}}>❌ {createError}</div>}
+      {createSuccess&&<div style={{background:"#052e16",border:"1px solid #166534",borderRadius:"7px",padding:"9px 12px",color:"#86efac",fontSize:"12.5px",marginBottom:"10px"}}>{createSuccess}</div>}
+      <div style={{display:"flex",justifyContent:"flex-end"}}>
+        <Btn label={creating?"Creating…":"Create User Account"} onClick={createUser} disabled={creating} color="#3b82f6" small/>
+      </div>
+    </div>
+
+    {/* USERS LIST */}
+    <SectionHead title={`All Users (${allEmails.length})`}/>
+    <InfoBox color="#f59e0b">All users with created accounts appear here. Use ✏️ to change a role, 🔑 to send a password reset email, ✕ to remove access.</InfoBox>
+
+    {allEmails.length===0
+      ?<div style={{textAlign:"center",padding:"32px",color:"#334155",fontSize:"13px"}}>No users yet. Create one above.</div>
+      :allEmails.map(email=>{
+        const isHardAdmin=ADMIN_EMAILS.includes(email);
+        const currentRole=isHardAdmin?"admin":(roles[email]||null);
+        const rc=ROLE_COLORS[currentRole]||"#475569";
+        const name=profiles[email]?.displayName||"";
+        const isEditing=editingRole===email;
+
+        return <div key={email} style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:"10px",padding:"13px 16px",marginBottom:"8px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:"10px",flexWrap:"wrap"}}>
+            <div style={{flex:1}}>
+              {name&&<div style={{fontSize:"13px",fontWeight:"700",color:"#f1f5f9",marginBottom:"2px"}}>{name}</div>}
+              <div style={{fontSize:name?"12px":"13.5px",fontWeight:name?"400":"600",color:name?"#64748b":"#e2e8f0",marginBottom:"4px"}}>{email}</div>
+              <div style={{display:"flex",gap:"6px",flexWrap:"wrap",alignItems:"center"}}>
+                {currentRole
+                  ?<Bdg label={ROLE_LABELS[currentRole]||currentRole} color={rc} small/>
+                  :<span style={{fontSize:"11px",color:"#ef4444",fontStyle:"italic"}}>No role assigned</span>}
+                {isHardAdmin&&<span style={{fontSize:"10px",color:"#475569",fontStyle:"italic"}}>· hardcoded admin</span>}
+              </div>
+            </div>
+            {!isHardAdmin&&<div style={{display:"flex",gap:"6px",alignItems:"center",flexWrap:"wrap",flexShrink:0}}>
+              <button onClick={()=>{setEditingRole(isEditing?null:email);setEditRoleVal(roles[email]||"sales");}}
+                style={{background:"#1e293b",border:"1px solid #334155",borderRadius:"6px",padding:"5px 10px",color:"#94a3b8",fontSize:"11.5px",fontWeight:"700",cursor:"pointer"}}>✏️ Role</button>
+              <button onClick={()=>setEditPassEmail(editPassEmail===email?null:email)}
+                style={{background:"#1e3a5f",border:"1px solid #2563eb",borderRadius:"6px",padding:"5px 10px",color:"#93c5fd",fontSize:"11.5px",fontWeight:"700",cursor:"pointer"}}>🔑 Reset PW</button>
+              <button onClick={()=>removeAccess(email)}
+                style={{background:"none",border:"1px solid #7f1d1d",borderRadius:"6px",padding:"5px 10px",color:"#ef4444",fontSize:"11.5px",fontWeight:"700",cursor:"pointer"}}>✕ Remove</button>
+            </div>}
+          </div>
+
+          {/* Inline role edit */}
+          {isEditing&&!isHardAdmin&&<div style={{marginTop:"10px",paddingTop:"10px",borderTop:"1px solid #1e293b",display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap"}}>
+            <span style={{fontSize:"12px",color:"#64748b",fontWeight:"600"}}>Change role to:</span>
+            {["admin","issuer","qc","sales"].map(r=>(
+              <button key={r} onClick={()=>setEditRoleVal(r)} style={{
+                background:editRoleVal===r?`${ROLE_COLORS[r]}20`:"none",
+                border:`1px solid ${editRoleVal===r?ROLE_COLORS[r]:"#334155"}`,
+                borderRadius:"7px",padding:"5px 12px",
+                color:editRoleVal===r?ROLE_COLORS[r]:"#475569",
+                fontSize:"12px",fontWeight:"700",cursor:"pointer"
+              }}>{ROLE_LABELS[r]}</button>
+            ))}
+            <Btn label={saving===email?"Saving…":"✓ Save"} onClick={()=>saveRoleEdit(email)} disabled={saving===email} color="#22c55e" small/>
+            <Btn label="Cancel" onClick={()=>setEditingRole(null)} outline color="#475569" small/>
+          </div>}
+
+          {/* Password reset */}
+          {editPassEmail===email&&!isHardAdmin&&<div style={{marginTop:"10px",paddingTop:"10px",borderTop:"1px solid #1e293b",background:"#0a1628",borderRadius:"8px",padding:"12px"}}>
+            <div style={{fontSize:"12px",fontWeight:"700",color:"#93c5fd",marginBottom:"6px"}}>🔑 Send Password Reset Email</div>
+            <div style={{fontSize:"12.5px",color:"#64748b",marginBottom:"10px"}}>A reset link will be sent to <strong style={{color:"#e2e8f0"}}>{email}</strong>.</div>
+            <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
+              <Btn label="Cancel" onClick={()=>setEditPassEmail(null)} outline color="#475569" small/>
+              <Btn label={savingPass?"Sending…":"Send Reset Email"} onClick={()=>sendReset(email)} disabled={savingPass} color="#f59e0b" small/>
+            </div>
+          </div>}
+        </div>;
+      })
+    }
+
+    {localToast&&<div style={{position:"fixed",bottom:"24px",left:"50%",transform:"translateX(-50%)",background:localToast.type==="error"?"#450a0a":"#052e16",border:`1px solid ${localToast.type==="error"?"#7f1d1d":"#166534"}`,borderRadius:"10px",padding:"10px 20px",color:"#f1f5f9",fontSize:"13px",fontWeight:"600",zIndex:4000,boxShadow:"0 8px 30px rgba(0,0,0,0.6)",animation:"fadeIn 0.2s ease",whiteSpace:"nowrap"}}>{localToast.msg}</div>}
+  </div>;
+}
+
+// ══════════════════════════════════════════════════════════
+// CATEGORY → PRODUCT SELECTOR
+// ══════════════════════════════════════════════════════════
+function CategoryProductSelect({category,setCategory,productName,setProductName,products,onUnitChange,catUnits}){
+  const cats = Object.keys(products||DEFAULT_PRODUCTS);
+  const prods = (products||DEFAULT_PRODUCTS)[category] || [];
+  const units = catUnits||CATEGORY_UNITS;
+  return <Grid2>
+    <Field label="Category *">
+      <select style={sl} value={category} onChange={e=>{
+        setCategory(e.target.value);
+        if(onUnitChange)onUnitChange(units[e.target.value]||CATEGORY_UNITS[e.target.value]||"kg");
+      }}>
+        <option value="">— Select Category —</option>
+        {cats.map(c=><option key={c} value={c}>{c}</option>)}
+      </select>
+    </Field>
+    <Field label="Product *">
+      <select style={sl} value={productName} onChange={e=>{
+        setProductName(e.target.value);
+        // Auto-fill unit from product's unit field
+        const prod=prods.find(p=>gpn(p)===e.target.value);
+        if(prod&&onUnitChange)onUnitChange(gpu(prod));
+      }} disabled={!category}>
+        <option value="">— Select Product —</option>
+        {prods.map(p=>{const n=gpn(p);const u=gpu(p);return <option key={n} value={n}>{n} ({u})</option>;})}
+      </select>
+    </Field>
+  </Grid2>;
+}
+
+// ══════════════════════════════════════════════════════════
+// OLD STOCK SECTION
+// ══════════════════════════════════════════════════════════
+function OldStockSection({role,user,showToast,products,catUnits}){
+  const [stocks,setStocks]=useState([]);
+  const [showForm,setShowForm]=useState(false);
+  const [saving,setSaving]=useState(false);
+  const [search,setSearch]=useState("");
+  const [form,setForm]=useState({category:"",productName:"",qty:"",unit:"kg",batchRef:"",dateAdded:today(),addedBy:"",notes:""});
+
+  useEffect(()=>{
+    const unsub=C("old_stock").orderBy("_createdAt","desc").onSnapshot(s=>setStocks(s.docs.map(d=>({id:d.id,...d.data()}))),
+      ()=>C("old_stock").onSnapshot(s=>setStocks(s.docs.map(d=>({id:d.id,...d.data()})))));
+    return unsub;
+  },[]);
+
+  const saveStock=async()=>{
+    if(!form.category||!form.productName||!form.qty)return showToast("Category, product and qty required","error");
+    if(saving)return;setSaving(true);
+    try{
+      await C("old_stock").add({...form,addedBy:form.addedBy||user.email,status:"Available",_createdAt:ts()});
+      setForm({category:"",productName:"",qty:"",unit:"kg",batchRef:"",dateAdded:today(),addedBy:"",notes:""});
+      setShowForm(false);showToast("Old stock entry added ✓");
+    }catch(e){showToast("Error saving","error");}
+    setSaving(false);
+  };
+
+  const toggleStatus=async(id,current)=>{
+    await C("old_stock").doc(id).update({status:current==="Available"?"Used":"Available"});
+    showToast("Status updated ✓");
+  };
+
+  const deleteStock=async(id)=>{
+    if(!confirm("Delete this entry?"))return;
+    await C("old_stock").doc(id).delete();showToast("Deleted","error");
+  };
+
+  const filtered=stocks.filter(s=>{
+    const q=search.toLowerCase();
+    return !q||s.productName?.toLowerCase().includes(q)||s.category?.toLowerCase().includes(q)||s.batchRef?.toLowerCase().includes(q);
+  });
+
+  const available=filtered.filter(s=>s.status==="Available");
+  const used=filtered.filter(s=>s.status!=="Available");
+  const canEdit=role==="admin"||role==="issuer"||role==="qc";
+
+  return <div style={{marginTop:"24px"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"14px",flexWrap:"wrap",gap:"10px"}}>
+      <div style={{display:"flex",gap:"8px",alignItems:"center",flex:1}}>
+        <span style={{fontSize:"12px",fontWeight:"700",color:"#f59e0b",textTransform:"uppercase",letterSpacing:"0.1em"}}>📦 Old / Rejected Material Register</span>
+        <span style={{fontSize:"11px",background:"#f59e0b18",border:"1px solid #f59e0b30",borderRadius:"99px",padding:"2px 10px",color:"#f59e0b",fontWeight:"700"}}>{available.length} Available</span>
+      </div>
+      <div style={{display:"flex",gap:"8px",alignItems:"center"}}>
+        <input placeholder="Search stock…" value={search} onChange={e=>setSearch(e.target.value)} style={{...inp,maxWidth:"180px",padding:"7px 10px",fontSize:"12px"}}/>
+        {canEdit&&<Btn label="+ Add Old/Rejected Material" onClick={()=>setShowForm(v=>!v)} color="#f59e0b" small/>}
+      </div>
+    </div>
+
+    {showForm&&<div style={{background:"#0a1010",border:"1px solid #f59e0b40",borderRadius:"10px",padding:"16px",marginBottom:"14px"}}>
+      <div style={{fontSize:"12px",fontWeight:"700",color:"#f59e0b",marginBottom:"12px"}}>📦 Add Old/Rejected Material Entry</div>
+      <CategoryProductSelect category={form.category} setCategory={cat=>{
+        const unit=(catUnits?.[cat])||CATEGORY_UNITS[cat]||"kg";
+        setForm({...form,category:cat,productName:"",unit});
+      }} productName={form.productName} setProductName={pn=>setForm({...form,productName:pn})} products={products} catUnits={catUnits}/>
+      <Grid2>
+        <Field label="Quantity *"><input style={inp} value={form.qty} onChange={e=>setForm({...form,qty:e.target.value})} placeholder="e.g. 500"/></Field>
+        <Field label="Unit">
+          <div style={{...inp,background:"#060b16",cursor:"default",display:"flex",alignItems:"center",gap:"8px",color:form.unit?"#22c55e":"#475569",fontWeight:"600"}}>
+            {form.unit||(form.category?(sysCatUnits?.[form.category]||CATEGORY_UNITS[form.category]||"kg"):"— select category first —")}
+            {form.unit&&<span style={{fontSize:"10px",color:"#475569",fontWeight:"400"}}>(auto)</span>}
+          </div>
+        </Field>
+        <Field label="Date Added"><input type="date" style={inp} value={form.dateAdded} onChange={e=>setForm({...form,dateAdded:e.target.value})}/></Field>
+      </Grid2>
+      <Grid2>
+        <Field label="Original Batch Ref (if any)"><input style={inp} value={form.batchRef} onChange={e=>setForm({...form,batchRef:e.target.value})} placeholder="e.g. GCC-2501-005"/></Field>
+        <Field label="Added By"><input style={inp} value={form.addedBy} onChange={e=>setForm({...form,addedBy:e.target.value})} placeholder={user.email}/></Field>
+      </Grid2>
+      <Field label="Notes"><textarea style={{...ta,minHeight:"50px"}} value={form.notes} onChange={e=>setForm({...form,notes:e.target.value})} placeholder="Condition, reason for old stock..."/></Field>
+      <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
+        <Btn label="Cancel" onClick={()=>setShowForm(false)} outline color="#475569" small/>
+        <Btn label={saving?"Saving…":"Save Entry"} onClick={saveStock} disabled={saving} color="#f59e0b" small/>
+      </div>
+    </div>}
+
+    {available.length===0&&used.length===0&&!showForm&&<div style={{textAlign:"center",padding:"24px",border:"1px dashed #1e293b",borderRadius:"8px",color:"#334155",fontSize:"13px"}}>No entries yet.{canEdit?" Click + Add Old/Rejected Material to log material.":""}</div>}
+
+    {available.length>0&&<>
+      <div style={{fontSize:"10px",fontWeight:"700",color:"#f59e0b",textTransform:"uppercase",letterSpacing:"0.09em",marginBottom:"8px"}}>Available ({available.length})</div>
+      {available.map(s=><OldStockCard key={s.id} s={s} canEdit={canEdit} onToggle={toggleStatus} onDelete={deleteStock}/>)}
+    </>}
+    {used.length>0&&<>
+      <div style={{fontSize:"10px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.09em",marginBottom:"8px",marginTop:"12px"}}>Used / Consumed ({used.length})</div>
+      {used.map(s=><OldStockCard key={s.id} s={s} canEdit={canEdit} onToggle={toggleStatus} onDelete={deleteStock}/>)}
+    </>}
+  </div>;
+}
+
+function OldStockCard({s,canEdit,onToggle,onDelete}){
+  const isAvail=s.status==="Available";
+  return <div style={{background:"#0f172a",border:`1px solid ${isAvail?"#f59e0b30":"#1e293b"}`,borderLeft:`3px solid ${isAvail?"#f59e0b":"#334155"}`,borderRadius:"10px",padding:"12px 16px",marginBottom:"8px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"8px"}}>
+    <div style={{flex:1}}>
+      <div style={{fontSize:"13.5px",fontWeight:"600",color:"#f1f5f9"}}>{s.productName}</div>
+      <div style={{fontSize:"11.5px",color:"#64748b",marginTop:"2px"}}>{s.category} · <strong style={{color:isAvail?"#f59e0b":"#475569"}}>{s.qty} {s.unit}</strong>{s.batchRef&&` · Ref: ${s.batchRef}`}</div>
+      {s.notes&&<div style={{fontSize:"11.5px",color:"#475569",marginTop:"2px",fontStyle:"italic"}}>{s.notes}</div>}
+    </div>
+    <div style={{display:"flex",gap:"6px",alignItems:"center",flexShrink:0}}>
+      <span style={{fontSize:"11px",fontWeight:"700",color:isAvail?"#f59e0b":"#64748b",background:isAvail?"#f59e0b18":"#1e293b",padding:"2px 9px",borderRadius:"99px",border:`1px solid ${isAvail?"#f59e0b30":"#334155"}`}}>{s.status||"Available"}</span>
+      {canEdit&&<button onClick={()=>onToggle(s.id,s.status||"Available")} style={{background:"none",border:"1px solid #1e293b",borderRadius:"6px",padding:"3px 8px",color:"#475569",fontSize:"11px",cursor:"pointer"}}>{isAvail?"Mark Used":"Restore"}</button>}
+      {canEdit&&<button onClick={()=>onDelete(s.id)} style={{background:"none",border:"none",color:"#334155",fontSize:"14px",cursor:"pointer"}}>🗑</button>}
+    </div>
+  </div>;
+}
+
+// ══════════════════════════════════════════════════════════
+// SETTINGS TAB (Admin only)
+// ══════════════════════════════════════════════════════════
+function SettingsTab({showToast}){
+  const [subTab,setSubTab]=useState("products");
+  const [settings,setSettings]=useState(null);
+  const [saving,setSaving]=useState(false);
+  const [prodData,setProdData]=useState(JSON.parse(JSON.stringify(DEFAULT_PRODUCTS)));
+  const [qcData,setQcData]=useState(JSON.parse(JSON.stringify(DEFAULT_QC_PARAMS)));
+  const [packSizeData,setPackSizeData]=useState(JSON.parse(JSON.stringify(DEFAULT_PACK_SIZES_BY_CAT)));
+  const [catUnits,setCatUnits]=useState({...CATEGORY_UNITS});
+  const [newPackSize,setNewPackSize]=useState("");
+  const [selCat,setSelCat]=useState(Object.keys(DEFAULT_PRODUCTS)[0]);
+  const [newProduct,setNewProduct]=useState("");
+  const [newProductUnit,setNewProductUnit]=useState("L");
+  const [newParam,setNewParam]=useState("");
+  const [newCat,setNewCat]=useState("");
+  const [newCatUnit,setNewCatUnit]=useState("L");
+
+  const fileRef = useRef(null);
+  const [importing,setImporting]=useState(false);
+  const [exporting,setExporting]=useState(false);
+
+  const exportExcel=async()=>{
+    setExporting(true);
+    try{
+      const XLSX=window.XLSX;
+      if(!XLSX){showToast("Excel library not loaded yet, try again","error");setExporting(false);return;}
+      const wb=XLSX.utils.book_new();
+      const cats=Object.keys(prodData);
+
+      // ── Products sheet ──────────────────────────────
+      const prodRows=[["CATEGORY","PRODUCT NAME","UNIT","HINT"]];
+      cats.forEach(cat=>{
+        (prodData[cat]||[]).forEach((p,i)=>{
+          const name=gpn(p); const unit=gpu(p);
+          prodRows.push([cat,name,unit,i===0?"← edit rows freely":""]);
+        });
+        prodRows.push(["","","",""]);// spacer
+      });
+      for(let i=0;i<5;i++)prodRows.push(["← Category","← Product name","← kg or L","← new"]);
+      const wsProd=XLSX.utils.aoa_to_sheet(prodRows);
+      wsProd["!cols"]=[{wch:26},{wch:44},{wch:10},{wch:18}];
+      XLSX.utils.book_append_sheet(wb,wsProd,"🎨 Products");
+
+      // ── QC Parameters sheet ─────────────────────────
+      const qcRows=[["CATEGORY","QC PARAMETER","MIN VALUE","MAX VALUE","HINT"]];
+      cats.forEach(cat=>{
+        (qcData[cat]||[]).forEach((p,i)=>{
+          const parsed=typeof p==="string"?{name:p,min:"",max:""}:p;
+          qcRows.push([cat,parsed.name||"",parsed.min||"",parsed.max||"",i===0?"← edit or delete rows freely":""]);
+        });
+        qcRows.push(["","","","",""]); // spacer
+      });
+      for(let i=0;i<5;i++)qcRows.push(["← Category","← Parameter name","← Min","← Max","← add"]);
+      const wsQC=XLSX.utils.aoa_to_sheet(qcRows);
+      wsQC["!cols"]=[{wch:26},{wch:40},{wch:12},{wch:12},{wch:18}];
+      XLSX.utils.book_append_sheet(wb,wsQC,"🔬 QC Parameters");
+
+      // ── Units sheet ─────────────────────────────────
+      const unitRows=[["CATEGORY","DEFAULT UNIT","ALLOWED UNITS"],["","","kg / L / MT / Bags"]];
+      cats.forEach(cat=>{
+        unitRows.push([cat,catUnits[cat]||"kg",""]);
+      });
+      const wsUnits=XLSX.utils.aoa_to_sheet(unitRows);
+      wsUnits["!cols"]=[{wch:26},{wch:18},{wch:24}];
+      XLSX.utils.book_append_sheet(wb,wsUnits,"⚖️ Category Units");
+
+      // ── Remove Categories sheet ─────────────────────
+      const remRows=[["CATEGORY NAME","REMOVE? (YES to delete)","NOTE"],
+                     ["","","Leave blank to keep | Type YES to remove from Products & QC"]];
+      cats.forEach(cat=>remRows.push([cat,"",""]));
+      const wsRem=XLSX.utils.aoa_to_sheet(remRows);
+      wsRem["!cols"]=[{wch:26},{wch:24},{wch:50}];
+      XLSX.utils.book_append_sheet(wb,wsRem,"🗑 Remove Categories");
+
+      // ── Instructions ────────────────────────────────
+      const instrRows=[
+        ["GCC Operations Hub — Products & QC Parameters Template"],
+        ["Gujarat Colours & Coatings Pvt Ltd | Exported: "+new Date().toLocaleDateString("en-IN")],
+        [""],
+        ["SHEET","WHAT TO DO"],
+        ["🎨 Products","Col A = Category, Col B = Product Name, Col C = Unit (kg/L/MT/Bags). Unit auto-fills in batch issue when product is selected."],
+        ["🔬 QC Parameters","Edit parameters per category. Set Min/Max for auto pass/fail."],
+        ["⚖️ Category Units","Fallback unit per category if product has no unit set."],
+        ["🗑 Remove Categories","Type YES in column B to remove a category from both Products & QC."],
+        [""],
+        ["RULES",""],
+        ["• Do NOT rename the sheet tabs.",""],
+        ["• Category names must match exactly across all sheets.",""],
+        ["• For Unit column: only kg, L, MT, Bags are valid. Anything else defaults to kg.",""],
+        ["• Blank rows between entries are ignored during import.",""],
+      ];
+      const wsInstr=XLSX.utils.aoa_to_sheet(instrRows);
+      wsInstr["!cols"]=[{wch:36},{wch:60}];
+      XLSX.utils.book_append_sheet(wb,wsInstr,"📋 Instructions");
+
+      XLSX.writeFile(wb,"GCC_Products_QC_Template.xlsx");
+      showToast("Excel exported ✓");
+    }catch(err){showToast("Error exporting: "+err.message,"error");}
+    setExporting(false);
+  };
+
+  const importExcel=async(e)=>{
+    const file=e.target.files?.[0];
+    if(!file)return;
+    setImporting(true);
+    try{
+      const XLSX=window.XLSX;
+      if(!XLSX){showToast("Excel reader not loaded yet, try again","error");setImporting(false);return;}
+      const buf=await file.arrayBuffer();
+      const wb_=XLSX.read(buf,{type:"array"});
+
+      // ── Step 1: Collect categories to remove ──────────────
+      const toRemove=new Set();
+      const remSheet=wb_.Sheets["🗑 Remove Categories"];
+      if(remSheet){
+        const rows=XLSX.utils.sheet_to_json(remSheet,{header:1,defval:""});
+        for(let ri=5;ri<rows.length;ri++){
+          const cat=(rows[ri][0]||"").toString().trim();
+          const flag=(rows[ri][1]||"").toString().trim().toUpperCase();
+          if(cat&&(flag==="YES"||flag==="Y"||flag==="✓"))toRemove.add(cat);
+        }
+      }
+
+      // ── Step 2: Read Products (A=Category, B=Product, C=Unit) ──
+      const newProds={};
+      const prodSheet=wb_.Sheets["🎨 Products"];
+      if(prodSheet){
+        const rows=XLSX.utils.sheet_to_json(prodSheet,{header:1,defval:""});
+        for(let ri=1;ri<rows.length;ri++){
+          const cat=(rows[ri][0]||"").toString().trim();
+          const prod=(rows[ri][1]||"").toString().trim();
+          const unit=(rows[ri][2]||"").toString().trim()||"kg";
+          if(!cat||!prod)continue;
+          if(cat.startsWith("←")||prod.startsWith("←"))continue;
+          if(toRemove.has(cat))continue;
+          if(!newProds[cat])newProds[cat]=[];
+          // Store as {name,unit} object
+          if(!newProds[cat].some(p=>gpn(p)===prod))
+            newProds[cat].push({name:prod,unit:["kg","L","MT","Bags"].includes(unit)?unit:"kg"});
+        }
+      }
+
+      // ── Step 3: Read QC Params (2-column or 4-column: A=Category, B=Param, C=Min, D=Max) ──
+      const newQc={};
+      const qcSheet=wb_.Sheets["🔬 QC Parameters"];
+      if(qcSheet){
+        const rows=XLSX.utils.sheet_to_json(qcSheet,{header:1,defval:""});
+        for(let ri=1;ri<rows.length;ri++){
+          const cat=(rows[ri][0]||"").toString().trim();
+          const param=(rows[ri][1]||"").toString().trim();
+          if(!cat||!param)continue;
+          if(cat.startsWith("←")||param.startsWith("←"))continue;
+          if(toRemove.has(cat))continue;
+          if(!newQc[cat])newQc[cat]=[];
+          const min=(rows[ri][2]||"").toString().trim();
+          const max=(rows[ri][3]||"").toString().trim();
+          // Store as object with range info
+          if(!newQc[cat].some(x=>(typeof x==="object"?x.name:x)===param))
+            newQc[cat].push({name:param,min,max});
+        }
+      }
+
+      // ── Step 4: Read Units sheet ──────────────────────────
+      const newUnits={};
+      const unitsSheet=wb_.Sheets["⚖️ Category Units"];
+      if(unitsSheet){
+        const rows=XLSX.utils.sheet_to_json(unitsSheet,{header:1,defval:""});
+        for(let ri=2;ri<rows.length;ri++){
+          const cat=(rows[ri][0]||"").toString().trim();
+          const unit=(rows[ri][1]||"").toString().trim();
+          if(cat&&unit&&!toRemove.has(cat))newUnits[cat]=unit;
+        }
+      }
+
+      if(Object.keys(newProds).length>0)setProdData(newProds);
+      if(Object.keys(newQc).length>0)setQcData(newQc);
+      if(Object.keys(newUnits).length>0)setCatUnits(u=>({...u,...newUnits}));
+
+      const removedList=[...toRemove].join(", ");
+      const msg=toRemove.size>0
+        ?`Imported ✓ — ${Object.keys(newProds).length} categories loaded, ${toRemove.size} removed (${removedList}). Click 💾 Save All Settings.`
+        :`Imported ✓ — ${Object.keys(newProds).length} categories, ${Object.values(newProds).reduce((s,a)=>s+a.length,0)} products loaded. Click 💾 Save All Settings.`;
+      showToast(msg);
+    }catch(err){showToast("Error reading file: "+err.message,"error");}
+    setImporting(false);
+    e.target.value="";
+  };
+
+  useEffect(()=>{
+    // Load saved settings from Firestore
+    C("settings").doc("products").get().then(snap=>{
+      if(snap.exists){const d=snap.data();
+        if(d.products)setProdData(d.products);
+        if(d.qcParams)setQcData(d.qcParams);
+        if(d.catUnits)setCatUnits(d.catUnits);
+        if(d.packSizes){
+          // Handle both old flat array and new per-category object
+          if(Array.isArray(d.packSizes)){setPackSizeData({...DEFAULT_PACK_SIZES_BY_CAT,_default:d.packSizes});}
+          else{setPackSizeData(d.packSizes);}
+        }
+      }
+    }).catch(()=>{});
+    // Load SheetJS if not already loaded
+    if(!window.XLSX){
+      const s=document.createElement("script");
+      s.src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+      document.head.appendChild(s);
+    }
+  },[]);
+
+  const saveAll=async()=>{
+    setSaving(true);
+    try{
+      await C("settings").doc("products").set({products:prodData,qcParams:qcData,packSizes:packSizeData,catUnits,updatedAt:ts()});
+      showToast("Settings saved ✓");
+    }catch(e){showToast("Error saving","error");}
+    setSaving(false);
+  };
+
+  const addProduct=()=>{
+    if(!newProduct.trim())return;
+    const updated={...prodData,[selCat]:[...(prodData[selCat]||[]),{name:newProduct.trim(),unit:newProductUnit}]};
+    setProdData(updated);setNewProduct("");setNewProductUnit("L");
+  };
+  const removeProduct=(cat,idx)=>{const arr=[...(prodData[cat]||[])];arr.splice(idx,1);setProdData({...prodData,[cat]:arr});};
+  const addParam=()=>{
+    if(!newParam.trim())return;
+    const updated={...qcData,[selCat]:[...(qcData[selCat]||[]),newParam.trim()]};
+    setQcData(updated);setNewParam("");
+  };
+  const removeParam=(cat,idx)=>{const arr=[...(qcData[cat]||[])];arr.splice(idx,1);setQcData({...qcData,[cat]:arr});};
+  const addCategory=()=>{
+    if(!newCat.trim())return;
+    const catName=newCat.trim();
+    if(!prodData[catName]){
+      setProdData({...prodData,[catName]:[]});
+      setQcData({...qcData,[catName]:[]});
+      setCatUnits({...catUnits,[catName]:newCatUnit});
+      setSelCat(catName);
+    }
+    setNewCat("");setNewCatUnit("L");
+  };
+
+  const cats=Object.keys(prodData);
+
+  return <div>
+    <SectionHead title="⚙️ System Settings"/>
+    <div style={{display:"flex",gap:"4px",marginBottom:"20px",borderBottom:"1px solid #1e293b"}}>
+      {[["products","🎨 Products"],["qcparams","🔬 QC Parameters"],["packsizes","📦 Pack Sizes"]].map(([key,label])=>(
+        <button key={key} onClick={()=>setSubTab(key)} style={{background:subTab===key?"#1e293b":"transparent",border:"none",borderBottom:subTab===key?"2px solid #3b82f6":"2px solid transparent",color:subTab===key?"#f1f5f9":"#64748b",padding:"8px 16px",cursor:"pointer",fontSize:"13px",fontWeight:"600",borderRadius:"8px 8px 0 0",transition:"all 0.15s"}}>{label}</button>
+      ))}
+    </div>
+
+    {/* Category selector + unit + add new category */}
+    <div style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"10px",padding:"14px 16px",marginBottom:"16px"}}>
+      <div style={{display:"flex",gap:"10px",alignItems:"flex-end",flexWrap:"wrap"}}>
+        <div style={{flex:1,minWidth:"140px"}}>
+          <Field label="Working Category">
+            <select style={sl} value={selCat} onChange={e=>setSelCat(e.target.value)}>
+              {cats.map(c=><option key={c}>{c}</option>)}
+            </select>
+          </Field>
+        </div>
+        <div style={{minWidth:"120px"}}>
+          <Field label="Default Unit">
+            <select style={{...sl,borderColor:catUnits[selCat]?"#22c55e30":"#1e293b"}} value={catUnits[selCat]||"kg"}
+              onChange={e=>setCatUnits({...catUnits,[selCat]:e.target.value})}>
+              {BATCH_UNITS.map(u=><option key={u}>{u}</option>)}
+            </select>
+          </Field>
+        </div>
+        <div style={{display:"flex",gap:"6px",paddingBottom:"14px",flex:2,minWidth:"240px"}}>
+          <input style={{...inp,flex:1,padding:"8px 10px",fontSize:"12.5px"}} value={newCat}
+            onChange={e=>setNewCat(e.target.value)} placeholder="New category name"/>
+          <select style={{...sl,width:"80px",padding:"8px 6px",fontSize:"12.5px"}} value={newCatUnit}
+            onChange={e=>setNewCatUnit(e.target.value)}>
+            {BATCH_UNITS.map(u=><option key={u}>{u}</option>)}
+          </select>
+          <Btn label="+ Add" onClick={addCategory} color="#64748b" small/>
+        </div>
+      </div>
+      {selCat&&<div style={{fontSize:"11px",color:"#334155",marginTop:"4px"}}>
+        Unit for <strong style={{color:"#64748b"}}>{selCat}</strong> auto-fills as <strong style={{color:"#22c55e"}}>{catUnits[selCat]||"kg"}</strong> when issuing a batch. Change above to update.
+      </div>}
+    </div>
+
+    {subTab==="products"&&<div>
+      <InfoBox color="#3b82f6">Each product has its own unit. The unit auto-fills when the product is selected in batch issue. You can also set these via Excel export → edit → import.</InfoBox>
+      {/* Add new product row */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 90px 60px",gap:"6px",marginBottom:"12px"}}>
+        <input style={inp} value={newProduct} onChange={e=>setNewProduct(e.target.value)} placeholder={`Product name in ${selCat}…`} onKeyDown={e=>e.key==="Enter"&&addProduct()}/>
+        <select style={sl} value={newProductUnit} onChange={e=>setNewProductUnit(e.target.value)}>
+          {BATCH_UNITS.map(u=><option key={u}>{u}</option>)}
+        </select>
+        <Btn label="+ Add" onClick={addProduct} color="#3b82f6" small/>
+      </div>
+      {/* Column headers */}
+      {(prodData[selCat]||[]).length>0&&<div style={{display:"grid",gridTemplateColumns:"1fr 90px 36px",gap:"6px",marginBottom:"4px",padding:"0 4px"}}>
+        {["Product Name","Unit",""].map(h=><div key={h} style={{fontSize:"10px",fontWeight:"700",color:"#334155",textTransform:"uppercase",letterSpacing:"0.07em"}}>{h}</div>)}
+      </div>}
+      <div style={{display:"flex",flexDirection:"column",gap:"6px"}}>
+        {(prodData[selCat]||[]).length===0&&<div style={{fontSize:"13px",color:"#334155",fontStyle:"italic",padding:"12px 0"}}>No products in {selCat}. Add one above.</div>}
+        {(prodData[selCat]||[]).map((p,i)=>{
+          const name=gpn(p); const unit=gpu(p);
+          return <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 90px 36px",gap:"6px",alignItems:"center"}}>
+            <input style={sml} value={name} onChange={e=>{
+              const arr=[...(prodData[selCat]||[])];
+              arr[i]={name:e.target.value,unit};
+              setProdData({...prodData,[selCat]:arr});
+            }} placeholder="Product name"/>
+            <select style={{...sml,padding:"6px 6px",borderColor:unit?"#22c55e30":"#1e293b"}} value={unit} onChange={e=>{
+              const arr=[...(prodData[selCat]||[])];
+              arr[i]={name,unit:e.target.value};
+              setProdData({...prodData,[selCat]:arr});
+            }}>
+              {BATCH_UNITS.map(u=><option key={u}>{u}</option>)}
+            </select>
+            <button onClick={()=>removeProduct(selCat,i)} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"16px",textAlign:"center"}}>×</button>
+          </div>;
+        })}
+      </div>
+    </div>}
+
+    {subTab==="qcparams"&&<div>
+      <InfoBox color="#22c55e">Manage QC test parameters for <strong style={{color:"#86efac"}}>{selCat}</strong>. Set Min and Max values — the system will auto-flag Pass/Fail when QC data is entered. Leave blank if no limit.</InfoBox>
+      <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 36px",gap:"6px",marginBottom:"6px"}}>
+        {["Parameter Name","Min Value","Max Value",""].map(h=><div key={h} style={{fontSize:"10px",fontWeight:"700",color:"#334155",textTransform:"uppercase",letterSpacing:"0.07em",padding:"0 4px"}}>{h}</div>)}
+      </div>
+      {(qcData[selCat]||[]).map((p,i)=>{
+        const parsed=gp(p);
+        const update=(field,val)=>{
+          const arr=[...(qcData[selCat]||[])];
+          arr[i]={...parsed,[field]:val};
+          setQcData({...qcData,[selCat]:arr});
+        };
+        return <div key={i} style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 36px",gap:"6px",marginBottom:"6px"}}>
+          <input style={sml} value={parsed.name} onChange={e=>update("name",e.target.value)} placeholder="Parameter name"/>
+          <input style={{...sml,borderColor:parsed.min?"#22c55e30":"#1e293b"}} value={parsed.min} onChange={e=>update("min",e.target.value)} placeholder="Min"/>
+          <input style={{...sml,borderColor:parsed.max?"#ef444430":"#1e293b"}} value={parsed.max} onChange={e=>update("max",e.target.value)} placeholder="Max"/>
+          <button onClick={()=>removeParam(selCat,i)} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"16px",padding:0,alignSelf:"center"}}>×</button>
+        </div>;
+      })}
+      {(qcData[selCat]||[]).length===0&&<div style={{fontSize:"13px",color:"#334155",fontStyle:"italic",padding:"10px 0"}}>No QC params for {selCat}.</div>}
+      <button onClick={()=>{const arr=[...(qcData[selCat]||[]),{name:"",min:"",max:""}];setQcData({...qcData,[selCat]:arr});}}
+        style={{marginTop:"8px",background:"none",border:"1px dashed #1e293b",borderRadius:"7px",padding:"7px 14px",color:"#475569",cursor:"pointer",fontSize:"12px",fontWeight:"600",width:"100%"}}>
+        + Add Parameter
+      </button>
+    </div>}
+
+    {subTab==="packsizes"&&<div>
+      <InfoBox color="#f59e0b">Pack sizes are set per category. Select a category below to manage its pack sizes. These appear in the packing entry table when filling a batch.</InfoBox>
+      {/* Use same selCat selector (already shown above) */}
+      <div style={{display:"flex",gap:"6px",marginBottom:"12px"}}>
+        <input style={{...inp,flex:1}} value={newPackSize} onChange={e=>setNewPackSize(e.target.value)}
+          placeholder={`Add pack size for ${selCat}… e.g. 5 L, 50 kg`}
+          onKeyDown={e=>{if(e.key==="Enter"&&newPackSize.trim()){const cat_arr=[...(packSizeData[selCat]||[]),newPackSize.trim()];setPackSizeData({...packSizeData,[selCat]:cat_arr});setNewPackSize("");}}}/>
+        <Btn label="+ Add" onClick={()=>{if(newPackSize.trim()){const cat_arr=[...(packSizeData[selCat]||[]),newPackSize.trim()];setPackSizeData({...packSizeData,[selCat]:cat_arr});setNewPackSize("");}}} color="#f59e0b" small/>
+      </div>
+      {(packSizeData[selCat]||[]).length===0&&<div style={{fontSize:"13px",color:"#334155",fontStyle:"italic",padding:"10px 0"}}>No pack sizes for {selCat}. Using defaults: {(packSizeData._default||DEFAULT_PACK_SIZES).join(", ")}</div>}
+      <div style={{display:"flex",flexDirection:"column",gap:"6px"}}>
+        {(packSizeData[selCat]||[]).map((s,i)=>(
+          <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:"#0f172a",border:"1px solid #1e293b",borderRadius:"8px",padding:"10px 14px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:"10px"}}>
+              <span style={{fontSize:"11px",fontWeight:"700",color:"#f59e0b",background:"#f59e0b18",padding:"2px 8px",borderRadius:"99px",border:"1px solid #f59e0b30"}}>#{i+1}</span>
+              <span style={{fontSize:"13px",color:"#e2e8f0",fontWeight:"500"}}>{s}</span>
+            </div>
+            <div style={{display:"flex",gap:"6px"}}>
+              {i>0&&<button onClick={()=>{const d=[...(packSizeData[selCat]||[])];[d[i-1],d[i]]=[d[i],d[i-1]];setPackSizeData({...packSizeData,[selCat]:d});}} style={{background:"none",border:"1px solid #1e293b",borderRadius:"5px",color:"#64748b",cursor:"pointer",fontSize:"12px",padding:"2px 8px"}}>↑</button>}
+              {i<(packSizeData[selCat]||[]).length-1&&<button onClick={()=>{const d=[...(packSizeData[selCat]||[])];[d[i],d[i+1]]=[d[i+1],d[i]];setPackSizeData({...packSizeData,[selCat]:d});}} style={{background:"none",border:"1px solid #1e293b",borderRadius:"5px",color:"#64748b",cursor:"pointer",fontSize:"12px",padding:"2px 8px"}}>↓</button>}
+              <button onClick={()=>{const d=(packSizeData[selCat]||[]).filter((_,idx)=>idx!==i);setPackSizeData({...packSizeData,[selCat]:d});}} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"16px"}}>×</button>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div style={{marginTop:"10px",fontSize:"12px",color:"#334155"}}>
+        Tip: If a category has no sizes defined, it uses the _default list. To reset, delete all sizes for that category.
+      </div>
+    </div>}
+
+    <div style={{marginTop:"20px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"10px"}}>
+      <div style={{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap"}}>
+        <input ref={fileRef} type="file" accept=".xlsx" onChange={importExcel} style={{display:"none"}}/>
+        <Btn label={importing?"Reading…":"📥 Import from Excel"} onClick={()=>fileRef.current?.click()} disabled={importing} color="#64748b" small/>
+        <Btn label={exporting?"Exporting…":"📤 Export to Excel"} onClick={exportExcel} disabled={exporting} color="#475569" small/>
+        <span style={{fontSize:"11px",color:"#334155"}}>Export → edit → import back</span>
+      </div>
+      <Btn label={saving?"Saving…":"💾 Save All Settings"} onClick={saveAll} disabled={saving} color="#3b82f6"/>
+    </div>
+  </div>;
+}
+
+// ══════════════════════════════════════════════════════════
+// LOGIN SCREEN
+// ══════════════════════════════════════════════════════════
+function LoginScreen(){
+  const [email,setEmail]=useState("");
+  const [password,setPassword]=useState("");
+  const [error,setError]=useState("");
+  const [loading,setLoading]=useState(false);
+  const handleLogin=async(e)=>{
+    e.preventDefault();setLoading(true);setError("");
+    try{await auth.signInWithEmailAndPassword(email,password);}
+    catch(err){setError(err.code==="auth/wrong-password"||err.code==="auth/user-not-found"||err.code==="auth/invalid-credential"?"Invalid email or password.":err.message);}
+    setLoading(false);
+  };
+  return <div style={{minHeight:"100vh",background:"#060b16",display:"flex",alignItems:"center",justifyContent:"center",padding:"20px"}}>
+    <div style={{width:"100%",maxWidth:"380px"}}>
+      <div style={{textAlign:"center",marginBottom:"28px"}}>
+        <div style={{fontSize:"11px",fontWeight:"700",color:"#3b82f6",letterSpacing:"0.15em",textTransform:"uppercase",marginBottom:"8px"}}>Gujarat Colours & Coatings Pvt Ltd</div>
+        <h1 style={{fontSize:"30px",fontWeight:"400",fontFamily:"'DM Serif Display',serif",color:"#f1f5f9",margin:0}}>GCC <span style={{fontStyle:"italic",color:"#3b82f6"}}>Operations Hub</span></h1>
+        <p style={{fontSize:"13px",color:"#475569",marginTop:"8px"}}>Sign in to your workspace</p>
+      </div>
+      <form onSubmit={handleLogin} style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:"16px",padding:"28px",boxShadow:"0 20px 60px rgba(0,0,0,0.5)"}}>
+        <div style={{marginBottom:"14px"}}>
+          <label style={{display:"block",fontSize:"11px",fontWeight:"600",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"6px"}}>Email / Login</label>
+          <input type="text" value={email} onChange={e=>setEmail(e.target.value)} placeholder="email@company.com or name@gcc-hub.app" required style={inp} autoComplete="email"/>
+          <div style={{fontSize:"10px",color:"#334155",marginTop:"4px"}}>Use your email address or the login provided by Admin</div>
+        </div>
+        <div style={{marginBottom:"20px"}}>
+          <label style={{display:"block",fontSize:"11px",fontWeight:"600",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"6px"}}>Password</label>
+          <input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="••••••••" required style={inp} autoComplete="current-password"/>
+        </div>
+        {error&&<div style={{background:"#450a0a",border:"1px solid #7f1d1d",borderRadius:"8px",padding:"10px 14px",color:"#fca5a5",fontSize:"13px",marginBottom:"14px"}}>{error}</div>}
+        <button type="submit" disabled={loading} style={{width:"100%",background:"#3b82f6",border:"none",borderRadius:"10px",padding:"12px",color:"#fff",fontWeight:"700",fontSize:"14px",opacity:loading?0.7:1,transition:"opacity 0.2s"}}>
+          {loading?"Signing in…":"Sign In →"}
+        </button>
+      </form>
+    </div>
+  </div>;
+}
+
+function NoAccessScreen(){
+  return <div style={{minHeight:"100vh",background:"#060b16",display:"flex",alignItems:"center",justifyContent:"center",padding:"20px",flexDirection:"column",gap:"12px"}}>
+    <div style={{fontSize:"40px"}}>🔒</div>
+    <div style={{fontSize:"16px",fontWeight:"600",color:"#f1f5f9"}}>Access Pending</div>
+    <div style={{fontSize:"13px",color:"#475569",textAlign:"center",maxWidth:"360px"}}>Your account exists but no role has been assigned yet. Please contact your admin (Raj) to assign your role.</div>
+    <button onClick={()=>auth.signOut()} style={{background:"none",border:"1px solid #1e293b",borderRadius:"8px",padding:"8px 18px",color:"#64748b",fontSize:"13px",marginTop:"8px",cursor:"pointer"}}>Sign Out</button>
+  </div>;
+}
+
+// ══════════════════════════════════════════════════════════
+// MAIN APP
+// ══════════════════════════════════════════════════════════
+const EP={projectName:"",projectCode:"",paintType:"Emulsion",application:"",status:"Ongoing",objective:"",formulationBase:"",assignedTo:"",targetDate:"",notes:""};
+const ER={materialName:"",vendorName:"",category:"Resin / Binder",batchNo:"",lotNo:"",quantityReceived:"",dateReceived:"",testedBy:"",testResult:"Pending",testsPerformed:"",observations:"",remarks:""};
+const EB={category:"",productName:"",shade:"",batchSize:"",unit:"kg",dateIssued:today(),issuedBy:"",oldStockUsed:"",issueNotes:""};
+const EC={customerName:"",productName:"",batchNo:"",monthYear:"",invoiceNo:"",materialAvailable:"",complaint:""};
+
+function MainApp({user,role}){
+  const isAdmin=role==="admin";
+  const canQC=role==="admin"||role==="qc";
+  const canIssuer=role==="admin"||role==="issuer";
+  const [tab,setTab]=useState(CAN_SEE.dashboard.includes(role)?"dashboard":"complaints");
+  const [rdSubTab,setRdSubTab]=useState("projects");
+  const [batchSubTab,setBatchSubTab]=useState("batches"); // "batches" | "oldstock"
+
+  // Products & QC params loaded from Firestore settings
+  const [sysProducts,setSysProducts]=useState(null); // null = not yet loaded
+  const [sysQcParams,setSysQcParams]=useState(DEFAULT_QC_PARAMS);
+  const [sysPackSizes,setSysPackSizes]=useState(DEFAULT_PACK_SIZES_BY_CAT);
+  const [sysCatUnits,setSysCatUnits]=useState({});
+  const [oldStocks,setOldStocks]=useState([]);
+
+  // Data
+  const [batches,setBatches]=useState([]);
+  const [complaints,setComplaints]=useState([]);
+  const [projects,setProjects]=useState([]);
+  const [rmTests,setRmTests]=useState([]);
+
+  // Modals/views
+  const [activeBatch,setActiveBatch]=useState(null);
+  const [activeComplaint,setActiveComplaint]=useState(null);
+  const [activeProject,setActiveProject]=useState(null);
+  const [viewRM,setViewRM]=useState(null);
+  const [showIssueBatch,setShowIssueBatch]=useState(false);
+  const [showAddComplaint,setShowAddComplaint]=useState(false);
+  const [showAddProject,setShowAddProject]=useState(false);
+  const [showAddRM,setShowAddRM]=useState(false);
+  const [editProject,setEditProject]=useState(null);
+  const [editRM,setEditRM]=useState(null);
+
+  // Forms
+  const [batchForm,setBatchForm]=useState(EB);
+  const [complaintForm,setComplaintForm]=useState(EC);
+  const [projForm,setProjForm]=useState(EP);
+  const [rmForm,setRmForm]=useState(ER);
+  const [saving,setSaving]=useState(false);
+
+  // Filters
+  const [batchFilter,setBatchFilter]=useState("All");
+  const [batchSearch,setBatchSearch]=useState("");
+  const [complaintFilter,setComplaintFilter]=useState("All");
+  const [complaintSearch,setComplaintSearch]=useState("");
+  const [projSearch,setProjSearch]=useState("");
+  const [projFilter,setProjFilter]=useState("All");
+  const [rmSearch,setRmSearch]=useState("");
+  const [rmFilter,setRmFilter]=useState("All");
+
+  const [toast,setToast]=useState(null);
+  const showToast=(msg,type="success")=>{setToast({msg,type});setTimeout(()=>setToast(null),2800);};
+
+  useEffect(()=>{
+    const subs=[];
+    // Load product/QC settings for all roles
+    C("settings").doc("products").get().then(snap=>{
+      if(snap.exists){const d=snap.data();
+        setSysProducts(d.products||DEFAULT_PRODUCTS);
+        if(d.qcParams)setSysQcParams(d.qcParams);
+        if(d.catUnits)setSysCatUnits(u=>({...u,...d.catUnits}));
+        if(d.packSizes){if(Array.isArray(d.packSizes))setSysPackSizes({...DEFAULT_PACK_SIZES_BY_CAT,_default:d.packSizes});else setSysPackSizes(d.packSizes);}
+      }else{
+        // First time — no settings saved yet, use defaults
+        setSysProducts(DEFAULT_PRODUCTS);
+      }
+    }).catch(()=>{});
+    // Old stock for batch-capable roles
+    if(CAN_SEE.batches.includes(role)){
+      subs.push(C("old_stock").orderBy("_createdAt","desc").onSnapshot(s=>setOldStocks(s.docs.map(d=>({id:d.id,...d.data()}))),
+        ()=>C("old_stock").onSnapshot(s=>setOldStocks(s.docs.map(d=>({id:d.id,...d.data()}))))));
+    }
+    if(CAN_SEE.batches.includes(role)){
+      subs.push(C("batches").orderBy("_createdAt","desc").onSnapshot(s=>setBatches(s.docs.map(d=>({id:d.id,...d.data()}))),()=>C("batches").onSnapshot(s=>setBatches(s.docs.map(d=>({id:d.id,...d.data()}))))));
+    }
+    if(CAN_SEE.complaints.includes(role)){
+      subs.push(C("complaints").orderBy("_createdAt","desc").onSnapshot(s=>setComplaints(s.docs.map(d=>({id:d.id,...d.data()}))),()=>C("complaints").onSnapshot(s=>setComplaints(s.docs.map(d=>({id:d.id,...d.data()}))))));
+    }
+    if(CAN_SEE.rd.includes(role)){
+      subs.push(C("rd_projects").orderBy("_createdAt","desc").onSnapshot(s=>setProjects(s.docs.map(d=>({id:d.id,...d.data()}))),()=>C("rd_projects").onSnapshot(s=>setProjects(s.docs.map(d=>({id:d.id,...d.data()}))))));
+      subs.push(C("rm_tests").orderBy("_createdAt","desc").onSnapshot(s=>setRmTests(s.docs.map(d=>({id:d.id,...d.data()}))),()=>C("rm_tests").onSnapshot(s=>setRmTests(s.docs.map(d=>({id:d.id,...d.data()}))))));
+    }
+    return()=>subs.forEach(u=>u());
+  },[role]);
+
+  // Sync active items
+  useEffect(()=>{if(activeBatch){const u=batches.find(b=>b.id===activeBatch.id);if(u)setActiveBatch(u);}},[batches]);
+  useEffect(()=>{if(activeComplaint){const u=complaints.find(c=>c.id===activeComplaint.id);if(u)setActiveComplaint(u);}},[complaints]);
+  useEffect(()=>{if(activeProject){const u=projects.find(p=>p.id===activeProject.id);if(u)setActiveProject(u);}},[projects]);
+  useEffect(()=>{if(viewRM){const u=rmTests.find(r=>r.id===viewRM.id);if(u)setViewRM(u);}},[rmTests]);
+
+  // Save functions
+  const saveBatch=async()=>{
+    if(!batchForm.productName.trim()||!batchForm.category)return showToast("Category and product required","error");
+    if(saving)return;setSaving(true);
+    try{
+      const cnt=(await C("batches").get()).size;
+      const d=new Date();const ym=`${String(d.getFullYear()).slice(2)}${String(d.getMonth()+1).padStart(2,"0")}`;
+      const bNo=`GCC-${ym}-${String(cnt+1).padStart(3,"0")}`;
+      await C("batches").add({...batchForm,batchNo:bNo,status:"Issued",issuedBy:batchForm.issuedBy||user.email,_createdAt:ts()});
+      setBatchForm(EB);setShowIssueBatch(false);showToast("Batch issued ✓");
+    }catch(e){showToast("Error issuing batch","error");}
+    setSaving(false);
+  };
+
+  const saveComplaint=async()=>{
+    if(!complaintForm.customerName.trim()||!complaintForm.complaint.trim())return showToast("Customer name and complaint required","error");
+    if(saving)return;setSaving(true);
+    try{
+      await C("complaints").add({...complaintForm,status:"Open",addedBy:user.email,_createdAt:ts()});
+      setComplaintForm(EC);setShowAddComplaint(false);showToast("Complaint added ✓");
+    }catch(e){showToast("Error saving","error");}
+    setSaving(false);
+  };
+
+  const saveProject=async()=>{
+    if(!projForm.projectName.trim())return showToast("Project name required","error");
+    if(saving)return;setSaving(true);
+    try{
+      const cnt=(await C("rd_projects").get()).size;
+      const code=projForm.projectCode.trim()||`GCC-RD-${String(cnt+1).padStart(3,"0")}`;
+      await C("rd_projects").add({...projForm,projectCode:code,dateCreated:today(),trials:[],_createdAt:ts()});
+      setProjForm(EP);setShowAddProject(false);showToast("Project created ✓");
+    }catch(e){showToast("Error saving","error");}
+    setSaving(false);
+  };
+
+  const saveRM=async()=>{
+    if(!rmForm.materialName.trim()||!rmForm.vendorName.trim())return showToast("Material and vendor required","error");
+    if(saving)return;setSaving(true);
+    try{await C("rm_tests").add({...rmForm,_createdAt:ts()});setRmForm(ER);setShowAddRM(false);showToast("Entry saved ✓");}
+    catch(e){showToast("Error saving","error");}
+    setSaving(false);
+  };
+
+  const updateProject=async(data)=>{
+    if(!data.projectName.trim())return showToast("Name required","error");
+    setSaving(true);
+    try{const{id,_createdAt,trials,...fields}=data;await C("rd_projects").doc(id).update(fields);setEditProject(null);showToast("Updated ✓");}
+    catch(e){showToast("Error","error");}
+    setSaving(false);
+  };
+
+  const updateRM=async(data)=>{
+    if(!data.materialName.trim())return showToast("Name required","error");
+    setSaving(true);
+    try{const{id,_createdAt,...fields}=data;await C("rm_tests").doc(id).update(fields);setEditRM(null);showToast("Updated ✓");}
+    catch(e){showToast("Error","error");}
+    setSaving(false);
+  };
+
+  const totalTrials=projects.reduce((s,p)=>s+(p.trials||[]).length,0);
+
+  // Wait for settings to load from Firestore before rendering
+  // This prevents the product list from briefly showing defaults then resetting
+  if(sysProducts===null){
+    return <div style={{minHeight:"100vh",background:"#060b16",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:"12px"}}>
+      <div style={{width:"36px",height:"36px",border:"3px solid #1e293b",borderTop:"3px solid #3b82f6",borderRadius:"50%",animation:"spin 0.8s linear infinite"}}/>
+      <div style={{fontSize:"13px",color:"#475569"}}>Loading settings…</div>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+    </div>;
+  }
+
+  // Filtered data
+  const fb=batches.filter(b=>{
+    const ms=batchFilter==="All"||b.status===batchFilter;
+    const q=batchSearch.toLowerCase();
+    return ms&&(!q||b.batchNo?.toLowerCase().includes(q)||b.productName?.toLowerCase().includes(q)||b.shade?.toLowerCase().includes(q));
+  });
+  const fc=complaints.filter(c=>{
+    // Sales can only see their own complaints
+    if(role==="sales"&&c.addedBy!==user.email)return false;
+    const ms=complaintFilter==="All"||c.status===complaintFilter;
+    const q=complaintSearch.toLowerCase();
+    return ms&&(!q||c.customerName?.toLowerCase().includes(q)||c.productName?.toLowerCase().includes(q)||c.batchNo?.toLowerCase().includes(q));
+  });
+  const fp=projects.filter(p=>{
+    const ms=projFilter==="All"||p.status===projFilter;
+    const q=projSearch.toLowerCase();
+    return ms&&(!q||p.projectName?.toLowerCase().includes(q)||p.projectCode?.toLowerCase().includes(q));
+  });
+  const frm=rmTests.filter(r=>{
+    const ms=rmFilter==="All"||r.testResult===rmFilter;
+    const q=rmSearch.toLowerCase();
+    return ms&&(!q||r.materialName?.toLowerCase().includes(q)||r.vendorName?.toLowerCase().includes(q));
+  });
+
+  const tabs=[
+    {key:"dashboard",label:"📊 Dashboard"},
+    {key:"batches",label:"📦 Batches"},
+    {key:"complaints",label:"⚠️ Complaints"},
+    {key:"rd",label:"🧪 R&D & QC"},
+    {key:"users",label:"👥 Users"},
+    {key:"settings",label:"⚙️ Settings"},
+  ].filter(t=>CAN_SEE[t.key]?.includes(role));
+
+  return <div style={{minHeight:"100vh",background:"#060b16",fontFamily:"'DM Sans',sans-serif",color:"#e2e8f0",paddingBottom:"48px"}}>
+    <style>{`@keyframes slideDown{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)}}@keyframes fadeIn{from{opacity:0;transform:translateX(-50%) translateY(8px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}`}</style>
+
+    {/* Header */}
+    <div style={{background:"linear-gradient(135deg,#0b1220,#0d1526)",borderBottom:"1px solid #1e293b",padding:"20px 28px 0"}}>
+      <div style={{maxWidth:"1000px",margin:"0 auto"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:"18px",flexWrap:"wrap",gap:"10px"}}>
+          <div>
+            <div style={{fontSize:"11px",fontWeight:"700",color:"#3b82f6",letterSpacing:"0.15em",textTransform:"uppercase",marginBottom:"3px"}}>Gujarat Colours & Coatings Pvt Ltd</div>
+            <h1 style={{fontSize:"24px",fontWeight:"400",fontFamily:"'DM Serif Display',serif",color:"#f1f5f9",margin:0}}>GCC <span style={{fontStyle:"italic",color:"#3b82f6"}}>Operations Hub</span></h1>
+          </div>
+          <div style={{display:"flex",gap:"8px",flexWrap:"wrap",alignItems:"center"}}>
+            {CAN_SEE.batches.includes(role)&&[["📦",batches.filter(b=>["Issued","In Production","QC Pending","QC Pass","Packed"].includes(b.status)).length,"#3b82f6","Active"],["🔬",batches.filter(b=>b.status==="QC Pending").length,"#a855f7","QC Pending"]].map(([icon,count,color,label])=><div key={label} style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"10px",padding:"8px 12px",textAlign:"center"}}>
+              <div style={{fontWeight:"700",fontSize:"17px",color}}>{icon} {count}</div>
+              <div style={{color:"#475569",fontSize:"10px",fontWeight:"600"}}>{label}</div>
+            </div>)}
+            {CAN_SEE.complaints.includes(role)&&<div style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"10px",padding:"8px 12px",textAlign:"center"}}>
+              <div style={{fontWeight:"700",fontSize:"17px",color:"#ef4444"}}>⚠️ {complaints.filter(c=>["Open","Under Review"].includes(c.status)&&(role!=="sales"||c.addedBy===user.email)).length}</div>
+              <div style={{color:"#475569",fontSize:"10px",fontWeight:"600"}}>{role==="sales"?"My Open":"Open"}</div>
+            </div>}
+            <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:"4px"}}>
+              <div style={{display:"flex",gap:"6px",alignItems:"center"}}>
+                <span style={{fontSize:"11px",color:"#334155"}}>{user.email}</span>
+                <span style={{fontSize:"10px",fontWeight:"700",padding:"2px 8px",borderRadius:"99px",background:`${ROLE_COLORS[role]}18`,color:ROLE_COLORS[role],border:`1px solid ${ROLE_COLORS[role]}30`}}>{ROLE_LABELS[role]}</span>
+              </div>
+              <button onClick={()=>auth.signOut()} style={{background:"none",border:"1px solid #1e293b",borderRadius:"7px",padding:"4px 12px",color:"#475569",fontSize:"11px",fontWeight:"600",cursor:"pointer"}}>Sign Out</button>
+            </div>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:"4px",overflowX:"auto"}}>
+          {tabs.map(t=><button key={t.key} onClick={()=>setTab(t.key)} style={{background:tab===t.key?"#1e293b":"transparent",border:"none",borderBottom:tab===t.key?"2px solid #3b82f6":"2px solid transparent",color:tab===t.key?"#f1f5f9":"#64748b",padding:"9px 18px",cursor:"pointer",fontSize:"13px",fontWeight:"600",borderRadius:"8px 8px 0 0",transition:"all 0.15s",whiteSpace:"nowrap"}}>{t.label}</button>)}
+        </div>
+      </div>
+    </div>
+
+    {/* Content */}
+    <div style={{maxWidth:"1000px",margin:"0 auto",padding:"24px 28px 0"}}>
+
+      {/* DASHBOARD */}
+      {tab==="dashboard"&&<DashboardTab role={role}/>}
+
+      {/* BATCHES */}
+      {tab==="batches"&&<>
+        {/* Sub-tabs */}
+        <div style={{display:"flex",gap:"4px",marginBottom:"18px",borderBottom:"1px solid #1e293b"}}>
+          {[["batches","📦 Batch List"],["oldstock","🗃 Old/Rejected Material"]].map(([key,label])=>(
+            <button key={key} onClick={()=>setBatchSubTab(key)} style={{background:batchSubTab===key?"#1e293b":"transparent",border:"none",borderBottom:batchSubTab===key?"2px solid #3b82f6":"2px solid transparent",color:batchSubTab===key?"#f1f5f9":"#64748b",padding:"8px 16px",cursor:"pointer",fontSize:"13px",fontWeight:"600",borderRadius:"8px 8px 0 0",transition:"all 0.15s"}}>{label}</button>
+          ))}
+        </div>
+
+        {batchSubTab==="batches"&&<>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"14px",flexWrap:"wrap",gap:"10px"}}>
+            <div style={{display:"flex",gap:"8px",flexWrap:"wrap",alignItems:"center",flex:1}}>
+              <input placeholder="Search batch, product…" value={batchSearch} onChange={e=>setBatchSearch(e.target.value)} style={{...inp,maxWidth:"200px",padding:"8px 12px",fontSize:"13px"}}/>
+              {["All",...BATCH_STATUS].map(s=><button key={s} onClick={()=>setBatchFilter(s)} style={{background:batchFilter===s?"#1e3a5f":"transparent",border:`1px solid ${batchFilter===s?"#3b82f6":"#1e293b"}`,color:batchFilter===s?"#93c5fd":"#475569",borderRadius:"99px",padding:"5px 12px",fontSize:"11.5px",fontWeight:"600",transition:"all 0.15s",cursor:"pointer"}}>{s}</button>)}
+            </div>
+            {canIssuer&&<Btn label="+ Issue New Batch" onClick={()=>setShowIssueBatch(true)} color="#3b82f6"/>}
+          </div>
+          {fb.length===0?<div style={{textAlign:"center",padding:"50px 0"}}><div style={{fontSize:"36px",marginBottom:"10px"}}>📦</div><div style={{fontSize:"13px",color:"#475569"}}>No batches found.{canIssuer?" Click + Issue New Batch.":""}</div></div>:fb.map(b=><BatchCard key={b.id} b={b} onClick={()=>setActiveBatch(b)} onDelete={async(id)=>{if(!confirm("Delete batch?"))return;await C("batches").doc(id).delete();showToast("Deleted","error");}} role={role}/>)}
+        </>}
+
+        {batchSubTab==="oldstock"&&<OldStockSection role={role} user={user} showToast={showToast} products={sysProducts} catUnits={sysCatUnits}/>}
+      </>}
+
+      {/* COMPLAINTS */}
+      {tab==="complaints"&&<>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"14px",flexWrap:"wrap",gap:"10px"}}>
+          <div style={{display:"flex",gap:"8px",flexWrap:"wrap",alignItems:"center",flex:1}}>
+            <input placeholder="Search customer, product…" value={complaintSearch} onChange={e=>setComplaintSearch(e.target.value)} style={{...inp,maxWidth:"200px",padding:"8px 12px",fontSize:"13px"}}/>
+            {["All",...COMPLAINT_STATUS].map(s=><button key={s} onClick={()=>setComplaintFilter(s)} style={{background:complaintFilter===s?"#1e3a5f":"transparent",border:`1px solid ${complaintFilter===s?"#3b82f6":"#1e293b"}`,color:complaintFilter===s?"#93c5fd":"#475569",borderRadius:"99px",padding:"5px 12px",fontSize:"11.5px",fontWeight:"600",transition:"all 0.15s",cursor:"pointer"}}>{s}</button>)}
+          </div>
+          {(role==="sales"||role==="admin")&&<Btn label="+ Add Complaint" onClick={()=>setShowAddComplaint(true)} color="#ef4444"/>}
+        </div>
+        {fc.length===0?<div style={{textAlign:"center",padding:"50px 0"}}><div style={{fontSize:"36px",marginBottom:"10px"}}>✅</div><div style={{fontSize:"13px",color:"#475569"}}>No complaints found.{role==="sales"?" Click + Add Complaint.":""}</div></div>:fc.map(c=><ComplaintCard key={c.id} c={c} onClick={()=>setActiveComplaint(c)} onDelete={async(id)=>{if(!confirm("Delete?"))return;await C("complaints").doc(id).delete();showToast("Deleted","error");}} role={role}/>)}
+      </>}
+
+      {/* R&D */}
+      {tab==="rd"&&<>
+        <div style={{display:"flex",gap:"4px",marginBottom:"20px",borderBottom:"1px solid #1e293b",paddingBottom:"0"}}>
+          {[["projects","⚗️ R&D Projects"],["rmtests","🧫 RM Tests"]].map(([key,label])=><button key={key} onClick={()=>setRdSubTab(key)} style={{background:rdSubTab===key?"#1e293b":"transparent",border:"none",borderBottom:rdSubTab===key?"2px solid #22c55e":"2px solid transparent",color:rdSubTab===key?"#f1f5f9":"#64748b",padding:"8px 16px",cursor:"pointer",fontSize:"13px",fontWeight:"600",borderRadius:"8px 8px 0 0",transition:"all 0.15s"}}>{label}</button>)}
+        </div>
+        {rdSubTab==="projects"&&<>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"14px",flexWrap:"wrap",gap:"10px"}}>
+            <div style={{display:"flex",gap:"8px",flexWrap:"wrap",alignItems:"center",flex:1}}>
+              <input placeholder="Search projects…" value={projSearch} onChange={e=>setProjSearch(e.target.value)} style={{...inp,maxWidth:"200px",padding:"8px 12px",fontSize:"13px"}}/>
+              {["All",...PROJECT_STATUS].map(s=><button key={s} onClick={()=>setProjFilter(s)} style={{background:projFilter===s?"#1e3a5f":"transparent",border:`1px solid ${projFilter===s?"#3b82f6":"#1e293b"}`,color:projFilter===s?"#93c5fd":"#475569",borderRadius:"99px",padding:"5px 12px",fontSize:"11.5px",fontWeight:"600",cursor:"pointer"}}>{s}</button>)}
+            </div>
+            {isAdmin&&<Btn label="+ New Project" onClick={()=>setShowAddProject(true)} color="#3b82f6"/>}
+          </div>
+          {fp.length===0?<div style={{textAlign:"center",padding:"50px 0"}}><div style={{fontSize:"36px",marginBottom:"10px"}}>🧪</div><div style={{fontSize:"13px",color:"#475569"}}>No projects.{isAdmin?" Click + New Project.":""}</div></div>:fp.map(p=><ProjectCard key={p.id} p={p} onClick={()=>setActiveProject(p)} onDelete={async(id)=>{if(!confirm("Delete project?"))return;await C("rd_projects").doc(id).delete();showToast("Deleted","error");}} onEdit={p=>setEditProject({...p})} isAdmin={isAdmin}/>)}
+        </>}
+        {rdSubTab==="rmtests"&&<>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"14px",flexWrap:"wrap",gap:"10px"}}>
+            <div style={{display:"flex",gap:"8px",flexWrap:"wrap",alignItems:"center",flex:1}}>
+              <input placeholder="Search material, vendor…" value={rmSearch} onChange={e=>setRmSearch(e.target.value)} style={{...inp,maxWidth:"200px",padding:"8px 12px",fontSize:"13px"}}/>
+              {["All",...TEST_RESULTS].map(r=><button key={r} onClick={()=>setRmFilter(r)} style={{background:rmFilter===r?"#1e3a5f":"transparent",border:`1px solid ${rmFilter===r?"#3b82f6":"#1e293b"}`,color:rmFilter===r?"#93c5fd":"#475569",borderRadius:"99px",padding:"5px 12px",fontSize:"11.5px",fontWeight:"600",cursor:"pointer"}}>{r}</button>)}
+            </div>
+            <Btn label="+ Add Test Entry" onClick={()=>setShowAddRM(true)} color="#3b82f6"/>
+          </div>
+          {frm.length===0?<div style={{textAlign:"center",padding:"50px 0"}}><div style={{fontSize:"36px",marginBottom:"10px"}}>🧫</div><div style={{fontSize:"13px",color:"#475569"}}>No entries.</div></div>:frm.map(r=><RMCard key={r.id} r={r} onClick={()=>setViewRM(r)} onDelete={async(id)=>{if(!confirm("Delete?"))return;await C("rm_tests").doc(id).delete();showToast("Deleted","error");}} onEdit={r=>setEditRM({...r})} isAdmin={isAdmin}/>)}
+        </>}
+      </>}
+
+      {/* USERS */}
+      {tab==="users"&&<UsersTab currentUser={user}/>}
+
+      {/* SETTINGS */}
+      {tab==="settings"&&<SettingsTab showToast={showToast}/>}
+    </div>
+
+    {/* ══ MODALS ══ */}
+
+    {/* Batch Workspace */}
+    <Modal wide open={!!activeBatch} onClose={()=>setActiveBatch(null)} title="Batch Details">
+      {activeBatch&&<BatchWorkspace batch={activeBatch} role={role} showToast={showToast} qcParams={sysQcParams} packSizes={sysPackSizes}/>}
+    </Modal>
+
+    {/* Issue Batch */}
+    <Modal open={showIssueBatch} onClose={()=>setShowIssueBatch(false)} title="Issue New Batch">
+      {(()=>{
+        const availOldStock=oldStocks.filter(s=>(s.status==="Available")&&s.productName===batchForm.productName);
+        return <>
+          <CategoryProductSelect
+            category={batchForm.category||""} setCategory={cat=>setBatchForm({...batchForm,category:cat,productName:""})}
+            productName={batchForm.productName} setProductName={pn=>setBatchForm({...batchForm,productName:pn})}
+            products={sysProducts}
+            catUnits={sysCatUnits}
+            onUnitChange={unit=>setBatchForm(f=>({...f,unit}))}/>
+          {availOldStock.length>0&&<div style={{background:"#422006",border:"1px solid #f59e0b",borderRadius:"8px",padding:"10px 14px",marginBottom:"14px",display:"flex",alignItems:"center",gap:"8px"}}>
+            <span style={{fontSize:"16px"}}>⚠️</span>
+            <div>
+              <div style={{fontSize:"12px",fontWeight:"700",color:"#f59e0b"}}>Old/Rejected Material Available for this Product!</div>
+              <div style={{fontSize:"12px",color:"#d97706"}}>{availOldStock.map(s=>`${s.qty} ${s.unit} (Ref: ${s.batchRef||"—"})`).join(" · ")} — consider using this before new production.</div>
+            </div>
+          </div>}
+          <Grid2>
+            <Field label="Shade / Colour"><input style={inp} value={batchForm.shade} onChange={e=>setBatchForm({...batchForm,shade:e.target.value})} placeholder="e.g. Off White, Base"/></Field>
+            <Field label="Date Issued"><input type="date" style={inp} value={batchForm.dateIssued} onChange={e=>setBatchForm({...batchForm,dateIssued:e.target.value})}/></Field>
+          </Grid2>
+          <Grid2>
+            <Field label="Batch Size *"><input style={inp} value={batchForm.batchSize} onChange={e=>setBatchForm({...batchForm,batchSize:e.target.value})} placeholder="1000"/></Field>
+            <Field label="Unit">
+              <div style={{...inp,background:"#060b16",cursor:"default",display:"flex",alignItems:"center",gap:"8px",color:batchForm.unit?"#22c55e":"#475569",fontWeight:"600"}}>
+                {batchForm.unit||"— select category first —"}
+                {batchForm.unit&&<span style={{fontSize:"10px",color:"#475569",fontWeight:"400"}}>(auto from category)</span>}
+              </div>
+            </Field>
+          </Grid2>
+          <Field label="Issued By"><input style={inp} value={batchForm.issuedBy} onChange={e=>setBatchForm({...batchForm,issuedBy:e.target.value})} placeholder={user.email}/></Field>
+          <Field label="Old/Rejected Material Used (if any)"><input style={inp} value={batchForm.oldStockUsed} onChange={e=>setBatchForm({...batchForm,oldStockUsed:e.target.value})} placeholder="e.g. 200kg from GCC-2501-005"/></Field>
+          <Field label="Issue Notes"><textarea style={{...ta,minHeight:"56px"}} value={batchForm.issueNotes} onChange={e=>setBatchForm({...batchForm,issueNotes:e.target.value})}/></Field>
+          <InfoBox color="#3b82f6">Batch number auto-generated as GCC-YYMM-NNN</InfoBox>
+          <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
+            <Btn label="Cancel" onClick={()=>setShowIssueBatch(false)} outline color="#475569"/>
+            <Btn label={saving?"Issuing…":"Issue Batch"} onClick={saveBatch} disabled={saving} color="#3b82f6"/>
+          </div>
+        </>;
+      })()}
+    </Modal>
+
+    {/* Add Complaint */}
+    <Modal open={showAddComplaint} onClose={()=>setShowAddComplaint(false)} title="Add New Complaint">
+      <Grid2>
+        <Field label="Customer Name *"><input style={inp} value={complaintForm.customerName} onChange={e=>setComplaintForm({...complaintForm,customerName:e.target.value})} placeholder="Customer / party name"/></Field>
+        <Field label="Product *"><input style={inp} value={complaintForm.productName} onChange={e=>setComplaintForm({...complaintForm,productName:e.target.value})} placeholder="Product name"/></Field>
+      </Grid2>
+      <Grid3>
+        <Field label="Batch No"><input style={inp} value={complaintForm.batchNo} onChange={e=>setComplaintForm({...complaintForm,batchNo:e.target.value})} placeholder="e.g. GCC-2501-001"/></Field>
+        <Field label="Month / Year"><input style={inp} value={complaintForm.monthYear} onChange={e=>setComplaintForm({...complaintForm,monthYear:e.target.value})} placeholder="e.g. Jan 2025"/></Field>
+        <Field label="Invoice No"><input style={inp} value={complaintForm.invoiceNo} onChange={e=>setComplaintForm({...complaintForm,invoiceNo:e.target.value})} placeholder="Invoice number"/></Field>
+      </Grid3>
+      <Field label="Material Available with Customer"><input style={inp} value={complaintForm.materialAvailable} onChange={e=>setComplaintForm({...complaintForm,materialAvailable:e.target.value})} placeholder="e.g. 15 L, 2 tins, approx half drum"/></Field>
+      <Field label="Complaint Description *"><textarea style={{...ta,minHeight:"100px"}} value={complaintForm.complaint} onChange={e=>setComplaintForm({...complaintForm,complaint:e.target.value})} placeholder="Describe the complaint in detail — what is the issue, when was it noticed, what conditions..."/></Field>
+      <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
+        <Btn label="Cancel" onClick={()=>setShowAddComplaint(false)} outline color="#475569"/>
+        <Btn label={saving?"Saving…":"Submit Complaint"} onClick={saveComplaint} disabled={saving} color="#ef4444"/>
+      </div>
+    </Modal>
+
+    {/* Complaint Workspace */}
+    <Modal wide open={!!activeComplaint} onClose={()=>setActiveComplaint(null)} title="Complaint Details">
+      {activeComplaint&&<ComplaintWorkspace complaint={activeComplaint} role={role} showToast={showToast}/>}
+    </Modal>
+
+    {/* Project Workspace */}
+    <Modal wide open={!!activeProject} onClose={()=>setActiveProject(null)} title="Project Workspace">
+      {activeProject&&<ProjectWorkspace key={activeProject.id} project={activeProject} isAdmin={isAdmin} showToast={showToast}/>}
+    </Modal>
+
+    {/* Add Project */}
+    <Modal open={showAddProject} onClose={()=>setShowAddProject(false)} title="New R&D Project">
+      <Field label="Project Name *"><input style={inp} value={projForm.projectName} onChange={e=>setProjForm({...projForm,projectName:e.target.value})} placeholder="e.g. Water-based Exterior Emulsion v3"/></Field>
+      <Grid2>
+        <Field label="Project Code"><input style={inp} value={projForm.projectCode} onChange={e=>setProjForm({...projForm,projectCode:e.target.value})} placeholder="Auto-generated if blank"/></Field>
+        <Field label="Paint Type"><select style={sl} value={projForm.paintType} onChange={e=>setProjForm({...projForm,paintType:e.target.value})}>{PAINT_TYPES.map(t=><option key={t}>{t}</option>)}</select></Field>
+      </Grid2>
+      <Field label="Target Application"><input style={inp} value={projForm.application} onChange={e=>setProjForm({...projForm,application:e.target.value})} placeholder="e.g. Interior walls, Metal surfaces"/></Field>
+      <Grid2>
+        <Field label="Status"><select style={sl} value={projForm.status} onChange={e=>setProjForm({...projForm,status:e.target.value})}>{PROJECT_STATUS.map(s=><option key={s}>{s}</option>)}</select></Field>
+        <Field label="Target Date"><input type="date" style={inp} value={projForm.targetDate} onChange={e=>setProjForm({...projForm,targetDate:e.target.value})}/></Field>
+      </Grid2>
+      <Field label="Assigned To"><input style={inp} value={projForm.assignedTo} onChange={e=>setProjForm({...projForm,assignedTo:e.target.value})} placeholder="Chemist / Team member"/></Field>
+      <Field label="Objective"><textarea style={ta} value={projForm.objective} onChange={e=>setProjForm({...projForm,objective:e.target.value})} placeholder="What is this project trying to achieve?"/></Field>
+      <Field label="Formulation Base"><textarea style={ta} value={projForm.formulationBase} onChange={e=>setProjForm({...projForm,formulationBase:e.target.value})} placeholder="Base resin, key pigments, binders..."/></Field>
+      <Field label="Notes"><textarea style={{...ta,minHeight:"56px"}} value={projForm.notes} onChange={e=>setProjForm({...projForm,notes:e.target.value})}/></Field>
+      <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
+        <Btn label="Cancel" onClick={()=>setShowAddProject(false)} outline color="#475569"/>
+        <Btn label={saving?"Creating…":"Create Project"} onClick={saveProject} disabled={saving} color="#3b82f6"/>
+      </div>
+    </Modal>
+
+    {/* Edit Project */}
+    <Modal open={!!editProject} onClose={()=>setEditProject(null)} title="Edit Project">
+      {editProject&&<>
+        <Field label="Project Name *"><input style={inp} value={editProject.projectName} onChange={e=>setEditProject({...editProject,projectName:e.target.value})}/></Field>
+        <Grid2>
+          <Field label="Project Code"><input style={inp} value={editProject.projectCode} onChange={e=>setEditProject({...editProject,projectCode:e.target.value})}/></Field>
+          <Field label="Paint Type"><select style={sl} value={editProject.paintType} onChange={e=>setEditProject({...editProject,paintType:e.target.value})}>{PAINT_TYPES.map(t=><option key={t}>{t}</option>)}</select></Field>
+        </Grid2>
+        <Field label="Target Application"><input style={inp} value={editProject.application||""} onChange={e=>setEditProject({...editProject,application:e.target.value})}/></Field>
+        <Grid2>
+          <Field label="Status"><select style={sl} value={editProject.status} onChange={e=>setEditProject({...editProject,status:e.target.value})}>{PROJECT_STATUS.map(s=><option key={s}>{s}</option>)}</select></Field>
+          <Field label="Target Date"><input type="date" style={inp} value={editProject.targetDate||""} onChange={e=>setEditProject({...editProject,targetDate:e.target.value})}/></Field>
+        </Grid2>
+        <Field label="Assigned To"><input style={inp} value={editProject.assignedTo||""} onChange={e=>setEditProject({...editProject,assignedTo:e.target.value})}/></Field>
+        <Field label="Objective"><textarea style={ta} value={editProject.objective||""} onChange={e=>setEditProject({...editProject,objective:e.target.value})}/></Field>
+        <Field label="Formulation Base"><textarea style={ta} value={editProject.formulationBase||""} onChange={e=>setEditProject({...editProject,formulationBase:e.target.value})}/></Field>
+        <Field label="Notes"><textarea style={{...ta,minHeight:"56px"}} value={editProject.notes||""} onChange={e=>setEditProject({...editProject,notes:e.target.value})}/></Field>
+        <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
+          <Btn label="Cancel" onClick={()=>setEditProject(null)} outline color="#475569"/>
+          <Btn label={saving?"Saving…":"Save Changes"} onClick={()=>updateProject(editProject)} disabled={saving} color="#f59e0b"/>
+        </div>
+      </>}
+    </Modal>
+
+    {/* Add RM */}
+    <Modal open={showAddRM} onClose={()=>setShowAddRM(false)} title="New Raw Material Test Entry">
+      <Grid2>
+        <Field label="Material Name *"><input style={inp} value={rmForm.materialName} onChange={e=>setRmForm({...rmForm,materialName:e.target.value})} placeholder="e.g. TiO2, Alkyd Resin"/></Field>
+        <Field label="Vendor / Supplier *"><input style={inp} value={rmForm.vendorName} onChange={e=>setRmForm({...rmForm,vendorName:e.target.value})}/></Field>
+      </Grid2>
+      <Grid2>
+        <Field label="Category"><select style={sl} value={rmForm.category} onChange={e=>setRmForm({...rmForm,category:e.target.value})}>{RM_CATEGORIES.map(c=><option key={c}>{c}</option>)}</select></Field>
+        <Field label="Date Received"><input type="date" style={inp} value={rmForm.dateReceived} onChange={e=>setRmForm({...rmForm,dateReceived:e.target.value})}/></Field>
+      </Grid2>
+      <Grid2>
+        <Field label="Batch / Lot No"><input style={inp} value={rmForm.batchNo} onChange={e=>setRmForm({...rmForm,batchNo:e.target.value})}/></Field>
+        <Field label="Quantity Received"><input style={inp} value={rmForm.quantityReceived} onChange={e=>setRmForm({...rmForm,quantityReceived:e.target.value})} placeholder="e.g. 25 kg"/></Field>
+      </Grid2>
+      <Grid2>
+        <Field label="Tested By"><input style={inp} value={rmForm.testedBy} onChange={e=>setRmForm({...rmForm,testedBy:e.target.value})}/></Field>
+        <Field label="Test Result"><select style={sl} value={rmForm.testResult} onChange={e=>setRmForm({...rmForm,testResult:e.target.value})}>{TEST_RESULTS.map(r=><option key={r}>{r}</option>)}</select></Field>
+      </Grid2>
+      <Field label="Tests Performed"><textarea style={ta} value={rmForm.testsPerformed} onChange={e=>setRmForm({...rmForm,testsPerformed:e.target.value})} placeholder="Viscosity, pH, Fineness, Density..."/></Field>
+      <Field label="Observations / Results"><textarea style={ta} value={rmForm.observations} onChange={e=>setRmForm({...rmForm,observations:e.target.value})} placeholder="Values measured, deviations from spec..."/></Field>
+      <Field label="Remarks / Action Taken"><textarea style={{...ta,minHeight:"56px"}} value={rmForm.remarks} onChange={e=>setRmForm({...rmForm,remarks:e.target.value})} placeholder="Accepted / Rejected / Returned to vendor..."/></Field>
+      <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
+        <Btn label="Cancel" onClick={()=>setShowAddRM(false)} outline color="#475569"/>
+        <Btn label={saving?"Saving…":"Save Entry"} onClick={saveRM} disabled={saving} color="#3b82f6"/>
+      </div>
+    </Modal>
+
+    {/* View / Retest RM */}
+    <Modal wide open={!!viewRM} onClose={()=>setViewRM(null)} title="Raw Material Test Details">
+      {viewRM&&<RMDetailView entry={viewRM} showToast={showToast}/>}
+    </Modal>
+
+    {/* Edit RM */}
+    <Modal open={!!editRM} onClose={()=>setEditRM(null)} title="Edit RM Entry">
+      {editRM&&<>
+        <Grid2>
+          <Field label="Material Name *"><input style={inp} value={editRM.materialName} onChange={e=>setEditRM({...editRM,materialName:e.target.value})}/></Field>
+          <Field label="Vendor / Supplier *"><input style={inp} value={editRM.vendorName} onChange={e=>setEditRM({...editRM,vendorName:e.target.value})}/></Field>
+        </Grid2>
+        <Grid2>
+          <Field label="Category"><select style={sl} value={editRM.category} onChange={e=>setEditRM({...editRM,category:e.target.value})}>{RM_CATEGORIES.map(c=><option key={c}>{c}</option>)}</select></Field>
+          <Field label="Date Received"><input type="date" style={inp} value={editRM.dateReceived||""} onChange={e=>setEditRM({...editRM,dateReceived:e.target.value})}/></Field>
+        </Grid2>
+        <Grid2>
+          <Field label="Batch / Lot No"><input style={inp} value={editRM.batchNo||""} onChange={e=>setEditRM({...editRM,batchNo:e.target.value})}/></Field>
+          <Field label="Qty Received"><input style={inp} value={editRM.quantityReceived||""} onChange={e=>setEditRM({...editRM,quantityReceived:e.target.value})}/></Field>
+        </Grid2>
+        <Grid2>
+          <Field label="Tested By"><input style={inp} value={editRM.testedBy||""} onChange={e=>setEditRM({...editRM,testedBy:e.target.value})}/></Field>
+          <Field label="Test Result"><select style={sl} value={editRM.testResult} onChange={e=>setEditRM({...editRM,testResult:e.target.value})}>{TEST_RESULTS.map(r=><option key={r}>{r}</option>)}</select></Field>
+        </Grid2>
+        <Field label="Tests Performed"><textarea style={ta} value={editRM.testsPerformed||""} onChange={e=>setEditRM({...editRM,testsPerformed:e.target.value})}/></Field>
+        <Field label="Observations / Results"><textarea style={ta} value={editRM.observations||""} onChange={e=>setEditRM({...editRM,observations:e.target.value})}/></Field>
+        <Field label="Remarks"><textarea style={{...ta,minHeight:"56px"}} value={editRM.remarks||""} onChange={e=>setEditRM({...editRM,remarks:e.target.value})}/></Field>
+        <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
+          <Btn label="Cancel" onClick={()=>setEditRM(null)} outline color="#475569"/>
+          <Btn label={saving?"Saving…":"Save Changes"} onClick={()=>updateRM(editRM)} disabled={saving} color="#f59e0b"/>
+        </div>
+      </>}
+    </Modal>
+
+    {/* Toast */}
+    {toast&&<div style={{position:"fixed",bottom:"24px",left:"50%",transform:"translateX(-50%)",background:toast.type==="error"?"#450a0a":"#052e16",border:`1px solid ${toast.type==="error"?"#7f1d1d":"#166534"}`,borderRadius:"10px",padding:"11px 22px",color:"#f1f5f9",fontSize:"13.5px",fontWeight:"600",zIndex:3000,boxShadow:"0 8px 30px rgba(0,0,0,0.6)",animation:"fadeIn 0.2s ease",whiteSpace:"nowrap"}}>
+      {toast.msg}
+    </div>}
+  </div>;
+}
+
+// ══════════════════════════════════════════════════════════
+// ROOT
+// ══════════════════════════════════════════════════════════
+function App(){
+  const [user,setUser]=useState(undefined);
+  const [role,setRole]=useState(null);
+  const [loading,setLoading]=useState(false);
+
+  useEffect(()=>{
+    const unsub=auth.onAuthStateChanged(async u=>{
+      setUser(u||null);
+      if(u){
+        setLoading(true);
+        // Update user profile
+        try{await db.collection("userProfiles").doc(u.uid).set({email:u.email,lastLogin:ts()},{merge:true});}catch(e){}
+        // Determine role — check hardcoded list first, then Firestore
+        if(ADMIN_EMAILS.includes(u.email)){setRole("admin");setLoading(false);return;}
+        try{
+          const snap=await db.collection("roles").doc(u.email).get();
+          // Firestore role takes priority — including admin role assigned via Users tab
+          setRole(snap.exists?snap.data().role:null);
+        }catch(e){setRole(null);}
+        setLoading(false);
+      }else{setRole(null);setLoading(false);}
+    });
+    return unsub;
+  },[]);
+
+  if(user===undefined||loading)return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",color:"#475569",fontSize:"14px"}}>Loading…</div>;
+  if(!user)return <LoginScreen/>;
+  if(!role)return <NoAccessScreen/>;
+  return <MainApp user={user} role={role}/>;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
