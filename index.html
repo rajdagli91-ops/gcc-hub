@@ -283,7 +283,7 @@ const getFYLabel=(fy)=>`${String(fy-1).padStart(2,"0")}-${String(fy).padStart(2,
 function BatchCard({b,onClick,onDelete,role}){
   const sc=BS_COL[b.status]||"#94a3b8";
   return <div onClick={onClick} onMouseEnter={e=>e.currentTarget.style.background="#0f1f35"} onMouseLeave={e=>e.currentTarget.style.background="#080e1a"}
-    style={{background:"#080e1a",border:"1px solid #1e293b",borderLeft:`3px solid ${sc}`,borderRadius:"8px",padding:"8px 14px",cursor:"pointer",transition:"background 0.1s",display:"grid",gridTemplateColumns:"70px 1fr 1fr auto auto",gap:"8px",alignItems:"center",marginBottom:"4px"}}>
+    style={{background:"#080e1a",border:"1px solid #1e293b",borderLeft:`3px solid ${sc}`,borderRadius:"8px",padding:"8px 14px",cursor:"pointer",transition:"background 0.1s",display:"grid",gridTemplateColumns:"100px 1fr 1fr auto auto",gap:"8px",alignItems:"center",marginBottom:"4px"}}>
     <div style={{fontSize:"13px",fontWeight:"700",color:"#f1f5f9",fontFamily:"monospace"}}>{b.batchNo}</div>
     <div style={{minWidth:0}}>
       <div style={{fontSize:"12.5px",fontWeight:"600",color:"#e2e8f0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{b.productName}{b.shade?` · ${b.shade}`:""}</div>
@@ -2500,7 +2500,7 @@ function MainApp({user,role}){
   const [batchSearch,setBatchSearch]=useState("");
   const [batchMonthFilter,setBatchMonthFilter]=useState("All");
   const [batchCatFilter,setBatchCatFilter]=useState("All");
-  const [batchFYFilter,setBatchFYFilter]=useState(String(getFY()));
+  const [batchFYFilter,setBatchFYFilter]=useState("All"); // Default All so existing batches show
   const [complaintFilter,setComplaintFilter]=useState("All");
   const [complaintSearch,setComplaintSearch]=useState("");
   const [projSearch,setProjSearch]=useState("");
@@ -2635,12 +2635,20 @@ function MainApp({user,role}){
     </div>;
   }
 
+  // Infer FY from batch — uses stored fyYear if available, else derives from dateIssued
+  const getBatchFY=(b)=>{
+    if(b.fyYear)return b.fyYear;
+    if(b.dateIssued){const d=new Date(b.dateIssued);const y=d.getFullYear()%100;return d.getMonth()>=3?y+1:y;}
+    return getFY();
+  };
+
   // Filtered data
   const fb=batches.filter(b=>{
     const ms=batchFilter==="All"||b.status===batchFilter;
     const cs=batchCatFilter==="All"||b.category===batchCatFilter;
-    const fys=batchFYFilter==="All"||String(b.fyYear||"")===batchFYFilter;
-    const mths=batchMonthFilter==="All"||(b.dateIssued||"").startsWith(batchMonthFilter);
+    const fys=batchFYFilter==="All"||getBatchFY(b)===parseInt(batchFYFilter);
+    // Month filter: compare just MM part of dateIssued (e.g. "05" for May)
+    const mths=batchMonthFilter==="All"||(b.dateIssued||"").slice(5,7)===batchMonthFilter;
     const q=normalize(batchSearch);
     const match=!q||normalize(b.batchNo||"").includes(q)||normalize(b.productName||"").includes(q)||normalize(b.shade||"").includes(q);
     return ms&&cs&&fys&&mths&&match;
@@ -2730,10 +2738,10 @@ function MainApp({user,role}){
             <select value={batchFYFilter} onChange={e=>setBatchFYFilter(e.target.value)} style={{...sl,width:"90px",padding:"7px 6px",fontSize:"12px"}}>
               {(()=>{const fy=getFY();const fys=[];for(let i=fy;i>=fy-3;i--)fys.push(String(i));return[<option key="All" value="All">All FY</option>,...fys.map(f=><option key={f} value={f}>FY {getFYLabel(parseInt(f))}</option>)];})()}
             </select>
-            {/* Month selector */}
+            {/* Month selector — just month names, no year */}
             <select value={batchMonthFilter} onChange={e=>setBatchMonthFilter(e.target.value)} style={{...sl,width:"110px",padding:"7px 6px",fontSize:"12px"}}>
               <option value="All">All Months</option>
-              {(()=>{const opts=[];for(let y=2025;y<=2027;y++){for(let m=1;m<=12;m++){const v=`${y}-${String(m).padStart(2,"0")}`;opts.push(<option key={v} value={v}>{new Date(y,m-1).toLocaleString("en-IN",{month:"short",year:"2-digit"})}</option>);}}return opts;})()}
+              {[["04","April"],["05","May"],["06","June"],["07","July"],["08","August"],["09","September"],["10","October"],["11","November"],["12","December"],["01","January"],["02","February"],["03","March"]].map(([v,n])=><option key={v} value={v}>{n}</option>)}
             </select>
             {/* Category selector */}
             <select value={batchCatFilter} onChange={e=>setBatchCatFilter(e.target.value)} style={{...sl,width:"120px",padding:"7px 6px",fontSize:"12px"}}>
@@ -2748,7 +2756,7 @@ function MainApp({user,role}){
             <span style={{marginLeft:"auto",fontSize:"11px",color:"#334155"}}>{fb.length} batch{fb.length!==1?"es":""}</span>
           </div>
           {/* Compact table header */}
-          {fb.length>0&&<div style={{display:"grid",gridTemplateColumns:"70px 1fr 1fr auto 24px",gap:"8px",padding:"4px 14px",marginBottom:"2px"}}>
+          {fb.length>0&&<div style={{display:"grid",gridTemplateColumns:"100px 1fr 1fr auto 24px",gap:"8px",padding:"4px 14px",marginBottom:"2px"}}>
             {["Batch #","Product","Size · Date","Status",""].map(h=><div key={h} style={{fontSize:"9px",fontWeight:"700",color:"#334155",textTransform:"uppercase",letterSpacing:"0.07em"}}>{h}</div>)}
           </div>}
           {fb.length===0?<div style={{textAlign:"center",padding:"40px 0"}}><div style={{fontSize:"30px",marginBottom:"8px"}}>📦</div><div style={{fontSize:"13px",color:"#475569"}}>No batches match filters.{canIssuer?" Click + Issue New Batch.":""}</div></div>
