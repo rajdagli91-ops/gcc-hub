@@ -2522,11 +2522,11 @@ function FYArchiveTab({showToast}){
     setDeleting(true);
     try{
       // Delete in batches of 20 (Firestore limit)
-      const deleteAll=async(ids,collection)=>{
+      const deleteAll=async(ids,col)=>{
         for(let i=0;i<ids.length;i+=20){
-          const batch=db.batch();
-          ids.slice(i,i+20).forEach(id=>batch.delete(db.collection(collection).doc(id)));
-          await batch.commit();
+          const wb_=db.batch();
+          ids.slice(i,i+20).forEach(id=>wb_.delete(db.collection(col).doc(id)));
+          await wb_.commit();
         }
       };
       await Promise.all([
@@ -2562,10 +2562,10 @@ function FYArchiveTab({showToast}){
     {loading&&<div style={{fontSize:"13px",color:"#475569",padding:"10px 0"}}>⏳ Loading data counts…</div>}
     {counts&&isPrevFY&&step!=="done"&&<>
       <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"10px",marginBottom:"16px"}}>
-        {[["📦 Batches",counts.batches,"#3b82f6"],["⚠️ Complaints",counts.complaints,"#ef4444"],["🔄 Old Stock",counts.oldStock,"#f59e0b"]].map(([label,count,color])=>(
-          <div key={label} style={{background:"#0b1220",border:`1px solid ${color}30`,borderRadius:"10px",padding:"14px 16px",textAlign:"center"}}>
+        {[["📦 Batches",counts.batches,"#3b82f6"],["⚠️ Complaints",counts.complaints,"#ef4444"],["🔄 Old Stock",counts.oldStock,"#f59e0b"]].map(([lbl,count,color])=>(
+          <div key={lbl} style={{background:"#0b1220",border:`1px solid ${color}30`,borderRadius:"10px",padding:"14px 16px",textAlign:"center"}}>
             <div style={{fontSize:"24px",fontWeight:"700",color}}>{count}</div>
-            <div style={{fontSize:"12px",color:"#64748b",marginTop:"3px"}}>{label}</div>
+            <div style={{fontSize:"12px",color:"#64748b",marginTop:"3px"}}>{lbl}</div>
           </div>
         ))}
       </div>
