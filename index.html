@@ -1571,23 +1571,27 @@ function RMDetailView({entry,showToast}){
 // ══════════════════════════════════════════════════════════
 // DASHBOARD TAB
 // ══════════════════════════════════════════════════════════
-function DashboardTab({role}){
+function DashboardTab({role,user}){
   const [counts,setCounts]=useState({batches:0,activeBatches:0,openComplaints:0,rdProjects:0,rmTests:0,qcPending:0});
   useEffect(()=>{
+    // For sales: only count their own open complaints
+    const complaintsQuery=role==="sales"&&user?.email
+      ?C("complaints").where("status","in",["Open","Under Review"]).where("addedBy","==",user.email)
+      :C("complaints").where("status","in",["Open","Under Review"]);
     Promise.all([
       C("batches").get(),
       C("batches").where("status","in",["Issued","In Production","QC Pending","QC Pass","Packed"]).get(),
       C("batches").where("status","==","QC Pending").get(),
-      C("complaints").where("status","in",["Open","Under Review"]).get(),
+      complaintsQuery.get(),
       C("rd_projects").get(),
       C("rm_tests").get()
     ]).then(([b,ab,qc,oc,rd,rm])=>setCounts({batches:b.size,activeBatches:ab.size,qcPending:qc.size,openComplaints:oc.size,rdProjects:rd.size,rmTests:rm.size}));
-  },[]);
+  },[role,user?.email]);
 
   const tiles=[
     {label:"Active Batches",val:counts.activeBatches,color:"#3b82f6",icon:"📦",roles:["admin","issuer","qc"]},
     {label:"QC Pending",val:counts.qcPending,color:"#a855f7",icon:"🔬",roles:["admin","qc"]},
-    {label:"Open Complaints",val:counts.openComplaints,color:"#ef4444",icon:"⚠️",roles:["admin","issuer","qc","sales"]},
+    {label:role==="sales"?"My Open Complaints":"Open Complaints",val:counts.openComplaints,color:"#ef4444",icon:"⚠️",roles:["admin","issuer","qc","sales"]},
     {label:"R&D Projects",val:counts.rdProjects,color:"#22c55e",icon:"🧪",roles:["admin","qc"]},
     {label:"RM Tests",val:counts.rmTests,color:"#f59e0b",icon:"🧫",roles:["admin","qc"]},
     {label:"Total Batches",val:counts.batches,color:"#64748b",icon:"📋",roles:["admin","issuer"]},
@@ -3232,7 +3236,12 @@ function MainApp({user,role}){
       subs.push(C("batches").orderBy("_createdAt","desc").onSnapshot(s=>setBatches(s.docs.map(d=>({id:d.id,...d.data()}))),()=>C("batches").onSnapshot(s=>setBatches(s.docs.map(d=>({id:d.id,...d.data()}))))));
     }
     if(CAN_SEE.complaints.includes(role)){
-      subs.push(C("complaints").orderBy("_createdAt","desc").onSnapshot(s=>setComplaints(s.docs.map(d=>({id:d.id,...d.data()}))),()=>C("complaints").onSnapshot(s=>setComplaints(s.docs.map(d=>({id:d.id,...d.data()}))))));
+      // Sales users only load their own complaints; other roles load all
+      const cQuery=role==="sales"
+        ?C("complaints").where("addedBy","==",user.email).orderBy("_createdAt","desc")
+        :C("complaints").orderBy("_createdAt","desc");
+      subs.push(cQuery.onSnapshot(s=>setComplaints(s.docs.map(d=>({id:d.id,...d.data()}))),
+        ()=>C("complaints").onSnapshot(s=>setComplaints(s.docs.map(d=>({id:d.id,...d.data()})).filter(c=>role!=="sales"||c.addedBy===user.email)))));
     }
     if(CAN_SEE.rd.includes(role)){
       subs.push(C("rd_projects").orderBy("_createdAt","desc").onSnapshot(s=>setProjects(s.docs.map(d=>({id:d.id,...d.data()}))),()=>C("rd_projects").onSnapshot(s=>setProjects(s.docs.map(d=>({id:d.id,...d.data()}))))));
@@ -3412,7 +3421,7 @@ function MainApp({user,role}){
     <div style={{maxWidth:"1000px",margin:"0 auto",padding:"24px 28px 0"}}>
 
       {/* DASHBOARD */}
-      {tab==="dashboard"&&<DashboardTab role={role}/>}
+      {tab==="dashboard"&&<DashboardTab role={role} user={user}/>}
 
       {/* BATCHES */}
       {tab==="batches"&&<>
