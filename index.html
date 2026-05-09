@@ -103,6 +103,7 @@ const CAN_SEE = {
   batches:  ["admin","issuer","qc"],
   complaints:["admin","issuer","qc","sales"],
   rd:       ["admin","qc"],
+  testimonials:["admin","sales"],
   users:    ["admin"],
   settings: ["admin"]
 };
@@ -712,7 +713,77 @@ function BatchWorkspace({batch,role,onClose,showToast,qcParams,packSizes}){
 }
 
 // ══════════════════════════════════════════════════════════
-// COMPLAINT MODULE
+// FILE UPLOAD — Firebase Storage REST API
+// ══════════════════════════════════════════════════════════
+const BUCKET=()=>window._firebaseConfig?.storageBucket||"r-and-d-gcc.firebasestorage.app";
+
+const uploadFile=async(file,folder,userEmail)=>{
+  const user=auth.currentUser;
+  if(!user)throw new Error("Not signed in");
+  const idToken=await user.getIdToken();
+  const safeName=`${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g,"_")}`;
+  const path=`${folder}/${safeName}`;
+  const encoded=encodeURIComponent(path);
+  const url=`https://firebasestorage.googleapis.com/v0/b/${BUCKET()}/o?uploadType=media&name=${encoded}`;
+  const res=await fetch(url,{method:"POST",headers:{"Content-Type":file.type,"Authorization":`Firebase ${idToken}`},body:file});
+  if(!res.ok){const err=await res.json();throw new Error(err.error?.message||"Upload failed");}
+  const data=await res.json();
+  const token=data.downloadTokens;
+  const downloadUrl=`https://firebasestorage.googleapis.com/v0/b/${BUCKET()}/o/${encoded}?alt=media&token=${token}`;
+  return {name:file.name,safeName,path,url:downloadUrl,type:file.type,size:file.size,uploadedBy:userEmail,uploadedAt:today()};
+};
+
+function FileAttachment({folder,existingFiles=[],onFilesChange,readOnly=false,maxFiles=5}){
+  const [uploading,setUploading]=useState(false);
+  const [error,setError]=useState("");
+  const user=auth.currentUser;
+  const fileRef=useRef(null);
+
+  const handleSelect=async(e)=>{
+    const files=[...e.target.files];
+    if(!files.length)return;
+    if(existingFiles.length+files.length>maxFiles){setError(`Max ${maxFiles} files allowed`);return;}
+    setUploading(true);setError("");
+    try{
+      const uploaded=await Promise.all(files.map(f=>uploadFile(f,folder,user?.email||"")));
+      onFilesChange([...existingFiles,...uploaded]);
+    }catch(err){setError(err.message||"Upload failed");}
+    setUploading(false);
+    e.target.value="";
+  };
+
+  const removeFile=(idx)=>{onFilesChange(existingFiles.filter((_,i)=>i!==idx));};
+
+  return <div>
+    {!readOnly&&existingFiles.length<maxFiles&&<div style={{marginBottom:"8px"}}>
+      <input ref={fileRef} type="file" accept="image/*,video/*,.pdf" multiple onChange={handleSelect} style={{display:"none"}}/>
+      <button onClick={()=>fileRef.current?.click()} disabled={uploading}
+        style={{background:"none",border:"1px dashed #334155",borderRadius:"7px",padding:"7px 14px",color:uploading?"#334155":"#64748b",cursor:uploading?"not-allowed":"pointer",fontSize:"12px",fontWeight:"600",display:"flex",alignItems:"center",gap:"6px"}}>
+        {uploading?"⏳ Uploading…":"📎 Add Photo / Video / PDF"}
+        <span style={{fontSize:"10px",color:"#334155"}}>({existingFiles.length}/{maxFiles})</span>
+      </button>
+      {error&&<div style={{fontSize:"11px",color:"#ef4444",marginTop:"4px"}}>{error}</div>}
+    </div>}
+    {existingFiles.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:"8px",marginTop:"6px"}}>
+      {existingFiles.map((f,i)=>{
+        const isImg=f.type?.startsWith("image/");
+        const isVid=f.type?.startsWith("video/");
+        return <div key={i} style={{position:"relative",background:"#0b1220",border:"1px solid #1e293b",borderRadius:"8px",overflow:"hidden",width:isImg||isVid?"140px":"auto",maxWidth:"200px"}}>
+          {isImg&&<img src={f.url} alt={f.name} style={{width:"140px",height:"100px",objectFit:"cover",display:"block"}}/>}
+          {isVid&&<video src={f.url} controls style={{width:"140px",height:"100px",objectFit:"cover",display:"block"}}/>}
+          {!isImg&&!isVid&&<a href={f.url} target="_blank" rel="noreferrer" style={{display:"flex",alignItems:"center",gap:"6px",padding:"10px 12px",color:"#93c5fd",fontSize:"12px",textDecoration:"none"}}>
+            📄 {f.name.length>20?f.name.slice(0,20)+"…":f.name}
+          </a>}
+          <div style={{padding:"4px 8px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span style={{fontSize:"10px",color:"#334155",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"90px"}}>{f.name}</span>
+            {!readOnly&&<button onClick={()=>removeFile(i)} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"14px",padding:"0 2px",flexShrink:0}}>×</button>}
+          </div>
+        </div>;
+      })}
+    </div>}
+  </div>;
+}
+
 // ══════════════════════════════════════════════════════════
 function ComplaintCard({c,onClick,onDelete,role}){
   const sc=CS_COL[c.status]||"#94a3b8";
@@ -853,7 +924,11 @@ function ComplaintWorkspace({complaint,role,showToast}){
         </div>)}
       </div>
       <div style={{fontSize:"10px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.09em",marginBottom:"5px"}}>Complaint Description</div>
-      <div style={{fontSize:"13.5px",color:"#cbd5e1",lineHeight:1.6,whiteSpace:"pre-wrap"}}>{live.complaint}</div>
+      <div style={{fontSize:"13.5px",color:"#cbd5e1",lineHeight:1.6,whiteSpace:"pre-wrap",marginBottom:"10px"}}>{live.complaint}</div>
+      {(live.attachments||[]).length>0&&<div>
+        <div style={{fontSize:"10px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.09em",marginBottom:"6px"}}>📎 Attachments</div>
+        <FileAttachment folder="" existingFiles={live.attachments||[]} onFilesChange={()=>{}} readOnly={true}/>
+      </div>}
     </div>
 
     {/* Response history — show all rounds */}
@@ -1550,6 +1625,193 @@ function DashboardTab({role}){
 // ══════════════════════════════════════════════════════════
 // USERS TAB (Admin only)
 // ══════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════
+// TESTIMONIALS MODULE
+// ══════════════════════════════════════════════════════════
+function TestimonialsTab({role,user,showToast}){
+  const [testimonials,setTestimonials]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [showAdd,setShowAdd]=useState(false);
+  const [saving,setSaving]=useState(false);
+  const [viewItem,setViewItem]=useState(null);
+  const [search,setSearch]=useState("");
+  const [filterRating,setFilterRating]=useState("All");
+  const blank={customerName:"",location:"",product:"",rating:"5",testimonialText:"",usedFor:"",attachments:[]};
+  const [form,setForm]=useState({...blank});
+  const [formFiles,setFormFiles]=useState([]);
+  const isAdmin=role==="admin";
+
+  useEffect(()=>{
+    const unsub=C("testimonials").orderBy("_createdAt","desc").onSnapshot(snap=>{
+      setTestimonials(snap.docs.map(d=>({id:d.id,...d.data()})));
+      setLoading(false);
+    },()=>setLoading(false));
+    return unsub;
+  },[]);
+
+  const save=async()=>{
+    if(!form.customerName.trim()||!form.testimonialText.trim())return showToast("Customer name and testimonial required","error");
+    setSaving(true);
+    try{
+      await C("testimonials").add({...form,attachments:formFiles,addedBy:user.email,dateAdded:today(),_createdAt:ts()});
+      setForm({...blank});setFormFiles([]);setShowAdd(false);showToast("Testimonial added ✓");
+    }catch(e){showToast("Error: "+e.message,"error");}
+    setSaving(false);
+  };
+
+  const del=async(id)=>{if(!confirm("Delete this testimonial?"))return;await C("testimonials").doc(id).delete();showToast("Deleted","error");};
+
+  const downloadTestimonial=(t)=>{
+    const ratingStars="★".repeat(parseInt(t.rating)||5)+"☆".repeat(5-(parseInt(t.rating)||5));
+    const imgs=(t.attachments||[]).filter(a=>a.type?.startsWith("image/"));
+    const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Testimonial — ${t.customerName}</title>
+<style>
+  body{font-family:Georgia,serif;max-width:700px;margin:40px auto;padding:24px;color:#1a1a1a;background:#fff;}
+  .header{text-align:center;border-bottom:2px solid #1a1a1a;padding-bottom:16px;margin-bottom:20px;}
+  .company{font-size:11pt;text-transform:uppercase;letter-spacing:2px;color:#555;}
+  .stars{font-size:24pt;color:#f59e0b;letter-spacing:4px;margin:8px 0;}
+  .quote{font-size:15pt;line-height:1.7;font-style:italic;color:#222;border-left:4px solid #f59e0b;padding-left:20px;margin:20px 0;}
+  .customer{font-size:13pt;font-weight:bold;}
+  .meta{font-size:10pt;color:#666;margin-top:4px;}
+  .photos{display:flex;flex-wrap:wrap;gap:10px;margin-top:20px;}
+  .photos img{width:200px;height:150px;object-fit:cover;border-radius:6px;border:1px solid #ddd;}
+  .footer{border-top:1px solid #ccc;padding-top:10px;margin-top:20px;font-size:9pt;color:#999;text-align:center;}
+  @media print{body{margin:20px;} @page{margin:15mm;}}
+</style></head><body>
+<div class="header">
+  <div class="company">Gujarat Colours &amp; Coatings Pvt Ltd</div>
+  <div class="stars">${ratingStars}</div>
+</div>
+<div class="quote">"${(t.testimonialText||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}"</div>
+<div class="customer">${(t.customerName||"").replace(/&/g,"&amp;")}</div>
+<div class="meta">${t.product?`Product: ${t.product}`:""} ${t.location?`&nbsp;·&nbsp; ${t.location}`:""} ${t.usedFor?`&nbsp;·&nbsp; ${t.usedFor}`:""}</div>
+${imgs.length>0?`<div class="photos">${imgs.slice(0,4).map(i=>`<img src="${i.url}" alt="" onerror="this.style.display='none'"/>`).join("")}</div>`:""}
+<div class="footer">Gujarat Colours &amp; Coatings Pvt Ltd &nbsp;·&nbsp; ${t.dateAdded}</div>
+</body></html>`;
+    const blob=new Blob([html],{type:"text/html"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+    a.href=url;a.download=`Testimonial_${(t.customerName||"customer").replace(/\s/g,"_")}.html`;
+    a.click();URL.revokeObjectURL(url);
+    showToast("Testimonial downloaded — open in browser and Print → Save as PDF ✓");
+  };
+  const ratingColor=(n)=>parseInt(n)>=4?"#f59e0b":parseInt(n)===3?"#64748b":"#ef4444";
+
+  const ft=testimonials.filter(t=>{
+    const q=normalize(search);
+    const rs=filterRating==="All"||t.rating===filterRating;
+    const ms=!q||normalize(t.customerName||"").includes(q)||normalize(t.product||"").includes(q)||normalize(t.testimonialText||"").includes(q);
+    return rs&&ms;
+  });
+
+  return <div>
+    <SectionHead title="⭐ Customer Testimonials"/>
+    {/* Actions & filters */}
+    <div style={{display:"flex",gap:"8px",flexWrap:"wrap",alignItems:"center",marginBottom:"14px"}}>
+      <input placeholder="Search customer, product…" value={search} onChange={e=>setSearch(e.target.value)} style={{...inp,maxWidth:"200px",padding:"7px 10px",fontSize:"12.5px"}}/>
+      <select value={filterRating} onChange={e=>setFilterRating(e.target.value)} style={{...sl,width:"110px",padding:"7px 6px",fontSize:"12px"}}>
+        <option value="All">All Ratings</option>
+        {["5","4","3","2","1"].map(r=><option key={r} value={r}>{"★".repeat(parseInt(r))} ({r}/5)</option>)}
+      </select>
+      <span style={{fontSize:"11px",color:"#334155",marginLeft:"4px"}}>{ft.length} testimonial{ft.length!==1?"s":""}</span>
+      <div style={{marginLeft:"auto"}}>
+        <Btn label="+ Add Testimonial" onClick={()=>setShowAdd(true)} color="#f59e0b"/>
+      </div>
+    </div>
+
+    {loading&&<div style={{textAlign:"center",padding:"40px",color:"#475569"}}>Loading…</div>}
+    {!loading&&ft.length===0&&<div style={{textAlign:"center",padding:"50px 0"}}>
+      <div style={{fontSize:"40px",marginBottom:"10px"}}>⭐</div>
+      <div style={{fontSize:"13px",color:"#475569"}}>No testimonials yet. Add your first customer testimonial!</div>
+    </div>}
+
+    {/* Testimonial grid */}
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:"14px"}}>
+      {ft.map(t=><div key={t.id} onClick={()=>setViewItem(t)}
+        style={{background:"#0f172a",border:"1px solid #1e293b",borderLeft:`3px solid ${ratingColor(t.rating)}`,borderRadius:"12px",padding:"16px",cursor:"pointer",transition:"background 0.15s"}}
+        onMouseEnter={e=>e.currentTarget.style.background="#0f1f35"} onMouseLeave={e=>e.currentTarget.style.background="#0f172a"}>
+        {/* Rating */}
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"8px"}}>
+          <span style={{fontSize:"15px",color:ratingColor(t.rating),letterSpacing:"2px"}}>{stars(t.rating)}</span>
+          <div style={{display:"flex",gap:"6px",alignItems:"center"}}>
+            {(t.attachments||[]).length>0&&<span style={{fontSize:"11px",color:"#475569"}}>📎 {t.attachments.length}</span>}
+            <button onClick={e=>{e.stopPropagation();downloadTestimonial(t);}} title="Download" style={{background:"none",border:"none",color:"#3b82f6",cursor:"pointer",fontSize:"13px"}}>📥</button>
+            {isAdmin&&<button onClick={e=>{e.stopPropagation();del(t.id)}} style={{background:"none",border:"none",color:"#334155",cursor:"pointer",fontSize:"13px"}}>🗑</button>}
+          </div>
+        </div>
+        {/* Testimonial text */}
+        <div style={{fontSize:"13px",color:"#cbd5e1",lineHeight:1.6,marginBottom:"10px",fontStyle:"italic",display:"-webkit-box",WebkitLineClamp:3,WebkitBoxOrient:"vertical",overflow:"hidden"}}>
+          "{t.testimonialText}"
+        </div>
+        {/* Customer info */}
+        <div style={{borderTop:"1px solid #1e293b",paddingTop:"8px"}}>
+          <div style={{fontSize:"13px",fontWeight:"700",color:"#e2e8f0"}}>{t.customerName}</div>
+          <div style={{fontSize:"11px",color:"#475569",marginTop:"2px"}}>
+            {t.product&&<span>{t.product}</span>}{t.location&&<span> · {t.location}</span>}
+          </div>
+          <div style={{fontSize:"10.5px",color:"#334155",marginTop:"3px"}}>Added: {t.dateAdded} by {t.addedBy}</div>
+        </div>
+        {/* Thumbnail preview */}
+        {(t.attachments||[]).filter(a=>a.type?.startsWith("image/")).length>0&&<div style={{display:"flex",gap:"6px",marginTop:"8px",flexWrap:"wrap"}}>
+          {t.attachments.filter(a=>a.type?.startsWith("image/")).slice(0,3).map((a,i)=><img key={i} src={a.url} alt="" style={{width:"60px",height:"50px",objectFit:"cover",borderRadius:"5px",border:"1px solid #1e293b"}}/>)}
+        </div>}
+      </div>)}
+    </div>
+
+    {/* Add Testimonial Modal */}
+    <Modal open={showAdd} onClose={()=>{setShowAdd(false);setForm({...blank});setFormFiles([]);}} title="Add Customer Testimonial">
+      <Grid2>
+        <Field label="Customer Name *"><input style={inp} value={form.customerName} onChange={e=>setForm({...form,customerName:e.target.value})} placeholder="e.g. Ravi Sharma"/></Field>
+        <Field label="Location / City"><input style={inp} value={form.location} onChange={e=>setForm({...form,location:e.target.value})} placeholder="e.g. Ahmedabad"/></Field>
+      </Grid2>
+      <Grid2>
+        <Field label="Product Used"><input style={inp} value={form.product} onChange={e=>setForm({...form,product:e.target.value})} placeholder="e.g. Interior Emulsion White"/></Field>
+        <Field label="Rating">
+          <select style={sl} value={form.rating} onChange={e=>setForm({...form,rating:e.target.value})}>
+            {["5","4","3","2","1"].map(r=><option key={r} value={r}>{"★".repeat(parseInt(r))} — {r}/5</option>)}
+          </select>
+        </Field>
+      </Grid2>
+      <Field label="Used For / Application"><input style={inp} value={form.usedFor} onChange={e=>setForm({...form,usedFor:e.target.value})} placeholder="e.g. Living room walls, 1500 sq.ft"/></Field>
+      <Field label="Customer Testimonial *">
+        <textarea style={{...ta,minHeight:"110px"}} value={form.testimonialText} onChange={e=>setForm({...form,testimonialText:e.target.value})} placeholder="What did the customer say about the product? Their experience, results, what they liked…"/>
+      </Field>
+      <div style={{marginBottom:"14px"}}>
+        <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"6px"}}>📸 Add Customer Photos / Videos</div>
+        <FileAttachment folder={`testimonials/${form.customerName.replace(/\s/g,"_")||"customer"}`} existingFiles={formFiles} onFilesChange={setFormFiles} maxFiles={8}/>
+        <div style={{fontSize:"10.5px",color:"#334155",marginTop:"4px"}}>Add photos/videos of the project, customer's space, or the customer using the product (max 8)</div>
+      </div>
+      <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
+        <Btn label="Cancel" onClick={()=>{setShowAdd(false);setForm({...blank});setFormFiles([]);}} outline color="#475569"/>
+        <Btn label={saving?"Saving…":"✓ Save Testimonial"} onClick={save} disabled={saving} color="#f59e0b"/>
+      </div>
+    </Modal>
+
+    {/* View Testimonial Modal */}
+    {viewItem&&<Modal wide open={!!viewItem} onClose={()=>setViewItem(null)} title="Customer Testimonial">
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"12px"}}>
+        <div>
+          <div style={{fontSize:"20px",fontWeight:"700",color:"#e2e8f0"}}>{viewItem.customerName}</div>
+          <div style={{fontSize:"12px",color:"#64748b"}}>{viewItem.product}{viewItem.location?` · ${viewItem.location}`:""}{viewItem.usedFor?` · ${viewItem.usedFor}`:""}</div>
+        </div>
+        <span style={{fontSize:"20px",color:ratingColor(viewItem.rating),letterSpacing:"2px"}}>{stars(viewItem.rating)}</span>
+      </div>
+      <div style={{background:"#0b1220",border:"1px solid #1e293b",borderLeft:"3px solid #f59e0b",borderRadius:"8px",padding:"16px",marginBottom:"14px"}}>
+        <div style={{fontSize:"15px",color:"#cbd5e1",lineHeight:1.7,fontStyle:"italic"}}>"{viewItem.testimonialText}"</div>
+      </div>
+      {(viewItem.attachments||[]).length>0&&<div style={{marginBottom:"12px"}}>
+        <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"8px"}}>📸 Photos & Videos</div>
+        <FileAttachment folder="" existingFiles={viewItem.attachments||[]} onFilesChange={()=>{}} readOnly={true}/>
+      </div>}
+      <div style={{fontSize:"11px",color:"#334155"}}>Added by {viewItem.addedBy} on {viewItem.dateAdded}</div>
+      <div style={{marginTop:"12px",display:"flex",gap:"8px",justifyContent:"flex-end"}}>
+        <Btn label="📥 Download Testimonial" onClick={()=>downloadTestimonial(viewItem)} color="#3b82f6" small/>
+        {isAdmin&&<Btn label="🗑 Delete" onClick={()=>{del(viewItem.id);setViewItem(null);}} color="#ef4444" outline small/>}
+      </div>
+    </Modal>}
+  </div>;
+}
+
 function UsersTab({currentUser}){
   const [profiles,setProfiles]=useState({});  // uid/email -> {email, displayName}
   const [roles,setRoles]=useState({});         // email -> role
@@ -2150,6 +2412,201 @@ function OldStockCard({s,canEdit,onToggle,onDelete}){
 // ══════════════════════════════════════════════════════════
 // SETTINGS TAB (Admin only)
 // ══════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════
+// FY ARCHIVE — Export & Delete Financial Year Data
+// ══════════════════════════════════════════════════════════
+function FYArchiveTab({showToast}){
+  const curFY=getFY();
+  const [selFY,setSelFY]=useState(String(curFY-1)); // default = previous FY
+  const [counts,setCounts]=useState(null);
+  const [loading,setLoading]=useState(false);
+  const [exporting,setExporting]=useState(false);
+  const [deleting,setDeleting]=useState(false);
+  const [step,setStep]=useState("idle"); // idle | confirm | done
+
+  // FY date range: April 1 (year-1) to March 31 (year)
+  const fyRange=(fy)=>{
+    const fy_=parseInt(fy);
+    return {from:`20${String(fy_-1).padStart(2,"0")}-04-01`, to:`20${String(fy_).padStart(2,"0")}-03-31`};
+  };
+  const inFY=(dateStr,fy)=>{
+    if(!dateStr)return false;
+    const {from,to}=fyRange(fy);
+    return dateStr>=from&&dateStr<=to;
+  };
+  const getBFY=(b)=>{
+    if(b.fyYear)return String(b.fyYear);
+    if(b.dateIssued){const d=new Date(b.dateIssued);const y=d.getFullYear()%100;return String(d.getMonth()>=3?y+1:y);}
+    return String(curFY);
+  };
+
+  const loadCounts=async(fy)=>{
+    setLoading(true);setCounts(null);
+    try{
+      const [bSnap,cSnap,osSnap]=await Promise.all([
+        C("batches").get(),
+        C("complaints").get(),
+        C("old_stock").get()
+      ]);
+      const batches=bSnap.docs.filter(d=>getBFY(d.data())===fy);
+      const complaints=cSnap.docs.filter(d=>inFY(d.data().dateCreated,fy));
+      const oldStock=osSnap.docs.filter(d=>inFY(d.data().dateAdded,fy));
+      setCounts({batches:batches.length,complaints:complaints.length,oldStock:oldStock.length,
+        batchIds:batches.map(d=>d.id),complaintIds:complaints.map(d=>d.id),oldStockIds:oldStock.map(d=>d.id),
+        batchDocs:batches.map(d=>({id:d.id,...d.data()})),
+        complaintDocs:complaints.map(d=>({id:d.id,...d.data()})),
+        oldStockDocs:oldStock.map(d=>({id:d.id,...d.data()}))});
+    }catch(e){showToast("Error loading data: "+e.message,"error");}
+    setLoading(false);
+  };
+
+  useEffect(()=>{loadCounts(selFY);},[selFY]);
+
+  const exportFY=async()=>{
+    if(!counts||!window.XLSX){showToast("Excel library not ready","error");return;}
+    setExporting(true);
+    try{
+      const XLSX=window.XLSX;
+      const wb=XLSX.utils.book_new();
+      const fy=parseInt(selFY);
+      const label=getFYLabel(fy);
+
+      // ── Summary sheet ──
+      const sumRows=[
+        [`GCC Operations Hub — Financial Year ${label} Archive`],
+        [`Exported on: ${new Date().toLocaleDateString("en-IN")}`],[""],
+        ["Data Type","Count"],
+        ["Batches",counts.batches],
+        ["Complaints",counts.complaints],
+        ["Old/Rejected Stock Entries",counts.oldStock],
+      ];
+      const wsSum=XLSX.utils.aoa_to_sheet(sumRows);
+      wsSum["!cols"]=[{wch:40},{wch:15}];
+      XLSX.utils.book_append_sheet(wb,wsSum,"📋 Summary");
+
+      // ── Batches sheet ──
+      const bRows=[["Batch No","Category","Product","Shade","Batch Size","Unit","Status","Date Issued","Issued By","Actual Qty Produced","QC Result","QC By","QC Date","Total Packed","Packing Date","Packed By"]];
+      counts.batchDocs.forEach(b=>{
+        bRows.push([b.batchNo,b.category||"",b.productName||"",b.shade||"",b.batchSize||"",b.unit||"",b.status||"",b.dateIssued||"",b.issuedBy||"",b.production?.actualQty||"",b.qc?.result||"",b.qc?.qcBy||"",b.qc?.qcDate||"",b.packing?.totalQty||"",b.packing?.packingDate||"",b.packing?.packedBy||""]);
+      });
+      const wsBatch=XLSX.utils.aoa_to_sheet(bRows);
+      wsBatch["!cols"]=[{wch:12},{wch:16},{wch:30},{wch:16},{wch:12},{wch:8},{wch:14},{wch:14},{wch:24},{wch:14},{wch:10},{wch:20},{wch:12},{wch:14},{wch:14},{wch:20}];
+      XLSX.utils.book_append_sheet(wb,wsBatch,"📦 Batches");
+
+      // ── Complaints sheet ──
+      const cRows=[["Customer","Product","Batch No","Date Raised","Status","QC Response","Days to Respond","Added By","Rounds"]];
+      counts.complaintDocs.forEach(c=>{
+        const qcR=c.qcResponses?.[0];
+        const days=qcR?.responseDate?(new Date(qcR.responseDate)-new Date(c.dateCreated||""))/(86400000):null;
+        cRows.push([c.customerName||"",c.productName||"",c.batchNo||"",c.dateCreated||"",c.status||"",qcR?.findings||qcR?.action||"",days!==null?Math.round(days):"",c.addedBy||"",c.currentRound||1]);
+      });
+      const wsComp=XLSX.utils.aoa_to_sheet(cRows);
+      wsComp["!cols"]=[{wch:24},{wch:28},{wch:12},{wch:14},{wch:16},{wch:40},{wch:14},{wch:28},{wch:8}];
+      XLSX.utils.book_append_sheet(wb,wsComp,"⚠️ Complaints");
+
+      // ── Old/Rejected Stock sheet ──
+      const osRows=[["Product","Category","Qty","Unit","Status","Batch Ref","Date Added","Notes"]];
+      counts.oldStockDocs.forEach(s=>{osRows.push([s.productName||"",s.category||"",s.qty||"",s.unit||"",s.status||"",s.batchRef||"",s.dateAdded||"",s.notes||""]);});
+      const wsOS=XLSX.utils.aoa_to_sheet(osRows);
+      wsOS["!cols"]=[{wch:28},{wch:16},{wch:10},{wch:8},{wch:12},{wch:14},{wch:14},{wch:40}];
+      XLSX.utils.book_append_sheet(wb,wsOS,"🔄 Old Stock");
+
+      XLSX.writeFile(wb,`GCC_FY_${label.replace("-","_")}_Archive.xlsx`);
+      showToast(`FY ${label} data exported ✓`);
+    }catch(e){showToast("Export failed: "+e.message,"error");}
+    setExporting(false);
+  };
+
+  const deleteFY=async()=>{
+    if(!counts)return;
+    setDeleting(true);
+    try{
+      // Delete in batches of 20 (Firestore limit)
+      const deleteAll=async(ids,collection)=>{
+        for(let i=0;i<ids.length;i+=20){
+          const batch=db.batch();
+          ids.slice(i,i+20).forEach(id=>batch.delete(db.collection(collection).doc(id)));
+          await batch.commit();
+        }
+      };
+      await Promise.all([
+        deleteAll(counts.batchIds,"batches"),
+        deleteAll(counts.complaintIds,"complaints"),
+        deleteAll(counts.oldStockIds,"old_stock"),
+      ]);
+      showToast(`FY ${getFYLabel(parseInt(selFY))} data deleted ✓`);
+      setStep("done");
+      loadCounts(selFY);
+    }catch(e){showToast("Delete failed: "+e.message,"error");}
+    setDeleting(false);
+  };
+
+  const fy_=parseInt(selFY);
+  const label=getFYLabel(fy_);
+  const isPrevFY=fy_<curFY;
+
+  return <div>
+    <InfoBox color="#f59e0b">⚠️ This section is for archiving completed financial years. Always export data before deleting. Current FY: <strong style={{color:"#fcd34d"}}>FY {getFYLabel(curFY)}</strong></InfoBox>
+
+    {/* FY Selector */}
+    <div style={{display:"flex",gap:"12px",alignItems:"flex-end",flexWrap:"wrap",marginBottom:"16px"}}>
+      <Field label="Select Financial Year">
+        <select style={{...sl,width:"160px"}} value={selFY} onChange={e=>{setSelFY(e.target.value);setStep("idle");}}>
+          {Array.from({length:5},(_,i)=>curFY-1-i).map(fy=><option key={fy} value={String(fy)}>FY {getFYLabel(fy)} {fy<curFY?"(Completed)":"(Current)"}</option>)}
+        </select>
+      </Field>
+      {!isPrevFY&&<InfoBox color="#ef4444">Current FY cannot be archived. Select a previous FY.</InfoBox>}
+    </div>
+
+    {/* Counts */}
+    {loading&&<div style={{fontSize:"13px",color:"#475569",padding:"10px 0"}}>⏳ Loading data counts…</div>}
+    {counts&&isPrevFY&&step!=="done"&&<>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"10px",marginBottom:"16px"}}>
+        {[["📦 Batches",counts.batches,"#3b82f6"],["⚠️ Complaints",counts.complaints,"#ef4444"],["🔄 Old Stock",counts.oldStock,"#f59e0b"]].map(([label,count,color])=>(
+          <div key={label} style={{background:"#0b1220",border:`1px solid ${color}30`,borderRadius:"10px",padding:"14px 16px",textAlign:"center"}}>
+            <div style={{fontSize:"24px",fontWeight:"700",color}}>{count}</div>
+            <div style={{fontSize:"12px",color:"#64748b",marginTop:"3px"}}>{label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Export */}
+      <div style={{background:"#052e16",border:"1px solid #166534",borderRadius:"10px",padding:"16px",marginBottom:"12px"}}>
+        <div style={{fontSize:"13px",fontWeight:"700",color:"#22c55e",marginBottom:"6px"}}>Step 1: Export FY {label} Data</div>
+        <div style={{fontSize:"12px",color:"#86efac",marginBottom:"12px"}}>Download all batches, complaints and old stock as an Excel file before deleting. This file is your permanent record.</div>
+        <Btn label={exporting?"Exporting…":`📥 Download FY ${label} Archive (Excel)`} onClick={exportFY} disabled={exporting||counts.batches+counts.complaints+counts.oldStock===0} color="#22c55e"/>
+        {counts.batches+counts.complaints+counts.oldStock===0&&<div style={{fontSize:"12px",color:"#334155",marginTop:"6px"}}>No data found for FY {label}.</div>}
+      </div>
+
+      {/* Delete */}
+      {counts.batches+counts.complaints+counts.oldStock>0&&<div style={{background:"#450a0a",border:"1px solid #7f1d1d",borderRadius:"10px",padding:"16px"}}>
+        <div style={{fontSize:"13px",fontWeight:"700",color:"#ef4444",marginBottom:"6px"}}>Step 2: Delete FY {label} Data</div>
+        <div style={{fontSize:"12px",color:"#fca5a5",marginBottom:"12px"}}>Permanently deletes {counts.batches} batches, {counts.complaints} complaints and {counts.oldStock} old stock entries. <strong>This cannot be undone.</strong> Export first.</div>
+        {step==="idle"&&<Btn label={`🗑 Delete All FY ${label} Data`} onClick={()=>setStep("confirm")} color="#ef4444" outline/>}
+        {step==="confirm"&&<div>
+          <div style={{fontSize:"13px",fontWeight:"700",color:"#ef4444",marginBottom:"10px"}}>⚠️ Are you absolutely sure? Type the FY label to confirm:</div>
+          <ConfirmDelete expected={label} onConfirm={deleteFY} onCancel={()=>setStep("idle")} saving={deleting}/>
+        </div>}
+      </div>}
+    </>}
+    {step==="done"&&<div style={{background:"#052e16",border:"1px solid #166534",borderRadius:"10px",padding:"20px",textAlign:"center"}}>
+      <div style={{fontSize:"24px",marginBottom:"8px"}}>✅</div>
+      <div style={{fontSize:"14px",fontWeight:"700",color:"#22c55e"}}>FY {label} data deleted successfully.</div>
+      <div style={{fontSize:"12px",color:"#86efac",marginTop:"4px"}}>The app is now clean for FY {getFYLabel(curFY)}.</div>
+    </div>}
+  </div>;
+}
+
+// Type-to-confirm delete component
+function ConfirmDelete({expected,onConfirm,onCancel,saving}){
+  const [val,setVal]=useState("");
+  return <div style={{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap"}}>
+    <input style={{...inp,maxWidth:"160px",borderColor:val===expected?"#ef4444":"#1e293b"}} value={val} onChange={e=>setVal(e.target.value)} placeholder={`Type: ${expected}`}/>
+    <Btn label={saving?"Deleting…":`Yes, Delete FY ${expected}`} onClick={onConfirm} disabled={val!==expected||saving} color="#ef4444" small/>
+    <Btn label="Cancel" onClick={onCancel} outline color="#475569" small/>
+  </div>;
+}
+
 function SettingsTab({showToast, initialProducts, initialQcParams, initialPackSizes, initialCatUnits, initialUnits, initialPaintTypes, initialRmCats, onSaved, onDirtyChange}){
   const [subTab,setSubTab]=useState("products");
   const [saving,setSaving]=useState(false);
@@ -2485,7 +2942,7 @@ function SettingsTab({showToast, initialProducts, initialQcParams, initialPackSi
       </div>
     </div>}
     <div style={{display:"flex",gap:"4px",marginBottom:"20px",borderBottom:"1px solid #1e293b"}}>
-      {[["products","🎨 Products"],["qcparams","🔬 QC Parameters"],["packsizes","📦 Pack Sizes"],["units","📏 Units"],["painttypes","🖌 Paint Types"],["rmcats","🧫 RM Categories"]].map(([key,label])=>(
+      {[["products","🎨 Products"],["qcparams","🔬 QC Parameters"],["packsizes","📦 Pack Sizes"],["units","📏 Units"],["painttypes","🖌 Paint Types"],["rmcats","🧫 RM Categories"],["fyarchive","📁 FY Archive"]].map(([key,label])=>(
         <button key={key} onClick={()=>trySetSubTab(key)} style={{background:subTab===key?"#1e293b":"transparent",border:"none",borderBottom:subTab===key?"2px solid #3b82f6":"2px solid transparent",color:subTab===key?"#f1f5f9":"#64748b",padding:"8px 16px",cursor:"pointer",fontSize:"13px",fontWeight:"600",borderRadius:"8px 8px 0 0",transition:"all 0.15s"}}>{label}</button>
       ))}
     </div>
@@ -2722,6 +3179,8 @@ function SettingsTab({showToast, initialProducts, initialQcParams, initialPackSi
       </div>
     </div>}
 
+    {subTab==="fyarchive"&&<FYArchiveTab showToast={showToast}/>}
+
     <div style={{marginTop:"20px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"10px"}}>
       <div style={{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap"}}>
         <input ref={fileRef} type="file" accept=".xlsx" onChange={importExcel} style={{display:"none"}}/>
@@ -2946,11 +3405,13 @@ function MainApp({user,role}){
     setSaving(false);
   };
 
+  const [complaintFiles,setComplaintFiles]=useState([]);
   const saveComplaint=async()=>{
     if(!complaintForm.customerName.trim()||!complaintForm.complaint.trim())return showToast("Customer name and complaint required","error");
     if(saving)return;setSaving(true);
     try{
-      await C("complaints").add({...complaintForm,status:"Open",addedBy:user.email,dateCreated:today(),currentRound:1,_createdAt:ts()});
+      await C("complaints").add({...complaintForm,attachments:complaintFiles,status:"Open",addedBy:user.email,dateCreated:today(),currentRound:1,_createdAt:ts()});
+      setComplaintFiles([]);
       setComplaintForm(EC);setShowAddComplaint(false);showToast("Complaint added ✓");
     }catch(e){showToast("Error saving","error");}
     setSaving(false);
@@ -3045,6 +3506,7 @@ function MainApp({user,role}){
     {key:"batches",label:"📦 Batches"},
     {key:"complaints",label:"⚠️ Complaints"},
     {key:"rd",label:"🧪 R&D & QC"},
+    {key:"testimonials",label:"⭐ Testimonials"},
     {key:"users",label:"👥 Users"},
     {key:"settings",label:"⚙️ Settings"},
   ].filter(t=>CAN_SEE[t.key]?.includes(role));
@@ -3178,6 +3640,7 @@ function MainApp({user,role}){
       </>}
 
       {/* USERS */}
+      {tab==="testimonials"&&<TestimonialsTab role={role} user={user} showToast={showToast}/>}
       {tab==="users"&&<UsersTab currentUser={user}/>}
 
       {/* SETTINGS */}
@@ -3300,6 +3763,11 @@ function MainApp({user,role}){
       </Grid3>
       <Field label="Material Available with Customer"><input style={inp} value={complaintForm.materialAvailable} onChange={e=>setComplaintForm({...complaintForm,materialAvailable:e.target.value})} placeholder="e.g. 15 L, 2 tins, approx half drum"/></Field>
       <Field label="Complaint Description *"><textarea style={{...ta,minHeight:"100px"}} value={complaintForm.complaint} onChange={e=>setComplaintForm({...complaintForm,complaint:e.target.value})} placeholder="Describe the complaint in detail — what is the issue, when was it noticed, what conditions..."/></Field>
+      <div style={{marginBottom:"14px"}}>
+        <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"6px"}}>📎 Attach Photos / Videos (optional)</div>
+        <FileAttachment folder={`complaints/${user?.email?.split("@")[0]||"user"}`} existingFiles={complaintFiles} onFilesChange={setComplaintFiles} maxFiles={5}/>
+        <div style={{fontSize:"10.5px",color:"#334155",marginTop:"4px"}}>Attach photos or short videos showing the issue (max 5 files)</div>
+      </div>
       <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
         <Btn label="Cancel" onClick={()=>setShowAddComplaint(false)} outline color="#475569"/>
         <Btn label={saving?"Saving…":"Submit Complaint"} onClick={saveComplaint} disabled={saving} color="#ef4444"/>
