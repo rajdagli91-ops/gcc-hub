@@ -2005,9 +2005,156 @@ function OldStockCard({s,canEdit,onToggle,onDelete}){
 // ══════════════════════════════════════════════════════════
 // SETTINGS TAB (Admin only)
 // ══════════════════════════════════════════════════════════
-function SettingsTab({showToast, initialProducts, initialQcParams, initialPackSizes, initialCatUnits, initialUnits, initialPaintTypes, initialRmCats, onSaved}){
+
+function CategoryProductSelect({category,setCategory,productName,setProductName,products,onUnitChange,catUnits}){
+  const cats = Object.keys(products||DEFAULT_PRODUCTS).sort((a,b)=>a.localeCompare(b));
+  const prods = [...((products||DEFAULT_PRODUCTS)[category] || [])].sort((a,b)=>gpn(a).localeCompare(gpn(b)));
+  const units = catUnits||CATEGORY_UNITS;
+  return <Grid2>
+    <Field label="Category *">
+      <select style={sl} value={category} onChange={e=>{
+        setCategory(e.target.value);
+        if(onUnitChange)onUnitChange(units[e.target.value]||CATEGORY_UNITS[e.target.value]||"kg");
+      }}>
+        <option value="">— Select Category —</option>
+        {cats.map(c=><option key={c} value={c}>{c}</option>)}
+      </select>
+    </Field>
+    <Field label="Product *">
+      <ProductSearch prods={prods} value={productName} disabled={!category} onChange={p=>{
+        if(p){
+          setProductName(gpn(p));
+          if(onUnitChange)onUnitChange(gpu(p));
+        }else{
+          setProductName("");
+        }
+      }}/>
+    </Field>
+  </Grid2>;
+}
+
+// ══════════════════════════════════════════════════════════
+// OLD STOCK SECTION
+// ══════════════════════════════════════════════════════════
+function OldStockSection({role,user,showToast,products,catUnits}){
+  const [stocks,setStocks]=useState([]);
+  const [showForm,setShowForm]=useState(false);
+  const [saving,setSaving]=useState(false);
+  const [search,setSearch]=useState("");
+  const [form,setForm]=useState({category:"",productName:"",qty:"",unit:"kg",batchRef:"",dateAdded:today(),addedBy:"",notes:""});
+
+  useEffect(()=>{
+    const unsub=C("old_stock").orderBy("_createdAt","desc").onSnapshot(s=>setStocks(s.docs.map(d=>({id:d.id,...d.data()}))),
+      ()=>C("old_stock").onSnapshot(s=>setStocks(s.docs.map(d=>({id:d.id,...d.data()})))));
+    return unsub;
+  },[]);
+
+  const saveStock=async()=>{
+    if(!form.category||!form.productName||!form.qty)return showToast("Category, product and qty required","error");
+    if(saving)return;setSaving(true);
+    try{
+      await C("old_stock").add({...form,addedBy:form.addedBy||user.email,status:"Available",_createdAt:ts()});
+      setForm({category:"",productName:"",qty:"",unit:"kg",batchRef:"",dateAdded:today(),addedBy:"",notes:""});
+      setShowForm(false);showToast("Old stock entry added ✓");
+    }catch(e){showToast("Error saving","error");}
+    setSaving(false);
+  };
+
+  const toggleStatus=async(id,current)=>{
+    await C("old_stock").doc(id).update({status:current==="Available"?"Used":"Available"});
+    showToast("Status updated ✓");
+  };
+
+  const deleteStock=async(id)=>{
+    if(!confirm("Delete this entry?"))return;
+    await C("old_stock").doc(id).delete();showToast("Deleted","error");
+  };
+
+  const filtered=stocks.filter(s=>{
+    const q=search.toLowerCase();
+    return !q||s.productName?.toLowerCase().includes(q)||s.category?.toLowerCase().includes(q)||s.batchRef?.toLowerCase().includes(q);
+  });
+
+  const available=filtered.filter(s=>s.status==="Available");
+  const used=filtered.filter(s=>s.status!=="Available");
+  const canEdit=role==="admin"||role==="issuer"||role==="qc";
+
+  return <div style={{marginTop:"24px"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"14px",flexWrap:"wrap",gap:"10px"}}>
+      <div style={{display:"flex",gap:"8px",alignItems:"center",flex:1}}>
+        <span style={{fontSize:"12px",fontWeight:"700",color:"#f59e0b",textTransform:"uppercase",letterSpacing:"0.1em"}}>📦 Old / Rejected Material Register</span>
+        <span style={{fontSize:"11px",background:"#f59e0b18",border:"1px solid #f59e0b30",borderRadius:"99px",padding:"2px 10px",color:"#f59e0b",fontWeight:"700"}}>{available.length} Available</span>
+      </div>
+      <div style={{display:"flex",gap:"8px",alignItems:"center"}}>
+        <input placeholder="Search stock…" value={search} onChange={e=>setSearch(e.target.value)} style={{...inp,maxWidth:"180px",padding:"7px 10px",fontSize:"12px"}}/>
+        {canEdit&&<Btn label="+ Add Old/Rejected Material" onClick={()=>setShowForm(v=>!v)} color="#f59e0b" small/>}
+      </div>
+    </div>
+
+    {showForm&&<div style={{background:"#0a1010",border:"1px solid #f59e0b40",borderRadius:"10px",padding:"16px",marginBottom:"14px"}}>
+      <div style={{fontSize:"12px",fontWeight:"700",color:"#f59e0b",marginBottom:"12px"}}>📦 Add Old/Rejected Material Entry</div>
+      <CategoryProductSelect category={form.category} setCategory={cat=>{
+        const unit=(catUnits?.[cat])||CATEGORY_UNITS[cat]||"kg";
+        setForm({...form,category:cat,productName:"",unit});
+      }} productName={form.productName} setProductName={pn=>setForm({...form,productName:pn})} products={products} catUnits={catUnits}/>
+      <Grid2>
+        <Field label="Quantity *"><input style={inp} value={form.qty} onChange={e=>setForm({...form,qty:e.target.value})} placeholder="e.g. 500"/></Field>
+        <Field label="Unit">
+          <div style={{...inp,background:"#060b16",cursor:"default",display:"flex",alignItems:"center",gap:"8px",color:form.unit?"#22c55e":"#475569",fontWeight:"600"}}>
+            {form.unit||(form.category?(sysCatUnits?.[form.category]||CATEGORY_UNITS[form.category]||"kg"):"— select category first —")}
+            {form.unit&&<span style={{fontSize:"10px",color:"#475569",fontWeight:"400"}}>(auto)</span>}
+          </div>
+        </Field>
+        <Field label="Date Added"><input type="date" style={inp} value={form.dateAdded} onChange={e=>setForm({...form,dateAdded:e.target.value})}/></Field>
+      </Grid2>
+      <Grid2>
+        <Field label="Original Batch Ref (if any)"><input style={inp} value={form.batchRef} onChange={e=>setForm({...form,batchRef:e.target.value})} placeholder="e.g. GCC-2501-005"/></Field>
+        <Field label="Added By"><input style={inp} value={form.addedBy} onChange={e=>setForm({...form,addedBy:e.target.value})} placeholder={user.email}/></Field>
+      </Grid2>
+      <Field label="Notes"><textarea style={{...ta,minHeight:"50px"}} value={form.notes} onChange={e=>setForm({...form,notes:e.target.value})} placeholder="Condition, reason for old stock..."/></Field>
+      <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
+        <Btn label="Cancel" onClick={()=>setShowForm(false)} outline color="#475569" small/>
+        <Btn label={saving?"Saving…":"Save Entry"} onClick={saveStock} disabled={saving} color="#f59e0b" small/>
+      </div>
+    </div>}
+
+    {available.length===0&&used.length===0&&!showForm&&<div style={{textAlign:"center",padding:"24px",border:"1px dashed #1e293b",borderRadius:"8px",color:"#334155",fontSize:"13px"}}>No entries yet.{canEdit?" Click + Add Old/Rejected Material to log material.":""}</div>}
+
+    {available.length>0&&<>
+      <div style={{fontSize:"10px",fontWeight:"700",color:"#f59e0b",textTransform:"uppercase",letterSpacing:"0.09em",marginBottom:"8px"}}>Available ({available.length})</div>
+      {available.map(s=><OldStockCard key={s.id} s={s} canEdit={canEdit} onToggle={toggleStatus} onDelete={deleteStock}/>)}
+    </>}
+    {used.length>0&&<>
+      <div style={{fontSize:"10px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.09em",marginBottom:"8px",marginTop:"12px"}}>Used / Consumed ({used.length})</div>
+      {used.map(s=><OldStockCard key={s.id} s={s} canEdit={canEdit} onToggle={toggleStatus} onDelete={deleteStock}/>)}
+    </>}
+  </div>;
+}
+
+function OldStockCard({s,canEdit,onToggle,onDelete}){
+  const isAvail=s.status==="Available";
+  return <div style={{background:"#0f172a",border:`1px solid ${isAvail?"#f59e0b30":"#1e293b"}`,borderLeft:`3px solid ${isAvail?"#f59e0b":"#334155"}`,borderRadius:"10px",padding:"12px 16px",marginBottom:"8px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"8px"}}>
+    <div style={{flex:1}}>
+      <div style={{fontSize:"13.5px",fontWeight:"600",color:"#f1f5f9"}}>{s.productName}</div>
+      <div style={{fontSize:"11.5px",color:"#64748b",marginTop:"2px"}}>{s.category} · <strong style={{color:isAvail?"#f59e0b":"#475569"}}>{s.qty} {s.unit}</strong>{s.batchRef&&` · Ref: ${s.batchRef}`}</div>
+      {s.notes&&<div style={{fontSize:"11.5px",color:"#475569",marginTop:"2px",fontStyle:"italic"}}>{s.notes}</div>}
+    </div>
+    <div style={{display:"flex",gap:"6px",alignItems:"center",flexShrink:0}}>
+      <span style={{fontSize:"11px",fontWeight:"700",color:isAvail?"#f59e0b":"#64748b",background:isAvail?"#f59e0b18":"#1e293b",padding:"2px 9px",borderRadius:"99px",border:`1px solid ${isAvail?"#f59e0b30":"#334155"}`}}>{s.status||"Available"}</span>
+      {canEdit&&<button onClick={()=>onToggle(s.id,s.status||"Available")} style={{background:"none",border:"1px solid #1e293b",borderRadius:"6px",padding:"3px 8px",color:"#475569",fontSize:"11px",cursor:"pointer"}}>{isAvail?"Mark Used":"Restore"}</button>}
+      {canEdit&&<button onClick={()=>onDelete(s.id)} style={{background:"none",border:"none",color:"#334155",fontSize:"14px",cursor:"pointer"}}>🗑</button>}
+    </div>
+  </div>;
+}
+
+// ══════════════════════════════════════════════════════════
+// SETTINGS TAB (Admin only)
+// ══════════════════════════════════════════════════════════
+function SettingsTab({showToast, initialProducts, initialQcParams, initialPackSizes, initialCatUnits, initialUnits, initialPaintTypes, initialRmCats, onSaved, onDirtyChange}){
   const [subTab,setSubTab]=useState("products");
   const [saving,setSaving]=useState(false);
+  const [isDirty,setIsDirty]=useState(false);
+  const [pendingSubTab,setPendingSubTab]=useState(null); // sub-tab waiting for confirm
   const [prodData,setProdData]=useState(()=>JSON.parse(JSON.stringify(initialProducts||DEFAULT_PRODUCTS)));
   const [qcData,setQcData]=useState(()=>JSON.parse(JSON.stringify(initialQcParams||DEFAULT_QC_PARAMS)));
   const [packSizeData,setPackSizeData]=useState(()=>JSON.parse(JSON.stringify(initialPackSizes||DEFAULT_PACK_SIZES_BY_CAT)));
@@ -2015,6 +2162,36 @@ function SettingsTab({showToast, initialProducts, initialQcParams, initialPackSi
   const [unitsData,setUnitsData]=useState(()=>[...(initialUnits||BATCH_UNITS)]);
   const [paintTypesData,setPaintTypesData]=useState(()=>[...(initialPaintTypes||PAINT_TYPES)]);
   const [rmCatsData,setRmCatsData]=useState(()=>[...(initialRmCats||RM_CATEGORIES)]);
+
+  // Dirty-aware setters — mark changed whenever any data is modified
+  const markDirty=()=>{setIsDirty(true);if(onDirtyChange)onDirtyChange(true);};
+  const dpd=(v)=>{setProdData(v);markDirty();};
+  const dqd=(v)=>{setQcData(v);markDirty();};
+  const dpkd=(v)=>{setPackSizeData(v);markDirty();};
+  const dcu=(v)=>{setCatUnits(v);markDirty();};
+  const dud=(v)=>{setUnitsData(v);markDirty();};
+  const dptd=(v)=>{setPaintTypesData(v);markDirty();};
+  const drcd=(v)=>{setRmCatsData(v);markDirty();};
+
+  // Intercept sub-tab switch — warn if dirty
+  const trySetSubTab=(key)=>{
+    if(isDirty){setPendingSubTab(key);}
+    else{setSubTab(key);}
+  };
+
+  const discardAndSwitch=(key)=>{
+    // Reset all data to current saved state (re-initialize from props)
+    setProdData(JSON.parse(JSON.stringify(initialProducts||DEFAULT_PRODUCTS)));
+    setQcData(JSON.parse(JSON.stringify(initialQcParams||DEFAULT_QC_PARAMS)));
+    setPackSizeData(JSON.parse(JSON.stringify(initialPackSizes||DEFAULT_PACK_SIZES_BY_CAT)));
+    setCatUnits({...CATEGORY_UNITS,...(initialCatUnits||{})});
+    setUnitsData([...(initialUnits||BATCH_UNITS)]);
+    setPaintTypesData([...(initialPaintTypes||PAINT_TYPES)]);
+    setRmCatsData([...(initialRmCats||RM_CATEGORIES)]);
+    setIsDirty(false);if(onDirtyChange)onDirtyChange(false);
+    setPendingSubTab(null);
+    setSubTab(key);
+  };
   const [newUnit,setNewUnit]=useState("");
   const [newPaintType,setNewPaintType]=useState("");
   const [newRmCat,setNewRmCat]=useState("");
@@ -2216,12 +2393,12 @@ function SettingsTab({showToast, initialProducts, initialQcParams, initialPackSi
           if(!newPack[cat])newPack[cat]=[];
           newPack[cat].push({size,qty});
         }
-        if(Object.keys(newPack).length>0)setPackSizeData(p=>({...p,...newPack}));
+        if(Object.keys(newPack).length>0)dpkd(p=>({...p,...newPack}));
       }
 
-      if(Object.keys(newProds).length>0)setProdData(newProds);
-      if(Object.keys(newQc).length>0)setQcData(newQc);
-      if(Object.keys(newUnits).length>0)setCatUnits(u=>({...u,...newUnits}));
+      if(Object.keys(newProds).length>0)dpd(newProds);
+      if(Object.keys(newQc).length>0)dqd(newQc);
+      if(Object.keys(newUnits).length>0)dcu(u=>({...u,...newUnits}));
 
       const removedList=[...toRemove].join(", ");
       const msg=toRemove.size>0
@@ -2247,6 +2424,8 @@ function SettingsTab({showToast, initialProducts, initialQcParams, initialPackSi
     try{
       await C("settings").doc("products").set({products:prodData,qcParams:qcData,packSizes:packSizeData,catUnits,units:unitsData,paintTypes:paintTypesData,rmCategories:rmCatsData,updatedAt:ts()});
       if(onSaved)onSaved({products:prodData,qcParams:qcData,packSizes:packSizeData,catUnits,units:unitsData,paintTypes:paintTypesData,rmCategories:rmCatsData});
+      setIsDirty(false);if(onDirtyChange)onDirtyChange(false);
+      if(pendingSubTab){setSubTab(pendingSubTab);setPendingSubTab(null);}
       showToast("Settings saved ✓");
     }catch(e){showToast("Error saving","error");}
     setSaving(false);
@@ -2255,22 +2434,22 @@ function SettingsTab({showToast, initialProducts, initialQcParams, initialPackSi
   const addProduct=()=>{
     if(!newProduct.trim())return;
     const updated={...prodData,[selCat]:[...(prodData[selCat]||[]),{name:newProduct.trim(),unit:newProductUnit}]};
-    setProdData(updated);setNewProduct("");setNewProductUnit("L");
+    dpd(updated);setNewProduct("");setNewProductUnit("L");
   };
-  const removeProduct=(cat,idx)=>{const arr=[...(prodData[cat]||[])];arr.splice(idx,1);setProdData({...prodData,[cat]:arr});};
+  const removeProduct=(cat,idx)=>{const arr=[...(prodData[cat]||[])];arr.splice(idx,1);dpd({...prodData,[cat]:arr});};
   const addParam=()=>{
     if(!newParam.trim())return;
     const updated={...qcData,[selCat]:[...(qcData[selCat]||[]),newParam.trim()]};
-    setQcData(updated);setNewParam("");
+    dqd(updated);setNewParam("");
   };
-  const removeParam=(cat,idx)=>{const arr=[...(qcData[cat]||[])];arr.splice(idx,1);setQcData({...qcData,[cat]:arr});};
+  const removeParam=(cat,idx)=>{const arr=[...(qcData[cat]||[])];arr.splice(idx,1);dqd({...qcData,[cat]:arr});};
   const addCategory=()=>{
     if(!newCat.trim())return;
     const catName=newCat.trim();
     if(!prodData[catName]){
-      setProdData({...prodData,[catName]:[]});
-      setQcData({...qcData,[catName]:[]});
-      setCatUnits({...catUnits,[catName]:newCatUnit});
+      dpd({...prodData,[catName]:[]});
+      dqd({...qcData,[catName]:[]});
+      dcu({...catUnits,[catName]:newCatUnit});
       setSelCat(catName);
     }
     setNewCat("");setNewCatUnit("L");
@@ -2280,9 +2459,34 @@ function SettingsTab({showToast, initialProducts, initialQcParams, initialPackSi
 
   return <div>
     <SectionHead title="⚙️ System Settings"/>
+
+    {/* Unsaved changes warning banner */}
+    {isDirty&&<div style={{background:"#422006",border:"1px solid #f59e0b",borderRadius:"8px",padding:"10px 16px",marginBottom:"12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:"10px",flexWrap:"wrap"}}>
+      <span style={{fontSize:"13px",fontWeight:"600",color:"#f59e0b"}}>⚠️ You have unsaved changes</span>
+      <div style={{display:"flex",gap:"8px"}}>
+        <Btn label={saving?"Saving…":"💾 Save Now"} onClick={saveAll} disabled={saving} color="#f59e0b" small/>
+        <Btn label="Discard" onClick={()=>discardAndSwitch(subTab)} outline color="#475569" small/>
+      </div>
+    </div>}
+
+    {/* Sub-tab switch confirmation dialog */}
+    {pendingSubTab&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:3000,display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <div style={{background:"#0f1729",border:"1px solid #f59e0b",borderRadius:"14px",padding:"28px 32px",maxWidth:"380px",width:"90%",boxShadow:"0 20px 60px rgba(0,0,0,0.6)"}}>
+        <div style={{fontSize:"20px",marginBottom:"8px"}}>⚠️</div>
+        <div style={{fontSize:"15px",fontWeight:"700",color:"#f1f5f9",marginBottom:"8px"}}>Unsaved Changes</div>
+        <div style={{fontSize:"13px",color:"#94a3b8",marginBottom:"20px",lineHeight:1.5}}>
+          You have changes in Settings that haven't been saved yet.<br/>What would you like to do?
+        </div>
+        <div style={{display:"flex",gap:"10px",flexDirection:"column"}}>
+          <Btn label={saving?"Saving…":"💾 Save & Switch Tab"} onClick={saveAll} disabled={saving} color="#22c55e"/>
+          <Btn label="Discard Changes & Switch" onClick={()=>discardAndSwitch(pendingSubTab)} outline color="#ef4444"/>
+          <Btn label="Cancel — Stay Here" onClick={()=>setPendingSubTab(null)} outline color="#475569"/>
+        </div>
+      </div>
+    </div>}
     <div style={{display:"flex",gap:"4px",marginBottom:"20px",borderBottom:"1px solid #1e293b"}}>
       {[["products","🎨 Products"],["qcparams","🔬 QC Parameters"],["packsizes","📦 Pack Sizes"],["units","📏 Units"],["painttypes","🖌 Paint Types"],["rmcats","🧫 RM Categories"]].map(([key,label])=>(
-        <button key={key} onClick={()=>setSubTab(key)} style={{background:subTab===key?"#1e293b":"transparent",border:"none",borderBottom:subTab===key?"2px solid #3b82f6":"2px solid transparent",color:subTab===key?"#f1f5f9":"#64748b",padding:"8px 16px",cursor:"pointer",fontSize:"13px",fontWeight:"600",borderRadius:"8px 8px 0 0",transition:"all 0.15s"}}>{label}</button>
+        <button key={key} onClick={()=>trySetSubTab(key)} style={{background:subTab===key?"#1e293b":"transparent",border:"none",borderBottom:subTab===key?"2px solid #3b82f6":"2px solid transparent",color:subTab===key?"#f1f5f9":"#64748b",padding:"8px 16px",cursor:"pointer",fontSize:"13px",fontWeight:"600",borderRadius:"8px 8px 0 0",transition:"all 0.15s"}}>{label}</button>
       ))}
     </div>
 
@@ -2299,7 +2503,7 @@ function SettingsTab({showToast, initialProducts, initialQcParams, initialPackSi
         <div style={{minWidth:"130px"}}>
           <Field label="Default Unit">
             <select style={{...sl,borderColor:catUnits[selCat]?"#22c55e30":"#1e293b"}} value={catUnits[selCat]||"kg"}
-              onChange={e=>setCatUnits({...catUnits,[selCat]:e.target.value})}>
+              onChange={e=>dcu({...catUnits,[selCat]:e.target.value})}>
               {(unitsData||BATCH_UNITS).map(u=><option key={u}>{u}</option>)}
             </select>
           </Field>
@@ -2331,7 +2535,7 @@ function SettingsTab({showToast, initialProducts, initialQcParams, initialPackSi
             const newQC={...qcData};delete newQC[selCat];
             const newPack={...packSizeData};delete newPack[selCat];
             const newCU={...catUnits};delete newCU[selCat];
-            setProdData(newProd);setQcData(newQC);setPackSizeData(newPack);setCatUnits(newCU);
+            dpd(newProd);dqd(newQC);dpkd(newPack);dcu(newCU);
             const remaining=Object.keys(newProd).sort((a,b)=>a.localeCompare(b));
             setSelCat(remaining[0]||"");
             showToast&&showToast(`Category "${selCat}" deleted`,"error");
@@ -2364,12 +2568,12 @@ function SettingsTab({showToast, initialProducts, initialQcParams, initialPackSi
             <input style={sml} value={name} onChange={e=>{
               const arr=[...(prodData[selCat]||[])];
               arr[i]={name:e.target.value,unit};
-              setProdData({...prodData,[selCat]:arr});
+              dpd({...prodData,[selCat]:arr});
             }} placeholder="Product name"/>
             <select style={{...sml,padding:"6px 6px",borderColor:unit?"#22c55e30":"#1e293b"}} value={unit} onChange={e=>{
               const arr=[...(prodData[selCat]||[])];
               arr[i]={name,unit:e.target.value};
-              setProdData({...prodData,[selCat]:arr});
+              dpd({...prodData,[selCat]:arr});
             }}>
               {(unitsData||BATCH_UNITS).map(u=><option key={u}>{u}</option>)}
             </select>
@@ -2400,7 +2604,7 @@ function SettingsTab({showToast, initialProducts, initialQcParams, initialPackSi
         </div>;
       })}
       {(qcData[selCat]||[]).length===0&&<div style={{fontSize:"13px",color:"#334155",fontStyle:"italic",padding:"10px 0"}}>No QC params for {selCat}.</div>}
-      <button onClick={()=>{const arr=[...(qcData[selCat]||[]),{name:"",unit:"",min:"",max:""}];setQcData({...qcData,[selCat]:arr});}}
+      <button onClick={()=>{const arr=[...(qcData[selCat]||[]),{name:"",unit:"",min:"",max:""}];dqd({...qcData,[selCat]:arr});}}
         style={{marginTop:"8px",background:"none",border:"1px dashed #1e293b",borderRadius:"7px",padding:"7px 14px",color:"#475569",cursor:"pointer",fontSize:"12px",fontWeight:"600",width:"100%"}}>
         + Add Parameter
       </button>
@@ -2416,7 +2620,7 @@ function SettingsTab({showToast, initialProducts, initialQcParams, initialPackSi
         <Btn label="+ Add" onClick={()=>{
           if(newPackSize.trim()){
             const cat_arr=[...(packSizeData[selCat]||[]),{size:newPackSize.trim(),qty:newPackQty.trim()}];
-            setPackSizeData({...packSizeData,[selCat]:cat_arr});
+            dpkd({...packSizeData,[selCat]:cat_arr});
             setNewPackSize("");setNewPackQty("");
           }
         }} color="#f59e0b" small/>
@@ -2434,16 +2638,16 @@ function SettingsTab({showToast, initialProducts, initialQcParams, initialPackSi
           const update=(field,val)=>{
             const d=[...(packSizeData[selCat]||[])];
             d[i]={...s,[field]:val};
-            setPackSizeData({...packSizeData,[selCat]:d});
+            dpkd({...packSizeData,[selCat]:d});
           };
           return <div key={i} style={{display:"grid",gridTemplateColumns:"2fr 1fr 120px 36px",gap:"6px",alignItems:"center"}}>
             <input style={sml} value={s.size} onChange={e=>update("size",e.target.value)} placeholder="e.g. 4 L tin"/>
             <input style={{...sml,borderColor:s.qty?"#22c55e30":"#f59e0b30",textAlign:"center"}} value={s.qty} onChange={e=>update("qty",e.target.value)} placeholder="qty"/>
             <div style={{display:"flex",gap:"4px"}}>
-              {i>0&&<button onClick={()=>{const d=[...(packSizeData[selCat]||[])];[d[i-1],d[i]]=[d[i],d[i-1]];setPackSizeData({...packSizeData,[selCat]:d});}} style={{background:"none",border:"1px solid #1e293b",borderRadius:"5px",color:"#64748b",cursor:"pointer",fontSize:"12px",padding:"2px 8px"}}>↑</button>}
-              {i<(packSizeData[selCat]||[]).length-1&&<button onClick={()=>{const d=[...(packSizeData[selCat]||[])];[d[i],d[i+1]]=[d[i+1],d[i]];setPackSizeData({...packSizeData,[selCat]:d});}} style={{background:"none",border:"1px solid #1e293b",borderRadius:"5px",color:"#64748b",cursor:"pointer",fontSize:"12px",padding:"2px 8px"}}>↓</button>}
+              {i>0&&<button onClick={()=>{const d=[...(packSizeData[selCat]||[])];[d[i-1],d[i]]=[d[i],d[i-1]];dpkd({...packSizeData,[selCat]:d});}} style={{background:"none",border:"1px solid #1e293b",borderRadius:"5px",color:"#64748b",cursor:"pointer",fontSize:"12px",padding:"2px 8px"}}>↑</button>}
+              {i<(packSizeData[selCat]||[]).length-1&&<button onClick={()=>{const d=[...(packSizeData[selCat]||[])];[d[i],d[i+1]]=[d[i+1],d[i]];dpkd({...packSizeData,[selCat]:d});}} style={{background:"none",border:"1px solid #1e293b",borderRadius:"5px",color:"#64748b",cursor:"pointer",fontSize:"12px",padding:"2px 8px"}}>↓</button>}
             </div>
-            <button onClick={()=>{const d=(packSizeData[selCat]||[]).filter((_,idx)=>idx!==i);setPackSizeData({...packSizeData,[selCat]:d});}} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"16px",textAlign:"center"}}>×</button>
+            <button onClick={()=>{const d=(packSizeData[selCat]||[]).filter((_,idx)=>idx!==i);dpkd({...packSizeData,[selCat]:d});}} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"16px",textAlign:"center"}}>×</button>
           </div>;
         })}
       </div>
@@ -2469,7 +2673,7 @@ function SettingsTab({showToast, initialProducts, initialQcParams, initialPackSi
             </div>
             <button onClick={()=>{
               if(unitsData.length<=1){showToast("Must keep at least one unit","error");return;}
-              setUnitsData(unitsData.filter((_,idx)=>idx!==i));
+              dud(unitsData.filter((_,idx)=>idx!==i));
             }} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"16px"}}>×</button>
           </div>
         ))}
@@ -2483,15 +2687,15 @@ function SettingsTab({showToast, initialProducts, initialQcParams, initialPackSi
       <div style={{display:"flex",gap:"6px",marginBottom:"12px"}}>
         <input style={{...inp,flex:1}} value={newPaintType} onChange={e=>setNewPaintType(e.target.value)}
           placeholder="Add paint type… e.g. Waterproofing, Cement Paint"
-          onKeyDown={e=>{if(e.key==="Enter"&&newPaintType.trim()&&!paintTypesData.includes(newPaintType.trim())){setPaintTypesData(d=>[...d,newPaintType.trim()]);setNewPaintType("");}}}/>
-        <Btn label="+ Add" onClick={()=>{if(newPaintType.trim()&&!paintTypesData.includes(newPaintType.trim())){setPaintTypesData(d=>[...d,newPaintType.trim()]);setNewPaintType("");}}} color="#e879f9" small/>
+          onKeyDown={e=>{if(e.key==="Enter"&&newPaintType.trim()&&!paintTypesData.includes(newPaintType.trim())){dptd(d=>[...d,newPaintType.trim()]);setNewPaintType("");}}}/>
+        <Btn label="+ Add" onClick={()=>{if(newPaintType.trim()&&!paintTypesData.includes(newPaintType.trim())){dptd(d=>[...d,newPaintType.trim()]);setNewPaintType("");}}} color="#e879f9" small/>
       </div>
       {paintTypesData.length===0&&<div style={{fontSize:"13px",color:"#334155",fontStyle:"italic",padding:"10px 0"}}>No paint types.</div>}
       <div style={{display:"flex",flexDirection:"column",gap:"6px"}}>
         {paintTypesData.map((t,i)=>(
           <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:"#0f172a",border:"1px solid #1e293b",borderRadius:"8px",padding:"10px 14px"}}>
             <span style={{fontSize:"13px",color:"#e2e8f0"}}>{t}</span>
-            <button onClick={()=>{if(paintTypesData.length<=1){showToast("Must keep at least one","error");return;}setPaintTypesData(paintTypesData.filter((_,j)=>j!==i));}}
+            <button onClick={()=>{if(paintTypesData.length<=1){showToast("Must keep at least one","error");return;}dptd(paintTypesData.filter((_,j)=>j!==i));}}
               style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"16px"}}>×</button>
           </div>
         ))}
@@ -2503,15 +2707,15 @@ function SettingsTab({showToast, initialProducts, initialQcParams, initialPackSi
       <div style={{display:"flex",gap:"6px",marginBottom:"12px"}}>
         <input style={{...inp,flex:1}} value={newRmCat} onChange={e=>setNewRmCat(e.target.value)}
           placeholder="Add RM category… e.g. Catalyst, Hardener, Thixotrope"
-          onKeyDown={e=>{if(e.key==="Enter"&&newRmCat.trim()&&!rmCatsData.includes(newRmCat.trim())){setRmCatsData(d=>[...d,newRmCat.trim()]);setNewRmCat("");}}}/>
-        <Btn label="+ Add" onClick={()=>{if(newRmCat.trim()&&!rmCatsData.includes(newRmCat.trim())){setRmCatsData(d=>[...d,newRmCat.trim()]);setNewRmCat("");}}} color="#f97316" small/>
+          onKeyDown={e=>{if(e.key==="Enter"&&newRmCat.trim()&&!rmCatsData.includes(newRmCat.trim())){drcd(d=>[...d,newRmCat.trim()]);setNewRmCat("");}}}/>
+        <Btn label="+ Add" onClick={()=>{if(newRmCat.trim()&&!rmCatsData.includes(newRmCat.trim())){drcd(d=>[...d,newRmCat.trim()]);setNewRmCat("");}}} color="#f97316" small/>
       </div>
       {rmCatsData.length===0&&<div style={{fontSize:"13px",color:"#334155",fontStyle:"italic",padding:"10px 0"}}>No RM categories.</div>}
       <div style={{display:"flex",flexDirection:"column",gap:"6px"}}>
         {rmCatsData.map((c,i)=>(
           <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:"#0f172a",border:"1px solid #1e293b",borderRadius:"8px",padding:"10px 14px"}}>
             <span style={{fontSize:"13px",color:"#e2e8f0"}}>{c}</span>
-            <button onClick={()=>{if(rmCatsData.length<=1){showToast("Must keep at least one","error");return;}setRmCatsData(rmCatsData.filter((_,j)=>j!==i));}}
+            <button onClick={()=>{if(rmCatsData.length<=1){showToast("Must keep at least one","error");return;}drcd(rmCatsData.filter((_,j)=>j!==i));}}
               style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"16px"}}>×</button>
           </div>
         ))}
@@ -2592,6 +2796,13 @@ function MainApp({user,role}){
   const canQC=role==="admin"||role==="qc";
   const canIssuer=role==="admin"||role==="issuer";
   const [tab,setTab]=useState(CAN_SEE.dashboard.includes(role)?"dashboard":"complaints");
+  const [settingsDirty,setSettingsDirty]=useState(false);
+  const [pendingMainTab,setPendingMainTab]=useState(null);
+
+  const trySetTab=(key)=>{
+    if(tab==="settings"&&settingsDirty){setPendingMainTab(key);}
+    else{setTab(key);}
+  };
   const [rdSubTab,setRdSubTab]=useState("projects");
   const [batchSubTab,setBatchSubTab]=useState("batches"); // "batches" | "oldstock"
 
@@ -2871,7 +3082,7 @@ function MainApp({user,role}){
           </div>
         </div>
         <div style={{display:"flex",gap:"4px",overflowX:"auto"}}>
-          {tabs.map(t=><button key={t.key} onClick={()=>setTab(t.key)} style={{background:tab===t.key?"#1e293b":"transparent",border:"none",borderBottom:tab===t.key?"2px solid #3b82f6":"2px solid transparent",color:tab===t.key?"#f1f5f9":"#64748b",padding:"9px 18px",cursor:"pointer",fontSize:"13px",fontWeight:"600",borderRadius:"8px 8px 0 0",transition:"all 0.15s",whiteSpace:"nowrap"}}>{t.label}</button>)}
+          {tabs.map(t=><button key={t.key} onClick={()=>trySetTab(t.key)} style={{background:tab===t.key?"#1e293b":"transparent",border:"none",borderBottom:tab===t.key?"2px solid #3b82f6":"2px solid transparent",color:tab===t.key?"#f1f5f9":"#64748b",padding:"9px 18px",cursor:"pointer",fontSize:"13px",fontWeight:"600",borderRadius:"8px 8px 0 0",transition:"all 0.15s",whiteSpace:"nowrap"}}>{t.label}</button>)}
         </div>
       </div>
     </div>
@@ -2979,16 +3190,30 @@ function MainApp({user,role}){
         initialUnits={sysUnits}
         initialPaintTypes={sysPaintTypes}
         initialRmCats={sysRmCats}
+        onDirtyChange={setSettingsDirty}
         onSaved={({products,qcParams,packSizes,catUnits,units,paintTypes,rmCategories})=>{
-          setSysProducts(products);
-          setSysQcParams(qcParams);
-          setSysPackSizes(packSizes);
-          setSysCatUnits(catUnits);
-          if(units)setSysUnits(units);
-          if(paintTypes)setSysPaintTypes(paintTypes);
-          if(rmCategories)setSysRmCats(rmCategories);
+          setSysProducts(products);setSysQcParams(qcParams);setSysPackSizes(packSizes);
+          setSysCatUnits(catUnits);if(units)setSysUnits(units);
+          if(paintTypes)setSysPaintTypes(paintTypes);if(rmCategories)setSysRmCats(rmCategories);
+          setSettingsDirty(false);
+          if(pendingMainTab){setTab(pendingMainTab);setPendingMainTab(null);}
         }}
       />}
+      {/* Main-tab switch blocked by unsaved settings */}
+      {pendingMainTab&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:4000,display:"flex",alignItems:"center",justifyContent:"center"}}>
+        <div style={{background:"#0f1729",border:"1px solid #f59e0b",borderRadius:"14px",padding:"28px 32px",maxWidth:"380px",width:"90%",boxShadow:"0 20px 60px rgba(0,0,0,0.6)"}}>
+          <div style={{fontSize:"20px",marginBottom:"8px"}}>⚠️</div>
+          <div style={{fontSize:"15px",fontWeight:"700",color:"#f1f5f9",marginBottom:"8px"}}>Unsaved Settings</div>
+          <div style={{fontSize:"13px",color:"#94a3b8",marginBottom:"20px",lineHeight:1.5}}>
+            You have unsaved changes in Settings.<br/>Save before leaving or discard changes?
+          </div>
+          <div style={{display:"flex",gap:"10px",flexDirection:"column"}}>
+            <Btn label="Go back to Settings to Save" onClick={()=>setPendingMainTab(null)} color="#22c55e"/>
+            <Btn label="Discard Changes & Leave" onClick={()=>{setSettingsDirty(false);setTab(pendingMainTab);setPendingMainTab(null);}} outline color="#ef4444"/>
+            <Btn label="Cancel" onClick={()=>setPendingMainTab(null)} outline color="#475569"/>
+          </div>
+        </div>
+      </div>}
     </div>
 
     {/* ══ MODALS ══ */}
