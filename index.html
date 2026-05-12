@@ -1060,6 +1060,7 @@ function TestReportCard({report,num,onDelete}){
         {report.testedBy&&<span style={{fontSize:"11px",color:"#475569"}}>🔬 {report.testedBy}</span>}
       </div>
       <div style={{display:"flex",gap:"6px",alignItems:"center",flexShrink:0}}>
+        <span style={{fontSize:"10px",color:"#475569",fontWeight:"600"}}>Test Result:</span>
         <Bdg label={report.recommendation} color={rc} small/>
         <button onClick={()=>onDelete(report.id)} style={{background:"none",border:"none",color:"#334155",cursor:"pointer",fontSize:"13px"}}>🗑</button>
       </div>
@@ -1092,7 +1093,8 @@ function TrialCard({trial,index,onDelete,onUpdate,isAdmin}){
   });
 
   const reports=trial.testReports||[];
-  const oc=OUTCOME_COLORS[trial.outcome]||"#94a3b8";
+  const displayOutcome=editing?editForm.outcome:(trial.outcome||"Under Evaluation");
+  const oc=OUTCOME_COLORS[displayOutcome]||"#94a3b8";
   const isEval=trial.outcome==="Under Evaluation";
 
   const saveEdit=async()=>{
@@ -1132,7 +1134,7 @@ function TrialCard({trial,index,onDelete,onUpdate,isAdmin}){
       </div>
       <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
         {isEval&&!editing&&<span style={{fontSize:"10px",fontWeight:"700",color:"#a855f7",background:"#a855f718",border:"1px solid #a855f730",padding:"2px 8px",borderRadius:"99px",whiteSpace:"nowrap"}}>⏳ Evaluating</span>}
-        <Bdg label={trial.outcome||"—"} color={oc}/>
+        <Bdg label={displayOutcome} color={oc}/>
         {onDelete&&!editing&&<button onClick={e=>{e.stopPropagation();setOpen(true);setEditing(true);}} style={{background:"#1e3a5f",border:"1px solid #2563eb40",borderRadius:"6px",color:"#93c5fd",cursor:"pointer",fontSize:"11.5px",fontWeight:"600",padding:"3px 10px"}}>✏️ Edit</button>}
         {onDelete&&!editing&&<button onClick={e=>{e.stopPropagation();onDelete(trial.id)}} style={{background:"none",border:"none",color:"#334155",fontSize:"14px",padding:"2px 4px"}}>🗑</button>}
         {!editing&&<span style={{color:"#334155",fontSize:"12px"}}>{open?"▲":"▼"}</span>}
@@ -3113,6 +3115,236 @@ const ER={materialName:"",vendorName:"",category:"Resin / Binder",batchNo:"",lot
 const EB={category:"",productName:"",shade:"",batchSize:"",unit:"kg",dateIssued:today(),issuedBy:"",oldStockUsed:"",issueNotes:""};
 const EC={customerName:"",productName:"",batchNo:"",monthYear:"",invoiceNo:"",materialAvailable:"",complaint:""};
 
+// ══════════════════════════════════════════════════════════
+// SAMPLE TESTING TAB — Customer / Competitor Samples
+// ══════════════════════════════════════════════════════════
+const SAMPLE_SOURCES=["Customer Sample","Competitor Sample","Market Sample","In-house Reference"];
+const SAMPLE_VERDICT=["Pass — Matches Spec","Pass — Better than Spec","Fail — Below Spec","Inconclusive","Requires Further Testing"];
+const VERDICT_COL={"Pass — Matches Spec":"#22c55e","Pass — Better than Spec":"#3b82f6","Fail — Below Spec":"#ef4444","Inconclusive":"#f59e0b","Requires Further Testing":"#a855f7"};
+
+function SampleTestsTab({role,user,showToast,sysQcParams,onCreateProject}){
+  const [samples,setSamples]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [showAdd,setShowAdd]=useState(false);
+  const [viewItem,setViewItem]=useState(null);
+  const [editItem,setEditItem]=useState(null);
+  const [saving,setSaving]=useState(false);
+  const [search,setSearch]=useState("");
+  const [filterSource,setFilterSource]=useState("All");
+  const [filterVerdict,setFilterVerdict]=useState("All");
+  const isAdmin=role==="admin";
+  const canQC=role==="admin"||role==="qc";
+
+  const blank={
+    sampleName:"",source:SAMPLE_SOURCES[0],providerName:"",
+    productCategory:"",productType:"",dateReceived:today(),receivedBy:"",
+    purpose:"",testParameters:[{name:"",unit:"",result:"",remarks:""}],
+    observations:"",verdict:SAMPLE_VERDICT[0],recommendation:"",
+    attachments:[]
+  };
+  const [form,setForm]=useState({...blank});
+  const [formFiles,setFormFiles]=useState([]);
+
+  useEffect(()=>{
+    const unsub=C("sample_tests").orderBy("_createdAt","desc").onSnapshot(
+      s=>{setSamples(s.docs.map(d=>({id:d.id,...d.data()})));setLoading(false);},
+      ()=>setLoading(false)
+    );
+    return unsub;
+  },[]);
+
+  const save=async(isEdit=false)=>{
+    if(!form.sampleName.trim())return showToast("Sample name required","error");
+    setSaving(true);
+    try{
+      const data={...form,attachments:formFiles,addedBy:user?.email,_updatedAt:ts()};
+      if(isEdit&&editItem){
+        await C("sample_tests").doc(editItem.id).update(data);
+        showToast("Updated ✓");setEditItem(null);
+      }else{
+        await C("sample_tests").add({...data,_createdAt:ts()});
+        showToast("Sample test saved ✓");setShowAdd(false);
+      }
+      setForm({...blank});setFormFiles([]);
+    }catch(e){showToast("Error: "+e.message,"error");}
+    setSaving(false);
+  };
+
+  const startEdit=(item)=>{setEditItem(item);setForm({...blank,...item});setFormFiles(item.attachments||[]);setViewItem(null);};
+  const del=async(id)=>{if(!confirm("Delete this entry?"))return;await C("sample_tests").doc(id).delete();showToast("Deleted","error");};
+
+  const addParam=()=>setForm(f=>({...f,testParameters:[...f.testParameters,{name:"",unit:"",result:"",remarks:""}]}));
+  const updParam=(i,field,val)=>setForm(f=>({...f,testParameters:f.testParameters.map((p,idx)=>idx===i?{...p,[field]:val}:p)}));
+  const remParam=(i)=>setForm(f=>({...f,testParameters:f.testParameters.filter((_,idx)=>idx!==i)}));
+
+  const fs_=samples.filter(s=>{
+    const q=normalize(search);
+    const src=filterSource==="All"||s.source===filterSource;
+    const vrd=filterVerdict==="All"||s.verdict===filterVerdict;
+    const ms=!q||normalize(s.sampleName||"").includes(q)||normalize(s.providerName||"").includes(q)||normalize(s.productType||"").includes(q);
+    return src&&vrd&&ms;
+  });
+
+  const SampleForm=({isEdit})=><div>
+    <Grid3>
+      <Field label="Sample Name *"><input style={inp} value={form.sampleName} onChange={e=>setForm({...form,sampleName:e.target.value})} placeholder="e.g. Competitor Emulsion X"/></Field>
+      <Field label="Source">
+        <select style={sl} value={form.source} onChange={e=>setForm({...form,source:e.target.value})}>
+          {SAMPLE_SOURCES.map(s=><option key={s}>{s}</option>)}
+        </select>
+      </Field>
+      <Field label={form.source==="Customer Sample"?"Customer Name":"Company / Source Name"}>
+        <input style={inp} value={form.providerName} onChange={e=>setForm({...form,providerName:e.target.value})} placeholder={form.source==="Customer Sample"?"Customer name":"Competitor / brand name"}/>
+      </Field>
+    </Grid3>
+    <Grid3>
+      <Field label="Product Category"><input style={inp} value={form.productCategory} onChange={e=>setForm({...form,productCategory:e.target.value})} placeholder="e.g. Emulsion, Enamel"/></Field>
+      <Field label="Product Type / Shade"><input style={inp} value={form.productType} onChange={e=>setForm({...form,productType:e.target.value})} placeholder="e.g. Interior White 3000"/></Field>
+      <Field label="Date Received"><input type="date" style={inp} value={form.dateReceived} onChange={e=>setForm({...form,dateReceived:e.target.value})}/></Field>
+    </Grid3>
+    <Grid2>
+      <Field label="Received By"><input style={inp} value={form.receivedBy} onChange={e=>setForm({...form,receivedBy:e.target.value})} placeholder="Who received the sample"/></Field>
+      <Field label="Purpose of Testing"><input style={inp} value={form.purpose} onChange={e=>setForm({...form,purpose:e.target.value})} placeholder="e.g. Benchmark, Match formulation, QC comparison"/></Field>
+    </Grid2>
+
+    {/* Test Parameters table */}
+    <div style={{marginBottom:"14px"}}>
+      <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"8px"}}>Test Parameters & Results</div>
+      <div style={{border:"1px solid #1e293b",borderRadius:"8px",overflow:"hidden",marginBottom:"6px"}}>
+        <div style={{display:"grid",gridTemplateColumns:"2fr 80px 1.5fr 2fr 28px",background:"#0b1220",padding:"7px 12px",gap:"6px"}}>
+          {["Parameter","Unit","Result Value","Remarks",""].map(h=><div key={h} style={{fontSize:"10px",fontWeight:"700",color:"#334155",textTransform:"uppercase",letterSpacing:"0.07em"}}>{h}</div>)}
+        </div>
+        {form.testParameters.map((p,i)=><div key={i} style={{display:"grid",gridTemplateColumns:"2fr 80px 1.5fr 2fr 28px",padding:"6px 12px",gap:"6px",borderTop:"1px solid #1e293b",alignItems:"center"}}>
+          <input style={sml} value={p.name} onChange={e=>updParam(i,"name",e.target.value)} placeholder="e.g. Viscosity, pH"/>
+          <input style={{...sml,textAlign:"center"}} value={p.unit} onChange={e=>updParam(i,"unit",e.target.value)} placeholder="KU"/>
+          <input style={sml} value={p.result} onChange={e=>updParam(i,"result",e.target.value)} placeholder="Enter value"/>
+          <input style={sml} value={p.remarks} onChange={e=>updParam(i,"remarks",e.target.value)} placeholder="Within spec? Notes?"/>
+          <button onClick={()=>remParam(i)} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"14px",padding:0}}>×</button>
+        </div>)}
+      </div>
+      <button onClick={addParam} style={{background:"none",border:"1px dashed #1e293b",borderRadius:"6px",padding:"5px 12px",color:"#475569",cursor:"pointer",fontSize:"12px",width:"100%"}}>+ Add Parameter Row</button>
+    </div>
+
+    <Field label="Observations / Findings">
+      <textarea style={{...ta,minHeight:"90px"}} value={form.observations} onChange={e=>setForm({...form,observations:e.target.value})} placeholder="Overall quality observations, how it compares to our product, notable characteristics…"/>
+    </Field>
+    <Grid2>
+      <Field label="Overall Verdict">
+        <select style={{...sl,borderColor:VERDICT_COL[form.verdict]||"#1e293b"}} value={form.verdict} onChange={e=>setForm({...form,verdict:e.target.value})}>
+          {SAMPLE_VERDICT.map(v=><option key={v}>{v}</option>)}
+        </select>
+      </Field>
+      <Field label="Recommendation / Action">
+        <input style={inp} value={form.recommendation} onChange={e=>setForm({...form,recommendation:e.target.value})} placeholder="e.g. Use as benchmark for formulation trial, Improve viscosity to match…"/>
+      </Field>
+    </Grid2>
+    <div style={{marginBottom:"14px"}}>
+      <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"6px"}}>📎 Attach Photos / Lab Reports</div>
+      <FileAttachment folder={`sample_tests/${form.sampleName.replace(/\s/g,"_")||"sample"}`} existingFiles={formFiles} onFilesChange={setFormFiles} maxFiles={8}/>
+    </div>
+    <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
+      <Btn label="Cancel" onClick={()=>{isEdit?setEditItem(null):setShowAdd(false);setForm({...blank});setFormFiles([]);}} outline color="#475569" small/>
+      <Btn label={saving?"Saving…":isEdit?"💾 Save Changes":"✓ Save Test Entry"} onClick={()=>save(isEdit)} disabled={saving} color="#22c55e" small/>
+    </div>
+  </div>;
+
+  return <div>
+    {/* Filters + add */}
+    <div style={{display:"flex",gap:"8px",flexWrap:"wrap",alignItems:"center",marginBottom:"14px"}}>
+      <input placeholder="Search sample, company…" value={search} onChange={e=>setSearch(e.target.value)} style={{...inp,maxWidth:"200px",padding:"7px 10px",fontSize:"12.5px"}}/>
+      <select value={filterSource} onChange={e=>setFilterSource(e.target.value)} style={{...sl,width:"155px",padding:"7px 6px",fontSize:"12px"}}>
+        <option value="All">All Sources</option>
+        {SAMPLE_SOURCES.map(s=><option key={s}>{s}</option>)}
+      </select>
+      <select value={filterVerdict} onChange={e=>setFilterVerdict(e.target.value)} style={{...sl,width:"160px",padding:"7px 6px",fontSize:"12px"}}>
+        <option value="All">All Verdicts</option>
+        {SAMPLE_VERDICT.map(v=><option key={v}>{v}</option>)}
+      </select>
+      <span style={{fontSize:"11px",color:"#334155"}}>{fs_.length} entr{fs_.length!==1?"ies":"y"}</span>
+      {canQC&&<div style={{marginLeft:"auto"}}><Btn label="+ Add Sample Test" onClick={()=>setShowAdd(true)} color="#22c55e"/></div>}
+    </div>
+
+    {/* Add form inline */}
+    {showAdd&&<div style={{background:"#080d18",border:"1px solid #22c55e30",borderRadius:"12px",padding:"18px",marginBottom:"16px"}}>
+      <div style={{fontSize:"13px",fontWeight:"700",color:"#22c55e",marginBottom:"14px"}}>🔭 New Sample Test Entry</div>
+      <SampleForm isEdit={false}/>
+    </div>}
+
+    {loading&&<div style={{textAlign:"center",padding:"40px",color:"#475569"}}>Loading…</div>}
+    {!loading&&fs_.length===0&&!showAdd&&<div style={{textAlign:"center",padding:"50px 0"}}>
+      <div style={{fontSize:"40px",marginBottom:"10px"}}>🔭</div>
+      <div style={{fontSize:"13px",color:"#475569"}}>No sample tests yet.{canQC?" Click + Add Sample Test.":""}</div>
+    </div>}
+
+    {/* Cards */}
+    {fs_.map(s=>{
+      const vc=VERDICT_COL[s.verdict]||"#94a3b8";
+      const isEditingThis=editItem?.id===s.id;
+      return <div key={s.id} style={{background:"#0f172a",border:`1px solid #1e293b`,borderLeft:`3px solid ${vc}`,borderRadius:"12px",marginBottom:"10px",overflow:"hidden"}}>
+        {/* Card header */}
+        {!isEditingThis&&<div onClick={()=>setViewItem(viewItem?.id===s.id?null:s)} style={{padding:"14px 18px",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:"8px"}}
+          onMouseEnter={e=>e.currentTarget.style.background="#0f1f35"} onMouseLeave={e=>e.currentTarget.style.background=""}>
+          <div style={{flex:1}}>
+            <div style={{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap",marginBottom:"4px"}}>
+              <span style={{fontSize:"13.5px",fontWeight:"700",color:"#f1f5f9"}}>{s.sampleName}</span>
+              <span style={{fontSize:"11px",background:"#1e293b",color:"#94a3b8",padding:"2px 8px",borderRadius:"99px"}}>{s.source}</span>
+              {s.providerName&&<span style={{fontSize:"11px",color:"#64748b"}}>— {s.providerName}</span>}
+            </div>
+            <div style={{fontSize:"11.5px",color:"#475569"}}>
+              {s.productCategory&&<span>{s.productCategory}{s.productType?` · ${s.productType}`:""}</span>}
+              <span style={{marginLeft:"8px"}}>📅 {s.dateReceived}</span>
+              {s.receivedBy&&<span style={{marginLeft:"8px"}}>👤 {s.receivedBy}</span>}
+              {(s.testParameters||[]).filter(p=>p.name).length>0&&<span style={{marginLeft:"8px"}}>🔬 {s.testParameters.filter(p=>p.name).length} tests</span>}
+              {(s.attachments||[]).length>0&&<span style={{marginLeft:"8px"}}>📎 {s.attachments.length}</span>}
+            </div>
+          </div>
+          <div style={{display:"flex",gap:"6px",alignItems:"center",flexShrink:0}}>
+            <Bdg label={s.verdict} color={vc}/>
+            {canQC&&<button onClick={e=>{e.stopPropagation();startEdit(s);}} style={{background:"#1e3a5f",border:"1px solid #2563eb40",borderRadius:"6px",color:"#93c5fd",cursor:"pointer",fontSize:"11px",fontWeight:"600",padding:"3px 8px"}}>✏️ Edit</button>}
+            {onCreateProject&&canQC&&<button onClick={e=>{e.stopPropagation();onCreateProject({projectName:`${s.sampleName} — R&D`,paintType:s.productCategory||"Other",application:s.productType||"",objective:`Develop/match sample: ${s.sampleName} from ${s.providerName||s.source}. ${s.observations||""}`.trim(),notes:`From Sample Test | Provider: ${s.providerName||"—"} | Verdict: ${s.verdict||"—"}${s.recommendation?` | ${s.recommendation}`:""}`});}} title="Create R&D Project from this sample" style={{background:"#052e16",border:"1px solid #166534",borderRadius:"6px",color:"#22c55e",cursor:"pointer",fontSize:"11px",fontWeight:"600",padding:"3px 8px",whiteSpace:"nowrap"}}>🧪 → R&D</button>}
+            {isAdmin&&<button onClick={e=>{e.stopPropagation();del(s.id);}} style={{background:"none",border:"none",color:"#334155",cursor:"pointer",fontSize:"14px"}}>🗑</button>}
+            <span style={{color:"#334155",fontSize:"12px"}}>{viewItem?.id===s.id?"▲":"▼"}</span>
+          </div>
+        </div>}
+
+        {/* Edit form */}
+        {isEditingThis&&<div style={{padding:"16px 18px",borderTop:"1px solid #2563eb40",background:"#060d1a"}}>
+          <div style={{fontSize:"12px",fontWeight:"700",color:"#93c5fd",marginBottom:"14px"}}>✏️ Editing: {s.sampleName}</div>
+          <SampleForm isEdit={true}/>
+        </div>}
+
+        {/* Expanded view */}
+        {viewItem?.id===s.id&&!isEditingThis&&<div style={{padding:"16px 18px",borderTop:"1px solid #1e293b",background:"#080d18"}}>
+          {s.purpose&&<div style={{marginBottom:"10px"}}><span style={{fontSize:"10px",fontWeight:"700",color:"#334155",textTransform:"uppercase",letterSpacing:"0.07em"}}>Purpose: </span><span style={{fontSize:"13px",color:"#94a3b8"}}>{s.purpose}</span></div>}
+          {/* Parameters table */}
+          {(s.testParameters||[]).filter(p=>p.name).length>0&&<div style={{marginBottom:"12px"}}>
+            <div style={{fontSize:"10px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"6px"}}>Test Results</div>
+            <div style={{border:"1px solid #1e293b",borderRadius:"8px",overflow:"hidden"}}>
+              <div style={{display:"grid",gridTemplateColumns:"2fr 80px 1.5fr 2fr",background:"#0b1220",padding:"6px 12px",gap:"6px"}}>
+                {["Parameter","Unit","Result","Remarks"].map(h=><div key={h} style={{fontSize:"10px",fontWeight:"700",color:"#334155",textTransform:"uppercase",letterSpacing:"0.07em"}}>{h}</div>)}
+              </div>
+              {s.testParameters.filter(p=>p.name).map((p,i)=><div key={i} style={{display:"grid",gridTemplateColumns:"2fr 80px 1.5fr 2fr",padding:"6px 12px",gap:"6px",borderTop:"1px solid #1e293b",background:i%2===0?"#080d18":"#0b1220"}}>
+                <div style={{fontSize:"12.5px",color:"#e2e8f0",fontWeight:"600"}}>{p.name}</div>
+                <div style={{fontSize:"12px",color:"#64748b"}}>{p.unit||"—"}</div>
+                <div style={{fontSize:"12.5px",color:"#22c55e",fontWeight:"600"}}>{p.result||"—"}</div>
+                <div style={{fontSize:"12px",color:"#94a3b8"}}>{p.remarks||"—"}</div>
+              </div>)}
+            </div>
+          </div>}
+          {s.observations&&<div style={{marginBottom:"10px"}}><div style={{fontSize:"10px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"4px"}}>Observations</div><div style={{fontSize:"13px",color:"#cbd5e1",lineHeight:1.6,whiteSpace:"pre-wrap"}}>{s.observations}</div></div>}
+          {s.recommendation&&<div style={{marginBottom:"10px"}}><div style={{fontSize:"10px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"4px"}}>Recommendation</div><div style={{fontSize:"13px",color:"#f59e0b"}}>{s.recommendation}</div></div>}
+          {(s.attachments||[]).length>0&&<div style={{marginBottom:"8px"}}><div style={{fontSize:"10px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"6px"}}>Attachments</div><FileAttachment folder="" existingFiles={s.attachments||[]} onFilesChange={()=>{}} readOnly={true}/></div>}
+          <div style={{fontSize:"10.5px",color:"#334155",marginTop:"6px"}}>Added by {s.addedBy} on {s.dateReceived}</div>
+          {onCreateProject&&canQC&&<div style={{marginTop:"12px",borderTop:"1px solid #1e293b",paddingTop:"10px"}}>
+            <Btn label="🧪 Create R&D Project from this Sample" onClick={()=>onCreateProject({projectName:`${s.sampleName} — R&D`,paintType:s.productCategory||"Other",application:s.productType||"",objective:`Develop/match: ${s.sampleName} from ${s.providerName||s.source}. ${s.observations||""}`.trim(),notes:`From Sample Test | Provider: ${s.providerName||"—"} | Verdict: ${s.verdict}${s.recommendation?` | Rec: ${s.recommendation}`:""}`})} color="#22c55e" small/>
+            <div style={{fontSize:"10.5px",color:"#334155",marginTop:"5px"}}>Opens a new R&D Project pre-filled with this sample's details</div>
+          </div>}
+        </div>}
+      </div>;
+    })}
+  </div>;
+}
+
 function MainApp({user,role}){
   const isAdmin=role==="admin";
   const canQC=role==="admin"||role==="qc";
@@ -3483,7 +3715,7 @@ function MainApp({user,role}){
       {/* R&D */}
       {tab==="rd"&&<>
         <div style={{display:"flex",gap:"4px",marginBottom:"20px",borderBottom:"1px solid #1e293b",paddingBottom:"0"}}>
-          {[["projects","⚗️ R&D Projects"],["rmtests","🧫 RM Tests"]].map(([key,label])=><button key={key} onClick={()=>setRdSubTab(key)} style={{background:rdSubTab===key?"#1e293b":"transparent",border:"none",borderBottom:rdSubTab===key?"2px solid #22c55e":"2px solid transparent",color:rdSubTab===key?"#f1f5f9":"#64748b",padding:"8px 16px",cursor:"pointer",fontSize:"13px",fontWeight:"600",borderRadius:"8px 8px 0 0",transition:"all 0.15s"}}>{label}</button>)}
+          {[["projects","⚗️ R&D Projects"],["rmtests","🧫 RM Tests"],["sampletests","🔭 Sample Testing"]].map(([key,label])=><button key={key} onClick={()=>setRdSubTab(key)} style={{background:rdSubTab===key?"#1e293b":"transparent",border:"none",borderBottom:rdSubTab===key?"2px solid #22c55e":"2px solid transparent",color:rdSubTab===key?"#f1f5f9":"#64748b",padding:"8px 16px",cursor:"pointer",fontSize:"13px",fontWeight:"600",borderRadius:"8px 8px 0 0",transition:"all 0.15s"}}>{label}</button>)}
         </div>
         {rdSubTab==="projects"&&<>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"14px",flexWrap:"wrap",gap:"10px"}}>
@@ -3505,9 +3737,10 @@ function MainApp({user,role}){
           </div>
           {frm.length===0?<div style={{textAlign:"center",padding:"50px 0"}}><div style={{fontSize:"36px",marginBottom:"10px"}}>🧫</div><div style={{fontSize:"13px",color:"#475569"}}>No entries.</div></div>:frm.map(r=><RMCard key={r.id} r={r} onClick={()=>setViewRM(r)} onDelete={async(id)=>{if(!confirm("Delete?"))return;await C("rm_tests").doc(id).delete();showToast("Deleted","error");}} onEdit={r=>setEditRM({...r})} isAdmin={isAdmin}/>)}
         </>}
+        {rdSubTab==="sampletests"&&<SampleTestsTab role={role} user={user} showToast={showToast} sysQcParams={sysQcParams}
+          onCreateProject={(prefill)=>{setProjForm({...EP,...prefill});setShowAddProject(true);setRdSubTab("projects");}}
+        />}
       </>}
-
-      {/* USERS */}
       {tab==="testimonials"&&<TestimonialsTab role={role} user={user} showToast={showToast}/>}
       {tab==="users"&&<UsersTab currentUser={user}/>}
 
