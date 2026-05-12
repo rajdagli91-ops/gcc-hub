@@ -3122,6 +3122,69 @@ const SAMPLE_SOURCES=["Customer Sample","Competitor Sample","Market Sample","In-
 const SAMPLE_VERDICT=["Pass — Matches Spec","Pass — Better than Spec","Fail — Below Spec","Inconclusive","Requires Further Testing"];
 const VERDICT_COL={"Pass — Matches Spec":"#22c55e","Pass — Better than Spec":"#3b82f6","Fail — Below Spec":"#ef4444","Inconclusive":"#f59e0b","Requires Further Testing":"#a855f7"};
 
+// ── Extracted outside SampleTestsTab to prevent remount on each keystroke ──
+function SampleForm({form,setForm,formFiles,setFormFiles,saving,isEdit,blank,addParam,updParam,remParam,onCancel,onSave}){
+  return <div>
+    <Grid3>
+      <Field label="Sample Name *"><input style={inp} value={form.sampleName} onChange={e=>setForm({...form,sampleName:e.target.value})} placeholder="e.g. Competitor Emulsion X"/></Field>
+      <Field label="Source">
+        <select style={sl} value={form.source} onChange={e=>setForm({...form,source:e.target.value})}>
+          {SAMPLE_SOURCES.map(s=><option key={s}>{s}</option>)}
+        </select>
+      </Field>
+      <Field label={form.source==="Customer Sample"?"Customer Name":"Company / Source Name"}>
+        <input style={inp} value={form.providerName} onChange={e=>setForm({...form,providerName:e.target.value})} placeholder={form.source==="Customer Sample"?"Customer name":"Competitor / brand name"}/>
+      </Field>
+    </Grid3>
+    <Grid3>
+      <Field label="Product Category"><input style={inp} value={form.productCategory} onChange={e=>setForm({...form,productCategory:e.target.value})} placeholder="e.g. Emulsion, Enamel"/></Field>
+      <Field label="Product Type / Shade"><input style={inp} value={form.productType} onChange={e=>setForm({...form,productType:e.target.value})} placeholder="e.g. Interior White 3000"/></Field>
+      <Field label="Date Received"><input type="date" style={inp} value={form.dateReceived} onChange={e=>setForm({...form,dateReceived:e.target.value})}/></Field>
+    </Grid3>
+    <Grid2>
+      <Field label="Received By"><input style={inp} value={form.receivedBy} onChange={e=>setForm({...form,receivedBy:e.target.value})} placeholder="Who received the sample"/></Field>
+      <Field label="Purpose of Testing"><input style={inp} value={form.purpose} onChange={e=>setForm({...form,purpose:e.target.value})} placeholder="e.g. Benchmark, Match formulation, QC comparison"/></Field>
+    </Grid2>
+    <div style={{marginBottom:"14px"}}>
+      <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"8px"}}>Test Parameters & Results</div>
+      <div style={{border:"1px solid #1e293b",borderRadius:"8px",overflow:"hidden",marginBottom:"6px"}}>
+        <div style={{display:"grid",gridTemplateColumns:"2fr 80px 1.5fr 2fr 28px",background:"#0b1220",padding:"7px 12px",gap:"6px"}}>
+          {["Parameter","Unit","Result Value","Remarks",""].map(h=><div key={h} style={{fontSize:"10px",fontWeight:"700",color:"#334155",textTransform:"uppercase",letterSpacing:"0.07em"}}>{h}</div>)}
+        </div>
+        {form.testParameters.map((p,i)=><div key={i} style={{display:"grid",gridTemplateColumns:"2fr 80px 1.5fr 2fr 28px",padding:"6px 12px",gap:"6px",borderTop:"1px solid #1e293b",alignItems:"center"}}>
+          <input style={sml} value={p.name} onChange={e=>updParam(i,"name",e.target.value)} placeholder="e.g. Viscosity, pH"/>
+          <input style={{...sml,textAlign:"center"}} value={p.unit} onChange={e=>updParam(i,"unit",e.target.value)} placeholder="KU"/>
+          <input style={sml} value={p.result} onChange={e=>updParam(i,"result",e.target.value)} placeholder="Enter value"/>
+          <input style={sml} value={p.remarks} onChange={e=>updParam(i,"remarks",e.target.value)} placeholder="Within spec? Notes?"/>
+          <button onClick={()=>remParam(i)} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"14px",padding:0}}>×</button>
+        </div>)}
+      </div>
+      <button onClick={addParam} style={{background:"none",border:"1px dashed #1e293b",borderRadius:"6px",padding:"5px 12px",color:"#475569",cursor:"pointer",fontSize:"12px",width:"100%"}}>+ Add Parameter Row</button>
+    </div>
+    <Field label="Observations / Findings">
+      <textarea style={{...ta,minHeight:"90px"}} value={form.observations} onChange={e=>setForm({...form,observations:e.target.value})} placeholder="Overall quality observations, how it compares to our product, notable characteristics…"/>
+    </Field>
+    <Grid2>
+      <Field label="Overall Verdict">
+        <select style={{...sl,borderColor:VERDICT_COL[form.verdict]||"#1e293b"}} value={form.verdict} onChange={e=>setForm({...form,verdict:e.target.value})}>
+          {SAMPLE_VERDICT.map(v=><option key={v}>{v}</option>)}
+        </select>
+      </Field>
+      <Field label="Recommendation / Action">
+        <input style={inp} value={form.recommendation} onChange={e=>setForm({...form,recommendation:e.target.value})} placeholder="e.g. Use as benchmark for formulation trial, Improve viscosity to match…"/>
+      </Field>
+    </Grid2>
+    <div style={{marginBottom:"14px"}}>
+      <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"6px"}}>📎 Attach Photos / Lab Reports</div>
+      <FileAttachment folder={`sample_tests/${form.sampleName.replace(/\s/g,"_")||"sample"}`} existingFiles={formFiles} onFilesChange={setFormFiles} maxFiles={8}/>
+    </div>
+    <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
+      <Btn label="Cancel" onClick={onCancel} outline color="#475569" small/>
+      <Btn label={saving?"Saving…":isEdit?"💾 Save Changes":"✓ Save Test Entry"} onClick={onSave} disabled={saving} color="#22c55e" small/>
+    </div>
+  </div>;
+}
+
 function SampleTestsTab({role,user,showToast,sysQcParams,onCreateProject}){
   const [samples,setSamples]=useState([]);
   const [loading,setLoading]=useState(true);
@@ -3185,69 +3248,6 @@ function SampleTestsTab({role,user,showToast,sysQcParams,onCreateProject}){
     return src&&vrd&&ms;
   });
 
-  const SampleForm=({isEdit})=><div>
-    <Grid3>
-      <Field label="Sample Name *"><input style={inp} value={form.sampleName} onChange={e=>setForm({...form,sampleName:e.target.value})} placeholder="e.g. Competitor Emulsion X"/></Field>
-      <Field label="Source">
-        <select style={sl} value={form.source} onChange={e=>setForm({...form,source:e.target.value})}>
-          {SAMPLE_SOURCES.map(s=><option key={s}>{s}</option>)}
-        </select>
-      </Field>
-      <Field label={form.source==="Customer Sample"?"Customer Name":"Company / Source Name"}>
-        <input style={inp} value={form.providerName} onChange={e=>setForm({...form,providerName:e.target.value})} placeholder={form.source==="Customer Sample"?"Customer name":"Competitor / brand name"}/>
-      </Field>
-    </Grid3>
-    <Grid3>
-      <Field label="Product Category"><input style={inp} value={form.productCategory} onChange={e=>setForm({...form,productCategory:e.target.value})} placeholder="e.g. Emulsion, Enamel"/></Field>
-      <Field label="Product Type / Shade"><input style={inp} value={form.productType} onChange={e=>setForm({...form,productType:e.target.value})} placeholder="e.g. Interior White 3000"/></Field>
-      <Field label="Date Received"><input type="date" style={inp} value={form.dateReceived} onChange={e=>setForm({...form,dateReceived:e.target.value})}/></Field>
-    </Grid3>
-    <Grid2>
-      <Field label="Received By"><input style={inp} value={form.receivedBy} onChange={e=>setForm({...form,receivedBy:e.target.value})} placeholder="Who received the sample"/></Field>
-      <Field label="Purpose of Testing"><input style={inp} value={form.purpose} onChange={e=>setForm({...form,purpose:e.target.value})} placeholder="e.g. Benchmark, Match formulation, QC comparison"/></Field>
-    </Grid2>
-
-    {/* Test Parameters table */}
-    <div style={{marginBottom:"14px"}}>
-      <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"8px"}}>Test Parameters & Results</div>
-      <div style={{border:"1px solid #1e293b",borderRadius:"8px",overflow:"hidden",marginBottom:"6px"}}>
-        <div style={{display:"grid",gridTemplateColumns:"2fr 80px 1.5fr 2fr 28px",background:"#0b1220",padding:"7px 12px",gap:"6px"}}>
-          {["Parameter","Unit","Result Value","Remarks",""].map(h=><div key={h} style={{fontSize:"10px",fontWeight:"700",color:"#334155",textTransform:"uppercase",letterSpacing:"0.07em"}}>{h}</div>)}
-        </div>
-        {form.testParameters.map((p,i)=><div key={i} style={{display:"grid",gridTemplateColumns:"2fr 80px 1.5fr 2fr 28px",padding:"6px 12px",gap:"6px",borderTop:"1px solid #1e293b",alignItems:"center"}}>
-          <input style={sml} value={p.name} onChange={e=>updParam(i,"name",e.target.value)} placeholder="e.g. Viscosity, pH"/>
-          <input style={{...sml,textAlign:"center"}} value={p.unit} onChange={e=>updParam(i,"unit",e.target.value)} placeholder="KU"/>
-          <input style={sml} value={p.result} onChange={e=>updParam(i,"result",e.target.value)} placeholder="Enter value"/>
-          <input style={sml} value={p.remarks} onChange={e=>updParam(i,"remarks",e.target.value)} placeholder="Within spec? Notes?"/>
-          <button onClick={()=>remParam(i)} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"14px",padding:0}}>×</button>
-        </div>)}
-      </div>
-      <button onClick={addParam} style={{background:"none",border:"1px dashed #1e293b",borderRadius:"6px",padding:"5px 12px",color:"#475569",cursor:"pointer",fontSize:"12px",width:"100%"}}>+ Add Parameter Row</button>
-    </div>
-
-    <Field label="Observations / Findings">
-      <textarea style={{...ta,minHeight:"90px"}} value={form.observations} onChange={e=>setForm({...form,observations:e.target.value})} placeholder="Overall quality observations, how it compares to our product, notable characteristics…"/>
-    </Field>
-    <Grid2>
-      <Field label="Overall Verdict">
-        <select style={{...sl,borderColor:VERDICT_COL[form.verdict]||"#1e293b"}} value={form.verdict} onChange={e=>setForm({...form,verdict:e.target.value})}>
-          {SAMPLE_VERDICT.map(v=><option key={v}>{v}</option>)}
-        </select>
-      </Field>
-      <Field label="Recommendation / Action">
-        <input style={inp} value={form.recommendation} onChange={e=>setForm({...form,recommendation:e.target.value})} placeholder="e.g. Use as benchmark for formulation trial, Improve viscosity to match…"/>
-      </Field>
-    </Grid2>
-    <div style={{marginBottom:"14px"}}>
-      <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"6px"}}>📎 Attach Photos / Lab Reports</div>
-      <FileAttachment folder={`sample_tests/${form.sampleName.replace(/\s/g,"_")||"sample"}`} existingFiles={formFiles} onFilesChange={setFormFiles} maxFiles={8}/>
-    </div>
-    <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
-      <Btn label="Cancel" onClick={()=>{isEdit?setEditItem(null):setShowAdd(false);setForm({...blank});setFormFiles([]);}} outline color="#475569" small/>
-      <Btn label={saving?"Saving…":isEdit?"💾 Save Changes":"✓ Save Test Entry"} onClick={()=>save(isEdit)} disabled={saving} color="#22c55e" small/>
-    </div>
-  </div>;
-
   return <div>
     {/* Filters + add */}
     <div style={{display:"flex",gap:"8px",flexWrap:"wrap",alignItems:"center",marginBottom:"14px"}}>
@@ -3267,7 +3267,9 @@ function SampleTestsTab({role,user,showToast,sysQcParams,onCreateProject}){
     {/* Add form inline */}
     {showAdd&&<div style={{background:"#080d18",border:"1px solid #22c55e30",borderRadius:"12px",padding:"18px",marginBottom:"16px"}}>
       <div style={{fontSize:"13px",fontWeight:"700",color:"#22c55e",marginBottom:"14px"}}>🔭 New Sample Test Entry</div>
-      <SampleForm isEdit={false}/>
+      <SampleForm form={form} setForm={setForm} formFiles={formFiles} setFormFiles={setFormFiles} saving={saving} isEdit={false} blank={blank} addParam={addParam} updParam={updParam} remParam={remParam}
+        onCancel={()=>{setShowAdd(false);setForm({...blank});setFormFiles([]);}}
+        onSave={()=>save(false)}/>
     </div>}
 
     {loading&&<div style={{textAlign:"center",padding:"40px",color:"#475569"}}>Loading…</div>}
@@ -3310,7 +3312,9 @@ function SampleTestsTab({role,user,showToast,sysQcParams,onCreateProject}){
         {/* Edit form */}
         {isEditingThis&&<div style={{padding:"16px 18px",borderTop:"1px solid #2563eb40",background:"#060d1a"}}>
           <div style={{fontSize:"12px",fontWeight:"700",color:"#93c5fd",marginBottom:"14px"}}>✏️ Editing: {s.sampleName}</div>
-          <SampleForm isEdit={true}/>
+          <SampleForm form={form} setForm={setForm} formFiles={formFiles} setFormFiles={setFormFiles} saving={saving} isEdit={true} blank={blank} addParam={addParam} updParam={updParam} remParam={remParam}
+            onCancel={()=>{setEditItem(null);setForm({...blank});setFormFiles([]);}}
+            onSave={()=>save(true)}/>
         </div>}
 
         {/* Expanded view */}
