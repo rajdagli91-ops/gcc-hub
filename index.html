@@ -713,24 +713,48 @@ function BatchWorkspace({batch,role,onClose,showToast,qcParams,packSizes}){
 }
 
 // ══════════════════════════════════════════════════════════
-// FILE UPLOAD — Firebase Storage REST API
+// FILE STORAGE — Base64 in Firestore (no Firebase Storage needed)
+// Images compressed via Canvas to keep size small
 // ══════════════════════════════════════════════════════════
-const BUCKET=()=>window._firebaseConfig?.storageBucket||"r-and-d-gcc.firebasestorage.app";
 
-const uploadFile=async(file,folder,userEmail)=>{
-  const user=auth.currentUser;
-  if(!user)throw new Error("Not signed in");
-  const idToken=await user.getIdToken();
-  const safeName=`${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g,"_")}`;
-  const path=`${folder}/${safeName}`;
-  const encoded=encodeURIComponent(path);
-  const url=`https://firebasestorage.googleapis.com/v0/b/${BUCKET()}/o?uploadType=media&name=${encoded}`;
-  const res=await fetch(url,{method:"POST",headers:{"Content-Type":file.type,"Authorization":`Firebase ${idToken}`},body:file});
-  if(!res.ok){const err=await res.json();throw new Error(err.error?.message||"Upload failed");}
-  const data=await res.json();
-  const token=data.downloadTokens;
-  const downloadUrl=`https://firebasestorage.googleapis.com/v0/b/${BUCKET()}/o/${encoded}?alt=media&token=${token}`;
-  return {name:file.name,safeName,path,url:downloadUrl,type:file.type,size:file.size,uploadedBy:userEmail,uploadedAt:today()};
+const compressImage=async(file,maxPx=900,quality=0.72)=>{
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=ev=>{
+      const img=new Image();
+      img.onload=()=>{
+        const scale=Math.min(1,maxPx/Math.max(img.width,img.height));
+        const w=Math.round(img.width*scale);
+        const h=Math.round(img.height*scale);
+        const canvas=document.createElement("canvas");
+        canvas.width=w;canvas.height=h;
+        const ctx=canvas.getContext("2d");
+        ctx.drawImage(img,0,0,w,h);
+        const dataUrl=canvas.toDataURL("image/jpeg",quality);
+        resolve(dataUrl);
+      };
+      img.onerror=reject;
+      img.src=ev.target.result;
+    };
+    reader.onerror=reject;
+    reader.readAsDataURL(file);
+  });
+};
+
+const fileToBase64=async(file,userEmail)=>{
+  let dataUrl;
+  if(file.type.startsWith("image/")){
+    dataUrl=await compressImage(file);
+  }else if(file.type.startsWith("video/")){
+    // Videos too large for Firestore — store metadata only, ask user to share via WhatsApp
+    return {name:file.name,type:file.type,size:file.size,url:null,isVideoStub:true,uploadedBy:userEmail,uploadedAt:today(),note:"Video too large to store inline — share via WhatsApp/email separately"};
+  }else{
+    // PDF/other — store as base64 if small enough
+    if(file.size>800000)throw new Error(`File "${file.name}" is too large (${(file.size/1024/1024).toFixed(1)}MB). Max 800KB for non-image files. For photos, any size is fine.`);
+    dataUrl=await new Promise((res,rej)=>{const r=new FileReader();r.onload=e=>res(e.target.result);r.onerror=rej;r.readAsDataURL(file);});
+  }
+  const sizeKB=Math.round(dataUrl.length*0.75/1024);
+  return {name:file.name,type:file.type,size:file.size,sizeKB,url:dataUrl,uploadedBy:userEmail,uploadedAt:today()};
 };
 
 function FileAttachment({folder,existingFiles=[],onFilesChange,readOnly=false,maxFiles=5}){
@@ -745,9 +769,9 @@ function FileAttachment({folder,existingFiles=[],onFilesChange,readOnly=false,ma
     if(existingFiles.length+files.length>maxFiles){setError(`Max ${maxFiles} files allowed`);return;}
     setUploading(true);setError("");
     try{
-      const uploaded=await Promise.all(files.map(f=>uploadFile(f,folder,user?.email||"")));
-      onFilesChange([...existingFiles,...uploaded]);
-    }catch(err){setError(err.message||"Upload failed");}
+      const processed=await Promise.all(files.map(f=>fileToBase64(f,user?.email||"")));
+      onFilesChange([...existingFiles,...processed]);
+    }catch(err){setError(err.message||"Processing failed");}
     setUploading(false);
     e.target.value="";
   };
@@ -756,26 +780,25 @@ function FileAttachment({folder,existingFiles=[],onFilesChange,readOnly=false,ma
 
   return <div>
     {!readOnly&&existingFiles.length<maxFiles&&<div style={{marginBottom:"8px"}}>
-      <input ref={fileRef} type="file" accept="image/*,video/*,.pdf" multiple onChange={handleSelect} style={{display:"none"}}/>
+      <input ref={fileRef} type="file" accept="image/*,.pdf" multiple onChange={handleSelect} style={{display:"none"}}/>
       <button onClick={()=>fileRef.current?.click()} disabled={uploading}
         style={{background:"none",border:"1px dashed #334155",borderRadius:"7px",padding:"7px 14px",color:uploading?"#334155":"#64748b",cursor:uploading?"not-allowed":"pointer",fontSize:"12px",fontWeight:"600",display:"flex",alignItems:"center",gap:"6px"}}>
-        {uploading?"⏳ Uploading…":"📎 Add Photo / Video / PDF"}
-        <span style={{fontSize:"10px",color:"#334155"}}>({existingFiles.length}/{maxFiles})</span>
+        {uploading?"⏳ Processing…":"📎 Add Photo / PDF"}
+        <span style={{fontSize:"10px",color:"#334155"}}>({existingFiles.length}/{maxFiles}) — images auto-compressed</span>
       </button>
-      {error&&<div style={{fontSize:"11px",color:"#ef4444",marginTop:"4px"}}>{error}</div>}
+      {error&&<div style={{background:"#450a0a",border:"1px solid #7f1d1d",borderRadius:"7px",padding:"8px 12px",color:"#fca5a5",fontSize:"12px",marginTop:"6px"}}>❌ {error}</div>}
     </div>}
     {existingFiles.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:"8px",marginTop:"6px"}}>
       {existingFiles.map((f,i)=>{
         const isImg=f.type?.startsWith("image/");
-        const isVid=f.type?.startsWith("video/");
-        return <div key={i} style={{position:"relative",background:"#0b1220",border:"1px solid #1e293b",borderRadius:"8px",overflow:"hidden",width:isImg||isVid?"140px":"auto",maxWidth:"200px"}}>
-          {isImg&&<img src={f.url} alt={f.name} style={{width:"140px",height:"100px",objectFit:"cover",display:"block"}}/>}
-          {isVid&&<video src={f.url} controls style={{width:"140px",height:"100px",objectFit:"cover",display:"block"}}/>}
-          {!isImg&&!isVid&&<a href={f.url} target="_blank" rel="noreferrer" style={{display:"flex",alignItems:"center",gap:"6px",padding:"10px 12px",color:"#93c5fd",fontSize:"12px",textDecoration:"none"}}>
-            📄 {f.name.length>20?f.name.slice(0,20)+"…":f.name}
-          </a>}
-          <div style={{padding:"4px 8px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <span style={{fontSize:"10px",color:"#334155",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"90px"}}>{f.name}</span>
+        const isPDF=f.type==="application/pdf";
+        const isVideoStub=f.isVideoStub;
+        return <div key={i} style={{position:"relative",background:"#0b1220",border:"1px solid #1e293b",borderRadius:"8px",overflow:"hidden",maxWidth:"160px"}}>
+          {isImg&&f.url&&<img src={f.url} alt={f.name} style={{width:"140px",height:"100px",objectFit:"cover",display:"block"}}/>}
+          {isPDF&&f.url&&<a href={f.url} target="_blank" rel="noreferrer" style={{display:"flex",alignItems:"center",gap:"6px",padding:"10px 12px",color:"#93c5fd",fontSize:"12px",textDecoration:"none"}}>📄 {f.name.length>18?f.name.slice(0,18)+"…":f.name}</a>}
+          {isVideoStub&&<div style={{padding:"10px 12px",fontSize:"11px",color:"#f59e0b"}}>🎥 {f.name.length>16?f.name.slice(0,16)+"…":f.name}<br/><span style={{fontSize:"10px",color:"#475569"}}>Share separately</span></div>}
+          <div style={{padding:"3px 8px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span style={{fontSize:"9px",color:"#334155"}}>{f.sizeKB?`${f.sizeKB}KB`:""}</span>
             {!readOnly&&<button onClick={()=>removeFile(i)} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"14px",padding:"0 2px",flexShrink:0}}>×</button>}
           </div>
         </div>;
