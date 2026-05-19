@@ -1096,7 +1096,8 @@ function TestReportCard({report,num,onDelete}){
   </div>;
 }
 
-function TrialCard({trial,index,onDelete,onUpdate,isAdmin}){
+function TrialCard({trial,index,onDelete,onUpdate,isAdmin,sysUnits,onAddUnit}){
+  const ING_UNITS_EFF=sysUnits&&sysUnits.length?sysUnits:[...ING_UNITS,...BATCH_UNITS.filter(u=>!ING_UNITS.includes(u))];
   const [open,setOpen]=useState(false);
   const [editing,setEditing]=useState(false);
   const [showRF,setShowRF]=useState(false);
@@ -1193,7 +1194,7 @@ function TrialCard({trial,index,onDelete,onUpdate,isAdmin}){
               <input style={sml} value={r.material} onChange={e=>updIng(i,"material",e.target.value)} placeholder="Material name"/>
               <input style={{...sml,textAlign:"center"}} type="number" value={r.quantity} onChange={e=>updIng(i,"quantity",e.target.value)} placeholder="0"/>
               <select style={{...sml,padding:"6px 4px"}} value={r.unit} onChange={e=>updIng(i,"unit",e.target.value)}>
-                {ING_UNITS.map(u=><option key={u}>{u}</option>)}
+                {ING_UNITS_EFF.map(u=><option key={u}>{u}</option>)}
               </select>
               <input style={sml} value={r.notes} onChange={e=>updIng(i,"notes",e.target.value)} placeholder="Notes"/>
               <button onClick={()=>remIng(i)} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"14px",padding:0}}>×</button>
@@ -1279,7 +1280,7 @@ function TrialCard({trial,index,onDelete,onUpdate,isAdmin}){
   </div>;
 }
 
-function ProjectWorkspace({project,isAdmin,showToast}){
+function ProjectWorkspace({project,isAdmin,showToast,sysUnits,sysRmCats,onAddRmCat,onAddUnit}){
   const [live,setLive]=useState(project);
   const [showForm,setShowForm]=useState(false);
   const [saving,setSaving]=useState(false);
@@ -1383,7 +1384,7 @@ function ProjectWorkspace({project,isAdmin,showToast}){
     {trials.length===0&&!showForm?<div style={{textAlign:"center",padding:"24px",border:"1px dashed #1e293b",borderRadius:"10px",marginBottom:"14px"}}>
       <div style={{fontSize:"26px",marginBottom:"6px"}}>⚗️</div>
       <div style={{fontSize:"13px",color:"#475569"}}>No trials yet.</div>
-    </div>:trials.map((t,i)=><TrialCard key={t.id} trial={t} index={i} isAdmin={isAdmin} onDelete={isAdmin?deleteTrial:null} onUpdate={updateTrial}/>)}
+    </div>:trials.map((t,i)=><TrialCard key={t.id} trial={t} index={i} isAdmin={isAdmin} onDelete={isAdmin?deleteTrial:null} onUpdate={updateTrial} sysUnits={sysUnits} onAddUnit={onAddUnit}/>)}
     {/* Notes section */}
     <div style={{marginTop:"20px"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"10px",paddingBottom:"10px",borderBottom:"1px solid #1e293b"}}>
@@ -3376,7 +3377,26 @@ function SampleTestsTab({role,user,showToast,sysQcParams,onCreateProject}){
 // ══════════════════════════════════════════════════════════
 // RAW MATERIAL STOCK MODULE
 // ══════════════════════════════════════════════════════════
-function RawMaterialStockTab({role,user,showToast,sysUnits,sysRmCats}){
+// Inline quick-add for categories and units from any screen
+function QuickAdd({label,onAdd,color="#38bdf8"}){
+  const [show,setShow]=useState(false);
+  const [val,setVal]=useState("");
+  return <span style={{display:"inline-flex",alignItems:"center",gap:"4px"}}>
+    {!show&&<button onClick={()=>setShow(true)} title={`Add new ${label}`}
+      style={{background:"none",border:`1px dashed ${color}50`,borderRadius:"5px",padding:"2px 7px",color,cursor:"pointer",fontSize:"11px",fontWeight:"600",whiteSpace:"nowrap"}}>
+      + New {label}
+    </button>}
+    {show&&<span style={{display:"inline-flex",gap:"4px",alignItems:"center"}}>
+      <input autoFocus style={{...sml,width:"130px",borderColor:color+"50"}} value={val} onChange={e=>setVal(e.target.value)}
+        onKeyDown={e=>{if(e.key==="Enter"&&val.trim()){onAdd(val.trim());setVal("");setShow(false);}if(e.key==="Escape"){setShow(false);setVal("");}}}
+        placeholder={`New ${label} name…`}/>
+      <button onClick={()=>{if(val.trim()){onAdd(val.trim());setVal("");setShow(false);}}} style={{background:color,border:"none",borderRadius:"5px",padding:"4px 8px",color:"#000",cursor:"pointer",fontSize:"11px",fontWeight:"700"}}>Add</button>
+      <button onClick={()=>{setShow(false);setVal("");}} style={{background:"none",border:"none",color:"#475569",cursor:"pointer",fontSize:"14px"}}>×</button>
+    </span>}
+  </span>;
+}
+
+function RawMaterialStockTab({role,user,showToast,sysUnits,sysRmCats,onAddRmCat,onAddUnit}){
   const isAdmin=role==="admin";
   const canStore=role==="admin"||role==="store";
   const UNITS=sysUnits||BATCH_UNITS;
@@ -3662,12 +3682,12 @@ function RawMaterialStockTab({role,user,showToast,sysUnits,sysRmCats}){
         <div style={{fontSize:"13px",fontWeight:"700",color:"#38bdf8",marginBottom:"14px"}}>{editMat?"✏️ Edit Material":"➕ New Raw Material"}</div>
         <Grid3>
           <Field label="Material Name *"><input style={inp} value={matForm.name} onChange={e=>setMatForm({...matForm,name:e.target.value})} placeholder="e.g. TiO2 White"/></Field>
-          <Field label="Category">
+          <Field label={<span style={{display:"flex",alignItems:"center",gap:"6px"}}>Category <QuickAdd label="Category" onAdd={cat=>{if(onAddRmCat)onAddRmCat(cat);}} color="#f97316"/></span>}>
             <select style={sl} value={matForm.category} onChange={e=>setMatForm({...matForm,category:e.target.value})}>
               {CATS.map(c=><option key={c}>{c}</option>)}
             </select>
           </Field>
-          <Field label="Unit">
+          <Field label={<span style={{display:"flex",alignItems:"center",gap:"6px"}}>Unit <QuickAdd label="Unit" onAdd={u=>{if(onAddUnit)onAddUnit(u);}} color="#38bdf8"/></span>}>
             <select style={sl} value={matForm.unit} onChange={e=>setMatForm({...matForm,unit:e.target.value})}>
               {UNITS.map(u=><option key={u}>{u}</option>)}
             </select>
@@ -3753,6 +3773,20 @@ function MainApp({user,role}){
   const [sysUnits,setSysUnits]=useState([...BATCH_UNITS]);
   const [sysPaintTypes,setSysPaintTypes]=useState([...PAINT_TYPES]);
   const [sysRmCats,setSysRmCats]=useState([...RM_CATEGORIES]);
+
+  // Add a new RM category or unit globally (from any screen) — saves to Firestore immediately
+  const addGlobalRmCat=async(cat)=>{
+    if(!cat.trim()||sysRmCats.includes(cat.trim()))return;
+    const updated=[...sysRmCats,cat.trim()];
+    setSysRmCats(updated);
+    try{await C("settings").doc("products").set({rmCategories:updated},{merge:true});}catch(e){}
+  };
+  const addGlobalUnit=async(unit)=>{
+    if(!unit.trim()||sysUnits.includes(unit.trim()))return;
+    const updated=[...sysUnits,unit.trim()];
+    setSysUnits(updated);
+    try{await C("settings").doc("products").set({units:updated},{merge:true});}catch(e){}
+  };
   const [oldStocks,setOldStocks]=useState([]);
 
   // Data
@@ -4127,7 +4161,7 @@ function MainApp({user,role}){
           onCreateProject={(prefill)=>{setProjForm({...EP,...prefill});setShowAddProject(true);setRdSubTab("projects");}}
         />}
       </>}
-      {tab==="stock"&&<RawMaterialStockTab role={role} user={user} showToast={showToast} sysUnits={sysUnits} sysRmCats={sysRmCats}/>}
+      {tab==="stock"&&<RawMaterialStockTab role={role} user={user} showToast={showToast} sysUnits={sysUnits} sysRmCats={sysRmCats} onAddRmCat={addGlobalRmCat} onAddUnit={addGlobalUnit}/>}
       {tab==="testimonials"&&<TestimonialsTab role={role} user={user} showToast={showToast}/>}
       {tab==="users"&&<UsersTab currentUser={user}/>}
 
@@ -4269,7 +4303,7 @@ function MainApp({user,role}){
 
     {/* Project Workspace */}
     <Modal wide open={!!activeProject} onClose={()=>setActiveProject(null)} title="Project Workspace">
-      {activeProject&&<ProjectWorkspace key={activeProject.id} project={activeProject} isAdmin={isAdmin} showToast={showToast}/>}
+      {activeProject&&<ProjectWorkspace key={activeProject.id} project={activeProject} isAdmin={isAdmin} showToast={showToast} sysUnits={sysUnits} sysRmCats={sysRmCats} onAddRmCat={addGlobalRmCat} onAddUnit={addGlobalUnit}/>}
     </Modal>
 
     {/* Add Project */}
@@ -4325,7 +4359,7 @@ function MainApp({user,role}){
         <Field label="Vendor / Supplier *"><input style={inp} value={rmForm.vendorName} onChange={e=>setRmForm({...rmForm,vendorName:e.target.value})}/></Field>
       </Grid2>
       <Grid2>
-        <Field label="Category"><select style={sl} value={rmForm.category} onChange={e=>setRmForm({...rmForm,category:e.target.value})}>{(sysRmCats||RM_CATEGORIES).map(c=><option key={c}>{c}</option>)}</select></Field>
+        <Field label={<span style={{display:"flex",alignItems:"center",gap:"6px"}}>Category <QuickAdd label="Category" onAdd={cat=>addGlobalRmCat&&addGlobalRmCat(cat)} color="#f97316"/></span>}><select style={sl} value={rmForm.category} onChange={e=>setRmForm({...rmForm,category:e.target.value})}>{(sysRmCats||RM_CATEGORIES).map(c=><option key={c}>{c}</option>)}</select></Field>
         <Field label="Date Received"><input type="date" style={inp} value={rmForm.dateReceived} onChange={e=>setRmForm({...rmForm,dateReceived:e.target.value})}/></Field>
       </Grid2>
       <Grid2>
