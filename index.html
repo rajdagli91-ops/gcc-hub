@@ -85,6 +85,133 @@ window.onerror=function(msg,src,line,col,err){
 };
 </script>
 
+
+<script>
+// Print production sheet — extracted from Babel to avoid large template literal issues
+// Print production sheet — opens in new window, auto-prints
+function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, chargingDate, user){
+  const bs=parseFloat(batchSize)||parseFloat(bom.baseBatchSize)||100;
+  const base=parseFloat(bom.baseBatchSize)||100;
+  const factor=bs/base;
+  let ingRows="";
+  let rowNo=0;
+  (bom.ingredients||[]).forEach(ing=>{
+    if(ing.isProcess){
+      ingRows+=`<tr style="background:#f0f0f0"><td colspan="6" style="padding:4px 6px;font-style:italic;font-weight:600;font-size:11px;border:1px solid #999">${ing.name||""}</td></tr>`;
+    }else{
+      rowNo++;
+      const stdQty=parseFloat(ing.standardQty)||0;
+      const currQty=(stdQty*factor).toFixed(3).replace(/\.?0+$/,"");
+      ingRows+=`<tr>
+        <td style="border:1px solid #999;padding:3px 5px;text-align:center;font-size:11px">${rowNo}</td>
+        <td style="border:1px solid #999;padding:3px 5px;font-size:11px">${ing.name||""}</td>
+        <td style="border:1px solid #999;padding:3px 5px;text-align:center;font-size:11px">${stdQty||""}</td>
+        <td style="border:1px solid #999;padding:3px 5px;text-align:center;font-size:11px">${currQty||""}</td>
+        <td style="border:1px solid #999;padding:3px 5px;text-align:center;font-size:11px"></td>
+        <td style="border:1px solid #999;padding:3px 5px;text-align:center;font-size:11px"></td>
+      </tr>`;
+    }
+  });
+  // Total row
+  const totalStd=(bom.ingredients||[]).filter(i=>!i.isProcess).reduce((s,i)=>s+(parseFloat(i.standardQty)||0),0);
+  const totalCurr=(totalStd*factor).toFixed(3).replace(/\.?0+$/,"");
+  const qc=bom.qcTests||{};
+  const packs=(bom.packingSizes||[]).filter(p=>p.size);
+  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Production Sheet — ${bom.productName}</title>
+<style>
+  body{font-family:Arial,sans-serif;margin:0;padding:12px;font-size:12px;}
+  .header-table{width:100%;border-collapse:collapse;margin-bottom:6px;}
+  .header-table td{padding:3px 5px;font-size:11px;}
+  .co-name{font-size:16px;font-weight:800;letter-spacing:1px;}
+  .sheet-title{font-size:14px;font-weight:700;text-align:center;}
+  .prod-name{font-size:13px;font-weight:700;border:1px solid #000;padding:4px 8px;margin-bottom:6px;}
+  .main-table{width:100%;border-collapse:collapse;margin-bottom:6px;}
+  .main-table th{border:1px solid #000;padding:4px 5px;background:#d0d0d0;font-size:10px;text-align:center;}
+  .main-table td{border:1px solid #999;padding:3px 5px;font-size:11px;}
+  .right-table{width:100%;border-collapse:collapse;font-size:11px;}
+  .right-table td{border:1px solid #999;padding:3px 5px;}
+  .section-head{font-weight:700;background:#e0e0e0;padding:2px 4px;font-size:10px;text-transform:uppercase;}
+  .footer-row{display:flex;justify-content:space-between;margin-top:10px;font-size:11px;}
+  @media print{body{margin:0;padding:8px;} @page{margin:8mm;size:A4;}}
+</style></head><body>
+<table class="header-table">
+  <tr>
+    <td style="width:30%"><span class="co-name">VEEBEE</span><br><span style="font-size:9px">G.C.C/7.2.1/F/03</span></td>
+    <td style="width:40%;text-align:center"><span class="sheet-title">PRODUCTION SHEET</span></td>
+    <td style="width:30%;text-align:right;font-size:10px">
+      <b>BATCH NO:</b> ${batchNo||"____________"}<br>
+      <b>MILL NO:</b> ____________<br>
+      <b>FILLING DATE:</b> ${fillingDate||"____________"}<br>
+      <b>CHARGING DATE:</b> ${chargingDate||today()}
+    </td>
+  </tr>
+</table>
+<div class="prod-name">PRODUCT NAME: ${bom.productName||""} &nbsp;&nbsp;&nbsp; B.SIZE: ${bs} ${bom.baseUnit||"L"}</div>
+<table style="width:100%;border-collapse:collapse">
+  <tr>
+    <td style="width:60%;vertical-align:top">
+      <table class="main-table" style="width:100%">
+        <thead>
+          <tr>
+            <th style="width:5%">NO</th>
+            <th style="width:28%">INGREDIENTS</th>
+            <th style="width:14%">STANDARD QTY</th>
+            <th style="width:14%">CURRENT QTY</th>
+            <th style="width:12%">ACTUAL QTY</th>
+            <th style="width:12%">AMOUNT</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${ingRows}
+          <tr style="font-weight:700;background:#f5f5f5">
+            <td colspan="2" style="border:1px solid #999;padding:3px 5px;text-align:center;font-size:11px">TOTAL</td>
+            <td style="border:1px solid #999;padding:3px 5px;text-align:center;font-size:11px">${totalStd.toFixed(3).replace(/\.?0+$/,"")}</td>
+            <td style="border:1px solid #999;padding:3px 5px;text-align:center;font-size:11px">${totalCurr}</td>
+            <td style="border:1px solid #999;padding:3px 5px"></td>
+            <td style="border:1px solid #999;padding:3px 5px"></td>
+          </tr>
+          <tr><td colspan="6" style="border:1px solid #999;padding:3px 5px;font-size:10px;font-style:italic">EXTRA ADDITIONS</td></tr>
+          <tr><td colspan="4" style="border:1px solid #999;padding:3px 5px;font-size:10px">Dhoyela</td><td colspan="2" style="border:1px solid #999"></td></tr>
+          <tr><td colspan="4" style="border:1px solid #999;padding:3px 5px;font-size:10px">Extra Output</td><td colspan="2" style="border:1px solid #999"></td></tr>
+          <tr><td colspan="4" style="border:1px solid #999;padding:3px 5px;font-size:10px">Dhoyela</td><td colspan="2" style="border:1px solid #999"></td></tr>
+        </tbody>
+      </table>
+    </td>
+    <td style="width:3%"></td>
+    <td style="width:37%;vertical-align:top">
+      <table class="right-table" style="width:100%">
+        <tr><td colspan="2" class="section-head">Charging time</td></tr>
+        <tr><td>Date</td><td style="width:55%"></td></tr>
+        <tr><td>Discharge time</td><td></td></tr>
+        <tr><td>Date</td><td></td></tr>
+        <tr><td colspan="2" class="section-head" style="margin-top:4px">Test</td></tr>
+        <tr><th style="border:1px solid #999;padding:3px 5px;background:#d0d0d0;font-size:10px">Parameter</th><th style="border:1px solid #999;padding:3px 5px;background:#d0d0d0;font-size:10px">Standard</th></tr>
+        <tr><td>SD (Drying)</td><td>${qc.sd||""}</td></tr>
+        <tr><td>TF (Drying)</td><td>${qc.tf||""}</td></tr>
+        <tr><td>HD (Drying)</td><td>${qc.hd||""}</td></tr>
+        <tr><td>Colour</td><td>${qc.colour||""}</td></tr>
+        <tr><td>Finish</td><td>${qc.finish||""}</td></tr>
+        <tr><td>Viscosity</td><td>${qc.viscosity||""}</td></tr>
+        <tr><td>Specific Gravity</td><td>${qc.sg||""}</td></tr>
+        ${qc.remarks?`<tr><td>Remarks</td><td>${qc.remarks}</td></tr>`:""}
+        <tr><td colspan="2" class="section-head" style="padding-top:6px">Packing</td></tr>
+        <tr><th style="border:1px solid #999;padding:3px 5px;background:#d0d0d0;font-size:10px">Size</th><th style="border:1px solid #999;padding:3px 5px;background:#d0d0d0;font-size:10px">Quantity</th></tr>
+        ${packs.length?packs.map(p=>`<tr><td>${p.size}</td><td>${p.qty||""}</td></tr>`).join(""):"<tr><td></td><td></td></tr><tr><td></td><td></td></tr>"}
+      </table>
+      <div style="margin-top:8px;font-size:10px;color:#555">BOM v${bom.currentVersion||1} · Printed: ${today()}</div>
+    </td>
+  </tr>
+</table>
+<div class="footer-row">
+  <div>Check by: ________________________________</div>
+  <div>Prepared by: ________________________________</div>
+</div>
+<script>window.onload=()=>{window.print();}<\/script>
+</body></html>`;
+  const w=window.open("","_blank");
+  w.document.write(html);w.document.close();
+}
+</script>
 <script type="text/babel">
 const {useState,useEffect,useRef} = React;
 const auth = window._auth;
@@ -3517,6 +3644,126 @@ function StockRow({m,i,isAdmin,saveAdjustment,delMaterial}){
   </div>;
 }
 
+// ── RM Export / Import component ──
+function RMExportImport({materials,CATS,UNITS,user,showToast,onImport}){
+  const [importing,setImporting]=useState(false);
+  const [preview,setPreview]=useState(null);
+  const fileRef=useRef(null);
+
+  const exportCSV=()=>{
+    const header=["Name","Category","Unit","Current Stock","Reorder Level","Supplier","Notes"];
+    const rows=[header,...materials.map(m=>[
+      m.name||"",m.category||"",m.unit||"",parseFloat(m.currentStock||0).toFixed(3),
+      m.reorderLevel||"",m.supplier||"",m.notes||""
+    ])];
+    const csv=rows.map(r=>r.map(v=>`"${String(v||"").replace(/"/g,'""')}"`).join(",")).join("\n");
+    const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));
+    a.download=`RM_Stock_${today()}.csv`;a.click();
+    showToast("Raw materials exported ✓");
+  };
+
+  const downloadTemplate=()=>{
+    const rows=[
+      ["Name","Category","Unit","Opening Stock","Reorder Level","Supplier","Notes"],
+      ["TiO2 White",CATS[0]||"Pigment","kg","100","20","ABC Chemicals",""],
+      ["Acrylic Binder",CATS[0]||"Resin","kg","200","50","XYZ Resin",""],
+    ];
+    const csv=rows.map(r=>r.map(v=>`"${v}"`).join(",")).join("\n");
+    const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));
+    a.download="RM_Import_Template.csv";a.click();
+    showToast("Template downloaded ✓");
+  };
+
+  const handleFile=async(e)=>{
+    const file=e.target.files[0];if(!file)return;
+    setImporting(true);
+    try{
+      const text=await file.text();
+      const rows=text.trim().split("\n").map(line=>
+        line.split(",").map(cell=>cell.trim().replace(/^"|"$/g,"").replace(/""/g,'"'))
+      );
+      const header=rows[0].map(h=>h.toLowerCase().trim());
+      const nameIdx=header.findIndex(h=>h.includes("name"));
+      const catIdx=header.findIndex(h=>h.includes("category"));
+      const unitIdx=header.findIndex(h=>h.includes("unit"));
+      const stockIdx=header.findIndex(h=>h.includes("opening")||h.includes("current"));
+      const reorderIdx=header.findIndex(h=>h.includes("reorder"));
+      const supplierIdx=header.findIndex(h=>h.includes("supplier"));
+      const notesIdx=header.findIndex(h=>h.includes("notes"));
+      const parsed=rows.slice(1).filter(r=>r[nameIdx]?.trim()).map(r=>({
+        name:r[nameIdx]?.trim()||"",
+        category:r[catIdx]?.trim()||CATS[0]||"",
+        unit:r[unitIdx]?.trim()||"kg",
+        openingStock:r[stockIdx]?.trim()||"0",
+        reorderLevel:r[reorderIdx]?.trim()||"",
+        supplier:r[supplierIdx]?.trim()||"",
+        notes:r[notesIdx]?.trim()||""
+      }));
+      setPreview(parsed);
+    }catch(err){showToast("Error reading file: "+err.message,"error");}
+    setImporting(false);e.target.value="";
+  };
+
+  const confirmImport=async()=>{
+    if(!preview?.length)return;
+    setImporting(true);
+    await onImport(preview);
+    setPreview(null);setImporting(false);
+  };
+
+  return <div>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"14px",marginBottom:"16px"}}>
+      {/* Export */}
+      <div style={{background:"#052e16",border:"1px solid #166534",borderRadius:"10px",padding:"16px"}}>
+        <div style={{fontSize:"13px",fontWeight:"700",color:"#22c55e",marginBottom:"6px"}}>📥 Export Raw Materials</div>
+        <div style={{fontSize:"12px",color:"#86efac",marginBottom:"12px"}}>Download all {materials.length} materials with current stock levels as CSV. Open in Excel to edit.</div>
+        <Btn label="📥 Download as CSV" onClick={exportCSV} disabled={materials.length===0} color="#22c55e" small/>
+      </div>
+      {/* Import */}
+      <div style={{background:"#0f1d35",border:"1px solid #2563eb40",borderRadius:"10px",padding:"16px"}}>
+        <div style={{fontSize:"13px",fontWeight:"700",color:"#93c5fd",marginBottom:"6px"}}>📤 Import Raw Materials</div>
+        <div style={{fontSize:"12px",color:"#64748b",marginBottom:"10px"}}>Upload a CSV to bulk-add or update materials. Existing materials are updated; new ones are added.</div>
+        <div style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>
+          <Btn label="⬇ Download Template" onClick={downloadTemplate} color="#64748b" small outline/>
+          <Btn label={importing?"Reading…":"📤 Upload CSV"} onClick={()=>fileRef.current?.click()} disabled={importing} color="#3b82f6" small/>
+          <input ref={fileRef} type="file" accept=".csv,.txt" onChange={handleFile} style={{display:"none"}}/>
+        </div>
+      </div>
+    </div>
+
+    {/* Preview imported data */}
+    {preview&&<div style={{background:"#0b1220",border:"1px solid #f59e0b",borderRadius:"10px",padding:"14px"}}>
+      <div style={{fontSize:"13px",fontWeight:"700",color:"#f59e0b",marginBottom:"10px"}}>Preview — {preview.length} material{preview.length!==1?"s":""} to import</div>
+      <div style={{border:"1px solid #1e293b",borderRadius:"8px",overflow:"hidden",marginBottom:"12px",maxHeight:"300px",overflowY:"auto"}}>
+        <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 80px 80px 1.5fr",background:"#0b1220",padding:"6px 12px",gap:"6px",position:"sticky",top:0}}>
+          {["Name","Category","Unit","Opening Stock","Reorder Level","Supplier"].map(h=><div key={h} style={{fontSize:"9px",fontWeight:"700",color:"#334155",textTransform:"uppercase"}}>{h}</div>)}
+        </div>
+        {preview.map((row,i)=>{
+          const exists=materials.some(m=>normalize(m.name)===normalize(row.name));
+          return <div key={i} style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 80px 80px 1.5fr",padding:"6px 12px",gap:"6px",borderTop:"1px solid #1e293b",background:exists?"#0f1d10":"#080d18",alignItems:"center"}}>
+            <div style={{fontSize:"12px",color:"#e2e8f0"}}>{row.name} {exists&&<span style={{fontSize:"9px",color:"#22c55e",background:"#052e16",padding:"1px 5px",borderRadius:"4px"}}>UPDATE</span>}</div>
+            <div style={{fontSize:"11px",color:"#64748b"}}>{row.category}</div>
+            <div style={{fontSize:"11px",color:"#64748b"}}>{row.unit}</div>
+            <div style={{fontSize:"11px",color:"#22c55e"}}>{row.openingStock}</div>
+            <div style={{fontSize:"11px",color:"#64748b"}}>{row.reorderLevel||"—"}</div>
+            <div style={{fontSize:"11px",color:"#64748b"}}>{row.supplier||"—"}</div>
+          </div>;
+        })}
+      </div>
+      <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
+        <Btn label="Cancel" onClick={()=>setPreview(null)} outline color="#475569" small/>
+        <Btn label={importing?"Importing…":`✓ Import ${preview.length} Materials`} onClick={confirmImport} disabled={importing} color="#22c55e" small/>
+      </div>
+    </div>}
+
+    <InfoBox color="#64748b" style={{marginTop:"12px"}}>
+      CSV columns: Name, Category, Unit, Opening Stock (or Current Stock), Reorder Level, Supplier, Notes.
+      Column order doesn't matter — headers are detected automatically.
+      Existing materials (matched by name) will be updated; new names will be added.
+    </InfoBox>
+  </div>;
+}
+
 function RawMaterialStockTab({role,user,showToast,sysUnits,sysRmCats,onAddRmCat,onAddUnit}){
   const isAdmin=role==="admin";
   const canStore=role==="admin"||role==="store";
@@ -3673,7 +3920,7 @@ function RawMaterialStockTab({role,user,showToast,sysUnits,sysRmCats,onAddRmCat,
 
     {/* Sub-tabs */}
     <div style={{display:"flex",gap:"4px",marginBottom:"14px",flexWrap:"wrap"}}>
-      {[["stock","📊 Stock Levels"],["consume","📉 Record Consumption"],[isAdmin?"addstock":"","📈 Add Received Stock"],[isAdmin?"addmat":"","➕ Add Material"],["history","🕐 History"]].filter(([k])=>k).map(([key,label])=>(
+      {[["stock","📊 Stock Levels"],["consume","📉 Record Consumption"],[isAdmin?"addstock":"","📈 Add Received Stock"],[isAdmin?"addmat":"","➕ Add Material"],[isAdmin?"importexport":"","📤 Export / Import"],["history","🕐 History"]].filter(([k])=>k).map(([key,label])=>(
         <button key={key} onClick={()=>setSubTab(key)} style={{background:subTab===key?"#1e293b":"transparent",border:`1px solid ${subTab===key?"#38bdf8":"#1e293b"}`,color:subTab===key?"#38bdf8":"#475569",borderRadius:"8px",padding:"6px 12px",cursor:"pointer",fontSize:"12.5px",fontWeight:"600"}}>{label}</button>
       ))}
     </div>
@@ -3853,6 +4100,31 @@ function RawMaterialStockTab({role,user,showToast,sysUnits,sysRmCats,onAddRmCat,
         })}
       </div>
     </div>}
+
+    {/* ── EXPORT / IMPORT ── */}
+    {subTab==="importexport"&&isAdmin&&<RMExportImport materials={materials} CATS={CATS} UNITS={UNITS} user={user} showToast={showToast} onImport={async(rows)=>{
+      // rows: [{name,category,unit,openingStock,reorderLevel,supplier,notes}]
+      let added=0, skipped=0;
+      for(const row of rows){
+        if(!row.name||!row.name.trim()){skipped++;continue;}
+        const existing=materials.find(m=>normalize(m.name)===normalize(row.name));
+        if(existing){
+          // Update existing material
+          await C("rm_stock_materials").doc(existing.id).update({
+            category:row.category||existing.category,unit:row.unit||existing.unit,
+            reorderLevel:row.reorderLevel||existing.reorderLevel,supplier:row.supplier||existing.supplier,
+            notes:row.notes||existing.notes,updatedAt:ts()
+          });
+          added++;
+        }else{
+          const qty=parseFloat(row.openingStock)||0;
+          const docRef=await C("rm_stock_materials").add({...row,currentStock:qty,addedBy:user.email,_createdAt:ts()});
+          if(qty>0)await C("rm_stock_transactions").add({materialId:docRef.id,materialName:row.name,type:"opening",qty,date:today(),addedBy:user.email,notes:"Imported opening stock",stockAfter:qty,_createdAt:ts()});
+          added++;
+        }
+      }
+      showToast(`Imported: ${added} materials${skipped?`, ${skipped} skipped`:""} ✓`);
+    }}/>}
   </div>;
 }
 
@@ -3860,132 +4132,9 @@ function RawMaterialStockTab({role,user,showToast,sysUnits,sysRmCats,onAddRmCat,
 // BOM (Bill of Materials) MODULE
 // ══════════════════════════════════════════════════════════
 
-// Print production sheet — opens in new window, auto-prints
-function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, chargingDate, user){
-  const bs=parseFloat(batchSize)||parseFloat(bom.baseBatchSize)||100;
-  const base=parseFloat(bom.baseBatchSize)||100;
-  const factor=bs/base;
-  let ingRows="";
-  let rowNo=0;
-  (bom.ingredients||[]).forEach(ing=>{
-    if(ing.isProcess){
-      ingRows+=`<tr style="background:#f0f0f0"><td colspan="6" style="padding:4px 6px;font-style:italic;font-weight:600;font-size:11px;border:1px solid #999">${ing.name||""}</td></tr>`;
-    }else{
-      rowNo++;
-      const stdQty=parseFloat(ing.standardQty)||0;
-      const currQty=(stdQty*factor).toFixed(3).replace(/\.?0+$/,"");
-      ingRows+=`<tr>
-        <td style="border:1px solid #999;padding:3px 5px;text-align:center;font-size:11px">${rowNo}</td>
-        <td style="border:1px solid #999;padding:3px 5px;font-size:11px">${ing.name||""}</td>
-        <td style="border:1px solid #999;padding:3px 5px;text-align:center;font-size:11px">${stdQty||""}</td>
-        <td style="border:1px solid #999;padding:3px 5px;text-align:center;font-size:11px">${currQty||""}</td>
-        <td style="border:1px solid #999;padding:3px 5px;text-align:center;font-size:11px"></td>
-        <td style="border:1px solid #999;padding:3px 5px;text-align:center;font-size:11px"></td>
-      </tr>`;
-    }
-  });
-  // Total row
-  const totalStd=(bom.ingredients||[]).filter(i=>!i.isProcess).reduce((s,i)=>s+(parseFloat(i.standardQty)||0),0);
-  const totalCurr=(totalStd*factor).toFixed(3).replace(/\.?0+$/,"");
-  const qc=bom.qcTests||{};
-  const packs=(bom.packingSizes||[]).filter(p=>p.size);
-  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Production Sheet — ${bom.productName}</title>
-<style>
-  body{font-family:Arial,sans-serif;margin:0;padding:12px;font-size:12px;}
-  .header-table{width:100%;border-collapse:collapse;margin-bottom:6px;}
-  .header-table td{padding:3px 5px;font-size:11px;}
-  .co-name{font-size:16px;font-weight:800;letter-spacing:1px;}
-  .sheet-title{font-size:14px;font-weight:700;text-align:center;}
-  .prod-name{font-size:13px;font-weight:700;border:1px solid #000;padding:4px 8px;margin-bottom:6px;}
-  .main-table{width:100%;border-collapse:collapse;margin-bottom:6px;}
-  .main-table th{border:1px solid #000;padding:4px 5px;background:#d0d0d0;font-size:10px;text-align:center;}
-  .main-table td{border:1px solid #999;padding:3px 5px;font-size:11px;}
-  .right-table{width:100%;border-collapse:collapse;font-size:11px;}
-  .right-table td{border:1px solid #999;padding:3px 5px;}
-  .section-head{font-weight:700;background:#e0e0e0;padding:2px 4px;font-size:10px;text-transform:uppercase;}
-  .footer-row{display:flex;justify-content:space-between;margin-top:10px;font-size:11px;}
-  @media print{body{margin:0;padding:8px;} @page{margin:8mm;size:A4;}}
-</style></head><body>
-<table class="header-table">
-  <tr>
-    <td style="width:30%"><span class="co-name">VEEBEE</span><br><span style="font-size:9px">G.C.C/7.2.1/F/03</span></td>
-    <td style="width:40%;text-align:center"><span class="sheet-title">PRODUCTION SHEET</span></td>
-    <td style="width:30%;text-align:right;font-size:10px">
-      <b>BATCH NO:</b> ${batchNo||"____________"}<br>
-      <b>MILL NO:</b> ____________<br>
-      <b>FILLING DATE:</b> ${fillingDate||"____________"}<br>
-      <b>CHARGING DATE:</b> ${chargingDate||today()}
-    </td>
-  </tr>
-</table>
-<div class="prod-name">PRODUCT NAME: ${bom.productName||""} &nbsp;&nbsp;&nbsp; B.SIZE: ${bs} ${bom.baseUnit||"L"}</div>
-<table style="width:100%;border-collapse:collapse">
-  <tr>
-    <td style="width:60%;vertical-align:top">
-      <table class="main-table" style="width:100%">
-        <thead>
-          <tr>
-            <th style="width:5%">NO</th>
-            <th style="width:28%">INGREDIENTS</th>
-            <th style="width:14%">STANDARD QTY</th>
-            <th style="width:14%">CURRENT QTY</th>
-            <th style="width:12%">ACTUAL QTY</th>
-            <th style="width:12%">AMOUNT</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${ingRows}
-          <tr style="font-weight:700;background:#f5f5f5">
-            <td colspan="2" style="border:1px solid #999;padding:3px 5px;text-align:center;font-size:11px">TOTAL</td>
-            <td style="border:1px solid #999;padding:3px 5px;text-align:center;font-size:11px">${totalStd.toFixed(3).replace(/\.?0+$/,"")}</td>
-            <td style="border:1px solid #999;padding:3px 5px;text-align:center;font-size:11px">${totalCurr}</td>
-            <td style="border:1px solid #999;padding:3px 5px"></td>
-            <td style="border:1px solid #999;padding:3px 5px"></td>
-          </tr>
-          <tr><td colspan="6" style="border:1px solid #999;padding:3px 5px;font-size:10px;font-style:italic">EXTRA ADDITIONS</td></tr>
-          <tr><td colspan="4" style="border:1px solid #999;padding:3px 5px;font-size:10px">Dhoyela</td><td colspan="2" style="border:1px solid #999"></td></tr>
-          <tr><td colspan="4" style="border:1px solid #999;padding:3px 5px;font-size:10px">Extra Output</td><td colspan="2" style="border:1px solid #999"></td></tr>
-          <tr><td colspan="4" style="border:1px solid #999;padding:3px 5px;font-size:10px">Dhoyela</td><td colspan="2" style="border:1px solid #999"></td></tr>
-        </tbody>
-      </table>
-    </td>
-    <td style="width:3%"></td>
-    <td style="width:37%;vertical-align:top">
-      <table class="right-table" style="width:100%">
-        <tr><td colspan="2" class="section-head">Charging time</td></tr>
-        <tr><td>Date</td><td style="width:55%"></td></tr>
-        <tr><td>Discharge time</td><td></td></tr>
-        <tr><td>Date</td><td></td></tr>
-        <tr><td colspan="2" class="section-head" style="margin-top:4px">Test</td></tr>
-        <tr><th style="border:1px solid #999;padding:3px 5px;background:#d0d0d0;font-size:10px">Parameter</th><th style="border:1px solid #999;padding:3px 5px;background:#d0d0d0;font-size:10px">Standard</th></tr>
-        <tr><td>SD (Drying)</td><td>${qc.sd||""}</td></tr>
-        <tr><td>TF (Drying)</td><td>${qc.tf||""}</td></tr>
-        <tr><td>HD (Drying)</td><td>${qc.hd||""}</td></tr>
-        <tr><td>Colour</td><td>${qc.colour||""}</td></tr>
-        <tr><td>Finish</td><td>${qc.finish||""}</td></tr>
-        <tr><td>Viscosity</td><td>${qc.viscosity||""}</td></tr>
-        <tr><td>Specific Gravity</td><td>${qc.sg||""}</td></tr>
-        ${qc.remarks?`<tr><td>Remarks</td><td>${qc.remarks}</td></tr>`:""}
-        <tr><td colspan="2" class="section-head" style="padding-top:6px">Packing</td></tr>
-        <tr><th style="border:1px solid #999;padding:3px 5px;background:#d0d0d0;font-size:10px">Size</th><th style="border:1px solid #999;padding:3px 5px;background:#d0d0d0;font-size:10px">Quantity</th></tr>
-        ${packs.length?packs.map(p=>`<tr><td>${p.size}</td><td>${p.qty||""}</td></tr>`).join(""):"<tr><td></td><td></td></tr><tr><td></td><td></td></tr>"}
-      </table>
-      <div style="margin-top:8px;font-size:10px;color:#555">BOM v${bom.currentVersion||1} · Printed: ${today()}</div>
-    </td>
-  </tr>
-</table>
-<div class="footer-row">
-  <div>Check by: ________________________________</div>
-  <div>Prepared by: ________________________________</div>
-</div>
-<script>window.onload=()=>{window.print();}<\/script>
-</body></html>`;
-  const w=window.open("","_blank");
-  w.document.write(html);w.document.close();
-}
 
 // BOM Form component — stable to avoid cursor loss
-function BOMForm({form,setForm,saving,isEdit,onCancel,onSave}){
+function BOMForm({form,setForm,saving,isEdit,onCancel,onSave,sysProducts}){
   const addIng=()=>setForm(f=>({...f,ingredients:[...f.ingredients,{id:newId(),name:"",standardQty:"",isProcess:false}]}));
   const addProcess=()=>setForm(f=>({...f,ingredients:[...f.ingredients,{id:newId(),name:"",isProcess:true}]}));
   const updIng=(id,field,val)=>setForm(f=>({...f,ingredients:f.ingredients.map(i=>i.id===id?{...i,[field]:val}:i)}));
@@ -3998,8 +4147,19 @@ function BOMForm({form,setForm,saving,isEdit,onCancel,onSave}){
 
   return <div>
     <Grid3>
-      <Field label="Product Name *"><input style={inp} value={form.productName} onChange={e=>setForm({...form,productName:e.target.value})} placeholder="e.g. SYN RELIANCE GREEN (PREMIUM)"/></Field>
-      <Field label="Category"><input style={inp} value={form.category} onChange={e=>setForm({...form,category:e.target.value})} placeholder="e.g. Enamel"/></Field>
+      <div>
+        <div style={{fontSize:"10.5px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"5px"}}>Product Name *</div>
+        <CategoryProductSelect
+          category={form.category}
+          setCategory={cat=>setForm({...form,category:cat,productName:""})}
+          productName={form.productName}
+          setProductName={p=>setForm({...form,productName:typeof p==="string"?p:(p?.name||p)})}
+          products={sysProducts}
+          catUnits={{}}
+        />
+        {!form.productName&&<div style={{fontSize:"10.5px",color:"#334155",marginTop:"4px"}}>Select category first, then product</div>}
+      </div>
+      <Field label="Category (auto-filled)"><input style={{...inp,color:"#64748b"}} value={form.category} readOnly placeholder="Auto-fills from product"/></Field>
       <Grid2>
         <Field label="Base Batch Size"><input style={inp} type="number" value={form.baseBatchSize} onChange={e=>setForm({...form,baseBatchSize:e.target.value})} placeholder="100"/></Field>
         <Field label="Unit"><select style={sl} value={form.baseUnit} onChange={e=>setForm({...form,baseUnit:e.target.value})}>{["L","kg","g","mL"].map(u=><option key={u}>{u}</option>)}</select></Field>
@@ -4195,7 +4355,7 @@ function BOMTab({role,roles,user,showToast,sysProducts}){
     {/* Create form */}
     {showCreate&&<div style={{background:"#080d18",border:"1px solid #3b82f630",borderRadius:"12px",padding:"18px",marginBottom:"16px"}}>
       <div style={{fontSize:"13px",fontWeight:"700",color:"#93c5fd",marginBottom:"14px"}}>📋 New Bill of Materials</div>
-      <BOMForm form={form} setForm={setForm} saving={saving} isEdit={false} onCancel={()=>{setShowCreate(false);setForm({...blankBOM});}} onSave={()=>saveBOM(false)}/>
+      <BOMForm form={form} setForm={setForm} saving={saving} isEdit={false} onCancel={()=>{setShowCreate(false);setForm({...blankBOM});}} onSave={()=>saveBOM(false)} sysProducts={sysProducts}/>
     </div>}
 
     {loading&&<div style={{textAlign:"center",padding:"40px",color:"#475569"}}>Loading…</div>}
@@ -4238,7 +4398,7 @@ function BOMTab({role,roles,user,showToast,sysProducts}){
         {/* Edit form */}
         {isOpen&&mode==="edit"&&<div style={{padding:"16px",borderTop:"1px solid #f59e0b30",background:"#080d18"}}>
           <div style={{fontSize:"12px",fontWeight:"700",color:"#f59e0b",marginBottom:"12px"}}>✏️ Editing: {b.productName} (currently v{b.currentVersion||1})</div>
-          <BOMForm form={form} setForm={setForm} saving={saving} isEdit={true} onCancel={()=>{setActiveBOM(null);setForm({...blankBOM});}} onSave={()=>saveBOM(true,b.id)}/>
+          <BOMForm form={form} setForm={setForm} saving={saving} isEdit={true} onCancel={()=>{setActiveBOM(null);setForm({...blankBOM});}} onSave={()=>saveBOM(true,b.id)} sysProducts={sysProducts}/>
         </div>}
 
         {/* Version history */}
