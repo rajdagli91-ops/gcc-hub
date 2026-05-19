@@ -103,6 +103,7 @@ const CAN_SEE = {
   batches:  ["admin","issuer","qc"],
   complaints:["admin","issuer","qc","sales"],
   rd:       ["admin","qc"],
+  bom:      ["admin","issuer","qc"],
   testimonials:["admin","sales"],
   stock:    ["admin","store","qc","issuer"],
   users:    ["admin"],
@@ -1847,7 +1848,7 @@ function UsersTab({currentUser}){
   const [profiles,setProfiles]=useState({});  // uid/email -> {email, displayName}
   const [roles,setRoles]=useState({});         // email -> role
   const [editingRole,setEditingRole]=useState(null);
-  const [editRoleVal,setEditRoleVal]=useState("");
+  const [editRoleVals,setEditRoleVals]=useState([]); // array of selected roles
   const [saving,setSaving]=useState(null);
   const [localToast,setLocalToast]=useState(null);
   const showLT=(msg,type="success")=>{setLocalToast({msg,type});setTimeout(()=>setLocalToast(null),3000);};
@@ -1871,7 +1872,11 @@ function UsersTab({currentUser}){
     });
     // Load roles — this is the source of truth for all users
     const unsub2=C("roles").onSnapshot(snap=>{
-      const r={};snap.docs.forEach(d=>r[d.id]=d.data().role);setRoles(r);
+      const r={};snap.docs.forEach(d=>{
+        const data=d.data();
+        // Support both old {role:"x"} and new {roles:["x","y"]} formats
+        r[d.id]=data.roles||(data.role?[data.role]:[]);
+      });setRoles(r);
     });
     return()=>{unsub1();unsub2();};
   },[]);
@@ -1896,7 +1901,7 @@ function UsersTab({currentUser}){
       });
       const data=await res.json();
       if(data.error)throw new Error(data.error.message);
-      await C("roles").doc(finalEmail).set({role:createRole,assignedBy:currentUser.email,assignedAt:ts()},{merge:true});
+      await C("roles").doc(finalEmail).set({roles:[createRole],role:createRole,assignedBy:currentUser.email,assignedAt:ts()},{merge:true});
       if(createName.trim()){
         await C("userProfiles").doc(data.localId||finalEmail).set({
           email:finalEmail,displayName:createName.trim(),
@@ -1916,10 +1921,12 @@ function UsersTab({currentUser}){
   };
 
   const saveRoleEdit=async(email)=>{
+    if(!editRoleVals.length)return showLT("Select at least one role","error");
     setSaving(email);
     try{
-      await C("roles").doc(email).set({role:editRoleVal,assignedBy:currentUser.email,assignedAt:ts()},{merge:true});
-      setEditingRole(null);showLT(`Role updated to ${ROLE_LABELS[editRoleVal]} ✓`);
+      const prim=primaryRole(editRoleVals);
+      await C("roles").doc(email).set({roles:editRoleVals,role:prim,assignedBy:currentUser.email,assignedAt:ts()},{merge:true});
+      setEditingRole(null);showLT(`Roles updated ✓`);
     }catch(e){showLT("Error updating role","error");}
     setSaving(null);
   };
@@ -2010,7 +2017,8 @@ function UsersTab({currentUser}){
       ?<div style={{textAlign:"center",padding:"32px",color:"#334155",fontSize:"13px"}}>No users yet. Create one above.</div>
       :allEmails.map(email=>{
         const isHardAdmin=ADMIN_EMAILS.includes(email);
-        const currentRole=isHardAdmin?"admin":(roles[email]||null);
+        const currentRoles=isHardAdmin?["admin"]:(roles[email]||[]);
+        const currentRole=primaryRole(currentRoles)||"—";
         const rc=ROLE_COLORS[currentRole]||"#475569";
         const name=profiles[email]?.displayName||"";
         const isEditing=editingRole===email;
@@ -2021,15 +2029,15 @@ function UsersTab({currentUser}){
               {name&&<div style={{fontSize:"13px",fontWeight:"700",color:"#f1f5f9",marginBottom:"2px"}}>{name}</div>}
               <div style={{fontSize:name?"12px":"13.5px",fontWeight:name?"400":"600",color:name?"#64748b":"#e2e8f0",marginBottom:"4px"}}>{email}</div>
               <div style={{display:"flex",gap:"6px",flexWrap:"wrap",alignItems:"center"}}>
-                {currentRole
-                  ?<Bdg label={ROLE_LABELS[currentRole]||currentRole} color={rc} small/>
+                {currentRoles.length>0
+                  ?currentRoles.map(r=><Bdg key={r} label={ROLE_LABELS[r]||r} color={ROLE_COLORS[r]||"#475569"} small/>)
                   :<span style={{fontSize:"11px",color:"#ef4444",fontStyle:"italic"}}>No role assigned</span>}
                 {isHardAdmin&&<span style={{fontSize:"10px",color:"#475569",fontStyle:"italic"}}>· hardcoded admin</span>}
               </div>
             </div>
             {!isHardAdmin&&<div style={{display:"flex",gap:"6px",alignItems:"center",flexWrap:"wrap",flexShrink:0}}>
-              <button onClick={()=>{setEditingRole(isEditing?null:email);setEditRoleVal(roles[email]||"sales");}}
-                style={{background:"#1e293b",border:"1px solid #334155",borderRadius:"6px",padding:"5px 10px",color:"#94a3b8",fontSize:"11.5px",fontWeight:"700",cursor:"pointer"}}>✏️ Role</button>
+              <button onClick={()=>{setEditingRole(isEditing?null:email);setEditRoleVals([...currentRoles]);}}
+                style={{background:"#1e293b",border:"1px solid #334155",borderRadius:"6px",padding:"5px 10px",color:"#94a3b8",fontSize:"11.5px",fontWeight:"700",cursor:"pointer"}}>✏️ Roles</button>
               <button onClick={()=>setEditPassEmail(editPassEmail===email?null:email)}
                 style={{background:"#1e3a5f",border:"1px solid #2563eb",borderRadius:"6px",padding:"5px 10px",color:"#93c5fd",fontSize:"11.5px",fontWeight:"700",cursor:"pointer"}}>🔑 Reset PW</button>
               <button onClick={()=>removeAccess(email)}
@@ -2037,20 +2045,33 @@ function UsersTab({currentUser}){
             </div>}
           </div>
 
-          {/* Inline role edit */}
-          {isEditing&&!isHardAdmin&&<div style={{marginTop:"10px",paddingTop:"10px",borderTop:"1px solid #1e293b",display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap"}}>
-            <span style={{fontSize:"12px",color:"#64748b",fontWeight:"600"}}>Change role to:</span>
-            {["admin","issuer","qc","sales"].map(r=>(
-              <button key={r} onClick={()=>setEditRoleVal(r)} style={{
-                background:editRoleVal===r?`${ROLE_COLORS[r]}20`:"none",
-                border:`1px solid ${editRoleVal===r?ROLE_COLORS[r]:"#334155"}`,
-                borderRadius:"7px",padding:"5px 12px",
-                color:editRoleVal===r?ROLE_COLORS[r]:"#475569",
-                fontSize:"12px",fontWeight:"700",cursor:"pointer"
-              }}>{ROLE_LABELS[r]}</button>
-            ))}
-            <Btn label={saving===email?"Saving…":"✓ Save"} onClick={()=>saveRoleEdit(email)} disabled={saving===email} color="#22c55e" small/>
-            <Btn label="Cancel" onClick={()=>setEditingRole(null)} outline color="#475569" small/>
+          {/* Multi-role checkbox edit */}
+          {isEditing&&!isHardAdmin&&<div style={{marginTop:"10px",paddingTop:"10px",borderTop:"1px solid #1e293b"}}>
+            <div style={{fontSize:"12px",color:"#64748b",fontWeight:"600",marginBottom:"8px"}}>Select roles (user can have multiple):</div>
+            <div style={{display:"flex",gap:"8px",flexWrap:"wrap",marginBottom:"10px"}}>
+              {["admin","issuer","qc","sales","store"].map(r=>{
+                const checked=editRoleVals.includes(r);
+                const toggle=()=>setEditRoleVals(checked?editRoleVals.filter(x=>x!==r):[...editRoleVals,r]);
+                return <button key={r} onClick={toggle} style={{
+                  background:checked?`${ROLE_COLORS[r]}25`:"none",
+                  border:`2px solid ${checked?ROLE_COLORS[r]:"#334155"}`,
+                  borderRadius:"8px",padding:"7px 14px",
+                  color:checked?ROLE_COLORS[r]:"#475569",
+                  fontSize:"12.5px",fontWeight:"700",cursor:"pointer",
+                  display:"flex",alignItems:"center",gap:"6px"
+                }}>
+                  <span style={{fontSize:"14px"}}>{checked?"☑":"☐"}</span>
+                  {ROLE_LABELS[r]}
+                </button>;
+              })}
+            </div>
+            {editRoleVals.length>1&&<div style={{fontSize:"11px",color:"#64748b",marginBottom:"8px",background:"#0b1220",border:"1px solid #1e293b",borderRadius:"6px",padding:"5px 10px"}}>
+              Primary role (highest privilege): <strong style={{color:ROLE_COLORS[primaryRole(editRoleVals)]}}>{ROLE_LABELS[primaryRole(editRoleVals)]}</strong>
+            </div>}
+            <div style={{display:"flex",gap:"8px"}}>
+              <Btn label={saving===email?"Saving…":"✓ Save Roles"} onClick={()=>saveRoleEdit(email)} disabled={saving===email} color="#22c55e" small/>
+              <Btn label="Cancel" onClick={()=>setEditingRole(null)} outline color="#475569" small/>
+            </div>
           </div>}
 
           {/* Password change */}
@@ -3835,11 +3856,470 @@ function RawMaterialStockTab({role,user,showToast,sysUnits,sysRmCats,onAddRmCat,
   </div>;
 }
 
-function MainApp({user,role}){
-  const isAdmin=role==="admin";
-  const canQC=role==="admin"||role==="qc";
-  const canIssuer=role==="admin"||role==="issuer";
-  const [tab,setTab]=useState(CAN_SEE.dashboard.includes(role)?"dashboard":"complaints");
+// ══════════════════════════════════════════════════════════
+// BOM (Bill of Materials) MODULE
+// ══════════════════════════════════════════════════════════
+
+// Print production sheet — opens in new window, auto-prints
+function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, chargingDate, user){
+  const bs=parseFloat(batchSize)||parseFloat(bom.baseBatchSize)||100;
+  const base=parseFloat(bom.baseBatchSize)||100;
+  const factor=bs/base;
+  let ingRows="";
+  let rowNo=0;
+  (bom.ingredients||[]).forEach(ing=>{
+    if(ing.isProcess){
+      ingRows+=`<tr style="background:#f0f0f0"><td colspan="6" style="padding:4px 6px;font-style:italic;font-weight:600;font-size:11px;border:1px solid #999">${ing.name||""}</td></tr>`;
+    }else{
+      rowNo++;
+      const stdQty=parseFloat(ing.standardQty)||0;
+      const currQty=(stdQty*factor).toFixed(3).replace(/\.?0+$/,"");
+      ingRows+=`<tr>
+        <td style="border:1px solid #999;padding:3px 5px;text-align:center;font-size:11px">${rowNo}</td>
+        <td style="border:1px solid #999;padding:3px 5px;font-size:11px">${ing.name||""}</td>
+        <td style="border:1px solid #999;padding:3px 5px;text-align:center;font-size:11px">${stdQty||""}</td>
+        <td style="border:1px solid #999;padding:3px 5px;text-align:center;font-size:11px">${currQty||""}</td>
+        <td style="border:1px solid #999;padding:3px 5px;text-align:center;font-size:11px"></td>
+        <td style="border:1px solid #999;padding:3px 5px;text-align:center;font-size:11px"></td>
+      </tr>`;
+    }
+  });
+  // Total row
+  const totalStd=(bom.ingredients||[]).filter(i=>!i.isProcess).reduce((s,i)=>s+(parseFloat(i.standardQty)||0),0);
+  const totalCurr=(totalStd*factor).toFixed(3).replace(/\.?0+$/,"");
+  const qc=bom.qcTests||{};
+  const packs=(bom.packingSizes||[]).filter(p=>p.size);
+  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Production Sheet — ${bom.productName}</title>
+<style>
+  body{font-family:Arial,sans-serif;margin:0;padding:12px;font-size:12px;}
+  .header-table{width:100%;border-collapse:collapse;margin-bottom:6px;}
+  .header-table td{padding:3px 5px;font-size:11px;}
+  .co-name{font-size:16px;font-weight:800;letter-spacing:1px;}
+  .sheet-title{font-size:14px;font-weight:700;text-align:center;}
+  .prod-name{font-size:13px;font-weight:700;border:1px solid #000;padding:4px 8px;margin-bottom:6px;}
+  .main-table{width:100%;border-collapse:collapse;margin-bottom:6px;}
+  .main-table th{border:1px solid #000;padding:4px 5px;background:#d0d0d0;font-size:10px;text-align:center;}
+  .main-table td{border:1px solid #999;padding:3px 5px;font-size:11px;}
+  .right-table{width:100%;border-collapse:collapse;font-size:11px;}
+  .right-table td{border:1px solid #999;padding:3px 5px;}
+  .section-head{font-weight:700;background:#e0e0e0;padding:2px 4px;font-size:10px;text-transform:uppercase;}
+  .footer-row{display:flex;justify-content:space-between;margin-top:10px;font-size:11px;}
+  @media print{body{margin:0;padding:8px;} @page{margin:8mm;size:A4;}}
+</style></head><body>
+<table class="header-table">
+  <tr>
+    <td style="width:30%"><span class="co-name">VEEBEE</span><br><span style="font-size:9px">G.C.C/7.2.1/F/03</span></td>
+    <td style="width:40%;text-align:center"><span class="sheet-title">PRODUCTION SHEET</span></td>
+    <td style="width:30%;text-align:right;font-size:10px">
+      <b>BATCH NO:</b> ${batchNo||"____________"}<br>
+      <b>MILL NO:</b> ____________<br>
+      <b>FILLING DATE:</b> ${fillingDate||"____________"}<br>
+      <b>CHARGING DATE:</b> ${chargingDate||today()}
+    </td>
+  </tr>
+</table>
+<div class="prod-name">PRODUCT NAME: ${bom.productName||""} &nbsp;&nbsp;&nbsp; B.SIZE: ${bs} ${bom.baseUnit||"L"}</div>
+<table style="width:100%;border-collapse:collapse">
+  <tr>
+    <td style="width:60%;vertical-align:top">
+      <table class="main-table" style="width:100%">
+        <thead>
+          <tr>
+            <th style="width:5%">NO</th>
+            <th style="width:28%">INGREDIENTS</th>
+            <th style="width:14%">STANDARD QTY</th>
+            <th style="width:14%">CURRENT QTY</th>
+            <th style="width:12%">ACTUAL QTY</th>
+            <th style="width:12%">AMOUNT</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${ingRows}
+          <tr style="font-weight:700;background:#f5f5f5">
+            <td colspan="2" style="border:1px solid #999;padding:3px 5px;text-align:center;font-size:11px">TOTAL</td>
+            <td style="border:1px solid #999;padding:3px 5px;text-align:center;font-size:11px">${totalStd.toFixed(3).replace(/\.?0+$/,"")}</td>
+            <td style="border:1px solid #999;padding:3px 5px;text-align:center;font-size:11px">${totalCurr}</td>
+            <td style="border:1px solid #999;padding:3px 5px"></td>
+            <td style="border:1px solid #999;padding:3px 5px"></td>
+          </tr>
+          <tr><td colspan="6" style="border:1px solid #999;padding:3px 5px;font-size:10px;font-style:italic">EXTRA ADDITIONS</td></tr>
+          <tr><td colspan="4" style="border:1px solid #999;padding:3px 5px;font-size:10px">Dhoyela</td><td colspan="2" style="border:1px solid #999"></td></tr>
+          <tr><td colspan="4" style="border:1px solid #999;padding:3px 5px;font-size:10px">Extra Output</td><td colspan="2" style="border:1px solid #999"></td></tr>
+          <tr><td colspan="4" style="border:1px solid #999;padding:3px 5px;font-size:10px">Dhoyela</td><td colspan="2" style="border:1px solid #999"></td></tr>
+        </tbody>
+      </table>
+    </td>
+    <td style="width:3%"></td>
+    <td style="width:37%;vertical-align:top">
+      <table class="right-table" style="width:100%">
+        <tr><td colspan="2" class="section-head">Charging time</td></tr>
+        <tr><td>Date</td><td style="width:55%"></td></tr>
+        <tr><td>Discharge time</td><td></td></tr>
+        <tr><td>Date</td><td></td></tr>
+        <tr><td colspan="2" class="section-head" style="margin-top:4px">Test</td></tr>
+        <tr><th style="border:1px solid #999;padding:3px 5px;background:#d0d0d0;font-size:10px">Parameter</th><th style="border:1px solid #999;padding:3px 5px;background:#d0d0d0;font-size:10px">Standard</th></tr>
+        <tr><td>SD (Drying)</td><td>${qc.sd||""}</td></tr>
+        <tr><td>TF (Drying)</td><td>${qc.tf||""}</td></tr>
+        <tr><td>HD (Drying)</td><td>${qc.hd||""}</td></tr>
+        <tr><td>Colour</td><td>${qc.colour||""}</td></tr>
+        <tr><td>Finish</td><td>${qc.finish||""}</td></tr>
+        <tr><td>Viscosity</td><td>${qc.viscosity||""}</td></tr>
+        <tr><td>Specific Gravity</td><td>${qc.sg||""}</td></tr>
+        ${qc.remarks?`<tr><td>Remarks</td><td>${qc.remarks}</td></tr>`:""}
+        <tr><td colspan="2" class="section-head" style="padding-top:6px">Packing</td></tr>
+        <tr><th style="border:1px solid #999;padding:3px 5px;background:#d0d0d0;font-size:10px">Size</th><th style="border:1px solid #999;padding:3px 5px;background:#d0d0d0;font-size:10px">Quantity</th></tr>
+        ${packs.length?packs.map(p=>`<tr><td>${p.size}</td><td>${p.qty||""}</td></tr>`).join(""):"<tr><td></td><td></td></tr><tr><td></td><td></td></tr>"}
+      </table>
+      <div style="margin-top:8px;font-size:10px;color:#555">BOM v${bom.currentVersion||1} · Printed: ${today()}</div>
+    </td>
+  </tr>
+</table>
+<div class="footer-row">
+  <div>Check by: ________________________________</div>
+  <div>Prepared by: ________________________________</div>
+</div>
+<script>window.onload=()=>{window.print();}</script>
+</body></html>`;
+  const w=window.open("","_blank");
+  w.document.write(html);w.document.close();
+}
+
+// BOM Form component — stable to avoid cursor loss
+function BOMForm({form,setForm,saving,isEdit,onCancel,onSave}){
+  const addIng=()=>setForm(f=>({...f,ingredients:[...f.ingredients,{id:newId(),name:"",standardQty:"",isProcess:false}]}));
+  const addProcess=()=>setForm(f=>({...f,ingredients:[...f.ingredients,{id:newId(),name:"",isProcess:true}]}));
+  const updIng=(id,field,val)=>setForm(f=>({...f,ingredients:f.ingredients.map(i=>i.id===id?{...i,[field]:val}:i)}));
+  const delIng=(id)=>setForm(f=>({...f,ingredients:f.ingredients.filter(i=>i.id!==id)}));
+  const moveIng=(idx,dir)=>setForm(f=>{const arr=[...f.ingredients];const to=idx+dir;if(to<0||to>=arr.length)return f;[arr[idx],arr[to]]=[arr[to],arr[idx]];return{...f,ingredients:arr};});
+  const updQC=(field,val)=>setForm(f=>({...f,qcTests:{...f.qcTests,[field]:val}}));
+  const addPack=()=>setForm(f=>({...f,packingSizes:[...f.packingSizes,{id:newId(),size:"",qty:""}]}));
+  const updPack=(id,field,val)=>setForm(f=>({...f,packingSizes:f.packingSizes.map(p=>p.id===id?{...p,[field]:val}:p)}));
+  const delPack=(id)=>setForm(f=>({...f,packingSizes:f.packingSizes.filter(p=>p.id!==id)}));
+
+  return <div>
+    <Grid3>
+      <Field label="Product Name *"><input style={inp} value={form.productName} onChange={e=>setForm({...form,productName:e.target.value})} placeholder="e.g. SYN RELIANCE GREEN (PREMIUM)"/></Field>
+      <Field label="Category"><input style={inp} value={form.category} onChange={e=>setForm({...form,category:e.target.value})} placeholder="e.g. Enamel"/></Field>
+      <Grid2>
+        <Field label="Base Batch Size"><input style={inp} type="number" value={form.baseBatchSize} onChange={e=>setForm({...form,baseBatchSize:e.target.value})} placeholder="100"/></Field>
+        <Field label="Unit"><select style={sl} value={form.baseUnit} onChange={e=>setForm({...form,baseUnit:e.target.value})}>{["L","kg","g","mL"].map(u=><option key={u}>{u}</option>)}</select></Field>
+      </Grid2>
+    </Grid3>
+
+    {/* Ingredients / Process steps */}
+    <div style={{marginBottom:"14px"}}>
+      <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"6px"}}>Ingredients & Process Steps</div>
+      <div style={{border:"1px solid #1e293b",borderRadius:"8px",overflow:"hidden",marginBottom:"6px"}}>
+        <div style={{display:"grid",gridTemplateColumns:"28px 2fr 100px 50px 28px",background:"#0b1220",padding:"6px 10px",gap:"6px"}}>
+          {["↕","Material / Step","Std Qty (per "+form.baseBatchSize+form.baseUnit+")","",""].map((h,i)=><div key={i} style={{fontSize:"9px",fontWeight:"700",color:"#334155",textTransform:"uppercase"}}>{h}</div>)}
+        </div>
+        {(form.ingredients||[]).map((ing,idx)=>
+          ing.isProcess
+            ?<div key={ing.id} style={{display:"grid",gridTemplateColumns:"28px 2fr 100px 50px 28px",padding:"5px 10px",gap:"6px",borderTop:"1px solid #1e293b",alignItems:"center",background:"#0a1520"}}>
+              <div style={{display:"flex",flexDirection:"column",gap:"1px"}}>
+                <button onClick={()=>moveIng(idx,-1)} style={{background:"none",border:"none",color:"#334155",cursor:"pointer",fontSize:"10px",padding:"1px",lineHeight:1}}>▲</button>
+                <button onClick={()=>moveIng(idx,1)} style={{background:"none",border:"none",color:"#334155",cursor:"pointer",fontSize:"10px",padding:"1px",lineHeight:1}}>▼</button>
+              </div>
+              <input style={{...sml,color:"#f59e0b",fontStyle:"italic",background:"#0f1d10",borderColor:"#f59e0b30"}} value={ing.name} onChange={e=>updIng(ing.id,"name",e.target.value)} placeholder="Process instruction e.g. Grind for 6hrs"/>
+              <div style={{fontSize:"10px",color:"#475569",fontStyle:"italic"}}>— process —</div>
+              <span style={{fontSize:"10px",color:"#64748b",background:"#0f1720",border:"1px solid #1e293b",borderRadius:"4px",padding:"2px 5px",textAlign:"center"}}>Step</span>
+              <button onClick={()=>delIng(ing.id)} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"14px",padding:0}}>×</button>
+            </div>
+            :<div key={ing.id} style={{display:"grid",gridTemplateColumns:"28px 2fr 100px 50px 28px",padding:"5px 10px",gap:"6px",borderTop:"1px solid #1e293b",alignItems:"center"}}>
+              <div style={{display:"flex",flexDirection:"column",gap:"1px"}}>
+                <button onClick={()=>moveIng(idx,-1)} style={{background:"none",border:"none",color:"#334155",cursor:"pointer",fontSize:"10px",padding:"1px",lineHeight:1}}>▲</button>
+                <button onClick={()=>moveIng(idx,1)} style={{background:"none",border:"none",color:"#334155",cursor:"pointer",fontSize:"10px",padding:"1px",lineHeight:1}}>▼</button>
+              </div>
+              <input style={sml} value={ing.name} onChange={e=>updIng(ing.id,"name",e.target.value)} placeholder="Material/ingredient name"/>
+              <input style={{...sml,textAlign:"center"}} type="number" step="0.001" value={ing.standardQty} onChange={e=>updIng(ing.id,"standardQty",e.target.value)} placeholder="0"/>
+              <div style={{fontSize:"10px",color:"#22c55e",background:"#052e16",border:"1px solid #166534",borderRadius:"4px",padding:"2px 5px",textAlign:"center"}}>Ingr.</div>
+              <button onClick={()=>delIng(ing.id)} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"14px",padding:0}}>×</button>
+            </div>
+        )}
+      </div>
+      <div style={{display:"flex",gap:"8px"}}>
+        <button onClick={addIng} style={{background:"#052e16",border:"1px dashed #166534",borderRadius:"6px",padding:"5px 12px",color:"#22c55e",cursor:"pointer",fontSize:"12px"}}>+ Add Ingredient</button>
+        <button onClick={addProcess} style={{background:"#0f1d10",border:"1px dashed #f59e0b50",borderRadius:"6px",padding:"5px 12px",color:"#f59e0b",cursor:"pointer",fontSize:"12px"}}>+ Add Process Step</button>
+      </div>
+    </div>
+
+    {/* QC Test Standards */}
+    <div style={{marginBottom:"14px"}}>
+      <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"8px"}}>QC Test Standards</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"8px"}}>
+        {[["sd","Drying SD"],["tf","Drying TF"],["hd","Drying HD"],["colour","Colour"],["finish","Finish"],["viscosity","Viscosity"],["sg","Specific Gravity"],["remarks","Remarks"]].map(([k,l])=>(
+          <Field key={k} label={l}><input style={inp} value={(form.qcTests||{})[k]||""} onChange={e=>updQC(k,e.target.value)} placeholder={k==="colour"?"e.g. BUS GREEN":k==="finish"?"e.g. 7+":k==="viscosity"?"e.g. 120 SEC":""}/></Field>
+        ))}
+      </div>
+    </div>
+
+    {/* Packing sizes */}
+    <div style={{marginBottom:"14px"}}>
+      <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"6px"}}>Packing Sizes</div>
+      <div style={{display:"flex",flexDirection:"column",gap:"4px",marginBottom:"6px"}}>
+        {(form.packingSizes||[]).map(p=><div key={p.id} style={{display:"flex",gap:"8px",alignItems:"center"}}>
+          <input style={{...sml,flex:1}} value={p.size} onChange={e=>updPack(p.id,"size",e.target.value)} placeholder="Pack size (e.g. 1L, 4L, 20L)"/>
+          <input style={{...sml,width:"80px"}} value={p.qty} onChange={e=>updPack(p.id,"qty",e.target.value)} placeholder="Qty"/>
+          <button onClick={()=>delPack(p.id)} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"14px",padding:0}}>×</button>
+        </div>)}
+      </div>
+      <button onClick={addPack} style={{background:"none",border:"1px dashed #1e293b",borderRadius:"6px",padding:"5px 12px",color:"#475569",cursor:"pointer",fontSize:"12px"}}>+ Add Pack Size</button>
+    </div>
+
+    {isEdit&&<InfoBox color="#f59e0b">Saving will create a new version and archive the current BOM for future reference.</InfoBox>}
+    <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
+      <Btn label="Cancel" onClick={onCancel} outline color="#475569" small/>
+      <Btn label={saving?"Saving…":isEdit?"💾 Save New Version":"✓ Create BOM"} onClick={onSave} disabled={saving} color="#3b82f6" small/>
+    </div>
+  </div>;
+}
+
+// Print dialog component — extracted to avoid remount
+function PrintDialog({bom,onClose}){
+  const [batchSize,setBatchSize]=useState(bom.baseBatchSize||"100");
+  const [batchNo,setBatchNo]=useState("");
+  const [fillingDate,setFillingDate]=useState(today());
+  const [chargingDate,setChargingDate]=useState(today());
+  return <div style={{background:"#0b1220",border:"1px solid #3b82f6",borderRadius:"10px",padding:"16px",marginBottom:"14px"}}>
+    <div style={{fontSize:"13px",fontWeight:"700",color:"#93c5fd",marginBottom:"12px"}}>🖨 Print Production Sheet — {bom.productName}</div>
+    <Grid2>
+      <Field label={"Batch Size ("+bom.baseUnit+") *"}><input style={inp} type="number" value={batchSize} onChange={e=>setBatchSize(e.target.value)} placeholder={bom.baseBatchSize}/></Field>
+      <Field label="Batch No"><input style={inp} value={batchNo} onChange={e=>setBatchNo(e.target.value)} placeholder="e.g. 0042"/></Field>
+    </Grid2>
+    <Grid2>
+      <Field label="Filling Date"><input type="date" style={inp} value={fillingDate} onChange={e=>setFillingDate(e.target.value)}/></Field>
+      <Field label="Charging Date"><input type="date" style={inp} value={chargingDate} onChange={e=>setChargingDate(e.target.value)}/></Field>
+    </Grid2>
+    <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
+      <Btn label="Cancel" onClick={onClose} outline color="#475569" small/>
+      <Btn label="🖨 Open Print Preview" onClick={()=>{printProductionSheet(bom,batchSize,batchNo,"",fillingDate,chargingDate);onClose();}} color="#22c55e" small/>
+    </div>
+  </div>;
+}
+
+function BOMTab({role,roles,user,showToast,sysProducts}){
+  const isAdmin=roles.includes("admin");
+  const canEdit=roles.some(r=>["admin","qc"].includes(r));
+  const [boms,setBoms]=useState([]);
+  const [versions,setVersions]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [search,setSearch]=useState("");
+  const [filterCat,setFilterCat]=useState("All");
+  const [activeBOM,setActiveBOM]=useState(null); // {bom, mode: "view"|"edit"|"print"|"history"}
+  const [showCreate,setShowCreate]=useState(false);
+  const [saving,setSaving]=useState(false);
+
+  const blankBOM={productName:"",category:"",baseBatchSize:"100",baseUnit:"L",
+    ingredients:[{id:newId(),name:"",standardQty:"",isProcess:false}],
+    qcTests:{sd:"",tf:"",hd:"",colour:"",finish:"",viscosity:"",sg:"",remarks:""},
+    packingSizes:[{id:newId(),size:"",qty:""}]};
+  const [form,setForm]=useState({...blankBOM});
+
+  useEffect(()=>{
+    const u1=C("bom_products").orderBy("productName").onSnapshot(s=>{setBoms(s.docs.map(d=>({id:d.id,...d.data()})));setLoading(false);},()=>setLoading(false));
+    const u2=C("bom_versions").orderBy("archivedAt","desc").onSnapshot(s=>setVersions(s.docs.map(d=>({id:d.id,...d.data()}))),()=>{});
+    return()=>{u1();u2();};
+  },[]);
+
+  const saveBOM=async(isEdit=false,editId=null)=>{
+    if(!form.productName.trim())return showToast("Product name required","error");
+    setSaving(true);
+    try{
+      if(isEdit&&editId){
+        // Archive current version first
+        const curr=boms.find(b=>b.id===editId);
+        if(curr){
+          await C("bom_versions").add({...curr,productId:editId,archivedAt:ts(),archivedBy:user.email});
+        }
+        const newVer=(curr?.currentVersion||1)+1;
+        await C("bom_products").doc(editId).update({...form,currentVersion:newVer,updatedBy:user.email,updatedAt:ts()});
+        showToast(`BOM updated to v${newVer} — previous version archived ✓`);
+      }else{
+        await C("bom_products").add({...form,currentVersion:1,createdBy:user.email,createdAt:ts(),updatedAt:ts()});
+        showToast("BOM created ✓");
+      }
+      setShowCreate(false);setActiveBOM(null);setForm({...blankBOM});
+    }catch(e){showToast("Error: "+e.message,"error");}
+    setSaving(false);
+  };
+
+  const deleteBOM=async(id)=>{
+    if(!confirm("Delete this BOM and all its version history?"))return;
+    const vids=versions.filter(v=>v.productId===id).map(v=>v.id);
+    await Promise.all(vids.map(vid=>C("bom_versions").doc(vid).delete()));
+    await C("bom_products").doc(id).delete();
+    showToast("BOM deleted","error");setActiveBOM(null);
+  };
+
+  const exportAllBOMs=()=>{
+    if(!boms.length)return showToast("No BOMs to export","error");
+    const rows=[["Product Name","Category","Base Batch Size","Unit","Version","Last Updated","Ingredient No","Ingredient/Step","Standard Qty","Is Process Step","SD","TF","HD","Colour","Finish","Viscosity","SG","Remarks"]];
+    boms.forEach(b=>{
+      const q=b.qcTests||{};
+      (b.ingredients||[]).forEach((ing,i)=>{
+        const qcSD=i===0?q.sd||"":"";const qcTF=i===0?q.tf||"":"";const qcHD=i===0?q.hd||"":"";
+        const qcCol=i===0?q.colour||"":"";const qcFin=i===0?q.finish||"":"";
+        const qcVis=i===0?q.viscosity||"":"";const qcSG=i===0?q.sg||"":"";const qcRem=i===0?q.remarks||"":"";
+        rows.push([b.productName,b.category||"",b.baseBatchSize||100,b.baseUnit||"L",b.currentVersion||1,b.updatedAt?.toDate?.()?.toLocaleDateString("en-IN")||"",i+1,ing.name||"",ing.isProcess?"":ing.standardQty||"",ing.isProcess?"Yes":"No",qcSD,qcTF,qcHD,qcCol,qcFin,qcVis,qcSG,qcRem]);
+      });
+    });
+    const csv=rows.map(r=>r.map(v=>`"${String(v||"").replace(/"/g,'""')}"`).join(",")).join("\n");
+    const blob=new Blob([csv],{type:"text/csv"});
+    const a=document.createElement("a");a.href=URL.createObjectURL(blob);
+    a.download=`GCC_BOMs_${today()}.csv`;a.click();
+    showToast("BOMs exported ✓");
+  };
+
+  const cats=[...new Set(boms.map(b=>b.category).filter(Boolean))].sort();
+  const fb=boms.filter(b=>{
+    const q=normalize(search);
+    const cs=filterCat==="All"||b.category===filterCat;
+    return cs&&(!q||normalize(b.productName||"").includes(q));
+  });
+
+  return <div>
+    <SectionHead title="📋 Bill of Materials"/>
+    <div style={{display:"flex",gap:"8px",flexWrap:"wrap",alignItems:"center",marginBottom:"12px"}}>
+      <input placeholder="Search product…" value={search} onChange={e=>setSearch(e.target.value)} style={{...inp,maxWidth:"200px",padding:"7px 10px",fontSize:"12.5px"}}/>
+      <select value={filterCat} onChange={e=>setFilterCat(e.target.value)} style={{...sl,width:"130px",padding:"7px 6px",fontSize:"12px"}}>
+        <option value="All">All Categories</option>
+        {cats.map(c=><option key={c}>{c}</option>)}
+      </select>
+      <span style={{fontSize:"11px",color:"#334155"}}>{fb.length} BOM{fb.length!==1?"s":""}</span>
+      <div style={{marginLeft:"auto",display:"flex",gap:"8px"}}>
+        <Btn label="📥 Export All (CSV)" onClick={exportAllBOMs} color="#64748b" small outline/>
+        {canEdit&&<Btn label="+ Create BOM" onClick={()=>{setForm({...blankBOM});setShowCreate(true);setActiveBOM(null);}} color="#3b82f6"/>}
+      </div>
+    </div>
+
+    {/* Create form */}
+    {showCreate&&<div style={{background:"#080d18",border:"1px solid #3b82f630",borderRadius:"12px",padding:"18px",marginBottom:"16px"}}>
+      <div style={{fontSize:"13px",fontWeight:"700",color:"#93c5fd",marginBottom:"14px"}}>📋 New Bill of Materials</div>
+      <BOMForm form={form} setForm={setForm} saving={saving} isEdit={false} onCancel={()=>{setShowCreate(false);setForm({...blankBOM});}} onSave={()=>saveBOM(false)}/>
+    </div>}
+
+    {loading&&<div style={{textAlign:"center",padding:"40px",color:"#475569"}}>Loading…</div>}
+    {!loading&&fb.length===0&&!showCreate&&<div style={{textAlign:"center",padding:"50px 0"}}>
+      <div style={{fontSize:"36px"}}>📋</div>
+      <div style={{fontSize:"13px",color:"#475569",marginTop:"8px"}}>{canEdit?"No BOMs yet. Create your first BOM to print production sheets.":"No BOMs found."}</div>
+    </div>}
+
+    {/* BOM cards */}
+    {fb.map(b=>{
+      const isOpen=activeBOM?.bom?.id===b.id;
+      const mode=activeBOM?.mode;
+      const bVersions=versions.filter(v=>v.productId===b.id).sort((a,z)=>z.currentVersion-a.currentVersion);
+      const totalIngr=(b.ingredients||[]).filter(i=>!i.isProcess).length;
+      const totalStd=(b.ingredients||[]).filter(i=>!i.isProcess).reduce((s,i)=>s+(parseFloat(i.standardQty)||0),0);
+
+      return <div key={b.id} style={{background:"#0f172a",border:"1px solid #1e293b",borderLeft:"3px solid #3b82f6",borderRadius:"12px",marginBottom:"10px",overflow:"hidden"}}>
+        {/* Card header */}
+        <div style={{padding:"13px 16px",display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:"8px"}}>
+          <div style={{flex:1,cursor:"pointer"}} onClick={()=>setActiveBOM(isOpen&&mode==="view"?null:{bom:b,mode:"view"})}>
+            <div style={{fontSize:"14px",fontWeight:"700",color:"#f1f5f9"}}>{b.productName}</div>
+            <div style={{fontSize:"11.5px",color:"#475569",marginTop:"2px"}}>
+              {b.category&&<span>{b.category} · </span>}Base: {b.baseBatchSize} {b.baseUnit} · {totalIngr} ingredients · Total: {totalStd.toFixed(2)}{b.baseUnit} · v{b.currentVersion||1}
+              {bVersions.length>0&&<span style={{color:"#64748b",marginLeft:"6px"}}>· {bVersions.length} archived version{bVersions.length!==1?"s":""}</span>}
+            </div>
+          </div>
+          <div style={{display:"flex",gap:"6px",flexShrink:0,flexWrap:"wrap"}}>
+            <Btn label="🖨 Print" onClick={()=>setActiveBOM({bom:b,mode:"print"})} color="#22c55e" small/>
+            {bVersions.length>0&&<Btn label={`📚 History (${bVersions.length})`} onClick={()=>setActiveBOM(isOpen&&mode==="history"?null:{bom:b,mode:"history"})} color="#64748b" small outline/>}
+            {canEdit&&<Btn label="✏️ Edit" onClick={()=>{setForm({...blankBOM,...b,ingredients:b.ingredients?.map(i=>({...i,id:i.id||newId()})),packingSizes:b.packingSizes?.map(p=>({...p,id:p.id||newId()}))||[{id:newId(),size:"",qty:""}]});setActiveBOM({bom:b,mode:"edit"});setShowCreate(false);}} color="#f59e0b" small/>}
+            {isAdmin&&<button onClick={()=>deleteBOM(b.id)} style={{background:"none",border:"none",color:"#334155",cursor:"pointer",fontSize:"14px"}}>🗑</button>}
+          </div>
+        </div>
+
+        {/* Print dialog */}
+        {isOpen&&mode==="print"&&<div style={{padding:"14px 16px",borderTop:"1px solid #1e293b",background:"#080d18"}}>
+          <PrintDialog bom={b} onClose={()=>setActiveBOM(null)}/>
+        </div>}
+
+        {/* Edit form */}
+        {isOpen&&mode==="edit"&&<div style={{padding:"16px",borderTop:"1px solid #f59e0b30",background:"#080d18"}}>
+          <div style={{fontSize:"12px",fontWeight:"700",color:"#f59e0b",marginBottom:"12px"}}>✏️ Editing: {b.productName} (currently v{b.currentVersion||1})</div>
+          <BOMForm form={form} setForm={setForm} saving={saving} isEdit={true} onCancel={()=>{setActiveBOM(null);setForm({...blankBOM});}} onSave={()=>saveBOM(true,b.id)}/>
+        </div>}
+
+        {/* Version history */}
+        {isOpen&&mode==="history"&&<div style={{padding:"14px 16px",borderTop:"1px solid #1e293b",background:"#080d18"}}>
+          <div style={{fontSize:"12px",fontWeight:"700",color:"#64748b",marginBottom:"10px"}}>📚 BOM Version History — {b.productName}</div>
+          <div style={{display:"flex",flexDirection:"column",gap:"6px"}}>
+            {/* Current version */}
+            <div style={{background:"#052e16",border:"1px solid #166534",borderRadius:"8px",padding:"10px 14px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div>
+                <span style={{fontSize:"12px",fontWeight:"700",color:"#22c55e"}}>v{b.currentVersion||1} (Current)</span>
+                <span style={{fontSize:"11px",color:"#64748b",marginLeft:"10px"}}>{(b.ingredients||[]).filter(i=>!i.isProcess).length} ingredients · Updated by {b.updatedBy||b.createdBy}</span>
+              </div>
+              <Btn label="🖨 Print" onClick={()=>setActiveBOM({bom:b,mode:"print"})} color="#22c55e" small/>
+            </div>
+            {/* Archived versions */}
+            {bVersions.map(v=><div key={v.id} style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"8px",padding:"10px 14px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"8px"}}>
+              <div>
+                <span style={{fontSize:"12px",fontWeight:"700",color:"#64748b"}}>v{v.currentVersion||"?"}</span>
+                <span style={{fontSize:"11px",color:"#475569",marginLeft:"10px"}}>{(v.ingredients||[]).filter(i=>!i.isProcess).length} ingredients · Archived by {v.archivedBy||"—"}</span>
+                <span style={{fontSize:"10px",color:"#334155",marginLeft:"8px"}}>{v.archivedAt?.toDate?.()?.toLocaleDateString("en-IN")||""}</span>
+              </div>
+              <div style={{display:"flex",gap:"6px"}}>
+                <Btn label="🖨 Print this version" onClick={()=>printProductionSheet(v,v.baseBatchSize,"","","",today())} color="#64748b" small outline/>
+                {canEdit&&<Btn label="⬆ Restore as Current" onClick={async()=>{if(!confirm("Restore v"+v.currentVersion+" as current BOM? Current will be archived."))return;const curr=boms.find(x=>x.id===b.id);if(curr)await C("bom_versions").add({...curr,productId:b.id,archivedAt:ts(),archivedBy:user.email});await C("bom_products").doc(b.id).update({...v,currentVersion:(curr?.currentVersion||1)+1,updatedBy:user.email,updatedAt:ts()});await C("bom_versions").doc(v.id).delete();showToast("Version restored ✓");}} color="#f59e0b" small/>}
+              </div>
+            </div>)}
+          </div>
+        </div>}
+
+        {/* Quick ingredient view */}
+        {isOpen&&mode==="view"&&<div style={{padding:"14px 16px",borderTop:"1px solid #1e293b",background:"#080d18"}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"14px"}}>
+            <div>
+              <div style={{fontSize:"10px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"6px"}}>Ingredients / Process</div>
+              <div style={{border:"1px solid #1e293b",borderRadius:"6px",overflow:"hidden"}}>
+                <div style={{display:"grid",gridTemplateColumns:"20px 1fr 70px",background:"#0b1220",padding:"5px 10px",gap:"6px"}}>
+                  {["#","Material","Std Qty"].map(h=><div key={h} style={{fontSize:"9px",fontWeight:"700",color:"#334155"}}>{h}</div>)}
+                </div>
+                {(b.ingredients||[]).map((ing,i)=>ing.isProcess
+                  ?<div key={i} style={{padding:"5px 10px",borderTop:"1px solid #1e293b",background:"#0a1520",fontSize:"11px",color:"#f59e0b",fontStyle:"italic",gridColumn:"1/-1"}}>→ {ing.name}</div>
+                  :<div key={i} style={{display:"grid",gridTemplateColumns:"20px 1fr 70px",padding:"5px 10px",borderTop:"1px solid #1e293b",gap:"6px",alignItems:"center"}}>
+                    <div style={{fontSize:"10px",color:"#475569"}}>{i+1}</div>
+                    <div style={{fontSize:"12px",color:"#cbd5e1"}}>{ing.name}</div>
+                    <div style={{fontSize:"12px",color:"#22c55e",textAlign:"right"}}>{ing.standardQty} {b.baseUnit}</div>
+                  </div>
+                )}
+                <div style={{display:"grid",gridTemplateColumns:"20px 1fr 70px",padding:"6px 10px",borderTop:"1px solid #1e293b",background:"#0b1220",gap:"6px"}}>
+                  <div/><div style={{fontSize:"11px",fontWeight:"700",color:"#94a3b8"}}>Total</div>
+                  <div style={{fontSize:"12px",fontWeight:"700",color:"#22c55e",textAlign:"right"}}>{totalStd.toFixed(2)} {b.baseUnit}</div>
+                </div>
+              </div>
+            </div>
+            <div>
+              <div style={{fontSize:"10px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"6px"}}>QC Standards</div>
+              <div style={{border:"1px solid #1e293b",borderRadius:"6px",overflow:"hidden"}}>
+                {Object.entries(b.qcTests||{}).filter(([,v])=>v).map(([k,v])=><div key={k} style={{display:"grid",gridTemplateColumns:"1fr 1fr",padding:"5px 10px",borderTop:"1px solid #1e293b",gap:"6px"}}>
+                  <div style={{fontSize:"11px",color:"#475569",textTransform:"capitalize"}}>{k}</div>
+                  <div style={{fontSize:"12px",color:"#e2e8f0"}}>{v}</div>
+                </div>)}
+              </div>
+              {(b.packingSizes||[]).filter(p=>p.size).length>0&&<>
+                <div style={{fontSize:"10px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"6px",marginTop:"10px"}}>Packing Sizes</div>
+                <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
+                  {b.packingSizes.filter(p=>p.size).map((p,i)=><span key={i} style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"6px",padding:"3px 10px",fontSize:"12px",color:"#94a3b8"}}>{p.size}</span>)}
+                </div>
+              </>}
+            </div>
+          </div>
+        </div>}
+      </div>;
+    })}
+  </div>;
+}
+
+function MainApp({user,role,roles=[]}){
+  const isAdmin=roles.includes("admin");
+  // Helper: does user have ANY of the given roles?
+  const hasRole=(...rs)=>rs.some(r=>roles.includes(r));
+  const canQC=hasRole("admin","qc");
+  const canIssuer=hasRole("admin","issuer");
+  const [tab,setTab]=useState(CAN_SEE.dashboard.some(r=>(roles.length?roles:[role]).includes(r))?"dashboard":"complaints");
   const [settingsDirty,setSettingsDirty]=useState(false);
   const [pendingMainTab,setPendingMainTab]=useState(null);
 
@@ -3964,22 +4444,21 @@ function MainApp({user,role}){
       setSysProducts(DEFAULT_PRODUCTS);
     });
     // Old stock for batch-capable roles
-    if(CAN_SEE.batches.includes(role)){
+    if(CAN_SEE.batches.some(r=>roles.includes(r))){
       subs.push(C("old_stock").orderBy("_createdAt","desc").onSnapshot(s=>setOldStocks(s.docs.map(d=>({id:d.id,...d.data()}))),
         ()=>C("old_stock").onSnapshot(s=>setOldStocks(s.docs.map(d=>({id:d.id,...d.data()}))))));
     }
-    if(CAN_SEE.batches.includes(role)){
+    if(CAN_SEE.batches.some(r=>roles.includes(r))){
       subs.push(C("batches").orderBy("_createdAt","desc").onSnapshot(s=>setBatches(s.docs.map(d=>({id:d.id,...d.data()}))),()=>C("batches").onSnapshot(s=>setBatches(s.docs.map(d=>({id:d.id,...d.data()}))))));
     }
-    if(CAN_SEE.complaints.includes(role)){
-      // Sales users only load their own complaints; other roles load all
-      const cQuery=role==="sales"
+    if(CAN_SEE.complaints.some(r=>roles.includes(r))){
+      const cQuery=roles.includes("sales")&&!roles.includes("admin")&&!roles.includes("qc")&&!roles.includes("issuer")
         ?C("complaints").where("addedBy","==",user.email).orderBy("_createdAt","desc")
         :C("complaints").orderBy("_createdAt","desc");
       subs.push(cQuery.onSnapshot(s=>setComplaints(s.docs.map(d=>({id:d.id,...d.data()}))),
-        ()=>C("complaints").onSnapshot(s=>setComplaints(s.docs.map(d=>({id:d.id,...d.data()})).filter(c=>role!=="sales"||c.addedBy===user.email)))));
+        ()=>C("complaints").onSnapshot(s=>setComplaints(s.docs.map(d=>({id:d.id,...d.data()})).filter(c=>!roles.includes("sales")||roles.includes("admin")||c.addedBy===user.email)))));
     }
-    if(CAN_SEE.rd.includes(role)){
+    if(CAN_SEE.rd.some(r=>roles.includes(r))){
       subs.push(C("rd_projects").orderBy("_createdAt","desc").onSnapshot(s=>setProjects(s.docs.map(d=>({id:d.id,...d.data()}))),()=>C("rd_projects").onSnapshot(s=>setProjects(s.docs.map(d=>({id:d.id,...d.data()}))))));
       subs.push(C("rm_tests").orderBy("_createdAt","desc").onSnapshot(s=>setRmTests(s.docs.map(d=>({id:d.id,...d.data()}))),()=>C("rm_tests").onSnapshot(s=>setRmTests(s.docs.map(d=>({id:d.id,...d.data()}))))));
     }
@@ -4087,9 +4566,9 @@ function MainApp({user,role}){
     const match=!q||normalize(b.batchNo||"").includes(q)||normalize(b.productName||"").includes(q)||normalize(b.shade||"").includes(q);
     return ms&&cs&&fys&&mths&&match;
   });
+  const isSalesOnly=roles.includes("sales")&&!roles.some(r=>["admin","qc","issuer"].includes(r));
   const fc=complaints.filter(c=>{
-    // Sales can only see their own complaints
-    if(role==="sales"&&c.addedBy!==user.email)return false;
+    if(isSalesOnly&&c.addedBy!==user.email)return false;
     const ms=complaintFilter==="All"||c.status===complaintFilter;
     const q=complaintSearch.toLowerCase();
     return ms&&(!q||c.customerName?.toLowerCase().includes(q)||c.productName?.toLowerCase().includes(q)||c.batchNo?.toLowerCase().includes(q));
@@ -4110,11 +4589,12 @@ function MainApp({user,role}){
     {key:"batches",label:"📦 Batches"},
     {key:"complaints",label:"⚠️ Complaints"},
     {key:"rd",label:"🧪 R&D & QC"},
+    {key:"bom",label:"📋 BOM"},
     {key:"stock",label:"🏪 RM Stock"},
     {key:"testimonials",label:"⭐ Testimonials"},
     {key:"users",label:"👥 Users"},
     {key:"settings",label:"⚙️ Settings"},
-  ].filter(t=>CAN_SEE[t.key]?.includes(role));
+  ].filter(t=>CAN_SEE[t.key]?.some(r=>roles.includes(r)));
 
   return <div style={{minHeight:"100vh",background:"#060b16",fontFamily:"'DM Sans',sans-serif",color:"#e2e8f0",paddingBottom:"48px"}}>
     <style>{`@keyframes slideDown{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)}}@keyframes fadeIn{from{opacity:0;transform:translateX(-50%) translateY(8px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}`}</style>
@@ -4128,11 +4608,11 @@ function MainApp({user,role}){
             <h1 style={{fontSize:"24px",fontWeight:"400",fontFamily:"'DM Serif Display',serif",color:"#f1f5f9",margin:0}}>GCC <span style={{fontStyle:"italic",color:"#3b82f6"}}>Operations Hub</span></h1>
           </div>
           <div style={{display:"flex",gap:"8px",flexWrap:"wrap",alignItems:"center"}}>
-            {CAN_SEE.batches.includes(role)&&[["📦",batches.filter(b=>["Issued","In Production","QC Pending","QC Pass","Packed"].includes(b.status)).length,"#3b82f6","Active"],["🔬",batches.filter(b=>b.status==="QC Pending").length,"#a855f7","QC Pending"]].map(([icon,count,color,label])=><div key={label} style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"10px",padding:"8px 12px",textAlign:"center"}}>
+            {CAN_SEE.batches.some(r=>roles.includes(r))&&[["📦",batches.filter(b=>["Issued","In Production","QC Pending","QC Pass","Packed"].includes(b.status)).length,"#3b82f6","Active"],["🔬",batches.filter(b=>b.status==="QC Pending").length,"#a855f7","QC Pending"]].map(([icon,count,color,label])=><div key={label} style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"10px",padding:"8px 12px",textAlign:"center"}}>
               <div style={{fontWeight:"700",fontSize:"17px",color}}>{icon} {count}</div>
               <div style={{color:"#475569",fontSize:"10px",fontWeight:"600"}}>{label}</div>
             </div>)}
-            {CAN_SEE.complaints.includes(role)&&<div style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"10px",padding:"8px 12px",textAlign:"center"}}>
+            {CAN_SEE.complaints.some(r=>roles.includes(r))&&<div style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"10px",padding:"8px 12px",textAlign:"center"}}>
               <div style={{fontWeight:"700",fontSize:"17px",color:"#ef4444"}}>⚠️ {complaints.filter(c=>["Open","Under Review"].includes(c.status)&&(role!=="sales"||c.addedBy===user.email)).length}</div>
               <div style={{color:"#475569",fontSize:"10px",fontWeight:"600"}}>{role==="sales"?"My Open":"Open"}</div>
             </div>}
@@ -4246,6 +4726,7 @@ function MainApp({user,role}){
           onCreateProject={(prefill)=>{setProjForm({...EP,...prefill});setShowAddProject(true);setRdSubTab("projects");}}
         />}
       </>}
+      {tab==="bom"&&<BOMTab role={role} roles={roles} user={user} showToast={showToast} sysProducts={sysProducts}/>}
       {tab==="stock"&&<RawMaterialStockTab role={role} user={user} showToast={showToast} sysUnits={sysUnits} sysRmCats={sysRmCats} onAddRmCat={addGlobalRmCat} onAddUnit={addGlobalUnit}/>}
       {tab==="testimonials"&&<TestimonialsTab role={role} user={user} showToast={showToast}/>}
       {tab==="users"&&<UsersTab currentUser={user}/>}
@@ -4511,9 +4992,14 @@ function MainApp({user,role}){
 // ══════════════════════════════════════════════════════════
 // ROOT
 // ══════════════════════════════════════════════════════════
+// Role priority — used to derive primary role from multi-role array
+const ROLE_PRIORITY=["admin","qc","issuer","sales","store"];
+const primaryRole=(rolesArr)=>ROLE_PRIORITY.find(r=>(rolesArr||[]).includes(r))||rolesArr?.[0]||null;
+
 function App(){
   const [user,setUser]=useState(undefined);
-  const [role,setRole]=useState(null);
+  const [role,setRole]=useState(null);     // primary role (for backward compat)
+  const [roles,setRoles]=useState([]);     // full roles array
   const [loading,setLoading]=useState(false);
 
   useEffect(()=>{
@@ -4522,31 +5008,34 @@ function App(){
       if(u){
         setLoading(true);
         try{await db.collection("userProfiles").doc(u.uid).set({email:u.email,lastLogin:ts()},{merge:true});}catch(e){}
-        // Check for admin-set pending password reset
         try{
           const pr=await db.collection("passwordResets").doc(u.email).get();
           if(pr.exists){
             const {newPassword}=pr.data();
-            // Apply new password using user's fresh idToken
             const idToken=await u.getIdToken(true);
             await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:update?key=${window._firebaseConfig.apiKey}`,{
               method:"POST",headers:{"Content-Type":"application/json"},
               body:JSON.stringify({idToken,password:newPassword,returnSecureToken:false})
             });
             await db.collection("passwordResets").doc(u.email).delete();
-            // Sign out to force re-login with new password
             await auth.signOut();
             alert("Your password was changed by the admin. Please log in with your new password.");
             return;
           }
         }catch(e){}
-        if(ADMIN_EMAILS.includes(u.email)){setRole("admin");setLoading(false);return;}
+        if(ADMIN_EMAILS.includes(u.email)){setRole("admin");setRoles(["admin"]);setLoading(false);return;}
         try{
           const snap=await db.collection("roles").doc(u.email).get();
-          setRole(snap.exists?snap.data().role:null);
-        }catch(e){setRole(null);}
+          if(snap.exists){
+            // Support both old {role:"x"} and new {roles:["x","y"]} formats
+            const data=snap.data();
+            const rolesArr=data.roles||(data.role?[data.role]:[]);
+            const prim=primaryRole(rolesArr);
+            setRoles(rolesArr);setRole(prim);
+          }else{setRoles([]);setRole(null);}
+        }catch(e){setRoles([]);setRole(null);}
         setLoading(false);
-      }else{setRole(null);setLoading(false);}
+      }else{setRoles([]);setRole(null);setLoading(false);}
     });
     return unsub;
   },[]);
@@ -4554,7 +5043,7 @@ function App(){
   if(user===undefined||loading)return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",color:"#475569",fontSize:"14px"}}>Loading…</div>;
   if(!user)return <LoginScreen/>;
   if(!role)return <NoAccessScreen/>;
-  return <MainApp user={user} role={role}/>;
+  return <MainApp user={user} role={role} roles={roles}/>;
 }
 
 ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
