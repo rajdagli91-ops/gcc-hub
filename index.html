@@ -94,16 +94,17 @@ const db = window._db;
 // CONSTANTS
 // ══════════════════════════════════════════════════════════
 const ADMIN_EMAILS = ["r-and-d-gcc@gmail.com","raj@gujaratcolours.com","rajdagli91@gmail.com","vijayddagli@gmail.com"];
-const ROLE_LABELS = {admin:"🔑 Admin",issuer:"📦 Issuer",qc:"🔬 QC",sales:"💼 Sales"};
-const ROLE_COLORS = {admin:"#3b82f6",issuer:"#f59e0b",qc:"#22c55e",sales:"#a855f7"};
+const ROLE_LABELS = {admin:"🔑 Admin",issuer:"📦 Issuer",qc:"🔬 QC",sales:"💼 Sales",store:"🏪 Store"};
+const ROLE_COLORS = {admin:"#3b82f6",issuer:"#f59e0b",qc:"#22c55e",sales:"#a855f7",store:"#38bdf8"};
 
 // Tab access per role
 const CAN_SEE = {
-  dashboard:["admin","issuer","qc","sales"],
+  dashboard:["admin","issuer","qc","sales","store"],
   batches:  ["admin","issuer","qc"],
   complaints:["admin","issuer","qc","sales"],
   rd:       ["admin","qc"],
   testimonials:["admin","sales"],
+  stock:    ["admin","store","qc","issuer"],
   users:    ["admin"],
   settings: ["admin"]
 };
@@ -1968,7 +1969,7 @@ function UsersTab({currentUser}){
       <Grid2>
         <Field label="Role *">
           <select style={sl} value={createRole} onChange={e=>setCreateRole(e.target.value)}>
-            {["admin","issuer","qc","sales"].map(r=><option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+            {["admin","issuer","qc","sales","store"].map(r=><option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
           </select>
         </Field>
         <Field label={createRole==="admin"?"Full Name (optional)":"Full Name / Username *"}>
@@ -3372,6 +3373,363 @@ function SampleTestsTab({role,user,showToast,sysQcParams,onCreateProject}){
   </div>;
 }
 
+// ══════════════════════════════════════════════════════════
+// RAW MATERIAL STOCK MODULE
+// ══════════════════════════════════════════════════════════
+function RawMaterialStockTab({role,user,showToast,sysUnits,sysRmCats}){
+  const isAdmin=role==="admin";
+  const canStore=role==="admin"||role==="store";
+  const UNITS=sysUnits||BATCH_UNITS;
+  const CATS=sysRmCats||RM_CATEGORIES;
+
+  // State
+  const [materials,setMaterials]=useState([]);
+  const [transactions,setTransactions]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [subTab,setSubTab]=useState("stock"); // stock | consume | history | add
+  const [search,setSearch]=useState("");
+  const [filterCat,setFilterCat]=useState("All");
+  const [saving,setSaving]=useState(false);
+
+  // Add material form (admin)
+  const blankMat={name:"",category:CATS[0]||"",unit:"kg",openingStock:"",reorderLevel:"",supplier:"",notes:""};
+  const [matForm,setMatForm]=useState({...blankMat});
+  const [showAddMat,setShowAddMat]=useState(false);
+  const [editMat,setEditMat]=useState(null);
+
+  // Consumption form (store)
+  const [consumeRows,setConsumeRows]=useState([{materialId:"",qty:"",notes:""}]);
+  const [consumeDate,setConsumeDate]=useState(today());
+
+  // Stock addition form (admin)
+  const [addStockRows,setAddStockRows]=useState([{materialId:"",qty:"",supplier:"",invoiceNo:"",notes:""}]);
+  const [addStockDate,setAddStockDate]=useState(today());
+
+  // Load data
+  useEffect(()=>{
+    const unsub1=C("rm_stock_materials").orderBy("name").onSnapshot(
+      s=>{setMaterials(s.docs.map(d=>({id:d.id,...d.data()})));setLoading(false);},
+      ()=>setLoading(false)
+    );
+    const unsub2=C("rm_stock_transactions").orderBy("date","desc").onSnapshot(
+      s=>setTransactions(s.docs.map(d=>({id:d.id,...d.data()}))),()=>{}
+    );
+    return()=>{unsub1();unsub2();};
+  },[]);
+
+  // Save new material
+  const saveMaterial=async(isEdit=false)=>{
+    if(!matForm.name.trim())return showToast("Material name required","error");
+    setSaving(true);
+    try{
+      if(isEdit&&editMat){
+        await C("rm_stock_materials").doc(editMat.id).update({...matForm,updatedBy:user.email,updatedAt:ts()});
+        showToast("Material updated ✓");setEditMat(null);
+      }else{
+        const openingQty=parseFloat(matForm.openingStock)||0;
+        const docRef=await C("rm_stock_materials").add({...matForm,currentStock:openingQty,addedBy:user.email,_createdAt:ts()});
+        if(openingQty>0){
+          await C("rm_stock_transactions").add({materialId:docRef.id,materialName:matForm.name,type:"opening",qty:openingQty,date:today(),addedBy:user.email,notes:"Opening stock",stockAfter:openingQty,_createdAt:ts()});
+        }
+        showToast("Material added ✓");setShowAddMat(false);
+      }
+      setMatForm({...blankMat});
+    }catch(e){showToast("Error: "+e.message,"error");}
+    setSaving(false);
+  };
+
+  // Save daily consumption
+  const saveConsumption=async()=>{
+    const valid=consumeRows.filter(r=>r.materialId&&parseFloat(r.qty)>0);
+    if(!valid.length)return showToast("Add at least one material with quantity","error");
+    setSaving(true);
+    try{
+      await Promise.all(valid.map(async r=>{
+        const mat=materials.find(m=>m.id===r.materialId);
+        if(!mat)return;
+        const qty=parseFloat(r.qty);
+        const newStock=Math.max(0,(parseFloat(mat.currentStock)||0)-qty);
+        await C("rm_stock_materials").doc(r.materialId).update({currentStock:newStock,updatedAt:ts()});
+        await C("rm_stock_transactions").add({materialId:r.materialId,materialName:mat.name,unit:mat.unit,type:"consumption",qty,date:consumeDate,addedBy:user.email,notes:r.notes||"Daily consumption",stockAfter:newStock,_createdAt:ts()});
+      }));
+      showToast(`Consumption recorded for ${valid.length} material${valid.length!==1?"s":""} ✓`);
+      setConsumeRows([{materialId:"",qty:"",notes:""}]);setConsumeDate(today());
+    }catch(e){showToast("Error: "+e.message,"error");}
+    setSaving(false);
+  };
+
+  // Admin: add stock received
+  const saveStockAddition=async()=>{
+    const valid=addStockRows.filter(r=>r.materialId&&parseFloat(r.qty)>0);
+    if(!valid.length)return showToast("Add at least one material with quantity","error");
+    setSaving(true);
+    try{
+      await Promise.all(valid.map(async r=>{
+        const mat=materials.find(m=>m.id===r.materialId);
+        if(!mat)return;
+        const qty=parseFloat(r.qty);
+        const newStock=(parseFloat(mat.currentStock)||0)+qty;
+        await C("rm_stock_materials").doc(r.materialId).update({currentStock:newStock,updatedAt:ts()});
+        await C("rm_stock_transactions").add({materialId:r.materialId,materialName:mat.name,unit:mat.unit,type:"addition",qty,date:addStockDate,supplier:r.supplier||"",invoiceNo:r.invoiceNo||"",addedBy:user.email,notes:r.notes||"Stock received",stockAfter:newStock,_createdAt:ts()});
+      }));
+      showToast(`Stock added for ${valid.length} material${valid.length!==1?"s":""} ✓`);
+      setAddStockRows([{materialId:"",qty:"",supplier:"",invoiceNo:"",notes:""}]);setAddStockDate(today());
+    }catch(e){showToast("Error: "+e.message,"error");}
+    setSaving(false);
+  };
+
+  // Admin: physical stock correction
+  const saveAdjustment=async(matId,correctedQty,reason)=>{
+    const mat=materials.find(m=>m.id===matId);
+    if(!mat)return;
+    const qty=parseFloat(correctedQty);
+    if(isNaN(qty)||qty<0)return showToast("Enter valid quantity","error");
+    const diff=qty-(parseFloat(mat.currentStock)||0);
+    await C("rm_stock_materials").doc(matId).update({currentStock:qty,updatedAt:ts()});
+    await C("rm_stock_transactions").add({materialId:matId,materialName:mat.name,unit:mat.unit,type:"adjustment",qty:Math.abs(diff),adjustedTo:qty,date:today(),addedBy:user.email,notes:reason||"Physical stock correction",stockAfter:qty,_createdAt:ts()});
+    showToast("Stock corrected ✓");
+  };
+
+  const delMaterial=async(id)=>{if(!confirm("Delete this material and all its transactions?"))return;
+    const txn=transactions.filter(t=>t.materialId===id);
+    await Promise.all(txn.map(t=>C("rm_stock_transactions").doc(t.id).delete()));
+    await C("rm_stock_materials").doc(id).delete();showToast("Deleted","error");};
+
+  // Stock status
+  const stockStatus=(mat)=>{
+    const curr=parseFloat(mat.currentStock)||0;
+    const reorder=parseFloat(mat.reorderLevel)||0;
+    if(curr<=0)return{color:"#ef4444",label:"Out of Stock",bg:"#450a0a"};
+    if(reorder>0&&curr<=reorder)return{color:"#f59e0b",label:"Low Stock",bg:"#422006"};
+    if(reorder>0&&curr<=reorder*1.5)return{color:"#eab308",label:"Near Reorder",bg:"#422006"};
+    return{color:"#22c55e",label:"In Stock",bg:"#052e16"};
+  };
+
+  const fm=materials.filter(m=>{
+    const q=normalize(search);
+    const cs=filterCat==="All"||m.category===filterCat;
+    const ms=!q||normalize(m.name||"").includes(q)||normalize(m.supplier||"").includes(q);
+    return cs&&ms;
+  });
+
+  const lowCount=materials.filter(m=>{const s=stockStatus(m);return s.label==="Low Stock"||s.label==="Out of Stock";}).length;
+
+  const txnType={consumption:{color:"#ef4444",icon:"📉"},addition:{color:"#22c55e",icon:"📈"},adjustment:{color:"#f59e0b",icon:"⚖️"},opening:{color:"#3b82f6",icon:"🔓"}};
+
+  return <div>
+    <SectionHead title="🏪 Raw Material Stock"/>
+
+    {/* Summary bar */}
+    <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"10px",marginBottom:"14px"}}>
+      {[["📦 Total Materials",materials.length,"#3b82f6"],["⚠️ Low / Out",lowCount,"#ef4444"],["✅ In Stock",materials.length-lowCount,"#22c55e"]].map(([l,v,c])=>(
+        <div key={l} style={{background:"#0b1220",border:`1px solid ${c}30`,borderRadius:"10px",padding:"12px 16px",textAlign:"center"}}>
+          <div style={{fontSize:"22px",fontWeight:"700",color:c}}>{v}</div>
+          <div style={{fontSize:"11px",color:"#64748b",marginTop:"2px"}}>{l}</div>
+        </div>
+      ))}
+    </div>
+
+    {/* Sub-tabs */}
+    <div style={{display:"flex",gap:"4px",marginBottom:"14px",flexWrap:"wrap"}}>
+      {[["stock","📊 Stock Levels"],["consume","📉 Record Consumption"],[isAdmin?"addstock":"","📈 Add Received Stock"],[isAdmin?"addmat":"","➕ Add Material"],["history","🕐 History"]].filter(([k])=>k).map(([key,label])=>(
+        <button key={key} onClick={()=>setSubTab(key)} style={{background:subTab===key?"#1e293b":"transparent",border:`1px solid ${subTab===key?"#38bdf8":"#1e293b"}`,color:subTab===key?"#38bdf8":"#475569",borderRadius:"8px",padding:"6px 12px",cursor:"pointer",fontSize:"12.5px",fontWeight:"600"}}>{label}</button>
+      ))}
+    </div>
+
+    {/* ── STOCK LEVELS ── */}
+    {subTab==="stock"&&<>
+      <div style={{display:"flex",gap:"8px",flexWrap:"wrap",alignItems:"center",marginBottom:"12px"}}>
+        <input placeholder="Search material…" value={search} onChange={e=>setSearch(e.target.value)} style={{...inp,maxWidth:"200px",padding:"7px 10px",fontSize:"12.5px"}}/>
+        <select value={filterCat} onChange={e=>setFilterCat(e.target.value)} style={{...sl,width:"140px",padding:"7px 6px",fontSize:"12px"}}>
+          <option value="All">All Categories</option>
+          {CATS.map(c=><option key={c}>{c}</option>)}
+        </select>
+        <span style={{fontSize:"11px",color:"#334155"}}>{fm.length} material{fm.length!==1?"s":""}</span>
+        {isAdmin&&<div style={{marginLeft:"auto",display:"flex",gap:"6px"}}>
+          <Btn label="📉 Consume" onClick={()=>setSubTab("consume")} color="#ef4444" small/>
+          <Btn label="📈 Add Stock" onClick={()=>setSubTab("addstock")} color="#22c55e" small/>
+          <Btn label="➕ Material" onClick={()=>setSubTab("addmat")} color="#38bdf8" small/>
+        </div>}
+      </div>
+      {loading&&<div style={{textAlign:"center",padding:"40px",color:"#475569"}}>Loading…</div>}
+      {!loading&&fm.length===0&&<div style={{textAlign:"center",padding:"50px 0"}}><div style={{fontSize:"36px"}}>🏪</div><div style={{fontSize:"13px",color:"#475569",marginTop:"8px"}}>{isAdmin?"No materials yet. Click ➕ Add Material.":"No materials found."}</div></div>}
+      {fm.length>0&&<div style={{border:"1px solid #1e293b",borderRadius:"10px",overflow:"hidden"}}>
+        <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 100px 80px 80px",background:"#0b1220",padding:"8px 14px",gap:"8px"}}>
+          {["Material","Category","Supplier","Current Stock","Reorder Level","Status"].map(h=><div key={h} style={{fontSize:"10px",fontWeight:"700",color:"#334155",textTransform:"uppercase",letterSpacing:"0.07em"}}>{h}</div>)}
+        </div>
+        {fm.map((m,i)=>{
+          const st=stockStatus(m);
+          const [adjQty,setAdjQty]=useState("");const [adjReason,setAdjReason]=useState("");const [adjOpen,setAdjOpen]=useState(false);
+          return <div key={m.id}>
+            <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 100px 80px 80px",padding:"10px 14px",gap:"8px",borderTop:"1px solid #1e293b",background:i%2===0?"#080d18":"#0b1220",alignItems:"center"}}>
+              <div>
+                <div style={{fontSize:"13px",fontWeight:"600",color:"#e2e8f0"}}>{m.name}</div>
+                {m.notes&&<div style={{fontSize:"10.5px",color:"#334155",marginTop:"1px"}}>{m.notes}</div>}
+              </div>
+              <div style={{fontSize:"12px",color:"#64748b"}}>{m.category||"—"}</div>
+              <div style={{fontSize:"12px",color:"#64748b"}}>{m.supplier||"—"}</div>
+              <div>
+                <div style={{fontSize:"14px",fontWeight:"700",color:st.color}}>{parseFloat(m.currentStock||0).toFixed(2)} <span style={{fontSize:"11px",fontWeight:"400"}}>{m.unit}</span></div>
+                {isAdmin&&<button onClick={()=>setAdjOpen(o=>!o)} style={{fontSize:"10px",color:"#475569",background:"none",border:"1px solid #1e293b",borderRadius:"4px",padding:"1px 5px",cursor:"pointer",marginTop:"3px"}}>✏️ Adjust</button>}
+              </div>
+              <div style={{fontSize:"12px",color:"#64748b"}}>{m.reorderLevel?`${m.reorderLevel} ${m.unit}`:"—"}</div>
+              <div style={{background:st.bg,border:`1px solid ${st.color}30`,borderRadius:"6px",padding:"2px 7px",fontSize:"10px",fontWeight:"700",color:st.color,textAlign:"center"}}>{st.label}</div>
+            </div>
+            {adjOpen&&isAdmin&&<div style={{padding:"10px 14px 10px 200px",background:"#060b16",borderTop:"1px solid #1e3a5f",display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap"}}>
+              <span style={{fontSize:"12px",color:"#64748b"}}>Correct to:</span>
+              <input style={{...sml,width:"100px"}} type="number" value={adjQty} onChange={e=>setAdjQty(e.target.value)} placeholder={`Current: ${m.currentStock}`}/>
+              <span style={{fontSize:"12px",color:"#64748b"}}>{m.unit}</span>
+              <input style={{...sml,flex:1,minWidth:"120px"}} value={adjReason} onChange={e=>setAdjReason(e.target.value)} placeholder="Reason (e.g. physical count)"/>
+              <Btn label="Save Correction" onClick={async()=>{await saveAdjustment(m.id,adjQty,adjReason);setAdjOpen(false);setAdjQty("");setAdjReason("");}} color="#f59e0b" small/>
+              <Btn label="Cancel" onClick={()=>setAdjOpen(false)} outline color="#475569" small/>
+            </div>}
+          </div>;
+        })}
+      </div>}
+    </>}
+
+    {/* ── RECORD CONSUMPTION ── */}
+    {subTab==="consume"&&<div>
+      <InfoBox color="#ef4444">Enter materials consumed today. Stock will be deducted automatically.</InfoBox>
+      <Grid2 style={{marginBottom:"12px"}}>
+        <Field label="Date"><input type="date" style={inp} value={consumeDate} onChange={e=>setConsumeDate(e.target.value)}/></Field>
+        <Field label="Entered By"><div style={{...inp,color:"#64748b",cursor:"default"}}>{user?.email}</div></Field>
+      </Grid2>
+      <div style={{border:"1px solid #1e293b",borderRadius:"8px",overflow:"hidden",marginBottom:"8px"}}>
+        <div style={{display:"grid",gridTemplateColumns:"2fr 100px 2fr 28px",background:"#0b1220",padding:"7px 12px",gap:"8px"}}>
+          {["Material","Qty Used","Notes",""].map(h=><div key={h} style={{fontSize:"10px",fontWeight:"700",color:"#334155",textTransform:"uppercase",letterSpacing:"0.07em"}}>{h}</div>)}
+        </div>
+        {consumeRows.map((row,i)=>{
+          const mat=materials.find(m=>m.id===row.materialId);
+          return <div key={i} style={{display:"grid",gridTemplateColumns:"2fr 100px 2fr 28px",padding:"7px 12px",gap:"8px",borderTop:"1px solid #1e293b",alignItems:"center"}}>
+            <select style={sl} value={row.materialId} onChange={e=>setConsumeRows(consumeRows.map((r,idx)=>idx===i?{...r,materialId:e.target.value}:r))}>
+              <option value="">— Select Material —</option>
+              {materials.map(m=><option key={m.id} value={m.id}>{m.name} (Stock: {parseFloat(m.currentStock||0).toFixed(1)} {m.unit})</option>)}
+            </select>
+            <div style={{display:"flex",gap:"4px",alignItems:"center"}}>
+              <input style={{...sml,textAlign:"center"}} type="number" min="0" step="0.01" value={row.qty} onChange={e=>setConsumeRows(consumeRows.map((r,idx)=>idx===i?{...r,qty:e.target.value}:r))} placeholder="0"/>
+              {mat&&<span style={{fontSize:"10px",color:"#475569",whiteSpace:"nowrap"}}>{mat.unit}</span>}
+            </div>
+            <input style={sml} value={row.notes} onChange={e=>setConsumeRows(consumeRows.map((r,idx)=>idx===i?{...r,notes:e.target.value}:r))} placeholder="Batch used for, etc."/>
+            <button onClick={()=>setConsumeRows(consumeRows.filter((_,idx)=>idx!==i))} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"14px",padding:0}}>×</button>
+          </div>;
+        })}
+      </div>
+      <div style={{display:"flex",gap:"8px",justifyContent:"space-between",flexWrap:"wrap"}}>
+        <button onClick={()=>setConsumeRows([...consumeRows,{materialId:"",qty:"",notes:""}])} style={{background:"none",border:"1px dashed #1e293b",borderRadius:"6px",padding:"5px 12px",color:"#475569",cursor:"pointer",fontSize:"12px"}}>+ Add Row</button>
+        <Btn label={saving?"Saving…":"📉 Save Consumption"} onClick={saveConsumption} disabled={saving} color="#ef4444"/>
+      </div>
+    </div>}
+
+    {/* ── ADD RECEIVED STOCK ── */}
+    {subTab==="addstock"&&isAdmin&&<div>
+      <InfoBox color="#22c55e">Record stock received from supplier. Stock will be added to current balance.</InfoBox>
+      <Grid2 style={{marginBottom:"12px"}}>
+        <Field label="Date Received"><input type="date" style={inp} value={addStockDate} onChange={e=>setAddStockDate(e.target.value)}/></Field>
+      </Grid2>
+      <div style={{border:"1px solid #1e293b",borderRadius:"8px",overflow:"hidden",marginBottom:"8px"}}>
+        <div style={{display:"grid",gridTemplateColumns:"2fr 100px 1.5fr 1fr 1fr 28px",background:"#0b1220",padding:"7px 12px",gap:"8px"}}>
+          {["Material","Qty Received","Supplier","Invoice No","Notes",""].map(h=><div key={h} style={{fontSize:"10px",fontWeight:"700",color:"#334155",textTransform:"uppercase",letterSpacing:"0.07em"}}>{h}</div>)}
+        </div>
+        {addStockRows.map((row,i)=>{
+          const mat=materials.find(m=>m.id===row.materialId);
+          return <div key={i} style={{display:"grid",gridTemplateColumns:"2fr 100px 1.5fr 1fr 1fr 28px",padding:"7px 12px",gap:"8px",borderTop:"1px solid #1e293b",alignItems:"center"}}>
+            <select style={sl} value={row.materialId} onChange={e=>setAddStockRows(addStockRows.map((r,idx)=>idx===i?{...r,materialId:e.target.value}:r))}>
+              <option value="">— Select Material —</option>
+              {materials.map(m=><option key={m.id} value={m.id}>{m.name} ({m.unit})</option>)}
+            </select>
+            <div style={{display:"flex",gap:"4px",alignItems:"center"}}>
+              <input style={{...sml,textAlign:"center"}} type="number" min="0" step="0.01" value={row.qty} onChange={e=>setAddStockRows(addStockRows.map((r,idx)=>idx===i?{...r,qty:e.target.value}:r))} placeholder="0"/>
+              {mat&&<span style={{fontSize:"10px",color:"#475569"}}>{mat.unit}</span>}
+            </div>
+            <input style={sml} value={row.supplier} onChange={e=>setAddStockRows(addStockRows.map((r,idx)=>idx===i?{...r,supplier:e.target.value}:r))} placeholder="Supplier name"/>
+            <input style={sml} value={row.invoiceNo} onChange={e=>setAddStockRows(addStockRows.map((r,idx)=>idx===i?{...r,invoiceNo:e.target.value}:r))} placeholder="Invoice #"/>
+            <input style={sml} value={row.notes} onChange={e=>setAddStockRows(addStockRows.map((r,idx)=>idx===i?{...r,notes:e.target.value}:r))} placeholder="Notes"/>
+            <button onClick={()=>setAddStockRows(addStockRows.filter((_,idx)=>idx!==i))} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"14px",padding:0}}>×</button>
+          </div>;
+        })}
+      </div>
+      <div style={{display:"flex",gap:"8px",justifyContent:"space-between",flexWrap:"wrap"}}>
+        <button onClick={()=>setAddStockRows([...addStockRows,{materialId:"",qty:"",supplier:"",invoiceNo:"",notes:""}])} style={{background:"none",border:"1px dashed #1e293b",borderRadius:"6px",padding:"5px 12px",color:"#475569",cursor:"pointer",fontSize:"12px"}}>+ Add Row</button>
+        <Btn label={saving?"Saving…":"📈 Save Stock Addition"} onClick={saveStockAddition} disabled={saving} color="#22c55e"/>
+      </div>
+    </div>}
+
+    {/* ── ADD MATERIAL ── */}
+    {subTab==="addmat"&&isAdmin&&<div>
+      {!showAddMat&&!editMat&&<div style={{display:"flex",justifyContent:"flex-end",marginBottom:"10px"}}><Btn label="➕ Add New Material" onClick={()=>setShowAddMat(true)} color="#38bdf8"/></div>}
+      {(showAddMat||editMat)&&<div style={{background:"#080d18",border:"1px solid #38bdf830",borderRadius:"12px",padding:"18px",marginBottom:"16px"}}>
+        <div style={{fontSize:"13px",fontWeight:"700",color:"#38bdf8",marginBottom:"14px"}}>{editMat?"✏️ Edit Material":"➕ New Raw Material"}</div>
+        <Grid3>
+          <Field label="Material Name *"><input style={inp} value={matForm.name} onChange={e=>setMatForm({...matForm,name:e.target.value})} placeholder="e.g. TiO2 White"/></Field>
+          <Field label="Category">
+            <select style={sl} value={matForm.category} onChange={e=>setMatForm({...matForm,category:e.target.value})}>
+              {CATS.map(c=><option key={c}>{c}</option>)}
+            </select>
+          </Field>
+          <Field label="Unit">
+            <select style={sl} value={matForm.unit} onChange={e=>setMatForm({...matForm,unit:e.target.value})}>
+              {UNITS.map(u=><option key={u}>{u}</option>)}
+            </select>
+          </Field>
+        </Grid3>
+        <Grid3>
+          <Field label={editMat?"Current Stock (direct edit)":"Opening Stock"}><input style={inp} type="number" value={matForm.openingStock} onChange={e=>setMatForm({...matForm,openingStock:e.target.value})} placeholder="0"/></Field>
+          <Field label="Reorder Level (alert when below)"><input style={inp} type="number" value={matForm.reorderLevel} onChange={e=>setMatForm({...matForm,reorderLevel:e.target.value})} placeholder="e.g. 50"/></Field>
+          <Field label="Supplier Name"><input style={inp} value={matForm.supplier} onChange={e=>setMatForm({...matForm,supplier:e.target.value})} placeholder="Supplier company"/></Field>
+        </Grid3>
+        <Field label="Notes"><input style={inp} value={matForm.notes} onChange={e=>setMatForm({...matForm,notes:e.target.value})} placeholder="Any notes about this material"/></Field>
+        <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",marginTop:"8px"}}>
+          <Btn label="Cancel" onClick={()=>{setShowAddMat(false);setEditMat(null);setMatForm({...blankMat});}} outline color="#475569" small/>
+          <Btn label={saving?"Saving…":editMat?"💾 Update":"✓ Add Material"} onClick={()=>saveMaterial(!!editMat)} disabled={saving} color="#38bdf8" small/>
+        </div>
+      </div>}
+      <div style={{display:"flex",flexDirection:"column",gap:"6px"}}>
+        {materials.map(m=><div key={m.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:"#0f172a",border:"1px solid #1e293b",borderRadius:"8px",padding:"10px 14px"}}>
+          <div>
+            <span style={{fontSize:"13px",fontWeight:"600",color:"#e2e8f0"}}>{m.name}</span>
+            <span style={{fontSize:"11px",color:"#475569",marginLeft:"10px"}}>{m.category} · {m.unit}</span>
+            {m.supplier&&<span style={{fontSize:"11px",color:"#475569",marginLeft:"6px"}}>· {m.supplier}</span>}
+          </div>
+          <div style={{display:"flex",gap:"6px"}}>
+            <button onClick={()=>{setEditMat(m);setMatForm({name:m.name,category:m.category,unit:m.unit,openingStock:m.currentStock,reorderLevel:m.reorderLevel||"",supplier:m.supplier||"",notes:m.notes||""});setShowAddMat(false);}} style={{background:"none",border:"1px solid #1e293b",borderRadius:"5px",color:"#93c5fd",cursor:"pointer",fontSize:"12px",padding:"3px 8px"}}>✏️</button>
+            <button onClick={()=>delMaterial(m.id)} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"14px"}}>🗑</button>
+          </div>
+        </div>)}
+      </div>
+    </div>}
+
+    {/* ── HISTORY ── */}
+    {subTab==="history"&&<div>
+      <div style={{fontSize:"12px",color:"#475569",marginBottom:"12px"}}>Showing last {Math.min(transactions.length,100)} transactions</div>
+      {transactions.length===0&&<div style={{textAlign:"center",padding:"40px",color:"#475569"}}>No transactions yet.</div>}
+      <div style={{display:"flex",flexDirection:"column",gap:"4px"}}>
+        {transactions.slice(0,100).map(t=>{
+          const tt=txnType[t.type]||{color:"#94a3b8",icon:"📋"};
+          const sign=t.type==="consumption"?"−":t.type==="addition"||t.type==="opening"?"+":"⚖";
+          return <div key={t.id} style={{display:"flex",gap:"10px",alignItems:"center",background:"#0b1220",border:"1px solid #1e293b",borderRadius:"8px",padding:"8px 14px"}}>
+            <span style={{fontSize:"16px",flexShrink:0}}>{tt.icon}</span>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{display:"flex",gap:"8px",alignItems:"baseline",flexWrap:"wrap"}}>
+                <span style={{fontSize:"13px",fontWeight:"600",color:"#e2e8f0"}}>{t.materialName}</span>
+                <span style={{fontSize:"12px",fontWeight:"700",color:tt.color}}>{sign}{t.qty} {t.unit||""}</span>
+                {t.type==="adjustment"&&<span style={{fontSize:"11px",color:"#f59e0b"}}>→ {t.adjustedTo} {t.unit||""}</span>}
+                <span style={{fontSize:"11px",color:"#334155",marginLeft:"auto"}}>Stock after: {parseFloat(t.stockAfter||0).toFixed(2)} {t.unit||""}</span>
+              </div>
+              <div style={{fontSize:"11px",color:"#475569",marginTop:"2px"}}>
+                {t.date} · {t.addedBy} · {t.notes||""}
+                {t.supplier&&<span> · {t.supplier}</span>}
+                {t.invoiceNo&&<span> · #{t.invoiceNo}</span>}
+              </div>
+            </div>
+            <span style={{fontSize:"10px",fontWeight:"700",background:tt.color+"20",color:tt.color,padding:"2px 7px",borderRadius:"99px",flexShrink:0,textTransform:"capitalize"}}>{t.type}</span>
+          </div>;
+        })}
+      </div>
+    </div>}
+  </div>;
+}
+
 function MainApp({user,role}){
   const isAdmin=role==="admin";
   const canQC=role==="admin"||role==="qc";
@@ -3633,6 +3991,7 @@ function MainApp({user,role}){
     {key:"batches",label:"📦 Batches"},
     {key:"complaints",label:"⚠️ Complaints"},
     {key:"rd",label:"🧪 R&D & QC"},
+    {key:"stock",label:"🏪 RM Stock"},
     {key:"testimonials",label:"⭐ Testimonials"},
     {key:"users",label:"👥 Users"},
     {key:"settings",label:"⚙️ Settings"},
@@ -3768,6 +4127,7 @@ function MainApp({user,role}){
           onCreateProject={(prefill)=>{setProjForm({...EP,...prefill});setShowAddProject(true);setRdSubTab("projects");}}
         />}
       </>}
+      {tab==="stock"&&<RawMaterialStockTab role={role} user={user} showToast={showToast} sysUnits={sysUnits} sysRmCats={sysRmCats}/>}
       {tab==="testimonials"&&<TestimonialsTab role={role} user={user} showToast={showToast}/>}
       {tab==="users"&&<UsersTab currentUser={user}/>}
 
