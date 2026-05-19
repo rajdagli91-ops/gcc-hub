@@ -3396,6 +3396,81 @@ function QuickAdd({label,onAdd,color="#38bdf8"}){
   </span>;
 }
 
+// Extracted to avoid hooks-in-map violation
+// Compact row for category-grouped view (no category column)
+function StockRowCompact({m,i,isAdmin,saveAdjustment}){
+  const curr=parseFloat(m.currentStock||0);
+  const reorder=parseFloat(m.reorderLevel||0);
+  const color=curr<=0?"#ef4444":reorder>0&&curr<=reorder?"#f59e0b":reorder>0&&curr<=reorder*1.5?"#eab308":"#22c55e";
+  const label=curr<=0?"Out of Stock":reorder>0&&curr<=reorder?"Low Stock":reorder>0&&curr<=reorder*1.5?"Near Reorder":"In Stock";
+  const bg=curr<=0?"#450a0a":reorder>0&&curr<=reorder?"#422006":"#052e16";
+  const [adjQty,setAdjQty]=useState("");
+  const [adjReason,setAdjReason]=useState("");
+  const [adjOpen,setAdjOpen]=useState(false);
+  return <div>
+    <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 100px 80px 80px",padding:"9px 14px",gap:"8px",borderTop:"1px solid #1e293b",background:i%2===0?"#080d18":"#0b1220",alignItems:"center"}}>
+      <div>
+        <div style={{fontSize:"13px",fontWeight:"600",color:"#e2e8f0"}}>{m.name}</div>
+        {m.notes&&<div style={{fontSize:"10.5px",color:"#334155"}}>{m.notes}</div>}
+      </div>
+      <div style={{fontSize:"12px",color:"#64748b"}}>{m.supplier||"—"}</div>
+      <div>
+        <div style={{fontSize:"14px",fontWeight:"700",color}}>{curr.toFixed(2)} <span style={{fontSize:"11px",fontWeight:"400"}}>{m.unit}</span></div>
+        {isAdmin&&<button onClick={()=>setAdjOpen(o=>!o)} style={{fontSize:"10px",color:"#475569",background:"none",border:"1px solid #1e293b",borderRadius:"4px",padding:"1px 5px",cursor:"pointer",marginTop:"2px"}}>✏️ Adjust</button>}
+      </div>
+      <div style={{fontSize:"12px",color:"#64748b"}}>{m.reorderLevel?`${m.reorderLevel} ${m.unit}`:"—"}</div>
+      <div style={{background:bg,border:`1px solid ${color}30`,borderRadius:"6px",padding:"2px 7px",fontSize:"10px",fontWeight:"700",color,textAlign:"center"}}>{label}</div>
+    </div>
+    {adjOpen&&isAdmin&&<div style={{padding:"8px 14px 8px 160px",background:"#060b16",borderTop:"1px solid #1e3a5f",display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap"}}>
+      <span style={{fontSize:"12px",color:"#64748b"}}>Correct to:</span>
+      <input style={{...sml,width:"90px"}} type="number" value={adjQty} onChange={e=>setAdjQty(e.target.value)} placeholder={`${curr}`}/>
+      <span style={{fontSize:"11px",color:"#64748b"}}>{m.unit}</span>
+      <input style={{...sml,flex:1,minWidth:"120px"}} value={adjReason} onChange={e=>setAdjReason(e.target.value)} placeholder="Reason"/>
+      <Btn label="Save" onClick={async()=>{await saveAdjustment(m.id,adjQty,adjReason);setAdjOpen(false);setAdjQty("");setAdjReason("");}} color="#f59e0b" small/>
+      <Btn label="Cancel" onClick={()=>setAdjOpen(false)} outline color="#475569" small/>
+    </div>}
+  </div>;
+}
+
+function StockRow({m,i,isAdmin,saveAdjustment,delMaterial}){
+  const st_=({mat})=>{
+    const curr=parseFloat(mat.currentStock)||0;
+    const reorder=parseFloat(mat.reorderLevel)||0;
+    if(curr<=0)return{color:"#ef4444",label:"Out of Stock",bg:"#450a0a"};
+    if(reorder>0&&curr<=reorder)return{color:"#f59e0b",label:"Low Stock",bg:"#422006"};
+    if(reorder>0&&curr<=reorder*1.5)return{color:"#eab308",label:"Near Reorder",bg:"#422006"};
+    return{color:"#22c55e",label:"In Stock",bg:"#052e16"};
+  };
+  const st=st_({mat:m});
+  const [adjQty,setAdjQty]=useState("");
+  const [adjReason,setAdjReason]=useState("");
+  const [adjOpen,setAdjOpen]=useState(false);
+  return <div>
+    <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 100px 80px 80px",padding:"10px 14px",gap:"8px",borderTop:"1px solid #1e293b",background:i%2===0?"#080d18":"#0b1220",alignItems:"center"}}>
+      <div>
+        <div style={{fontSize:"13px",fontWeight:"600",color:"#e2e8f0"}}>{m.name}</div>
+        {m.notes&&<div style={{fontSize:"10.5px",color:"#334155",marginTop:"1px"}}>{m.notes}</div>}
+      </div>
+      <div style={{fontSize:"12px",color:"#64748b"}}>{m.category||"—"}</div>
+      <div style={{fontSize:"12px",color:"#64748b"}}>{m.supplier||"—"}</div>
+      <div>
+        <div style={{fontSize:"14px",fontWeight:"700",color:st.color}}>{parseFloat(m.currentStock||0).toFixed(2)} <span style={{fontSize:"11px",fontWeight:"400"}}>{m.unit}</span></div>
+        {isAdmin&&<button onClick={()=>setAdjOpen(o=>!o)} style={{fontSize:"10px",color:"#475569",background:"none",border:"1px solid #1e293b",borderRadius:"4px",padding:"1px 5px",cursor:"pointer",marginTop:"3px"}}>✏️ Adjust</button>}
+      </div>
+      <div style={{fontSize:"12px",color:"#64748b"}}>{m.reorderLevel?`${m.reorderLevel} ${m.unit}`:"—"}</div>
+      <div style={{background:st.bg,border:`1px solid ${st.color}30`,borderRadius:"6px",padding:"2px 7px",fontSize:"10px",fontWeight:"700",color:st.color,textAlign:"center"}}>{st.label}</div>
+    </div>
+    {adjOpen&&isAdmin&&<div style={{padding:"10px 14px 10px 200px",background:"#060b16",borderTop:"1px solid #1e3a5f",display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap"}}>
+      <span style={{fontSize:"12px",color:"#64748b"}}>Correct to:</span>
+      <input style={{...sml,width:"100px"}} type="number" value={adjQty} onChange={e=>setAdjQty(e.target.value)} placeholder={`Current: ${m.currentStock}`}/>
+      <span style={{fontSize:"12px",color:"#64748b"}}>{m.unit}</span>
+      <input style={{...sml,flex:1,minWidth:"120px"}} value={adjReason} onChange={e=>setAdjReason(e.target.value)} placeholder="Reason (e.g. physical count)"/>
+      <Btn label="Save Correction" onClick={async()=>{await saveAdjustment(m.id,adjQty,adjReason);setAdjOpen(false);setAdjQty("");setAdjReason("");}} color="#f59e0b" small/>
+      <Btn label="Cancel" onClick={()=>setAdjOpen(false)} outline color="#475569" small/>
+    </div>}
+  </div>;
+}
+
 function RawMaterialStockTab({role,user,showToast,sysUnits,sysRmCats,onAddRmCat,onAddUnit}){
   const isAdmin=role==="admin";
   const canStore=role==="admin"||role==="store";
@@ -3406,7 +3481,7 @@ function RawMaterialStockTab({role,user,showToast,sysUnits,sysRmCats,onAddRmCat,
   const [materials,setMaterials]=useState([]);
   const [transactions,setTransactions]=useState([]);
   const [loading,setLoading]=useState(true);
-  const [subTab,setSubTab]=useState("stock"); // stock | consume | history | add
+  const [groupByCat,setGroupByCat]=useState(false);
   const [search,setSearch]=useState("");
   const [filterCat,setFilterCat]=useState("All");
   const [saving,setSaving]=useState(false);
@@ -3560,10 +3635,15 @@ function RawMaterialStockTab({role,user,showToast,sysUnits,sysRmCats,onAddRmCat,
     {subTab==="stock"&&<>
       <div style={{display:"flex",gap:"8px",flexWrap:"wrap",alignItems:"center",marginBottom:"12px"}}>
         <input placeholder="Search material…" value={search} onChange={e=>setSearch(e.target.value)} style={{...inp,maxWidth:"200px",padding:"7px 10px",fontSize:"12.5px"}}/>
-        <select value={filterCat} onChange={e=>setFilterCat(e.target.value)} style={{...sl,width:"140px",padding:"7px 6px",fontSize:"12px"}}>
+        <select value={filterCat} onChange={e=>{setFilterCat(e.target.value);if(e.target.value!=="All")setGroupByCat(false);}} style={{...sl,width:"140px",padding:"7px 6px",fontSize:"12px"}}>
           <option value="All">All Categories</option>
           {CATS.map(c=><option key={c}>{c}</option>)}
         </select>
+        {/* Group by category toggle — only when showing All */}
+        {filterCat==="All"&&<button onClick={()=>setGroupByCat(g=>!g)}
+          style={{background:groupByCat?"#1e3a5f":"transparent",border:`1px solid ${groupByCat?"#38bdf8":"#1e293b"}`,color:groupByCat?"#38bdf8":"#475569",borderRadius:"8px",padding:"6px 12px",cursor:"pointer",fontSize:"12px",fontWeight:"600",whiteSpace:"nowrap"}}>
+          {groupByCat?"📂 Grouped by Category":"📋 Flat List"}
+        </button>}
         <span style={{fontSize:"11px",color:"#334155"}}>{fm.length} material{fm.length!==1?"s":""}</span>
         {isAdmin&&<div style={{marginLeft:"auto",display:"flex",gap:"6px"}}>
           <Btn label="📉 Consume" onClick={()=>setSubTab("consume")} color="#ef4444" small/>
@@ -3573,39 +3653,42 @@ function RawMaterialStockTab({role,user,showToast,sysUnits,sysRmCats,onAddRmCat,
       </div>
       {loading&&<div style={{textAlign:"center",padding:"40px",color:"#475569"}}>Loading…</div>}
       {!loading&&fm.length===0&&<div style={{textAlign:"center",padding:"50px 0"}}><div style={{fontSize:"36px"}}>🏪</div><div style={{fontSize:"13px",color:"#475569",marginTop:"8px"}}>{isAdmin?"No materials yet. Click ➕ Add Material.":"No materials found."}</div></div>}
-      {fm.length>0&&<div style={{border:"1px solid #1e293b",borderRadius:"10px",overflow:"hidden"}}>
+
+      {/* ── Flat list ── */}
+      {fm.length>0&&!groupByCat&&<div style={{border:"1px solid #1e293b",borderRadius:"10px",overflow:"hidden"}}>
         <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 100px 80px 80px",background:"#0b1220",padding:"8px 14px",gap:"8px"}}>
           {["Material","Category","Supplier","Current Stock","Reorder Level","Status"].map(h=><div key={h} style={{fontSize:"10px",fontWeight:"700",color:"#334155",textTransform:"uppercase",letterSpacing:"0.07em"}}>{h}</div>)}
         </div>
-        {fm.map((m,i)=>{
-          const st=stockStatus(m);
-          const [adjQty,setAdjQty]=useState("");const [adjReason,setAdjReason]=useState("");const [adjOpen,setAdjOpen]=useState(false);
-          return <div key={m.id}>
-            <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 100px 80px 80px",padding:"10px 14px",gap:"8px",borderTop:"1px solid #1e293b",background:i%2===0?"#080d18":"#0b1220",alignItems:"center"}}>
-              <div>
-                <div style={{fontSize:"13px",fontWeight:"600",color:"#e2e8f0"}}>{m.name}</div>
-                {m.notes&&<div style={{fontSize:"10.5px",color:"#334155",marginTop:"1px"}}>{m.notes}</div>}
-              </div>
-              <div style={{fontSize:"12px",color:"#64748b"}}>{m.category||"—"}</div>
-              <div style={{fontSize:"12px",color:"#64748b"}}>{m.supplier||"—"}</div>
-              <div>
-                <div style={{fontSize:"14px",fontWeight:"700",color:st.color}}>{parseFloat(m.currentStock||0).toFixed(2)} <span style={{fontSize:"11px",fontWeight:"400"}}>{m.unit}</span></div>
-                {isAdmin&&<button onClick={()=>setAdjOpen(o=>!o)} style={{fontSize:"10px",color:"#475569",background:"none",border:"1px solid #1e293b",borderRadius:"4px",padding:"1px 5px",cursor:"pointer",marginTop:"3px"}}>✏️ Adjust</button>}
-              </div>
-              <div style={{fontSize:"12px",color:"#64748b"}}>{m.reorderLevel?`${m.reorderLevel} ${m.unit}`:"—"}</div>
-              <div style={{background:st.bg,border:`1px solid ${st.color}30`,borderRadius:"6px",padding:"2px 7px",fontSize:"10px",fontWeight:"700",color:st.color,textAlign:"center"}}>{st.label}</div>
-            </div>
-            {adjOpen&&isAdmin&&<div style={{padding:"10px 14px 10px 200px",background:"#060b16",borderTop:"1px solid #1e3a5f",display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap"}}>
-              <span style={{fontSize:"12px",color:"#64748b"}}>Correct to:</span>
-              <input style={{...sml,width:"100px"}} type="number" value={adjQty} onChange={e=>setAdjQty(e.target.value)} placeholder={`Current: ${m.currentStock}`}/>
-              <span style={{fontSize:"12px",color:"#64748b"}}>{m.unit}</span>
-              <input style={{...sml,flex:1,minWidth:"120px"}} value={adjReason} onChange={e=>setAdjReason(e.target.value)} placeholder="Reason (e.g. physical count)"/>
-              <Btn label="Save Correction" onClick={async()=>{await saveAdjustment(m.id,adjQty,adjReason);setAdjOpen(false);setAdjQty("");setAdjReason("");}} color="#f59e0b" small/>
-              <Btn label="Cancel" onClick={()=>setAdjOpen(false)} outline color="#475569" small/>
-            </div>}
-          </div>;
-        })}
+        {fm.map((m,i)=><StockRow key={m.id} m={m} i={i} isAdmin={isAdmin} saveAdjustment={saveAdjustment} delMaterial={delMaterial}/>)}
       </div>}
+
+      {/* ── Grouped by category ── */}
+      {fm.length>0&&groupByCat&&(()=>{
+        const cats=[...new Set(fm.map(m=>m.category||"Uncategorised"))].sort();
+        return <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
+          {cats.map(cat=>{
+            const catMats=fm.filter(m=>(m.category||"Uncategorised")===cat);
+            const totalLow=catMats.filter(m=>{const c=parseFloat(m.currentStock||0);const r=parseFloat(m.reorderLevel||0);return c<=0||(r>0&&c<=r);}).length;
+            return <div key={cat} style={{border:"1px solid #1e293b",borderRadius:"10px",overflow:"hidden"}}>
+              {/* Category header */}
+              <div style={{background:"#0f1d35",padding:"10px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid #1e3a5f"}}>
+                <div style={{display:"flex",alignItems:"center",gap:"10px"}}>
+                  <span style={{fontSize:"13px",fontWeight:"700",color:"#93c5fd"}}>{cat}</span>
+                  <span style={{fontSize:"11px",color:"#475569"}}>{catMats.length} material{catMats.length!==1?"s":""}</span>
+                </div>
+                <div style={{display:"flex",gap:"8px",alignItems:"center"}}>
+                  {totalLow>0&&<span style={{fontSize:"11px",fontWeight:"700",color:"#f59e0b",background:"#422006",padding:"2px 8px",borderRadius:"99px",border:"1px solid #f59e0b30"}}>⚠️ {totalLow} low/out</span>}
+                </div>
+              </div>
+              {/* Column headers */}
+              <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 100px 80px 80px",background:"#0b1220",padding:"7px 14px",gap:"8px"}}>
+                {["Material","Supplier","Current Stock","Reorder Level","Status"].map(h=><div key={h} style={{fontSize:"10px",fontWeight:"700",color:"#334155",textTransform:"uppercase",letterSpacing:"0.07em"}}>{h}</div>)}
+              </div>
+              {catMats.map((m,i)=><StockRowCompact key={m.id} m={m} i={i} isAdmin={isAdmin} saveAdjustment={saveAdjustment}/>)}
+            </div>;
+          })}
+        </div>;
+      })()}
     </>}
 
     {/* ── RECORD CONSUMPTION ── */}
