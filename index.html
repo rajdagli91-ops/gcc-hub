@@ -89,7 +89,7 @@ window.onerror=function(msg,src,line,col,err){
 <script>
 // Print production sheet — extracted from Babel to avoid large template literal issues
 // Print production sheet — opens in new window, auto-prints
-function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, chargingDate, packSizes){
+function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, chargingDate, packSizes, issueDate, extraConfig){
   const bs=parseFloat(batchSize)||parseFloat(bom.baseBatchSize)||100;
   const base=parseFloat(bom.baseBatchSize)||100;
   const factor=bs/base;
@@ -164,6 +164,7 @@ function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, char
     <td style="width:30%;text-align:right;font-size:10px">
       <b>BATCH NO:</b> ${batchNo||"____________"}<br>
       <b>MILL NO:</b> ____________<br>
+      <b>ISSUE DATE:</b> ${issueDate||"____________"}<br>
       <b>FILLING DATE:</b> ____________<br>
       <b>CHARGING DATE:</b> ____________
     </td>
@@ -202,12 +203,19 @@ function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, char
           <tr><td style="border:1px solid #999;padding:10px 5px"></td><td style="border:1px solid #999;padding:10px 5px"></td><td style="border:1px solid #999;padding:10px 5px"></td><td style="border:1px solid #999;padding:10px 5px"></td><td style="border:1px solid #999;padding:10px 5px"></td><td style="border:1px solid #999;padding:10px 5px"></td></tr>
           <tr><td style="border:1px solid #999;padding:10px 5px"></td><td style="border:1px solid #999;padding:10px 5px"></td><td style="border:1px solid #999;padding:10px 5px"></td><td style="border:1px solid #999;padding:10px 5px"></td><td style="border:1px solid #999;padding:10px 5px"></td><td style="border:1px solid #999;padding:10px 5px"></td></tr>
           <tr><td colspan="6" style="border:1px solid #999;padding:3px 5px;font-size:10px;font-style:italic;font-weight:600;background:#f5f5f5">EXTRA ADDITIONS</td></tr>
-          <tr><td colspan="4" style="border:1px solid #999;padding:3px 5px;font-size:10px">Dhoyela</td><td style="border:1px solid #999;padding:3px 5px"></td><td style="border:1px solid #999;padding:3px 5px"></td></tr>
-          <tr><td colspan="4" style="border:1px solid #999;padding:18px 5px 3px;font-size:10px">Extra Output</td><td style="border:1px solid #999"></td><td style="border:1px solid #999"></td></tr>
-          <tr><td colspan="4" style="border:1px solid #999;padding:18px 5px 3px;font-size:10px">Dhoyela</td><td style="border:1px solid #999"></td><td style="border:1px solid #999"></td></tr>
-          <tr><td colspan="4" style="border:1px solid #999;padding:18px 5px 3px;font-size:10px">&nbsp;</td><td style="border:1px solid #999"></td><td style="border:1px solid #999"></td></tr>
-          <tr><td colspan="4" style="border:1px solid #999;padding:18px 5px 3px;font-size:10px">&nbsp;</td><td style="border:1px solid #999"></td><td style="border:1px solid #999"></td></tr>
-          <tr><td colspan="4" style="border:1px solid #999;padding:18px 5px 3px;font-size:10px">&nbsp;</td><td style="border:1px solid #999"></td><td style="border:1px solid #999"></td></tr>
+          ${(function(){
+            var cfg=extraConfig||{};
+            var rows='';
+            var rowStyle='border:1px solid #999;padding:12px 5px;font-size:11px';
+            var cells='<td style="'+rowStyle+'"></td><td style="'+rowStyle+'"></td>';
+            var items=cfg.items||['Dhoyela','Extra Output','Dhoyela'];
+            items.forEach(function(label){
+              rows+='<tr><td colspan="4" style="'+rowStyle+';font-style:italic">'+label+'</td>'+cells+'</tr>';
+            });
+            var blanks=cfg.blankRows!==undefined?cfg.blankRows:2;
+            for(var i=0;i<blanks;i++) rows+='<tr><td colspan="4" style="'+rowStyle+'">&nbsp;</td>'+cells+'</tr>';
+            return rows;
+          })()}
         </tbody>
       </table>
     </td>
@@ -4338,16 +4346,43 @@ function BOMForm({form,setForm,saving,isEdit,onCancel,onSave,sysProducts,sysQcPa
 function PrintDialog({bom,packSizes,onClose}){
   const [batchSize,setBatchSize]=useState(bom.baseBatchSize||"100");
   const [batchNo,setBatchNo]=useState("");
+  // Extra additions config — default: Dhoyela, Extra Output, Dhoyela
+  const [extraItems,setExtraItems]=useState(["Dhoyela","Extra Output","Dhoyela"]);
+  const [blankRows,setBlankRows]=useState(2);
+  const addItem=(label)=>setExtraItems(v=>[...v,label]);
+  const removeItem=(i)=>setExtraItems(v=>v.filter((_,idx)=>idx!==i));
+
   return <div style={{background:"#0b1220",border:"1px solid #3b82f6",borderRadius:"10px",padding:"16px",marginBottom:"14px"}}>
     <div style={{fontSize:"13px",fontWeight:"700",color:"#93c5fd",marginBottom:"12px"}}>🖨 Print Production Sheet — {bom.productName}</div>
     <Grid2>
       <Field label={"Batch Size ("+bom.baseUnit+") *"}><input style={inp} type="number" value={batchSize} onChange={e=>setBatchSize(e.target.value)} placeholder={bom.baseBatchSize}/></Field>
       <Field label="Batch No"><input style={inp} value={batchNo} onChange={e=>setBatchNo(e.target.value)} placeholder="e.g. 0042"/></Field>
     </Grid2>
-    <div style={{fontSize:"11px",color:"#475569",marginBottom:"10px"}}>Filling Date and Charging Date will be filled manually on the printed sheet.</div>
+    <div style={{fontSize:"11px",color:"#475569",marginBottom:"12px"}}>Filling Date and Charging Date will be filled manually on the printed sheet.</div>
+
+    {/* Extra Additions config */}
+    <div style={{background:"#080d18",border:"1px solid #1e293b",borderRadius:"8px",padding:"12px",marginBottom:"12px"}}>
+      <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"8px"}}>Extra Additions Rows</div>
+      <div style={{display:"flex",flexDirection:"column",gap:"4px",marginBottom:"8px"}}>
+        {extraItems.map((item,i)=><div key={i} style={{display:"flex",gap:"6px",alignItems:"center"}}>
+          <input style={{...sml,flex:1}} value={item} onChange={e=>setExtraItems(v=>v.map((x,idx)=>idx===i?e.target.value:x))} placeholder="Row label"/>
+          <button onClick={()=>removeItem(i)} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"14px",padding:"0 2px"}}>×</button>
+        </div>)}
+      </div>
+      <div style={{display:"flex",gap:"8px",flexWrap:"wrap",alignItems:"center"}}>
+        <button onClick={()=>addItem("Dhoyela")} style={{background:"#052e16",border:"1px solid #166534",borderRadius:"6px",padding:"4px 10px",color:"#22c55e",cursor:"pointer",fontSize:"11px"}}>+ Dhoyela</button>
+        <button onClick={()=>addItem("Extra Output")} style={{background:"#0f1d35",border:"1px solid #2563eb40",borderRadius:"6px",padding:"4px 10px",color:"#93c5fd",cursor:"pointer",fontSize:"11px"}}>+ Extra Output</button>
+        <button onClick={()=>addItem("")} style={{background:"none",border:"1px dashed #334155",borderRadius:"6px",padding:"4px 10px",color:"#475569",cursor:"pointer",fontSize:"11px"}}>+ Custom Row</button>
+        <div style={{display:"flex",alignItems:"center",gap:"6px",marginLeft:"auto"}}>
+          <span style={{fontSize:"11px",color:"#475569"}}>Extra blank rows:</span>
+          <input type="number" min="0" max="8" value={blankRows} onChange={e=>setBlankRows(parseInt(e.target.value)||0)} style={{...sml,width:"48px",textAlign:"center"}}/>
+        </div>
+      </div>
+    </div>
+
     <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
       <Btn label="Cancel" onClick={onClose} outline color="#475569" small/>
-      <Btn label="🖨 Open Print Preview" onClick={()=>{printProductionSheet(bom,batchSize,batchNo,"","","",packSizes);onClose();}} color="#22c55e" small/>
+      <Btn label="🖨 Open Print Preview" onClick={()=>{printProductionSheet(bom,batchSize,batchNo,"","","",packSizes,"",{items:extraItems,blankRows});onClose();}} color="#22c55e" small/>
     </div>
   </div>;
 }
@@ -4521,7 +4556,7 @@ function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes,sysQcParams}
                 <span style={{fontSize:"10px",color:"#334155",marginLeft:"8px"}}>{v.archivedAt?.toDate?.()?.toLocaleDateString("en-IN")||""}</span>
               </div>
               <div style={{display:"flex",gap:"6px"}}>
-                <Btn label="🖨 Print this version" onClick={()=>printProductionSheet(v,v.baseBatchSize,"","","","",sysPackSizes)} color="#64748b" small outline/>
+                <Btn label="🖨 Print this version" onClick={()=>printProductionSheet(v,v.baseBatchSize,"","","","",sysPackSizes,"")} color="#64748b" small outline/>
                 {canEdit&&<Btn label="⬆ Restore as Current" onClick={async()=>{if(!confirm("Restore v"+v.currentVersion+" as current BOM? Current will be archived."))return;const curr=boms.find(x=>x.id===b.id);if(curr)await C("bom_versions").add({...curr,productId:b.id,archivedAt:ts(),archivedBy:user.email});await C("bom_products").doc(b.id).update({...v,currentVersion:(curr?.currentVersion||1)+1,updatedBy:user.email,updatedAt:ts()});await C("bom_versions").doc(v.id).delete();showToast("Version restored ✓");}} color="#f59e0b" small/>}
               </div>
             </div>)}
@@ -4743,7 +4778,7 @@ function MainApp({user,role,roles=[]}){
         if(!bomSnap.empty){
           const bom=bomSnap.docs[0].data();
           if(window.confirm(`Batch ${bNo} issued ✓\n\nPrint production sheet for ${batchForm.productName} (${batchForm.batchSize} ${batchForm.unit})?`)){
-            printProductionSheet(bom,batchForm.batchSize,bNo,"","","",sysPackSizes);
+            printProductionSheet(bom,batchForm.batchSize,bNo,"","","",sysPackSizes,batchForm.dateIssued);
           }
         }else{
           showToast(`Batch ${bNo} issued ✓ (No BOM found for this product)`);
@@ -4950,7 +4985,7 @@ function MainApp({user,role,roles=[]}){
                 try{
                   const bomSnap=await C("bom_products").where("productName","==",batch.productName).limit(1).get();
                   if(!bomSnap.empty){
-                    printProductionSheet(bomSnap.docs[0].data(),batch.batchSize,batch.batchNo,"","","",sysPackSizes);
+                    printProductionSheet(bomSnap.docs[0].data(),batch.batchSize,batch.batchNo,"","","",sysPackSizes,batch.dateIssued);
                   }else{
                     showToast("No BOM found for "+batch.productName+". Create a BOM in the 📋 BOM tab first.","error");
                   }
@@ -5092,7 +5127,10 @@ function MainApp({user,role,roles=[]}){
           </div>}
           <Grid2>
             <Field label="Shade / Colour"><input style={inp} value={batchForm.shade} onChange={e=>setBatchForm({...batchForm,shade:e.target.value})} placeholder="e.g. Off White, Base"/></Field>
-            <Field label="Date Issued"><input type="date" style={inp} value={batchForm.dateIssued} onChange={e=>setBatchForm({...batchForm,dateIssued:e.target.value})}/></Field>
+            <Field label={isAdmin?"Date Issued (Admin — editable)":"🔒 Date Issued (auto-set, admin only)"}>{isAdmin
+              ?<input type="date" style={inp} value={batchForm.dateIssued} onChange={e=>setBatchForm({...batchForm,dateIssued:e.target.value})}/>
+              :<div style={{...inp,color:"#22c55e",fontWeight:"600",cursor:"default",display:"flex",alignItems:"center",gap:"6px"}}><span>📅</span>{batchForm.dateIssued}<span style={{fontSize:"10px",color:"#334155",marginLeft:"auto"}}>🔒 locked</span></div>
+            }</Field>
           </Grid2>
           <Grid2>
             <Field label="Batch Size *"><input style={inp} value={batchForm.batchSize} onChange={e=>setBatchForm({...batchForm,batchSize:e.target.value})} placeholder="1000"/></Field>
