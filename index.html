@@ -447,10 +447,10 @@ function StageBox({icon,title,done,active,children,editForm,editLabel,onEdit,onS
 const getFY=()=>{const d=new Date();const y=d.getFullYear()%100;return d.getMonth()>=3?y+1:y;};
 const getFYLabel=(fy)=>`${String(fy-1).padStart(2,"0")}-${String(fy).padStart(2,"0")}`;
 
-function BatchCard({b,onClick,onDelete,role}){
+function BatchCard({b,onClick,onDelete,onReprint,role}){
   const sc=BS_COL[b.status]||"#94a3b8";
   return <div onClick={onClick} onMouseEnter={e=>e.currentTarget.style.background="#0f1f35"} onMouseLeave={e=>e.currentTarget.style.background="#080e1a"}
-    style={{background:"#080e1a",border:"1px solid #1e293b",borderLeft:`3px solid ${sc}`,borderRadius:"8px",padding:"8px 14px",cursor:"pointer",transition:"background 0.1s",display:"grid",gridTemplateColumns:"100px 1fr 1fr auto auto",gap:"8px",alignItems:"center",marginBottom:"4px"}}>
+    style={{background:"#080e1a",border:"1px solid #1e293b",borderLeft:`3px solid ${sc}`,borderRadius:"8px",padding:"8px 14px",cursor:"pointer",transition:"background 0.1s",display:"grid",gridTemplateColumns:"100px 1fr 1fr auto auto auto",gap:"8px",alignItems:"center",marginBottom:"4px"}}>
     <div style={{fontSize:"13px",fontWeight:"700",color:"#f1f5f9",fontFamily:"monospace"}}>{b.batchNo}</div>
     <div style={{minWidth:0}}>
       <div style={{fontSize:"12.5px",fontWeight:"600",color:"#e2e8f0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{b.productName}{b.shade?` · ${b.shade}`:""}</div>
@@ -458,6 +458,7 @@ function BatchCard({b,onClick,onDelete,role}){
     </div>
     <div style={{fontSize:"11px",color:"#64748b"}}>{b.batchSize} {b.unit} · {b.dateIssued}</div>
     <Bdg label={b.status} color={sc}/>
+    {onReprint&&<button onClick={e=>{e.stopPropagation();onReprint(b);}} title="Reprint production sheet" style={{background:"none",border:"1px solid #334155",borderRadius:"5px",color:"#64748b",fontSize:"12px",padding:"2px 6px",cursor:"pointer"}}>🖨</button>}
     {(role==="admin")&&<button onClick={e=>{e.stopPropagation();onDelete(b.id)}} style={{background:"none",border:"none",color:"#334155",fontSize:"14px",padding:"2px 4px"}}>🗑</button>}
   </div>;
 }
@@ -4892,7 +4893,18 @@ function MainApp({user,role,roles=[]}){
             {["Batch #","Product","Size · Date","Status",""].map(h=><div key={h} style={{fontSize:"9px",fontWeight:"700",color:"#334155",textTransform:"uppercase",letterSpacing:"0.07em"}}>{h}</div>)}
           </div>}
           {fb.length===0?<div style={{textAlign:"center",padding:"40px 0"}}><div style={{fontSize:"30px",marginBottom:"8px"}}>📦</div><div style={{fontSize:"13px",color:"#475569"}}>No batches match filters.{canIssuer?" Click + Issue New Batch.":""}</div></div>
-            :fb.map(b=><BatchCard key={b.id} b={b} onClick={()=>setActiveBatch(b)} onDelete={async(id)=>{if(!confirm("Delete batch?"))return;await C("batches").doc(id).delete();showToast("Deleted","error");}} role={role}/>)}
+            :fb.map(b=><BatchCard key={b.id} b={b} onClick={()=>setActiveBatch(b)}
+              onReprint={async(batch)=>{
+                try{
+                  const bomSnap=await C("bom_products").where("productName","==",batch.productName).limit(1).get();
+                  if(!bomSnap.empty){
+                    printProductionSheet(bomSnap.docs[0].data(),batch.batchSize,batch.batchNo,"",batch.dateIssued,batch.dateIssued,sysPackSizes);
+                  }else{
+                    showToast("No BOM found for "+batch.productName+". Create a BOM in the 📋 BOM tab first.","error");
+                  }
+                }catch(e){showToast("Error: "+e.message,"error");}
+              }}
+              onDelete={async(id)=>{if(!confirm("Delete batch?"))return;await C("batches").doc(id).delete();showToast("Deleted","error");}} role={role}/>)}
         </>}
 
         {batchSubTab==="oldstock"&&<OldStockSection role={role} user={user} showToast={showToast} products={sysProducts} catUnits={sysCatUnits}/>}
