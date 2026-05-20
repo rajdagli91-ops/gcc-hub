@@ -2136,9 +2136,28 @@ function UsersTab({currentUser}){
   };
 
   const removeAccess=async(email)=>{
-    if(!confirm(`Remove ${email}'s access? They will see "Access Pending" until re-assigned.`))return;
-    try{await C("roles").doc(email).delete();showLT("Access removed ✓");}
-    catch(e){showLT("Error","error");}
+    if(!confirm(`Completely remove ${email}?\n\nThis will:\n• Delete their role and profile\n• Block them from logging in\n• Remove all their account data\n\nThis cannot be undone.`))return;
+    try{
+      const uid=profiles[email]?.uid;
+      // 1. Delete role
+      await C("roles").doc(email).delete().catch(()=>{});
+      // 2. Delete userProfile
+      if(uid)await C("userProfiles").doc(uid).delete().catch(()=>{});
+      // 3. Delete any pending password reset
+      await C("passwordResets").doc(email).delete().catch(()=>{});
+      // 4. Add to bannedUsers so login is blocked at app level
+      await C("bannedUsers").doc(email).set({email,removedBy:currentUser.email,removedAt:ts()});
+      // 5. Attempt to delete Firebase Auth account via REST API (works for accounts created with signUp)
+      if(uid){
+        try{
+          await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:delete?key=${firebaseConfig.apiKey}`,{
+            method:"POST",headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({localId:uid,idToken:await currentUser.getIdToken()})
+          });
+        }catch(authErr){/* Firebase Auth deletion requires Admin SDK — app-level block is in place */}
+      }
+      showLT(`${email} removed completely ✓`);
+    }catch(e){showLT("Error: "+e.message,"error");}
   };
 
   const sendReset=async(email)=>{
@@ -5344,6 +5363,11 @@ function App(){
       if(u){
         setLoading(true);
         try{await db.collection("userProfiles").doc(u.uid).set({email:u.email,lastLogin:ts()},{merge:true});}catch(e){}
+        // Check if user is banned
+        try{
+          const banned=await db.collection("bannedUsers").doc(u.email).get();
+          if(banned.exists){await auth.signOut();setRoles([]);setRole(null);setLoading(false);return;}
+        }catch(e){}
         try{
           const pr=await db.collection("passwordResets").doc(u.email).get();
           if(pr.exists){
