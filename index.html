@@ -138,8 +138,8 @@ function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, char
     }).filter(Boolean);
   }
   var packRows=catPackSizes.length
-    ?catPackSizes.map(function(s){return '<tr><td style="border:1px solid #999;padding:4px 6px;font-size:11px">'+s+'</td><td style="border:1px solid #999;padding:4px 6px;min-width:80px">&nbsp;</td></tr>';}).join("")
-    :'<tr><td style="border:1px solid #999;padding:4px 6px">&nbsp;</td><td style="border:1px solid #999;padding:4px 6px">&nbsp;</td></tr><tr><td style="border:1px solid #999;padding:4px 6px">&nbsp;</td><td style="border:1px solid #999;padding:4px 6px">&nbsp;</td></tr><tr><td style="border:1px solid #999;padding:4px 6px">&nbsp;</td><td style="border:1px solid #999;padding:4px 6px">&nbsp;</td></tr>';
+    ?catPackSizes.map(function(s){return '<tr><td style="border:1px solid #999;padding:10px 6px;font-size:11px">'+s+'</td><td style="border:1px solid #999;padding:10px 6px;min-width:80px">&nbsp;</td></tr>';}).join("")
+    :'<tr><td style="border:1px solid #999;padding:10px 6px">&nbsp;</td><td style="border:1px solid #999;padding:10px 6px">&nbsp;</td></tr><tr><td style="border:1px solid #999;padding:10px 6px">&nbsp;</td><td style="border:1px solid #999;padding:10px 6px">&nbsp;</td></tr><tr><td style="border:1px solid #999;padding:10px 6px">&nbsp;</td><td style="border:1px solid #999;padding:10px 6px">&nbsp;</td></tr>';
   const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Production Sheet — ${bom.productName}</title>
 <style>
   body{font-family:Arial,sans-serif;margin:0;padding:12px;font-size:12px;}
@@ -231,20 +231,20 @@ function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, char
         <tr><td>Date</td><td></td></tr>
         <tr><td colspan="2" class="section-head" style="margin-top:4px">Test Parameters</td></tr>
         <tr>
-          <th style="border:1px solid #999;padding:3px 5px;background:#d0d0d0;font-size:10px">Parameter</th>
-          <th style="border:1px solid #999;padding:3px 5px;background:#d0d0d0;font-size:10px">Standard</th>
-          <th style="border:1px solid #999;padding:3px 5px;background:#d0d0d0;font-size:10px">Actual Value</th>
+          <th style="border:1px solid #999;padding:5px 5px;background:#d0d0d0;font-size:10px">Parameter</th>
+          <th style="border:1px solid #999;padding:5px 5px;background:#d0d0d0;font-size:10px">Standard</th>
+          <th style="border:1px solid #999;padding:5px 5px;background:#d0d0d0;font-size:10px">Actual Value</th>
         </tr>
         ${qcParams.length
           ?qcParams.map(p=>`<tr>
-            <td style="border:1px solid #999;padding:4px 5px;font-size:11px">${p.name||""}</td>
-            <td style="border:1px solid #999;padding:4px 5px;font-size:11px;text-align:center">${p.standard||""}</td>
-            <td style="border:1px solid #999;padding:4px 5px;min-width:70px">&nbsp;</td>
+            <td style="border:1px solid #999;padding:10px 5px;font-size:11px">${p.name||""}</td>
+            <td style="border:1px solid #999;padding:10px 5px;font-size:11px;text-align:center">${p.standard||""}</td>
+            <td style="border:1px solid #999;padding:10px 5px;min-width:70px">&nbsp;</td>
           </tr>`).join("")
-          :"<tr><td colspan='3' style='color:#999;font-style:italic;border:1px solid #999;padding:4px'>No QC parameters defined</td></tr>"
+          :"<tr><td colspan='3' style='color:#999;font-style:italic;border:1px solid #999;padding:10px 5px'>No QC parameters defined</td></tr>"
         }
         <tr><td colspan="2" class="section-head" style="padding-top:6px">Packing</td></tr>
-        <tr><th style="border:1px solid #999;padding:3px 5px;background:#d0d0d0;font-size:10px">Size</th><th style="border:1px solid #999;padding:3px 5px;background:#d0d0d0;font-size:10px">No. of Packs</th></tr>
+        <tr><th style="border:1px solid #999;padding:5px 5px;background:#d0d0d0;font-size:10px">Size</th><th style="border:1px solid #999;padding:5px 5px;background:#d0d0d0;font-size:10px">No. of Packs</th></tr>
         ${packRows}
       </table>
       <div style="margin-top:8px;font-size:10px;color:#555">BOM v${bom.currentVersion||1} · Printed: ${today()}</div>
