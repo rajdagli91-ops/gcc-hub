@@ -102,9 +102,10 @@ function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, char
       rowNo++;
       const stdQty=parseFloat(ing.standardQty)||0;
       const currQty=(stdQty*factor).toFixed(3).replace(/\.?0+$/,"");
+      const nameDisplay=ing.name+(ing.desc?` (${ing.desc})`:"");
       ingRows+=`<tr>
         <td style="border:1px solid #999;padding:7px 5px;text-align:center;font-size:11px">${rowNo}</td>
-        <td style="border:1px solid #999;padding:7px 5px;font-size:11px">${ing.name||""}</td>
+        <td style="border:1px solid #999;padding:7px 5px;font-size:11px">${nameDisplay}</td>
         <td style="border:1px solid #999;padding:7px 5px;text-align:center;font-size:11px">${stdQty||""}</td>
         <td style="border:1px solid #999;padding:7px 5px;text-align:center;font-size:11px">${currQty||""}</td>
         <td style="border:1px solid #999;padding:7px 5px;text-align:center;font-size:11px"></td>
@@ -163,8 +164,8 @@ function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, char
     <td style="width:30%;text-align:right;font-size:10px">
       <b>BATCH NO:</b> ${batchNo||"____________"}<br>
       <b>MILL NO:</b> ____________<br>
-      <b>FILLING DATE:</b> ${fillingDate||"____________"}<br>
-      <b>CHARGING DATE:</b> ${chargingDate||today()}
+      <b>FILLING DATE:</b> ____________<br>
+      <b>CHARGING DATE:</b> ____________
     </td>
   </tr>
 </table>
@@ -421,22 +422,26 @@ function InfoBox({children,color="#3b82f6"}){
 // BATCH MODULE
 // ══════════════════════════════════════════════════════════
 // StageBox must be defined at top level (not inside BatchWorkspace) to avoid React hook errors
-function StageBox({icon,title,done,active,children,editForm,editLabel,onEdit,onSave,saveLabel,editStage,setEditStage,saving}){
+function StageBox({icon,title,done,active,children,editForm,editLabel,onEdit,onEditDone,onSave,saveLabel,editStage,setEditStage,saving}){
   const [open,setOpen]=useState(!!active||!!done);
   return <div style={{border:`1px solid ${active?"#2563eb":done?"#166534":"#1e293b"}`,borderRadius:"10px",marginBottom:"10px",overflow:"hidden"}}>
     <div onClick={()=>setOpen(o=>!o)} style={{display:"flex",alignItems:"center",gap:"10px",padding:"12px 16px",cursor:"pointer",background:done?"#052e16":active?"#0a1626":"#0b1220"}}>
       <span style={{fontSize:"16px"}}>{done?"✅":active?"🔄":"⏸"}</span>
       <span style={{flex:1,fontSize:"13px",fontWeight:"700",color:done?"#22c55e":active?"#93c5fd":"#475569"}}>{icon} {title}</span>
-      <span style={{color:"#334155",fontSize:"12px"}}>{open?"▲":"▼"}</span>
+      <div style={{display:"flex",gap:"6px",alignItems:"center"}} onClick={e=>e.stopPropagation()}>
+        {done&&onEditDone&&editStage!==title&&<Btn label="✏️ Edit" onClick={onEditDone} color="#f59e0b" small outline/>}
+        <span style={{color:"#334155",fontSize:"12px"}}>{open?"▲":"▼"}</span>
+      </div>
     </div>
     {open&&<div style={{padding:"14px 16px",borderTop:`1px solid ${active?"#1e3a5f":"#1e293b"}`,background:"#080d18"}}>
       {children}
       {active&&editForm&&editStage!==title&&onEdit&&<div style={{marginTop:"10px"}}><Btn label={editLabel||"Fill Details"} onClick={onEdit} color="#2563eb" small/></div>}
-      {editStage===title&&editForm&&<div style={{marginTop:"12px",padding:"14px",background:"#060d1a",border:"1px solid #2563eb30",borderRadius:"8px"}}>
+      {editStage===title&&editForm&&<div style={{marginTop:"12px",padding:"14px",background:"#060d1a",border:"1px solid #f59e0b30",borderRadius:"8px"}}>
+        <div style={{fontSize:"11px",fontWeight:"700",color:"#f59e0b",marginBottom:"10px"}}>✏️ Editing {title} — changes save without affecting batch status</div>
         {editForm}
         <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",marginTop:"12px"}}>
           <Btn label="Cancel" onClick={()=>setEditStage(null)} outline color="#475569" small/>
-          <Btn label={saving?"Saving…":saveLabel||"Save"} onClick={onSave} disabled={saving} color="#2563eb" small/>
+          <Btn label={saving?"Saving…":saveLabel||"Save Changes"} onClick={onSave} disabled={saving} color="#f59e0b" small/>
         </div>
       </div>}
     </div>}
@@ -651,6 +656,17 @@ function BatchWorkspace({batch,role,onClose,showToast,qcParams,packSizes}){
 
     <StageBox {...sb} icon="🏭" title="Production Details" done={stageIndex>=1&&!!live.production?.completionDate} active={live.status==="Issued"||live.status==="In Production"}
       editLabel="Enter Production Details" onEdit={canQC?()=>setEditStage("Production Details"):null}
+      onEditDone={canQC?()=>{
+        // Pre-fill form with existing data for correction
+        if(live.production)setProdForm({
+          startDate:live.production.startDate||today(),
+          completionDate:live.production.completionDate||today(),
+          actualQty:live.production.actualQty||"",
+          producedBy:live.production.producedBy||"",
+          notes:live.production.notes||""
+        });
+        setEditStage("Production Details");
+      }:null}
       editForm={<div>
         <Grid2>
           <Field label="Start Date"><input type="date" style={inp} value={prodForm.startDate} onChange={e=>setProdForm({...prodForm,startDate:e.target.value})}/></Field>
@@ -738,10 +754,10 @@ function BatchWorkspace({batch,role,onClose,showToast,qcParams,packSizes}){
 
         <Field label="Production Notes"><textarea style={{...ta,minHeight:"56px"}} value={prodForm.notes} onChange={e=>setProdForm({...prodForm,notes:e.target.value})} placeholder="Any production notes..."/></Field>
       </div>}
-      saveLabel="Save & Mark QC Pending"
+      saveLabel={live.status==="QC Pending"||live.status==="QC Pass"||live.status==="QC Fail"||live.status==="Packed"||live.status==="Dispatched"?"💾 Save Correction":"Save & Mark QC Pending"}
       onSave={()=>{
+        const isCorrection=live.status!=="Issued"&&live.status!=="In Production";
         const desc=selectedOldStock.length>0?selectedOldStock.map(s=>`${s.usedQty||s.qty} ${s.unit} ${s.productName}`).join(", "):prodForm.notes;
-        // For partial use: update qty remaining or mark as Used
         const markUsed=selectedOldStock.map(s=>{
           const used=parseFloat(s.usedQty)||parseFloat(s.qty);
           const avail=parseFloat(s.qty)||0;
@@ -752,7 +768,7 @@ function BatchWorkspace({batch,role,onClose,showToast,qcParams,packSizes}){
             return C("old_stock").doc(s.id).update({qty:remaining.toFixed(2),usedInBatch:live.batchNo,lastUsedDate:today(),notes:`${s.notes||""} | Partial: ${used} used in ${live.batchNo}`.trim()});
           }
         });
-        save({production:{...prodForm,oldStockUsed:desc,selectedOldStockIds:selectedOldStock.map(s=>s.id)}},"QC Pending",markUsed);
+        save({production:{...prodForm,oldStockUsed:desc,selectedOldStockIds:selectedOldStock.map(s=>s.id)}},isCorrection?live.status:"QC Pending",markUsed);
       }}>
       {live.production?<div style={{fontSize:"13px",color:"#94a3b8"}}>
         Produced: <strong style={{color:"#e2e8f0"}}>{live.production.actualQty} {live.unit}</strong> · Completed: {live.production.completionDate} · By: {live.production.producedBy}
@@ -763,6 +779,18 @@ function BatchWorkspace({batch,role,onClose,showToast,qcParams,packSizes}){
 
     <StageBox {...sb} icon="🔬" title="QC Testing" done={live.status==="QC Pass"||live.status==="QC Fail"||live.status==="Packed"} active={live.status==="QC Pending"}
       editLabel="Enter QC Results" onEdit={canQC&&live.status==="QC Pending"?()=>setEditStage("QC Testing"):null}
+      onEditDone={canQC?()=>{
+        // Pre-fill QC form with existing data for correction
+        if(live.qc)setQcForm({...live.qc});
+        setEditStage("QC Testing");
+      }:null}
+      saveLabel={live.status==="QC Pass"||live.status==="QC Fail"||live.status==="Packed"
+        ?qcForm.result==="Pass"?"💾 Save Correction — Pass ✓":"💾 Save Correction — Fail ✗"
+        :qcForm.result==="Pass"?"Save — QC Pass ✓":"Save — QC Fail ✗"}
+      onSave={()=>{
+        const nextStatus=qcForm.result==="Pass"?"QC Pass":"QC Fail";
+        save({qc:qcForm},nextStatus);
+      }}
       editForm={<div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"10px"}}>
           {params.map(p=>{
@@ -2688,13 +2716,17 @@ function SettingsTab({showToast, initialProducts, initialQcParams, initialPackSi
   const [saving,setSaving]=useState(false);
   const [isDirty,setIsDirty]=useState(false);
   const [pendingSubTab,setPendingSubTab]=useState(null); // sub-tab waiting for confirm
-  const [prodData,setProdData]=useState(()=>JSON.parse(JSON.stringify(initialProducts||DEFAULT_PRODUCTS)));
+  const [prodData,setProdData]=useState(()=>{
+    const p=JSON.parse(JSON.stringify(initialProducts||DEFAULT_PRODUCTS));
+    Object.keys(p).forEach(cat=>{if(Array.isArray(p[cat]))p[cat].sort((a,b)=>(a.name||a).localeCompare(b.name||b));});
+    return p;
+  });
   const [qcData,setQcData]=useState(()=>JSON.parse(JSON.stringify(initialQcParams||DEFAULT_QC_PARAMS)));
   const [packSizeData,setPackSizeData]=useState(()=>JSON.parse(JSON.stringify(initialPackSizes||DEFAULT_PACK_SIZES_BY_CAT)));
   const [catUnits,setCatUnits]=useState(()=>({...CATEGORY_UNITS,...(initialCatUnits||{})}));
-  const [unitsData,setUnitsData]=useState(()=>[...(initialUnits||BATCH_UNITS)]);
-  const [paintTypesData,setPaintTypesData]=useState(()=>[...(initialPaintTypes||PAINT_TYPES)]);
-  const [rmCatsData,setRmCatsData]=useState(()=>[...(initialRmCats||RM_CATEGORIES)]);
+  const [unitsData,setUnitsData]=useState(()=>[...(initialUnits||BATCH_UNITS)].sort((a,b)=>a.localeCompare(b)));
+  const [paintTypesData,setPaintTypesData]=useState(()=>[...(initialPaintTypes||PAINT_TYPES)].sort((a,b)=>a.localeCompare(b)));
+  const [rmCatsData,setRmCatsData]=useState(()=>[...(initialRmCats||RM_CATEGORIES)].sort((a,b)=>a.localeCompare(b)));
 
   // Dirty-aware setters — mark changed whenever any data is modified
   const markDirty=()=>{setIsDirty(true);if(onDirtyChange)onDirtyChange(true);};
@@ -2966,14 +2998,12 @@ function SettingsTab({showToast, initialProducts, initialQcParams, initialPackSi
 
   const addProduct=()=>{
     if(!newProduct.trim())return;
-    const updated={...prodData,[selCat]:[...(prodData[selCat]||[]),{name:newProduct.trim(),unit:newProductUnit}]};
-    dpd(updated);setNewProduct("");setNewProductUnit("L");
+    const existing=prodData[selCat]||[];const sorted=[...existing,{name:newProduct.trim(),unit:newProductUnit}].sort((a,b)=>(a.name||a).localeCompare(b.name||b));dpd({...prodData,[selCat]:sorted});setNewProduct("");setNewProductUnit("L");
   };
   const removeProduct=(cat,idx)=>{const arr=[...(prodData[cat]||[])];arr.splice(idx,1);dpd({...prodData,[cat]:arr});};
   const addParam=()=>{
     if(!newParam.trim())return;
-    const updated={...qcData,[selCat]:[...(qcData[selCat]||[]),newParam.trim()]};
-    dqd(updated);setNewParam("");
+    const existingP=qcData[selCat]||[];const sortedP=[...existingP,newParam.trim()].sort((a,b)=>(a.name||a).localeCompare(b.name||b));dqd({...qcData,[selCat]:sortedP});setNewParam("");
   };
   const removeParam=(cat,idx)=>{const arr=[...(qcData[cat]||[])];arr.splice(idx,1);dqd({...qcData,[cat]:arr});};
   const addCategory=()=>{
@@ -3191,9 +3221,9 @@ function SettingsTab({showToast, initialProducts, initialQcParams, initialPackSi
       <div style={{display:"flex",gap:"6px",marginBottom:"12px"}}>
         <input style={{...inp,flex:1}} value={newUnit} onChange={e=>setNewUnit(e.target.value)}
           placeholder="Add unit… e.g. Litre, Drum, Pail, 5 gal"
-          onKeyDown={e=>{if(e.key==="Enter"&&newUnit.trim()&&!unitsData.includes(newUnit.trim())){setUnitsData(u=>[...u,newUnit.trim()]);setNewUnit("");}}}/>
+          onKeyDown={e=>{if(e.key==="Enter"&&newUnit.trim()&&!unitsData.includes(newUnit.trim())){dud(u=>[...u,newUnit.trim()].sort((a,b)=>a.localeCompare(b)));setNewUnit("");}}}/>
         <Btn label="+ Add" onClick={()=>{
-          if(newUnit.trim()&&!unitsData.includes(newUnit.trim())){setUnitsData(u=>[...u,newUnit.trim()]);setNewUnit("");}
+          if(newUnit.trim()&&!unitsData.includes(newUnit.trim())){dud(u=>[...u,newUnit.trim()].sort((a,b)=>a.localeCompare(b)));setNewUnit("");}
         }} color="#38bdf8" small/>
       </div>
       {unitsData.length===0&&<div style={{fontSize:"13px",color:"#334155",fontStyle:"italic",padding:"10px 0"}}>No units defined. Add some above.</div>}
@@ -3220,8 +3250,8 @@ function SettingsTab({showToast, initialProducts, initialQcParams, initialPackSi
       <div style={{display:"flex",gap:"6px",marginBottom:"12px"}}>
         <input style={{...inp,flex:1}} value={newPaintType} onChange={e=>setNewPaintType(e.target.value)}
           placeholder="Add paint type… e.g. Waterproofing, Cement Paint"
-          onKeyDown={e=>{if(e.key==="Enter"&&newPaintType.trim()&&!paintTypesData.includes(newPaintType.trim())){dptd(d=>[...d,newPaintType.trim()]);setNewPaintType("");}}}/>
-        <Btn label="+ Add" onClick={()=>{if(newPaintType.trim()&&!paintTypesData.includes(newPaintType.trim())){dptd(d=>[...d,newPaintType.trim()]);setNewPaintType("");}}} color="#e879f9" small/>
+          onKeyDown={e=>{if(e.key==="Enter"&&newPaintType.trim()&&!paintTypesData.includes(newPaintType.trim())){dptd(d=>[...d,newPaintType.trim()].sort((a,b)=>a.localeCompare(b)));setNewPaintType("");}}}/>
+        <Btn label="+ Add" onClick={()=>{if(newPaintType.trim()&&!paintTypesData.includes(newPaintType.trim())){dptd(d=>[...d,newPaintType.trim()].sort((a,b)=>a.localeCompare(b)));setNewPaintType("");}}} color="#e879f9" small/>
       </div>
       {paintTypesData.length===0&&<div style={{fontSize:"13px",color:"#334155",fontStyle:"italic",padding:"10px 0"}}>No paint types.</div>}
       <div style={{display:"flex",flexDirection:"column",gap:"6px"}}>
@@ -3240,8 +3270,8 @@ function SettingsTab({showToast, initialProducts, initialQcParams, initialPackSi
       <div style={{display:"flex",gap:"6px",marginBottom:"12px"}}>
         <input style={{...inp,flex:1}} value={newRmCat} onChange={e=>setNewRmCat(e.target.value)}
           placeholder="Add RM category… e.g. Catalyst, Hardener, Thixotrope"
-          onKeyDown={e=>{if(e.key==="Enter"&&newRmCat.trim()&&!rmCatsData.includes(newRmCat.trim())){drcd(d=>[...d,newRmCat.trim()]);setNewRmCat("");}}}/>
-        <Btn label="+ Add" onClick={()=>{if(newRmCat.trim()&&!rmCatsData.includes(newRmCat.trim())){drcd(d=>[...d,newRmCat.trim()]);setNewRmCat("");}}} color="#f97316" small/>
+          onKeyDown={e=>{if(e.key==="Enter"&&newRmCat.trim()&&!rmCatsData.includes(newRmCat.trim())){drcd(d=>[...d,newRmCat.trim()].sort((a,b)=>a.localeCompare(b)));setNewRmCat("");}}}/>
+        <Btn label="+ Add" onClick={()=>{if(newRmCat.trim()&&!rmCatsData.includes(newRmCat.trim())){drcd(d=>[...d,newRmCat.trim()].sort((a,b)=>a.localeCompare(b)));setNewRmCat("");}}} color="#f97316" small/>
       </div>
       {rmCatsData.length===0&&<div style={{fontSize:"13px",color:"#334155",fontStyle:"italic",padding:"10px 0"}}>No RM categories.</div>}
       <div style={{display:"flex",flexDirection:"column",gap:"6px"}}>
@@ -4072,7 +4102,7 @@ function RawMaterialStockTab({role,user,showToast,sysUnits,sysRmCats,onAddRmCat,
         <Grid3>
           <Field label="Material Name *"><input style={inp} value={matForm.name} onChange={e=>setMatForm({...matForm,name:e.target.value})} placeholder="e.g. TiO2 White"/></Field>
           <div>
-            <div style={{fontSize:"10.5px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"5px",display:"flex",alignItems:"center",gap:"8px"}}>Category {onAddRmCat&&<QuickAdd label="Category" onAdd={onAddRmCat} color="#f97316"/>}</div>
+            <div style={{fontSize:"10.5px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"5px",display:"flex",alignItems:"center",gap:"8px"}}>Category {onAddRmCat&&<QuickAdd label="Category" onAdd={v=>{if(onAddRmCat)onAddRmCat(v);}} color="#f97316"/>}</div>
             <select style={sl} value={matForm.category} onChange={e=>setMatForm({...matForm,category:e.target.value})}>
               {CATS.map(c=><option key={c}>{c}</option>)}
             </select>
@@ -4204,28 +4234,30 @@ function BOMForm({form,setForm,saving,isEdit,onCancel,onSave,sysProducts}){
     <div style={{marginBottom:"14px"}}>
       <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"6px"}}>Ingredients & Process Steps</div>
       <div style={{border:"1px solid #1e293b",borderRadius:"8px",overflow:"hidden",marginBottom:"6px"}}>
-        <div style={{display:"grid",gridTemplateColumns:"28px 2fr 100px 50px 28px",background:"#0b1220",padding:"6px 10px",gap:"6px"}}>
-          {["↕","Material / Step","Std Qty (per "+form.baseBatchSize+form.baseUnit+")","",""].map((h,i)=><div key={i} style={{fontSize:"9px",fontWeight:"700",color:"#334155",textTransform:"uppercase"}}>{h}</div>)}
+        <div style={{display:"grid",gridTemplateColumns:"28px 2fr 100px 1.2fr 50px 28px",background:"#0b1220",padding:"6px 10px",gap:"6px"}}>
+          {["↕","Material / Step","Std Qty (per "+form.baseBatchSize+form.baseUnit+")","Description / Notes","",""].map((h,i)=><div key={i} style={{fontSize:"9px",fontWeight:"700",color:"#334155",textTransform:"uppercase"}}>{h}</div>)}
         </div>
         {(form.ingredients||[]).map((ing,idx)=>
           ing.isProcess
-            ?<div key={ing.id} style={{display:"grid",gridTemplateColumns:"28px 2fr 100px 50px 28px",padding:"5px 10px",gap:"6px",borderTop:"1px solid #1e293b",alignItems:"center",background:"#0a1520"}}>
+            ?<div key={ing.id} style={{display:"grid",gridTemplateColumns:"28px 2fr 100px 1.2fr 50px 28px",padding:"5px 10px",gap:"6px",borderTop:"1px solid #1e293b",alignItems:"center",background:"#0a1520"}}>
               <div style={{display:"flex",flexDirection:"column",gap:"1px"}}>
                 <button onClick={()=>moveIng(idx,-1)} style={{background:"none",border:"none",color:"#334155",cursor:"pointer",fontSize:"10px",padding:"1px",lineHeight:1}}>▲</button>
                 <button onClick={()=>moveIng(idx,1)} style={{background:"none",border:"none",color:"#334155",cursor:"pointer",fontSize:"10px",padding:"1px",lineHeight:1}}>▼</button>
               </div>
               <input style={{...sml,color:"#f59e0b",fontStyle:"italic",background:"#0f1d10",borderColor:"#f59e0b30"}} value={ing.name} onChange={e=>updIng(ing.id,"name",e.target.value)} placeholder="Process instruction e.g. Grind for 6hrs"/>
               <div style={{fontSize:"10px",color:"#475569",fontStyle:"italic"}}>— process —</div>
+              <input style={{...sml,color:"#64748b"}} value={ing.desc||""} onChange={e=>updIng(ing.id,"desc",e.target.value)} placeholder="Notes (optional)"/>
               <span style={{fontSize:"10px",color:"#64748b",background:"#0f1720",border:"1px solid #1e293b",borderRadius:"4px",padding:"2px 5px",textAlign:"center"}}>Step</span>
               <button onClick={()=>delIng(ing.id)} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"14px",padding:0}}>×</button>
             </div>
-            :<div key={ing.id} style={{display:"grid",gridTemplateColumns:"28px 2fr 100px 50px 28px",padding:"5px 10px",gap:"6px",borderTop:"1px solid #1e293b",alignItems:"center"}}>
+            :<div key={ing.id} style={{display:"grid",gridTemplateColumns:"28px 2fr 100px 1.2fr 50px 28px",padding:"5px 10px",gap:"6px",borderTop:"1px solid #1e293b",alignItems:"center"}}>
               <div style={{display:"flex",flexDirection:"column",gap:"1px"}}>
                 <button onClick={()=>moveIng(idx,-1)} style={{background:"none",border:"none",color:"#334155",cursor:"pointer",fontSize:"10px",padding:"1px",lineHeight:1}}>▲</button>
                 <button onClick={()=>moveIng(idx,1)} style={{background:"none",border:"none",color:"#334155",cursor:"pointer",fontSize:"10px",padding:"1px",lineHeight:1}}>▼</button>
               </div>
               <input style={sml} value={ing.name} onChange={e=>updIng(ing.id,"name",e.target.value)} placeholder="Material/ingredient name"/>
               <input style={{...sml,textAlign:"center"}} type="number" step="0.001" value={ing.standardQty} onChange={e=>updIng(ing.id,"standardQty",e.target.value)} placeholder="0"/>
+              <input style={{...sml,color:"#94a3b8"}} value={ing.desc||""} onChange={e=>updIng(ing.id,"desc",e.target.value)} placeholder="e.g. imported, grind 6hrs, wash 1"/>
               <div style={{fontSize:"10px",color:"#22c55e",background:"#052e16",border:"1px solid #166534",borderRadius:"4px",padding:"2px 5px",textAlign:"center"}}>Ingr.</div>
               <button onClick={()=>delIng(ing.id)} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"14px",padding:0}}>×</button>
             </div>
@@ -4280,28 +4312,23 @@ function BOMForm({form,setForm,saving,isEdit,onCancel,onSave,sysProducts}){
 function PrintDialog({bom,packSizes,onClose}){
   const [batchSize,setBatchSize]=useState(bom.baseBatchSize||"100");
   const [batchNo,setBatchNo]=useState("");
-  const [fillingDate,setFillingDate]=useState(today());
-  const [chargingDate,setChargingDate]=useState(today());
   return <div style={{background:"#0b1220",border:"1px solid #3b82f6",borderRadius:"10px",padding:"16px",marginBottom:"14px"}}>
     <div style={{fontSize:"13px",fontWeight:"700",color:"#93c5fd",marginBottom:"12px"}}>🖨 Print Production Sheet — {bom.productName}</div>
     <Grid2>
       <Field label={"Batch Size ("+bom.baseUnit+") *"}><input style={inp} type="number" value={batchSize} onChange={e=>setBatchSize(e.target.value)} placeholder={bom.baseBatchSize}/></Field>
       <Field label="Batch No"><input style={inp} value={batchNo} onChange={e=>setBatchNo(e.target.value)} placeholder="e.g. 0042"/></Field>
     </Grid2>
-    <Grid2>
-      <Field label="Filling Date"><input type="date" style={inp} value={fillingDate} onChange={e=>setFillingDate(e.target.value)}/></Field>
-      <Field label="Charging Date"><input type="date" style={inp} value={chargingDate} onChange={e=>setChargingDate(e.target.value)}/></Field>
-    </Grid2>
+    <div style={{fontSize:"11px",color:"#475569",marginBottom:"10px"}}>Filling Date and Charging Date will be filled manually on the printed sheet.</div>
     <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
       <Btn label="Cancel" onClick={onClose} outline color="#475569" small/>
-      <Btn label="🖨 Open Print Preview" onClick={()=>{printProductionSheet(bom,batchSize,batchNo,"",fillingDate,chargingDate,packSizes);onClose();}} color="#22c55e" small/>
+      <Btn label="🖨 Open Print Preview" onClick={()=>{printProductionSheet(bom,batchSize,batchNo,"","","",packSizes);onClose();}} color="#22c55e" small/>
     </div>
   </div>;
 }
 
 function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes}){
   const isAdmin=roles.includes("admin");
-  const canEdit=roles.some(r=>["admin","qc"].includes(r));
+  const canEdit=roles.some(r=>["admin","qc","issuer"].includes(r));
   const [boms,setBoms]=useState([]);
   const [versions,setVersions]=useState([]);
   const [loading,setLoading]=useState(true);
@@ -4469,7 +4496,7 @@ function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes}){
                 <span style={{fontSize:"10px",color:"#334155",marginLeft:"8px"}}>{v.archivedAt?.toDate?.()?.toLocaleDateString("en-IN")||""}</span>
               </div>
               <div style={{display:"flex",gap:"6px"}}>
-                <Btn label="🖨 Print this version" onClick={()=>printProductionSheet(v,v.baseBatchSize,"","","",today(),sysPackSizes)} color="#64748b" small outline/>
+                <Btn label="🖨 Print this version" onClick={()=>printProductionSheet(v,v.baseBatchSize,"","","","",sysPackSizes)} color="#64748b" small outline/>
                 {canEdit&&<Btn label="⬆ Restore as Current" onClick={async()=>{if(!confirm("Restore v"+v.currentVersion+" as current BOM? Current will be archived."))return;const curr=boms.find(x=>x.id===b.id);if(curr)await C("bom_versions").add({...curr,productId:b.id,archivedAt:ts(),archivedBy:user.email});await C("bom_products").doc(b.id).update({...v,currentVersion:(curr?.currentVersion||1)+1,updatedBy:user.email,updatedAt:ts()});await C("bom_versions").doc(v.id).delete();showToast("Version restored ✓");}} color="#f59e0b" small/>}
               </div>
             </div>)}
@@ -4545,13 +4572,13 @@ function MainApp({user,role,roles=[]}){
   // Add a new RM category or unit globally (from any screen) — saves to Firestore immediately
   const addGlobalRmCat=async(cat)=>{
     if(!cat.trim()||sysRmCats.includes(cat.trim()))return;
-    const updated=[...sysRmCats,cat.trim()];
+    const updated=[...sysRmCats,cat.trim()].sort((a,b)=>a.localeCompare(b));
     setSysRmCats(updated);
     try{await C("settings").doc("products").set({rmCategories:updated},{merge:true});}catch(e){}
   };
   const addGlobalUnit=async(unit)=>{
     if(!unit.trim()||sysUnits.includes(unit.trim()))return;
-    const updated=[...sysUnits,unit.trim()];
+    const updated=[...sysUnits,unit.trim()].sort((a,b)=>a.localeCompare(b));
     setSysUnits(updated);
     try{await C("settings").doc("products").set({units:updated},{merge:true});}catch(e){}
   };
@@ -4691,7 +4718,7 @@ function MainApp({user,role,roles=[]}){
         if(!bomSnap.empty){
           const bom=bomSnap.docs[0].data();
           if(window.confirm(`Batch ${bNo} issued ✓\n\nPrint production sheet for ${batchForm.productName} (${batchForm.batchSize} ${batchForm.unit})?`)){
-            printProductionSheet(bom,batchForm.batchSize,bNo,"",today(),today(),sysPackSizes);
+            printProductionSheet(bom,batchForm.batchSize,bNo,"","","",sysPackSizes);
           }
         }else{
           showToast(`Batch ${bNo} issued ✓ (No BOM found for this product)`);
@@ -4898,7 +4925,7 @@ function MainApp({user,role,roles=[]}){
                 try{
                   const bomSnap=await C("bom_products").where("productName","==",batch.productName).limit(1).get();
                   if(!bomSnap.empty){
-                    printProductionSheet(bomSnap.docs[0].data(),batch.batchSize,batch.batchNo,"",batch.dateIssued,batch.dateIssued,sysPackSizes);
+                    printProductionSheet(bomSnap.docs[0].data(),batch.batchSize,batch.batchNo,"","","",sysPackSizes);
                   }else{
                     showToast("No BOM found for "+batch.productName+". Create a BOM in the 📋 BOM tab first.","error");
                   }
