@@ -89,7 +89,7 @@ window.onerror=function(msg,src,line,col,err){
 <script>
 // Print production sheet — extracted from Babel to avoid large template literal issues
 // Print production sheet — opens in new window, auto-prints
-function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, chargingDate, user){
+function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, chargingDate, packSizes){
   const bs=parseFloat(batchSize)||parseFloat(bom.baseBatchSize)||100;
   const base=parseFloat(bom.baseBatchSize)||100;
   const factor=bs/base;
@@ -129,6 +129,16 @@ function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, char
       {name:"Specific Gravity",standard:_qcRaw.sg||""},
       ...(_qcRaw.remarks?[{name:"Remarks",standard:_qcRaw.remarks}]:[])
     ].filter(p=>p.standard);
+  // Get pack sizes for this product's category from settings
+  var catPackSizes=[];
+  if(packSizes&&bom.category&&packSizes[bom.category]){
+    catPackSizes=(packSizes[bom.category]||[]).map(function(p){
+      return typeof p==='string'?p:(p.size||p.label||String(p));
+    }).filter(Boolean);
+  }
+  var packRows=catPackSizes.length
+    ?catPackSizes.map(function(s){return '<tr><td style="border:1px solid #999;padding:4px 6px;font-size:11px">'+s+'</td><td style="border:1px solid #999;padding:4px 6px;min-width:80px">&nbsp;</td></tr>';}).join("")
+    :'<tr><td style="border:1px solid #999;padding:4px 6px">&nbsp;</td><td style="border:1px solid #999;padding:4px 6px">&nbsp;</td></tr><tr><td style="border:1px solid #999;padding:4px 6px">&nbsp;</td><td style="border:1px solid #999;padding:4px 6px">&nbsp;</td></tr><tr><td style="border:1px solid #999;padding:4px 6px">&nbsp;</td><td style="border:1px solid #999;padding:4px 6px">&nbsp;</td></tr>';
   const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Production Sheet — ${bom.productName}</title>
 <style>
   body{font-family:Arial,sans-serif;margin:0;padding:12px;font-size:12px;}
@@ -182,10 +192,13 @@ function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, char
             <td style="border:1px solid #999;padding:3px 5px"></td>
             <td style="border:1px solid #999;padding:3px 5px"></td>
           </tr>
-          <tr><td colspan="6" style="border:1px solid #999;padding:3px 5px;font-size:10px;font-style:italic">EXTRA ADDITIONS</td></tr>
-          <tr><td colspan="4" style="border:1px solid #999;padding:3px 5px;font-size:10px">Dhoyela</td><td colspan="2" style="border:1px solid #999"></td></tr>
-          <tr><td colspan="4" style="border:1px solid #999;padding:3px 5px;font-size:10px">Extra Output</td><td colspan="2" style="border:1px solid #999"></td></tr>
-          <tr><td colspan="4" style="border:1px solid #999;padding:3px 5px;font-size:10px">Dhoyela</td><td colspan="2" style="border:1px solid #999"></td></tr>
+          <tr><td colspan="6" style="border:1px solid #999;padding:3px 5px;font-size:10px;font-style:italic;font-weight:600;background:#f5f5f5">EXTRA ADDITIONS</td></tr>
+          <tr><td colspan="4" style="border:1px solid #999;padding:3px 5px;font-size:10px">Dhoyela</td><td style="border:1px solid #999;padding:3px 5px"></td><td style="border:1px solid #999;padding:3px 5px"></td></tr>
+          <tr><td colspan="4" style="border:1px solid #999;padding:18px 5px 3px;font-size:10px">Extra Output</td><td style="border:1px solid #999"></td><td style="border:1px solid #999"></td></tr>
+          <tr><td colspan="4" style="border:1px solid #999;padding:18px 5px 3px;font-size:10px">Dhoyela</td><td style="border:1px solid #999"></td><td style="border:1px solid #999"></td></tr>
+          <tr><td colspan="4" style="border:1px solid #999;padding:18px 5px 3px;font-size:10px">&nbsp;</td><td style="border:1px solid #999"></td><td style="border:1px solid #999"></td></tr>
+          <tr><td colspan="4" style="border:1px solid #999;padding:18px 5px 3px;font-size:10px">&nbsp;</td><td style="border:1px solid #999"></td><td style="border:1px solid #999"></td></tr>
+          <tr><td colspan="4" style="border:1px solid #999;padding:18px 5px 3px;font-size:10px">&nbsp;</td><td style="border:1px solid #999"></td><td style="border:1px solid #999"></td></tr>
         </tbody>
       </table>
     </td>
@@ -197,13 +210,22 @@ function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, char
         <tr><td>Discharge time</td><td></td></tr>
         <tr><td>Date</td><td></td></tr>
         <tr><td colspan="2" class="section-head" style="margin-top:4px">Test Parameters</td></tr>
-        <tr><th style="border:1px solid #999;padding:3px 5px;background:#d0d0d0;font-size:10px">Parameter</th><th style="border:1px solid #999;padding:3px 5px;background:#d0d0d0;font-size:10px">Standard</th></tr>
-        ${qcParams.length?qcParams.map(p=>`<tr><td>${p.name||""}</td><td>${p.standard||""}</td></tr>`).join(""):"<tr><td colspan='2' style='color:#999;font-style:italic'>No QC parameters defined</td></tr>"}
+        <tr>
+          <th style="border:1px solid #999;padding:3px 5px;background:#d0d0d0;font-size:10px">Parameter</th>
+          <th style="border:1px solid #999;padding:3px 5px;background:#d0d0d0;font-size:10px">Standard</th>
+          <th style="border:1px solid #999;padding:3px 5px;background:#d0d0d0;font-size:10px">Actual Value</th>
+        </tr>
+        ${qcParams.length
+          ?qcParams.map(p=>`<tr>
+            <td style="border:1px solid #999;padding:4px 5px;font-size:11px">${p.name||""}</td>
+            <td style="border:1px solid #999;padding:4px 5px;font-size:11px;text-align:center">${p.standard||""}</td>
+            <td style="border:1px solid #999;padding:4px 5px;min-width:70px">&nbsp;</td>
+          </tr>`).join("")
+          :"<tr><td colspan='3' style='color:#999;font-style:italic;border:1px solid #999;padding:4px'>No QC parameters defined</td></tr>"
+        }
         <tr><td colspan="2" class="section-head" style="padding-top:6px">Packing</td></tr>
         <tr><th style="border:1px solid #999;padding:3px 5px;background:#d0d0d0;font-size:10px">Size</th><th style="border:1px solid #999;padding:3px 5px;background:#d0d0d0;font-size:10px">No. of Packs</th></tr>
-        <tr><td></td><td></td></tr>
-        <tr><td></td><td></td></tr>
-        <tr><td></td><td></td></tr>
+        ${packRows}
       </table>
       <div style="margin-top:8px;font-size:10px;color:#555">BOM v${bom.currentVersion||1} · Printed: ${today()}</div>
     </td>
@@ -4206,14 +4228,18 @@ function BOMForm({form,setForm,saving,isEdit,onCancel,onSave,sysProducts}){
       </div>
     </div>
 
-    {/* QC Test Parameters — dynamic, add/edit/remove */}
+    {/* QC Test Parameters — dynamic, add/edit/remove, reorder */}
     <div style={{marginBottom:"14px"}}>
       <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"6px"}}>QC Test Parameters</div>
       <div style={{border:"1px solid #1e293b",borderRadius:"8px",overflow:"hidden",marginBottom:"6px"}}>
-        <div style={{display:"grid",gridTemplateColumns:"2fr 2fr 28px",background:"#0b1220",padding:"6px 10px",gap:"6px"}}>
-          {["Parameter Name","Standard / Expected Value",""].map(h=><div key={h} style={{fontSize:"9px",fontWeight:"700",color:"#334155",textTransform:"uppercase"}}>{h}</div>)}
+        <div style={{display:"grid",gridTemplateColumns:"28px 2fr 2fr 28px",background:"#0b1220",padding:"6px 10px",gap:"6px"}}>
+          {["↕","Parameter Name","Standard / Expected Value",""].map(h=><div key={h} style={{fontSize:"9px",fontWeight:"700",color:"#334155",textTransform:"uppercase"}}>{h}</div>)}
         </div>
-        {(form.qcTests||[]).map((p,i)=><div key={p.id||i} style={{display:"grid",gridTemplateColumns:"2fr 2fr 28px",padding:"5px 10px",gap:"6px",borderTop:"1px solid #1e293b",alignItems:"center"}}>
+        {(form.qcTests||[]).map((p,i)=><div key={p.id||i} style={{display:"grid",gridTemplateColumns:"28px 2fr 2fr 28px",padding:"5px 10px",gap:"6px",borderTop:"1px solid #1e293b",alignItems:"center"}}>
+          <div style={{display:"flex",flexDirection:"column",gap:"1px"}}>
+            <button onClick={()=>{const arr=[...(form.qcTests||[])];if(i===0)return;[arr[i-1],arr[i]]=[arr[i],arr[i-1]];setForm({...form,qcTests:arr});}} style={{background:"none",border:"none",color:i===0?"#1e293b":"#334155",cursor:i===0?"default":"pointer",fontSize:"10px",padding:"1px",lineHeight:1}}>▲</button>
+            <button onClick={()=>{const arr=[...(form.qcTests||[])];if(i===arr.length-1)return;[arr[i],arr[i+1]]=[arr[i+1],arr[i]];setForm({...form,qcTests:arr});}} style={{background:"none",border:"none",color:i===(form.qcTests||[]).length-1?"#1e293b":"#334155",cursor:i===(form.qcTests||[]).length-1?"default":"pointer",fontSize:"10px",padding:"1px",lineHeight:1}}>▼</button>
+          </div>
           <input style={sml} value={p.name||""} onChange={e=>{const arr=[...(form.qcTests||[])];arr[i]={...arr[i],name:e.target.value};setForm({...form,qcTests:arr});}} placeholder="e.g. Viscosity, Drying SF, Colour"/>
           <input style={sml} value={p.standard||""} onChange={e=>{const arr=[...(form.qcTests||[])];arr[i]={...arr[i],standard:e.target.value};setForm({...form,qcTests:arr});}} placeholder="e.g. 120 SEC, 2 Hrs, BUS GREEN"/>
           <button onClick={()=>setForm({...form,qcTests:(form.qcTests||[]).filter((_,j)=>j!==i)})} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"14px",padding:0}}>×</button>
@@ -4242,7 +4268,7 @@ function BOMForm({form,setForm,saving,isEdit,onCancel,onSave,sysProducts}){
 }
 
 // Print dialog component — extracted to avoid remount
-function PrintDialog({bom,onClose}){
+function PrintDialog({bom,packSizes,onClose}){
   const [batchSize,setBatchSize]=useState(bom.baseBatchSize||"100");
   const [batchNo,setBatchNo]=useState("");
   const [fillingDate,setFillingDate]=useState(today());
@@ -4259,12 +4285,12 @@ function PrintDialog({bom,onClose}){
     </Grid2>
     <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
       <Btn label="Cancel" onClick={onClose} outline color="#475569" small/>
-      <Btn label="🖨 Open Print Preview" onClick={()=>{printProductionSheet(bom,batchSize,batchNo,"",fillingDate,chargingDate);onClose();}} color="#22c55e" small/>
+      <Btn label="🖨 Open Print Preview" onClick={()=>{printProductionSheet(bom,batchSize,batchNo,"",fillingDate,chargingDate,packSizes);onClose();}} color="#22c55e" small/>
     </div>
   </div>;
 }
 
-function BOMTab({role,roles,user,showToast,sysProducts}){
+function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes}){
   const isAdmin=roles.includes("admin");
   const canEdit=roles.some(r=>["admin","qc"].includes(r));
   const [boms,setBoms]=useState([]);
@@ -4405,7 +4431,7 @@ function BOMTab({role,roles,user,showToast,sysProducts}){
 
         {/* Print dialog */}
         {isOpen&&mode==="print"&&<div style={{padding:"14px 16px",borderTop:"1px solid #1e293b",background:"#080d18"}}>
-          <PrintDialog bom={b} onClose={()=>setActiveBOM(null)}/>
+          <PrintDialog bom={b} packSizes={sysPackSizes} onClose={()=>setActiveBOM(null)}/>
         </div>}
 
         {/* Edit form */}
@@ -4434,7 +4460,7 @@ function BOMTab({role,roles,user,showToast,sysProducts}){
                 <span style={{fontSize:"10px",color:"#334155",marginLeft:"8px"}}>{v.archivedAt?.toDate?.()?.toLocaleDateString("en-IN")||""}</span>
               </div>
               <div style={{display:"flex",gap:"6px"}}>
-                <Btn label="🖨 Print this version" onClick={()=>printProductionSheet(v,v.baseBatchSize,"","","",today())} color="#64748b" small outline/>
+                <Btn label="🖨 Print this version" onClick={()=>printProductionSheet(v,v.baseBatchSize,"","","",today(),sysPackSizes)} color="#64748b" small outline/>
                 {canEdit&&<Btn label="⬆ Restore as Current" onClick={async()=>{if(!confirm("Restore v"+v.currentVersion+" as current BOM? Current will be archived."))return;const curr=boms.find(x=>x.id===b.id);if(curr)await C("bom_versions").add({...curr,productId:b.id,archivedAt:ts(),archivedBy:user.email});await C("bom_products").doc(b.id).update({...v,currentVersion:(curr?.currentVersion||1)+1,updatedBy:user.email,updatedAt:ts()});await C("bom_versions").doc(v.id).delete();showToast("Version restored ✓");}} color="#f59e0b" small/>}
               </div>
             </div>)}
@@ -4645,13 +4671,24 @@ function MainApp({user,role,roles=[]}){
     if(saving)return;setSaving(true);
     try{
       const fy=getFY();
-      // Get highest sequence number for this financial year
       const snap=await C("batches").where("fyYear","==",fy).get();
       const maxSeq=snap.docs.reduce((m,d)=>{const n=parseInt(d.data().batchSeq||0);return Math.max(m,n);},0);
       const seq=maxSeq+1;
-      const bNo=String(seq).padStart(4,"0"); // e.g. 0001, 0002
+      const bNo=String(seq).padStart(4,"0");
       await C("batches").add({...batchForm,batchNo:bNo,batchSeq:seq,fyYear:fy,status:"Issued",issuedBy:batchForm.issuedBy||user.email,_createdAt:ts()});
-      setBatchForm(EB);setShowIssueBatch(false);showToast(`Batch ${bNo} issued ✓`);
+      // Look up BOM for this product and auto-print
+      try{
+        const bomSnap=await C("bom_products").where("productName","==",batchForm.productName).limit(1).get();
+        if(!bomSnap.empty){
+          const bom=bomSnap.docs[0].data();
+          if(window.confirm(`Batch ${bNo} issued ✓\n\nPrint production sheet for ${batchForm.productName} (${batchForm.batchSize} ${batchForm.unit})?`)){
+            printProductionSheet(bom,batchForm.batchSize,bNo,"",today(),today(),sysPackSizes);
+          }
+        }else{
+          showToast(`Batch ${bNo} issued ✓ (No BOM found for this product)`);
+        }
+      }catch(e){showToast(`Batch ${bNo} issued ✓`);}
+      setBatchForm(EB);setShowIssueBatch(false);
     }catch(e){showToast("Error issuing batch","error");}
     setSaving(false);
   };
@@ -4894,7 +4931,7 @@ function MainApp({user,role,roles=[]}){
           onCreateProject={(prefill)=>{setProjForm({...EP,...prefill});setShowAddProject(true);setRdSubTab("projects");}}
         />}
       </>}
-      {tab==="bom"&&<BOMTab role={role} roles={roles} user={user} showToast={showToast} sysProducts={sysProducts}/>}
+      {tab==="bom"&&<BOMTab role={role} roles={roles} user={user} showToast={showToast} sysProducts={sysProducts} sysPackSizes={sysPackSizes}/>}
       {tab==="stock"&&<RawMaterialStockTab role={role} user={user} showToast={showToast} sysUnits={sysUnits} sysRmCats={sysRmCats} onAddRmCat={addGlobalRmCat} onAddUnit={addGlobalUnit}/>}
       {tab==="testimonials"&&<TestimonialsTab role={role} user={user} showToast={showToast}/>}
       {tab==="users"&&<UsersTab currentUser={user}/>}
