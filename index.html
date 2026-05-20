@@ -4202,7 +4202,21 @@ function RawMaterialStockTab({role,user,showToast,sysUnits,sysRmCats,onAddRmCat,
 
 
 // BOM Form component — stable to avoid cursor loss
-function BOMForm({form,setForm,saving,isEdit,onCancel,onSave,sysProducts}){
+function BOMForm({form,setForm,saving,isEdit,onCancel,onSave,sysProducts,sysQcParams}){
+  // Helper: build BOM QC params from Settings QC params for a category
+  const buildQCFromSettings=(category)=>{
+    const settingsParams=(sysQcParams||DEFAULT_QC_PARAMS)[category]||[];
+    return settingsParams.map(p=>{
+      const pName=typeof p==="string"?p:(p.name||"");
+      const existing=(form.qcTests||[]).find(q=>q.name===pName);
+      return {id:existing?.id||newId(), name:pName, standard:existing?.standard||""};
+    });
+  };
+  const syncQCFromSettings=()=>{
+    const synced=buildQCFromSettings(form.category);
+    if(!synced.length)return;
+    setForm({...form,qcTests:synced});
+  };
   const addIng=()=>setForm(f=>({...f,ingredients:[...f.ingredients,{id:newId(),name:"",standardQty:"",isProcess:false}]}));
   const addProcess=()=>setForm(f=>({...f,ingredients:[...f.ingredients,{id:newId(),name:"",isProcess:true}]}));
   const updIng=(id,field,val)=>setForm(f=>({...f,ingredients:f.ingredients.map(i=>i.id===id?{...i,[field]:val}:i)}));
@@ -4215,7 +4229,10 @@ function BOMForm({form,setForm,saving,isEdit,onCancel,onSave,sysProducts}){
         <div style={{fontSize:"10.5px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"5px"}}>Product Name *</div>
         <CategoryProductSelect
           category={form.category}
-          setCategory={cat=>setForm({...form,category:cat,productName:""})}
+          setCategory={cat=>{
+            const newQC=buildQCFromSettings(cat);
+            setForm({...form,category:cat,productName:"",qcTests:newQC.length?newQC:form.qcTests});
+          }}
           productName={form.productName}
           setProductName={p=>setForm({...form,productName:typeof p==="string"?p:(p?.name||p)})}
           products={sysProducts}
@@ -4271,7 +4288,16 @@ function BOMForm({form,setForm,saving,isEdit,onCancel,onSave,sysProducts}){
 
     {/* QC Test Parameters — dynamic, add/edit/remove, reorder */}
     <div style={{marginBottom:"14px"}}>
-      <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"6px"}}>QC Test Parameters</div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"6px"}}>
+        <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em"}}>QC Test Parameters</div>
+        <div style={{display:"flex",gap:"6px",alignItems:"center"}}>
+          {form.category&&(sysQcParams||DEFAULT_QC_PARAMS)[form.category]?.length>0&&
+            <button onClick={syncQCFromSettings} title="Load parameter names from Settings → QC Parameters for this category"
+              style={{background:"#0f1d35",border:"1px solid #2563eb40",borderRadius:"6px",padding:"3px 10px",color:"#93c5fd",cursor:"pointer",fontSize:"11px",fontWeight:"600"}}>
+              🔄 Sync from Settings ({form.category})
+            </button>}
+        </div>
+      </div>
       <div style={{border:"1px solid #1e293b",borderRadius:"8px",overflow:"hidden",marginBottom:"6px"}}>
         <div style={{display:"grid",gridTemplateColumns:"28px 2fr 2fr 28px",background:"#0b1220",padding:"6px 10px",gap:"6px"}}>
           {["↕","Parameter Name","Standard / Expected Value",""].map(h=><div key={h} style={{fontSize:"9px",fontWeight:"700",color:"#334155",textTransform:"uppercase"}}>{h}</div>)}
@@ -4326,7 +4352,7 @@ function PrintDialog({bom,packSizes,onClose}){
   </div>;
 }
 
-function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes}){
+function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes,sysQcParams}){
   const isAdmin=roles.includes("admin");
   const canEdit=roles.some(r=>["admin","qc","issuer"].includes(r));
   const [boms,setBoms]=useState([]);
@@ -4338,15 +4364,14 @@ function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes}){
   const [showCreate,setShowCreate]=useState(false);
   const [saving,setSaving]=useState(false);
 
-  const defaultQCParams=()=>[
-    {id:newId(),name:"SD (Drying)",standard:""},{id:newId(),name:"TF (Drying)",standard:""},
-    {id:newId(),name:"HD (Drying)",standard:""},{id:newId(),name:"Colour",standard:""},
-    {id:newId(),name:"Finish",standard:""},{id:newId(),name:"Viscosity",standard:""},
-    {id:newId(),name:"Specific Gravity",standard:""}
-  ];
+  const defaultQCParams=(category)=>{
+    const settingsParams=category&&(sysQcParams||DEFAULT_QC_PARAMS)[category];
+    if(settingsParams?.length) return settingsParams.map(p=>({id:newId(),name:typeof p==="string"?p:(p.name||""),standard:""}));
+    return [{id:newId(),name:"SD (Drying)",standard:""},{id:newId(),name:"TF (Drying)",standard:""},{id:newId(),name:"HD (Drying)",standard:""},{id:newId(),name:"Colour",standard:""},{id:newId(),name:"Finish",standard:""},{id:newId(),name:"Viscosity",standard:""},{id:newId(),name:"Specific Gravity",standard:""}];
+  };
   const blankBOM={productName:"",category:"",baseBatchSize:"100",baseUnit:"L",
     ingredients:[{id:newId(),name:"",standardQty:"",isProcess:false}],
-    qcTests:defaultQCParams(),
+    qcTests:defaultQCParams(""),
     packingSizes:[]};
   const [form,setForm]=useState({...blankBOM});
 
@@ -4430,7 +4455,7 @@ function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes}){
     {/* Create form */}
     {showCreate&&<div style={{background:"#080d18",border:"1px solid #3b82f630",borderRadius:"12px",padding:"18px",marginBottom:"16px"}}>
       <div style={{fontSize:"13px",fontWeight:"700",color:"#93c5fd",marginBottom:"14px"}}>📋 New Bill of Materials</div>
-      <BOMForm form={form} setForm={setForm} saving={saving} isEdit={false} onCancel={()=>{setShowCreate(false);setForm({...blankBOM});}} onSave={()=>saveBOM(false)} sysProducts={sysProducts}/>
+      <BOMForm form={form} setForm={setForm} saving={saving} isEdit={false} onCancel={()=>{setShowCreate(false);setForm({...blankBOM});}} onSave={()=>saveBOM(false)} sysProducts={sysProducts} sysQcParams={sysQcParams}/>
     </div>}
 
     {loading&&<div style={{textAlign:"center",padding:"40px",color:"#475569"}}>Loading…</div>}
@@ -4460,7 +4485,7 @@ function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes}){
           <div style={{display:"flex",gap:"6px",flexShrink:0,flexWrap:"wrap"}}>
             <Btn label="🖨 Print" onClick={()=>setActiveBOM({bom:b,mode:"print"})} color="#22c55e" small/>
             {bVersions.length>0&&<Btn label={`📚 History (${bVersions.length})`} onClick={()=>setActiveBOM(isOpen&&mode==="history"?null:{bom:b,mode:"history"})} color="#64748b" small outline/>}
-            {canEdit&&<Btn label="✏️ Edit" onClick={()=>{setForm({...blankBOM,...b,ingredients:b.ingredients?.map(i=>({...i,id:i.id||newId()})),qcTests:Array.isArray(b.qcTests)?b.qcTests.map(p=>({...p,id:p.id||newId()})):defaultQCParams()});setActiveBOM({bom:b,mode:"edit"});setShowCreate(false);}} color="#f59e0b" small/>}
+            {canEdit&&<Btn label="✏️ Edit" onClick={()=>{setForm({...blankBOM,...b,ingredients:b.ingredients?.map(i=>({...i,id:i.id||newId()})),qcTests:Array.isArray(b.qcTests)?b.qcTests.map(p=>({...p,id:p.id||newId()})):defaultQCParams(b.category)});setActiveBOM({bom:b,mode:"edit"});setShowCreate(false);}} color="#f59e0b" small/>}
             {isAdmin&&<button onClick={()=>deleteBOM(b.id)} style={{background:"none",border:"none",color:"#334155",cursor:"pointer",fontSize:"14px"}}>🗑</button>}
           </div>
         </div>
@@ -4473,7 +4498,7 @@ function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes}){
         {/* Edit form */}
         {isOpen&&mode==="edit"&&<div style={{padding:"16px",borderTop:"1px solid #f59e0b30",background:"#080d18"}}>
           <div style={{fontSize:"12px",fontWeight:"700",color:"#f59e0b",marginBottom:"12px"}}>✏️ Editing: {b.productName} (currently v{b.currentVersion||1})</div>
-          <BOMForm form={form} setForm={setForm} saving={saving} isEdit={true} onCancel={()=>{setActiveBOM(null);setForm({...blankBOM});}} onSave={()=>saveBOM(true,b.id)} sysProducts={sysProducts}/>
+          <BOMForm form={form} setForm={setForm} saving={saving} isEdit={true} onCancel={()=>{setActiveBOM(null);setForm({...blankBOM});}} onSave={()=>saveBOM(true,b.id)} sysProducts={sysProducts} sysQcParams={sysQcParams}/>
         </div>}
 
         {/* Version history */}
@@ -4978,7 +5003,7 @@ function MainApp({user,role,roles=[]}){
           onCreateProject={(prefill)=>{setProjForm({...EP,...prefill});setShowAddProject(true);setRdSubTab("projects");}}
         />}
       </>}
-      {tab==="bom"&&<BOMTab role={role} roles={roles} user={user} showToast={showToast} sysProducts={sysProducts} sysPackSizes={sysPackSizes}/>}
+      {tab==="bom"&&<BOMTab role={role} roles={roles} user={user} showToast={showToast} sysProducts={sysProducts} sysPackSizes={sysPackSizes} sysQcParams={sysQcParams}/>}
       {tab==="stock"&&<RawMaterialStockTab role={role} user={user} showToast={showToast} sysUnits={sysUnits} sysRmCats={sysRmCats} onAddRmCat={addGlobalRmCat} onAddUnit={addGlobalUnit}/>}
       {tab==="testimonials"&&<TestimonialsTab role={role} user={user} showToast={showToast}/>}
       {tab==="users"&&<UsersTab currentUser={user}/>}
