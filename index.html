@@ -206,14 +206,17 @@ function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, char
           ${(function(){
             var cfg=extraConfig||{};
             var rows='';
-            var rowStyle='border:1px solid #999;padding:12px 5px;font-size:11px';
-            var cells='<td style="'+rowStyle+'"></td><td style="'+rowStyle+'"></td>';
+            var normalStyle='border:1px solid #999;padding:12px 5px;font-size:11px;font-style:italic';
+            var highlightStyle='border:1px solid #999;padding:8px 5px;font-size:11px;font-style:italic;font-weight:700;background:#f0f0f0';
+            var blankCells='<td style="border:1px solid #999;padding:12px 5px"></td><td style="border:1px solid #999;padding:12px 5px"></td>';
             var items=cfg.items||['Dhoyela','Extra Output','Dhoyela'];
             items.forEach(function(label){
-              rows+='<tr><td colspan="4" style="'+rowStyle+';font-style:italic">'+label+'</td>'+cells+'</tr>';
+              var isHighlight=label==='Extra Output'||label.toLowerCase().includes('extra output');
+              var style=isHighlight?highlightStyle:normalStyle;
+              rows+='<tr><td colspan="4" style="'+style+'">'+label+'</td>'+blankCells+'</tr>';
             });
             var blanks=cfg.blankRows!==undefined?cfg.blankRows:2;
-            for(var i=0;i<blanks;i++) rows+='<tr><td colspan="4" style="'+rowStyle+'">&nbsp;</td>'+cells+'</tr>';
+            for(var i=0;i<blanks;i++) rows+='<tr><td colspan="4" style="'+normalStyle+'">&nbsp;</td>'+blankCells+'</tr>';
             return rows;
           })()}
         </tbody>
