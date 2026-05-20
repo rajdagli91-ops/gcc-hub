@@ -2154,14 +2154,22 @@ function UsersTab({currentUser}){
   const adminChangePass=async(email)=>{
     if(!newPassVal||newPassVal.length<6){setPassError("Password must be at least 6 characters");return;}
     setSavingPass(true);setPassError("");
+    const isFakeEmail=email.endsWith("@gcc-hub.app")||email.endsWith("@gcc.app");
     try{
-      // Store new password in passwordResets collection — applied on next login for all account types
-      await C("passwordResets").doc(email).set({
-        newPassword:newPassVal,setBy:"admin",setAt:today(),email,_createdAt:ts()
-      });
-      showLT(`Password set ✓ — will apply when ${email.endsWith("@gcc-hub.app")?"user":"user"} next logs in`);
-      setEditPassEmail(null);setNewPassVal("");
-    }catch(e){setPassError(e.message||"Error");}
+      if(!isFakeEmail){
+        // Real email — use Firebase's own password reset email (most reliable)
+        await auth.sendPasswordResetEmail(email);
+        showLT("Password reset email sent to "+email+" ✓");
+        setEditPassEmail(null);setNewPassVal("");
+      }else{
+        // Fake/internal email — store in Firestore, applied on next login
+        await C("passwordResets").doc(email).set({
+          newPassword:newPassVal,setBy:currentUser.email,setAt:today(),email,_createdAt:ts()
+        });
+        showLT("New password saved ✓ — will apply when user next logs in");
+        setEditPassEmail(null);setNewPassVal("");
+      }
+    }catch(e){setPassError(e.message||"Error setting password");}
     setSavingPass(false);
   };
 
@@ -2280,19 +2288,29 @@ function UsersTab({currentUser}){
 
           {/* Password change */}
           {editPassEmail===email&&!isHardAdmin&&<div style={{marginTop:"10px",paddingTop:"10px",borderTop:"1px solid #1e293b",background:"#0a1628",borderRadius:"8px",padding:"12px"}}>
-            <div style={{fontSize:"12px",fontWeight:"700",color:"#93c5fd",marginBottom:"8px"}}>🔑 Set New Password — {name||email}</div>
-            <div style={{fontSize:"12px",color:"#64748b",marginBottom:"8px"}}>
-              Set a new password for this user. It will apply the next time they log in.
-              {!email.endsWith("@gcc-hub.app")&&<span style={{color:"#f59e0b"}}> (Real email account)</span>}
-            </div>
-            <Field label="New Password (min 6 chars)">
-              <input type="password" style={inp} value={newPassVal} onChange={e=>{setNewPassVal(e.target.value);setPassError("");}} placeholder="Enter new password"/>
-            </Field>
-            {passError&&<div style={{fontSize:"12px",color:"#ef4444",marginBottom:"6px"}}>{passError}</div>}
-            <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",marginTop:"8px"}}>
-              <Btn label="Cancel" onClick={()=>{setEditPassEmail(null);setNewPassVal("");setPassError("");}} outline color="#475569" small/>
-              <Btn label={savingPass?"Saving…":"✓ Set Password"} onClick={()=>adminChangePass(email)} disabled={savingPass} color="#f59e0b" small/>
-            </div>
+            <div style={{fontSize:"12px",fontWeight:"700",color:"#93c5fd",marginBottom:"8px"}}>🔑 Reset Password — {name||email}</div>
+            {!email.endsWith("@gcc-hub.app")&&!email.endsWith("@gcc.app")
+              ?<div style={{background:"#0f2d0f",border:"1px solid #166534",borderRadius:"6px",padding:"8px 12px",marginBottom:"10px",fontSize:"12px",color:"#86efac"}}>
+                📧 Real email account — clicking "Send Reset Email" will send a password reset link directly to <strong>{email}</strong>. No password entry needed.
+              </div>
+              :<div style={{background:"#1a1400",border:"1px solid #f59e0b40",borderRadius:"6px",padding:"8px 12px",marginBottom:"10px",fontSize:"12px",color:"#fcd34d"}}>
+                🔒 Internal account — enter a new password below. The user must log out and log back in with their <strong>current password once</strong>, then the system will automatically apply the new password.
+              </div>}
+            {(!email.endsWith("@gcc-hub.app")&&!email.endsWith("@gcc.app"))
+              ?<div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
+                <Btn label="Cancel" onClick={()=>{setEditPassEmail(null);setNewPassVal("");setPassError("");}} outline color="#475569" small/>
+                <Btn label={savingPass?"Sending…":"📧 Send Reset Email"} onClick={()=>adminChangePass(email)} disabled={savingPass} color="#22c55e" small/>
+              </div>
+              :<>
+                <Field label="New Password (min 6 chars)">
+                  <input type="password" style={inp} value={newPassVal} onChange={e=>{setNewPassVal(e.target.value);setPassError("");}} placeholder="Enter new password"/>
+                </Field>
+                {passError&&<div style={{fontSize:"12px",color:"#ef4444",marginBottom:"6px"}}>{passError}</div>}
+                <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",marginTop:"8px"}}>
+                  <Btn label="Cancel" onClick={()=>{setEditPassEmail(null);setNewPassVal("");setPassError("");}} outline color="#475569" small/>
+                  <Btn label={savingPass?"Saving…":"✓ Set Password"} onClick={()=>adminChangePass(email)} disabled={savingPass} color="#f59e0b" small/>
+                </div>
+              </>}
           </div>}
         </div>;
       })
@@ -5330,17 +5348,26 @@ function App(){
           const pr=await db.collection("passwordResets").doc(u.email).get();
           if(pr.exists){
             const {newPassword}=pr.data();
-            const idToken=await u.getIdToken(true);
-            await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:update?key=${window._firebaseConfig.apiKey}`,{
-              method:"POST",headers:{"Content-Type":"application/json"},
-              body:JSON.stringify({idToken,password:newPassword,returnSecureToken:false})
-            });
-            await db.collection("passwordResets").doc(u.email).delete();
-            await auth.signOut();
-            alert("Your password was changed by the admin. Please log in with your new password.");
-            return;
+            try{
+              const idToken=await u.getIdToken(true);
+              const resp=await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:update?key=${firebaseConfig.apiKey}`,{
+                method:"POST",headers:{"Content-Type":"application/json"},
+                body:JSON.stringify({idToken,password:newPassword,returnSecureToken:true})
+              });
+              const result=await resp.json();
+              if(result.error){throw new Error(result.error.message);}
+              await db.collection("passwordResets").doc(u.email).delete();
+              await auth.signOut();
+              alert("Your password has been changed by the admin.\n\nPlease log in again with your new password.");
+              return;
+            }catch(passErr){
+              // Password update failed — delete the pending reset so user isn't stuck, log the error
+              console.error("Password update failed:",passErr.message);
+              await db.collection("passwordResets").doc(u.email).delete().catch(()=>{});
+              alert("Note: An admin set a new password for your account but it could not be applied automatically.\nPlease contact your admin to reset your password.");
+            }
           }
-        }catch(e){}
+        }catch(e){console.error("Password reset check failed:",e);}
         if(ADMIN_EMAILS.includes(u.email)){setRole("admin");setRoles(["admin"]);setLoading(false);return;}
         try{
           const snap=await db.collection("roles").doc(u.email).get();
