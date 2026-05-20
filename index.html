@@ -115,8 +115,20 @@ function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, char
   // Total row
   const totalStd=(bom.ingredients||[]).filter(i=>!i.isProcess).reduce((s,i)=>s+(parseFloat(i.standardQty)||0),0);
   const totalCurr=(totalStd*factor).toFixed(3).replace(/\.?0+$/,"");
-  const qc=bom.qcTests||{};
-  const packs=(bom.packingSizes||[]).filter(p=>p.size);
+  // Normalise qcTests — support both old {sd,tf,...} and new [{name,standard},...] formats
+  const _qcRaw=bom.qcTests||{};
+  const qcParams=Array.isArray(_qcRaw)
+    ?_qcRaw
+    :[
+      {name:"SD (Drying)",standard:_qcRaw.sd||""},
+      {name:"TF (Drying)",standard:_qcRaw.tf||""},
+      {name:"HD (Drying)",standard:_qcRaw.hd||""},
+      {name:"Colour",standard:_qcRaw.colour||""},
+      {name:"Finish",standard:_qcRaw.finish||""},
+      {name:"Viscosity",standard:_qcRaw.viscosity||""},
+      {name:"Specific Gravity",standard:_qcRaw.sg||""},
+      ...(_qcRaw.remarks?[{name:"Remarks",standard:_qcRaw.remarks}]:[])
+    ].filter(p=>p.standard);
   const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Production Sheet — ${bom.productName}</title>
 <style>
   body{font-family:Arial,sans-serif;margin:0;padding:12px;font-size:12px;}
@@ -184,19 +196,14 @@ function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, char
         <tr><td>Date</td><td style="width:55%"></td></tr>
         <tr><td>Discharge time</td><td></td></tr>
         <tr><td>Date</td><td></td></tr>
-        <tr><td colspan="2" class="section-head" style="margin-top:4px">Test</td></tr>
+        <tr><td colspan="2" class="section-head" style="margin-top:4px">Test Parameters</td></tr>
         <tr><th style="border:1px solid #999;padding:3px 5px;background:#d0d0d0;font-size:10px">Parameter</th><th style="border:1px solid #999;padding:3px 5px;background:#d0d0d0;font-size:10px">Standard</th></tr>
-        <tr><td>SD (Drying)</td><td>${qc.sd||""}</td></tr>
-        <tr><td>TF (Drying)</td><td>${qc.tf||""}</td></tr>
-        <tr><td>HD (Drying)</td><td>${qc.hd||""}</td></tr>
-        <tr><td>Colour</td><td>${qc.colour||""}</td></tr>
-        <tr><td>Finish</td><td>${qc.finish||""}</td></tr>
-        <tr><td>Viscosity</td><td>${qc.viscosity||""}</td></tr>
-        <tr><td>Specific Gravity</td><td>${qc.sg||""}</td></tr>
-        ${qc.remarks?`<tr><td>Remarks</td><td>${qc.remarks}</td></tr>`:""}
+        ${qcParams.length?qcParams.map(p=>`<tr><td>${p.name||""}</td><td>${p.standard||""}</td></tr>`).join(""):"<tr><td colspan='2' style='color:#999;font-style:italic'>No QC parameters defined</td></tr>"}
         <tr><td colspan="2" class="section-head" style="padding-top:6px">Packing</td></tr>
-        <tr><th style="border:1px solid #999;padding:3px 5px;background:#d0d0d0;font-size:10px">Size</th><th style="border:1px solid #999;padding:3px 5px;background:#d0d0d0;font-size:10px">Quantity</th></tr>
-        ${packs.length?packs.map(p=>`<tr><td>${p.size}</td><td>${p.qty||""}</td></tr>`).join(""):"<tr><td></td><td></td></tr><tr><td></td><td></td></tr>"}
+        <tr><th style="border:1px solid #999;padding:3px 5px;background:#d0d0d0;font-size:10px">Size</th><th style="border:1px solid #999;padding:3px 5px;background:#d0d0d0;font-size:10px">No. of Packs</th></tr>
+        <tr><td></td><td></td></tr>
+        <tr><td></td><td></td></tr>
+        <tr><td></td><td></td></tr>
       </table>
       <div style="margin-top:8px;font-size:10px;color:#555">BOM v${bom.currentVersion||1} · Printed: ${today()}</div>
     </td>
@@ -4140,10 +4147,6 @@ function BOMForm({form,setForm,saving,isEdit,onCancel,onSave,sysProducts}){
   const updIng=(id,field,val)=>setForm(f=>({...f,ingredients:f.ingredients.map(i=>i.id===id?{...i,[field]:val}:i)}));
   const delIng=(id)=>setForm(f=>({...f,ingredients:f.ingredients.filter(i=>i.id!==id)}));
   const moveIng=(idx,dir)=>setForm(f=>{const arr=[...f.ingredients];const to=idx+dir;if(to<0||to>=arr.length)return f;[arr[idx],arr[to]]=[arr[to],arr[idx]];return{...f,ingredients:arr};});
-  const updQC=(field,val)=>setForm(f=>({...f,qcTests:{...f.qcTests,[field]:val}}));
-  const addPack=()=>setForm(f=>({...f,packingSizes:[...f.packingSizes,{id:newId(),size:"",qty:""}]}));
-  const updPack=(id,field,val)=>setForm(f=>({...f,packingSizes:f.packingSizes.map(p=>p.id===id?{...p,[field]:val}:p)}));
-  const delPack=(id)=>setForm(f=>({...f,packingSizes:f.packingSizes.filter(p=>p.id!==id)}));
 
   return <div>
     <Grid3>
@@ -4203,28 +4206,32 @@ function BOMForm({form,setForm,saving,isEdit,onCancel,onSave,sysProducts}){
       </div>
     </div>
 
-    {/* QC Test Standards */}
+    {/* QC Test Parameters — dynamic, add/edit/remove */}
     <div style={{marginBottom:"14px"}}>
-      <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"8px"}}>QC Test Standards</div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"8px"}}>
-        {[["sd","Drying SD"],["tf","Drying TF"],["hd","Drying HD"],["colour","Colour"],["finish","Finish"],["viscosity","Viscosity"],["sg","Specific Gravity"],["remarks","Remarks"]].map(([k,l])=>(
-          <Field key={k} label={l}><input style={inp} value={(form.qcTests||{})[k]||""} onChange={e=>updQC(k,e.target.value)} placeholder={k==="colour"?"e.g. BUS GREEN":k==="finish"?"e.g. 7+":k==="viscosity"?"e.g. 120 SEC":""}/></Field>
-        ))}
+      <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"6px"}}>QC Test Parameters</div>
+      <div style={{border:"1px solid #1e293b",borderRadius:"8px",overflow:"hidden",marginBottom:"6px"}}>
+        <div style={{display:"grid",gridTemplateColumns:"2fr 2fr 28px",background:"#0b1220",padding:"6px 10px",gap:"6px"}}>
+          {["Parameter Name","Standard / Expected Value",""].map(h=><div key={h} style={{fontSize:"9px",fontWeight:"700",color:"#334155",textTransform:"uppercase"}}>{h}</div>)}
+        </div>
+        {(form.qcTests||[]).map((p,i)=><div key={p.id||i} style={{display:"grid",gridTemplateColumns:"2fr 2fr 28px",padding:"5px 10px",gap:"6px",borderTop:"1px solid #1e293b",alignItems:"center"}}>
+          <input style={sml} value={p.name||""} onChange={e=>{const arr=[...(form.qcTests||[])];arr[i]={...arr[i],name:e.target.value};setForm({...form,qcTests:arr});}} placeholder="e.g. Viscosity, Drying SF, Colour"/>
+          <input style={sml} value={p.standard||""} onChange={e=>{const arr=[...(form.qcTests||[])];arr[i]={...arr[i],standard:e.target.value};setForm({...form,qcTests:arr});}} placeholder="e.g. 120 SEC, 2 Hrs, BUS GREEN"/>
+          <button onClick={()=>setForm({...form,qcTests:(form.qcTests||[]).filter((_,j)=>j!==i)})} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"14px",padding:0}}>×</button>
+        </div>)}
+        {!(form.qcTests||[]).length&&<div style={{padding:"10px 12px",fontSize:"12px",color:"#334155",fontStyle:"italic"}}>No test parameters yet. Add parameters below.</div>}
+      </div>
+      <div style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>
+        <button onClick={()=>setForm({...form,qcTests:[...(form.qcTests||[]),{id:newId(),name:"",standard:""}]})}
+          style={{background:"none",border:"1px dashed #22c55e50",borderRadius:"6px",padding:"5px 12px",color:"#22c55e",cursor:"pointer",fontSize:"12px"}}>+ Add Parameter</button>
+        <button onClick={()=>setForm({...form,qcTests:[...(form.qcTests||[]),...[
+          {id:newId(),name:"SD (Drying)",standard:""},{id:newId(),name:"TF (Drying)",standard:""},
+          {id:newId(),name:"HD (Drying)",standard:""},{id:newId(),name:"Colour",standard:""},
+          {id:newId(),name:"Finish",standard:""},{id:newId(),name:"Viscosity",standard:""},
+          {id:newId(),name:"Specific Gravity",standard:""}
+        ]]})} style={{background:"none",border:"1px dashed #3b82f650",borderRadius:"6px",padding:"5px 12px",color:"#64748b",cursor:"pointer",fontSize:"12px"}}>+ Add Standard Set</button>
       </div>
     </div>
 
-    {/* Packing sizes */}
-    <div style={{marginBottom:"14px"}}>
-      <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"6px"}}>Packing Sizes</div>
-      <div style={{display:"flex",flexDirection:"column",gap:"4px",marginBottom:"6px"}}>
-        {(form.packingSizes||[]).map(p=><div key={p.id} style={{display:"flex",gap:"8px",alignItems:"center"}}>
-          <input style={{...sml,flex:1}} value={p.size} onChange={e=>updPack(p.id,"size",e.target.value)} placeholder="Pack size (e.g. 1L, 4L, 20L)"/>
-          <input style={{...sml,width:"80px"}} value={p.qty} onChange={e=>updPack(p.id,"qty",e.target.value)} placeholder="Qty"/>
-          <button onClick={()=>delPack(p.id)} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"14px",padding:0}}>×</button>
-        </div>)}
-      </div>
-      <button onClick={addPack} style={{background:"none",border:"1px dashed #1e293b",borderRadius:"6px",padding:"5px 12px",color:"#475569",cursor:"pointer",fontSize:"12px"}}>+ Add Pack Size</button>
-    </div>
 
     {isEdit&&<InfoBox color="#f59e0b">Saving will create a new version and archive the current BOM for future reference.</InfoBox>}
     <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
@@ -4269,10 +4276,16 @@ function BOMTab({role,roles,user,showToast,sysProducts}){
   const [showCreate,setShowCreate]=useState(false);
   const [saving,setSaving]=useState(false);
 
+  const defaultQCParams=()=>[
+    {id:newId(),name:"SD (Drying)",standard:""},{id:newId(),name:"TF (Drying)",standard:""},
+    {id:newId(),name:"HD (Drying)",standard:""},{id:newId(),name:"Colour",standard:""},
+    {id:newId(),name:"Finish",standard:""},{id:newId(),name:"Viscosity",standard:""},
+    {id:newId(),name:"Specific Gravity",standard:""}
+  ];
   const blankBOM={productName:"",category:"",baseBatchSize:"100",baseUnit:"L",
     ingredients:[{id:newId(),name:"",standardQty:"",isProcess:false}],
-    qcTests:{sd:"",tf:"",hd:"",colour:"",finish:"",viscosity:"",sg:"",remarks:""},
-    packingSizes:[{id:newId(),size:"",qty:""}]};
+    qcTests:defaultQCParams(),
+    packingSizes:[]};
   const [form,setForm]=useState({...blankBOM});
 
   useEffect(()=>{
@@ -4385,7 +4398,7 @@ function BOMTab({role,roles,user,showToast,sysProducts}){
           <div style={{display:"flex",gap:"6px",flexShrink:0,flexWrap:"wrap"}}>
             <Btn label="🖨 Print" onClick={()=>setActiveBOM({bom:b,mode:"print"})} color="#22c55e" small/>
             {bVersions.length>0&&<Btn label={`📚 History (${bVersions.length})`} onClick={()=>setActiveBOM(isOpen&&mode==="history"?null:{bom:b,mode:"history"})} color="#64748b" small outline/>}
-            {canEdit&&<Btn label="✏️ Edit" onClick={()=>{setForm({...blankBOM,...b,ingredients:b.ingredients?.map(i=>({...i,id:i.id||newId()})),packingSizes:b.packingSizes?.map(p=>({...p,id:p.id||newId()}))||[{id:newId(),size:"",qty:""}]});setActiveBOM({bom:b,mode:"edit"});setShowCreate(false);}} color="#f59e0b" small/>}
+            {canEdit&&<Btn label="✏️ Edit" onClick={()=>{setForm({...blankBOM,...b,ingredients:b.ingredients?.map(i=>({...i,id:i.id||newId()})),qcTests:Array.isArray(b.qcTests)?b.qcTests.map(p=>({...p,id:p.id||newId()})):defaultQCParams()});setActiveBOM({bom:b,mode:"edit"});setShowCreate(false);}} color="#f59e0b" small/>}
             {isAdmin&&<button onClick={()=>deleteBOM(b.id)} style={{background:"none",border:"none",color:"#334155",cursor:"pointer",fontSize:"14px"}}>🗑</button>}
           </div>
         </div>
@@ -4454,17 +4467,12 @@ function BOMTab({role,roles,user,showToast,sysProducts}){
             <div>
               <div style={{fontSize:"10px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"6px"}}>QC Standards</div>
               <div style={{border:"1px solid #1e293b",borderRadius:"6px",overflow:"hidden"}}>
-                {Object.entries(b.qcTests||{}).filter(([,v])=>v).map(([k,v])=><div key={k} style={{display:"grid",gridTemplateColumns:"1fr 1fr",padding:"5px 10px",borderTop:"1px solid #1e293b",gap:"6px"}}>
-                  <div style={{fontSize:"11px",color:"#475569",textTransform:"capitalize"}}>{k}</div>
-                  <div style={{fontSize:"12px",color:"#e2e8f0"}}>{v}</div>
+                {((Array.isArray(b.qcTests)?b.qcTests:Object.entries(b.qcTests||{}).map(([k,v])=>({name:k,standard:v}))).filter(p=>p.standard||p.standard===0)).map((p,i)=><div key={i} style={{display:"grid",gridTemplateColumns:"1fr 1fr",padding:"5px 10px",borderTop:"1px solid #1e293b",gap:"6px"}}>
+                  <div style={{fontSize:"11px",color:"#475569"}}>{p.name}</div>
+                  <div style={{fontSize:"12px",color:"#e2e8f0"}}>{p.standard}</div>
                 </div>)}
+                {!(Array.isArray(b.qcTests)?b.qcTests:Object.entries(b.qcTests||{})).filter(p=>p.standard||p[1]).length&&<div style={{padding:"8px 10px",fontSize:"11px",color:"#334155",fontStyle:"italic"}}>No test parameters defined</div>}
               </div>
-              {(b.packingSizes||[]).filter(p=>p.size).length>0&&<>
-                <div style={{fontSize:"10px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"6px",marginTop:"10px"}}>Packing Sizes</div>
-                <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
-                  {b.packingSizes.filter(p=>p.size).map((p,i)=><span key={i} style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"6px",padding:"3px 10px",fontSize:"12px",color:"#94a3b8"}}>{p.size}</span>)}
-                </div>
-              </>}
             </div>
           </div>
         </div>}
