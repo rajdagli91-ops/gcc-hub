@@ -283,7 +283,7 @@ const CAN_SEE = {
   testimonials:["admin","sales"],
   stock:    ["admin","store","qc","issuer"],
   users:    ["admin"],
-  settings: ["admin"]
+  settings: ["admin","issuer","qc"]
 };
 
 // Default product catalogue — admin can override via Settings tab
@@ -2759,8 +2759,22 @@ function ConfirmDelete({expected,onConfirm,onCancel,saving}){
   </div>;
 }
 
-function SettingsTab({showToast, initialProducts, initialQcParams, initialPackSizes, initialCatUnits, initialUnits, initialPaintTypes, initialRmCats, onSaved, onDirtyChange}){
-  const [subTab,setSubTab]=useState("products");
+function SettingsTab({showToast, initialProducts, initialQcParams, initialPackSizes, initialCatUnits, initialUnits, initialPaintTypes, initialRmCats, onSaved, onDirtyChange, roles=[]}){
+  const isAdmin=(roles||[]).includes("admin");
+  const isIssuer=(roles||[]).includes("issuer");
+  const isQC=(roles||[]).includes("qc");
+
+  // Define which sub-tabs each role can access
+  const allSubTabs=[
+    ["products","🎨 Products",       isAdmin||isIssuer],
+    ["qcparams","🔬 QC Parameters",  isAdmin],
+    ["packsizes","📦 Pack Sizes",    isAdmin||isIssuer],
+    ["units","📏 Units",             isAdmin],
+    ["painttypes","🖌 Paint Types",  isAdmin||isQC],
+    ["rmcats","🧫 RM Categories",    isAdmin],
+    ["fyarchive","📁 FY Archive",    isAdmin],
+  ].filter(([,,allowed])=>allowed);
+  const [subTab,setSubTab]=useState(()=>allSubTabs[0]?.[0]||"products");
   const [saving,setSaving]=useState(false);
   const [isDirty,setIsDirty]=useState(false);
   const [pendingSubTab,setPendingSubTab]=useState(null); // sub-tab waiting for confirm
@@ -3096,7 +3110,7 @@ function SettingsTab({showToast, initialProducts, initialQcParams, initialPackSi
       </div>
     </div>}
     <div style={{display:"flex",gap:"4px",marginBottom:"20px",borderBottom:"1px solid #1e293b"}}>
-      {[["products","🎨 Products"],["qcparams","🔬 QC Parameters"],["packsizes","📦 Pack Sizes"],["units","📏 Units"],["painttypes","🖌 Paint Types"],["rmcats","🧫 RM Categories"],["fyarchive","📁 FY Archive"]].map(([key,label])=>(
+      {allSubTabs.map(([key,label])=>(
         <button key={key} onClick={()=>trySetSubTab(key)} style={{background:subTab===key?"#1e293b":"transparent",border:"none",borderBottom:subTab===key?"2px solid #3b82f6":"2px solid transparent",color:subTab===key?"#f1f5f9":"#64748b",padding:"8px 16px",cursor:"pointer",fontSize:"13px",fontWeight:"600",borderRadius:"8px 8px 0 0",transition:"all 0.15s"}}>{label}</button>
       ))}
     </div>
@@ -5084,7 +5098,7 @@ function MainApp({user,role,roles=[]}){
       {tab==="users"&&<UsersTab currentUser={user}/>}
 
       {/* SETTINGS */}
-      {tab==="settings"&&<SettingsTab
+      {tab==="settings"&&<SettingsTab roles={roles}
         showToast={showToast}
         initialProducts={sysProducts}
         initialQcParams={sysQcParams}
