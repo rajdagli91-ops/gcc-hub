@@ -5378,18 +5378,21 @@ function App(){
       if(u){
         setLoading(true);
         try{await db.collection("userProfiles").doc(u.uid).set({email:u.email,lastLogin:ts()},{merge:true});}catch(e){}
-        // Check if user is banned
+
+        // ── ADMIN SHORTCUT: always first, cannot be banned or reset ──
+        if(ADMIN_EMAILS.includes(u.email)){
+          db.collection("passwordResets").doc(u.email).delete().catch(()=>{});
+          db.collection("bannedUsers").doc(u.email).delete().catch(()=>{});
+          setRole("admin");setRoles(["admin"]);setLoading(false);return;
+        }
+
+        // ── Ban check (non-admin only) ──
         try{
           const banned=await db.collection("bannedUsers").doc(u.email).get();
           if(banned.exists){await auth.signOut();setRoles([]);setRole(null);setLoading(false);return;}
         }catch(e){}
-        // Admin check FIRST — skip all reset/role logic for hardcoded admins
-        if(ADMIN_EMAILS.includes(u.email)){
-          // Clean up any stale passwordResets for admin (safety)
-          db.collection("passwordResets").doc(u.email).delete().catch(()=>{});
-          setRole("admin");setRoles(["admin"]);setLoading(false);return;
-        }
-        // Password reset flow — only for non-admin accounts
+
+        // ── Password reset flow (non-admin only) ──
         try{
           const pr=await db.collection("passwordResets").doc(u.email).get();
           if(pr.exists){
@@ -5409,10 +5412,12 @@ function App(){
             }catch(passErr){
               console.error("Password update failed:",passErr.message);
               await db.collection("passwordResets").doc(u.email).delete().catch(()=>{});
-              alert("Note: An admin set a new password for your account but it could not be applied automatically.\nPlease contact your admin to reset your password.");
+              alert("Password auto-change failed. Please contact your admin.");
             }
           }
         }catch(e){console.error("Password reset check failed:",e);}
+
+        // ── Role lookup (non-admin only) ──
         try{
           const snap=await db.collection("roles").doc(u.email).get();
           if(snap.exists){
