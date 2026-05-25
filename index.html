@@ -2147,16 +2147,9 @@ function UsersTab({currentUser}){
       await C("passwordResets").doc(email).delete().catch(()=>{});
       // 4. Add to bannedUsers so login is blocked at app level
       await C("bannedUsers").doc(email).set({email,removedBy:currentUser.email,removedAt:ts()});
-      // 5. Attempt to delete Firebase Auth account via REST API (works for accounts created with signUp)
-      if(uid){
-        try{
-          await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:delete?key=${firebaseConfig.apiKey}`,{
-            method:"POST",headers:{"Content-Type":"application/json"},
-            body:JSON.stringify({localId:uid,idToken:await currentUser.getIdToken()})
-          });
-        }catch(authErr){/* Firebase Auth deletion requires Admin SDK — app-level block is in place */}
-      }
-      showLT(`${email} removed completely ✓`);
+      // Note: Firebase Auth account deletion requires Firebase Admin SDK (server-side).
+      // The bannedUsers block prevents app access even if the Auth account still exists.
+      showLT(`${email} removed ✓`);
     }catch(e){showLT("Error: "+e.message,"error");}
   };
 
@@ -3865,6 +3858,15 @@ function RMExportImport({materials,CATS,UNITS,user,showToast,onImport}){
     {/* Preview imported data */}
     {preview&&<div style={{background:"#0b1220",border:"1px solid #f59e0b",borderRadius:"10px",padding:"14px"}}>
       <div style={{fontSize:"13px",fontWeight:"700",color:"#f59e0b",marginBottom:"10px"}}>Preview — {preview.length} material{preview.length!==1?"s":""} to import</div>
+      {/* Show new categories/units that will be auto-created */}
+      {[...new Set(preview.map(r=>r.category).filter(Boolean))].filter(c=>!CATS.includes(c)).length>0&&
+        <div style={{background:"#0f1d10",border:"1px solid #22c55e40",borderRadius:"6px",padding:"8px 12px",marginBottom:"8px",fontSize:"12px",color:"#86efac"}}>
+          ✅ New categories will be auto-created: <strong>{[...new Set(preview.map(r=>r.category).filter(Boolean))].filter(c=>!CATS.includes(c)).join(", ")}</strong>
+        </div>}
+      {[...new Set(preview.map(r=>r.unit).filter(Boolean))].filter(u=>u&&!UNITS.includes(u)).length>0&&
+        <div style={{background:"#0f1d10",border:"1px solid #22c55e40",borderRadius:"6px",padding:"8px 12px",marginBottom:"8px",fontSize:"12px",color:"#86efac"}}>
+          ✅ New units will be auto-created: <strong>{[...new Set(preview.map(r=>r.unit).filter(Boolean))].filter(u=>!UNITS.includes(u)).join(", ")}</strong>
+        </div>}
       <div style={{border:"1px solid #1e293b",borderRadius:"8px",overflow:"hidden",marginBottom:"12px",maxHeight:"300px",overflowY:"auto"}}>
         <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 80px 80px 1.5fr",background:"#0b1220",padding:"6px 12px",gap:"6px",position:"sticky",top:0}}>
           {["Name","Category","Unit","Opening Stock","Reorder Level","Supplier"].map(h=><div key={h} style={{fontSize:"9px",fontWeight:"700",color:"#334155",textTransform:"uppercase"}}>{h}</div>)}
@@ -4092,34 +4094,84 @@ function RawMaterialStockTab({role,user,showToast,sysUnits,sysRmCats,onAddRmCat,
 
     {/* ── RECORD CONSUMPTION ── */}
     {subTab==="consume"&&<div>
-      <InfoBox color="#ef4444">Enter materials consumed today. Stock will be deducted automatically.</InfoBox>
-      <Grid2 style={{marginBottom:"12px"}}>
+      <InfoBox color="#ef4444">Select a category to see all its materials. Enter quantities consumed — only filled rows will be saved.</InfoBox>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"10px",marginBottom:"14px"}}>
         <Field label="Date"><input type="date" style={inp} value={consumeDate} onChange={e=>setConsumeDate(e.target.value)}/></Field>
-        <Field label="Entered By"><div style={{...inp,color:"#64748b",cursor:"default"}}>{user?.email}</div></Field>
-      </Grid2>
-      <div style={{border:"1px solid #1e293b",borderRadius:"8px",overflow:"hidden",marginBottom:"8px"}}>
-        <div style={{display:"grid",gridTemplateColumns:"2fr 100px 2fr 28px",background:"#0b1220",padding:"7px 12px",gap:"8px"}}>
-          {["Material","Qty Used","Notes",""].map(h=><div key={h} style={{fontSize:"10px",fontWeight:"700",color:"#334155",textTransform:"uppercase",letterSpacing:"0.07em"}}>{h}</div>)}
-        </div>
-        {consumeRows.map((row,i)=>{
-          const mat=materials.find(m=>m.id===row.materialId);
-          return <div key={i} style={{display:"grid",gridTemplateColumns:"2fr 100px 2fr 28px",padding:"7px 12px",gap:"8px",borderTop:"1px solid #1e293b",alignItems:"center"}}>
-            <select style={sl} value={row.materialId} onChange={e=>setConsumeRows(consumeRows.map((r,idx)=>idx===i?{...r,materialId:e.target.value}:r))}>
-              <option value="">— Select Material —</option>
-              {materials.map(m=><option key={m.id} value={m.id}>{m.name} (Stock: {parseFloat(m.currentStock||0).toFixed(1)} {m.unit})</option>)}
-            </select>
-            <div style={{display:"flex",gap:"4px",alignItems:"center"}}>
-              <input style={{...sml,textAlign:"center"}} type="number" min="0" step="0.01" value={row.qty} onChange={e=>setConsumeRows(consumeRows.map((r,idx)=>idx===i?{...r,qty:e.target.value}:r))} placeholder="0"/>
-              {mat&&<span style={{fontSize:"10px",color:"#475569",whiteSpace:"nowrap"}}>{mat.unit}</span>}
-            </div>
-            <input style={sml} value={row.notes} onChange={e=>setConsumeRows(consumeRows.map((r,idx)=>idx===i?{...r,notes:e.target.value}:r))} placeholder="Batch used for, etc."/>
-            <button onClick={()=>setConsumeRows(consumeRows.filter((_,idx)=>idx!==i))} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"14px",padding:0}}>×</button>
-          </div>;
-        })}
+        <Field label="Filter by Category">
+          <select style={sl} value={filterCat} onChange={e=>{setFilterCat(e.target.value);}}>
+            <option value="All">All Categories</option>
+            {CATS.map(c=><option key={c}>{c}</option>)}
+          </select>
+        </Field>
+        <Field label="Common Notes (optional)"><input style={inp} value={consumeRows[0]?.notes||""} onChange={e=>setConsumeRows(consumeRows.map(r=>({...r,notes:e.target.value})))} placeholder="e.g. Batch 0042, daily use"/></Field>
       </div>
-      <div style={{display:"flex",gap:"8px",justifyContent:"space-between",flexWrap:"wrap"}}>
-        <button onClick={()=>setConsumeRows([...consumeRows,{materialId:"",qty:"",notes:""}])} style={{background:"none",border:"1px dashed #1e293b",borderRadius:"6px",padding:"5px 12px",color:"#475569",cursor:"pointer",fontSize:"12px"}}>+ Add Row</button>
-        <Btn label={saving?"Saving…":"📉 Save Consumption"} onClick={saveConsumption} disabled={saving} color="#ef4444"/>
+
+      {/* Category-grouped consumption grid */}
+      {(filterCat==="All"?CATS:[filterCat]).map(cat=>{
+        const catMats=materials.filter(m=>(m.category||"Uncategorised")===cat);
+        if(!catMats.length) return null;
+        return <div key={cat} style={{border:"1px solid #1e293b",borderRadius:"10px",overflow:"hidden",marginBottom:"10px"}}>
+          <div style={{background:"#0f1d35",padding:"8px 14px",display:"flex",alignItems:"center",gap:"10px",borderBottom:"1px solid #1e3a5f"}}>
+            <span style={{fontSize:"12px",fontWeight:"700",color:"#93c5fd"}}>{cat}</span>
+            <span style={{fontSize:"11px",color:"#475569"}}>{catMats.length} material{catMats.length!==1?"s":""}</span>
+            <button onClick={()=>{
+              const ids=catMats.map(m=>m.id);
+              setConsumeRows(prev=>{
+                const newRows=[...prev];
+                ids.forEach(id=>{if(!newRows.find(r=>r.materialId===id))newRows.push({materialId:id,qty:"",notes:prev[0]?.notes||""});});
+                return newRows;
+              });
+            }} style={{background:"#0f1d35",border:"1px solid #2563eb40",borderRadius:"5px",padding:"2px 8px",color:"#93c5fd",cursor:"pointer",fontSize:"11px",marginLeft:"auto"}}>+ Add All</button>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"2fr 120px 100px",background:"#0b1220",padding:"5px 12px",gap:"8px"}}>
+            {["Material (Current Stock)","Qty Used",""].map((h,i)=><div key={i} style={{fontSize:"9px",fontWeight:"700",color:"#334155",textTransform:"uppercase"}}>{h}</div>)}
+          </div>
+          {catMats.map(m=>{
+            const row=consumeRows.find(r=>r.materialId===m.id);
+            const stock=parseFloat(m.currentStock||0);
+            const qty=parseFloat(row?.qty||0);
+            const isLow=stock<=0||(parseFloat(m.reorderLevel||0)>0&&stock<=parseFloat(m.reorderLevel||0));
+            const willExceed=qty>stock;
+            return <div key={m.id} style={{display:"grid",gridTemplateColumns:"2fr 120px 100px",padding:"7px 12px",gap:"8px",borderTop:"1px solid #1e293b",alignItems:"center",background:row?.qty?qty>0?"#060d0d":"#080d18":"#080d18"}}>
+              <div>
+                <div style={{fontSize:"12px",color:"#e2e8f0",fontWeight:row?.qty?"600":"400"}}>{m.name}</div>
+                <div style={{fontSize:"10.5px",color:isLow?"#ef4444":"#475569"}}>
+                  Stock: {stock.toFixed(2)} {m.unit} {isLow&&"⚠️ Low"}
+                </div>
+              </div>
+              <div style={{display:"flex",gap:"4px",alignItems:"center"}}>
+                <input style={{...sml,textAlign:"center",borderColor:willExceed?"#ef4444":row?.qty?"#22c55e30":"#1e293b",background:willExceed?"#2d0a0a":"#0b1220"}}
+                  type="number" min="0" step="0.01"
+                  value={row?.qty||""}
+                  onChange={e=>{
+                    const val=e.target.value;
+                    setConsumeRows(prev=>{
+                      const exists=prev.find(r=>r.materialId===m.id);
+                      if(exists) return prev.map(r=>r.materialId===m.id?{...r,qty:val}:r);
+                      return [...prev,{materialId:m.id,qty:val,notes:prev[0]?.notes||""}];
+                    });
+                  }}
+                  placeholder="0"/>
+                <span style={{fontSize:"10px",color:"#475569",whiteSpace:"nowrap"}}>{m.unit}</span>
+              </div>
+              {willExceed
+                ?<div style={{fontSize:"10px",color:"#ef4444"}}>⚠️ Exceeds stock</div>
+                :row?.qty&&qty>0
+                  ?<div style={{fontSize:"10px",color:"#22c55e"}}>→ {(stock-qty).toFixed(2)} {m.unit} left</div>
+                  :<div/>}
+            </div>;
+          })}
+        </div>;
+      })}
+
+      <div style={{display:"flex",gap:"8px",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",marginTop:"4px"}}>
+        <div style={{fontSize:"12px",color:"#475569"}}>
+          {consumeRows.filter(r=>r.materialId&&parseFloat(r.qty)>0).length} material{consumeRows.filter(r=>r.materialId&&parseFloat(r.qty)>0).length!==1?"s":""} to record
+        </div>
+        <div style={{display:"flex",gap:"8px"}}>
+          <Btn label="Clear All" onClick={()=>setConsumeRows([{materialId:"",qty:"",notes:""}])} outline color="#475569" small/>
+          <Btn label={saving?"Saving…":"📉 Save Consumption"} onClick={saveConsumption} disabled={saving} color="#ef4444"/>
+        </div>
       </div>
     </div>}
 
@@ -4235,12 +4287,26 @@ function RawMaterialStockTab({role,user,showToast,sysUnits,sysRmCats,onAddRmCat,
     {/* ── EXPORT / IMPORT ── */}
     {subTab==="importexport"&&isAdmin&&<RMExportImport materials={materials} CATS={CATS} UNITS={UNITS} user={user} showToast={showToast} onImport={async(rows)=>{
       // rows: [{name,category,unit,openingStock,reorderLevel,supplier,notes}]
+
+      // ── Step 1: Auto-create any new categories and units from the CSV ──
+      const newCats=[...new Set(rows.map(r=>(r.category||"").trim()).filter(Boolean))]
+        .filter(cat=>cat&&!CATS.includes(cat));
+      const newUnits=[...new Set(rows.map(r=>(r.unit||"").trim()).filter(Boolean))]
+        .filter(u=>u&&!UNITS.includes(u));
+
+      for(const cat of newCats){
+        if(onAddRmCat) await onAddRmCat(cat);
+      }
+      for(const unit of newUnits){
+        if(onAddUnit) await onAddUnit(unit);
+      }
+
+      // ── Step 2: Import materials ──
       let added=0, skipped=0;
       for(const row of rows){
         if(!row.name||!row.name.trim()){skipped++;continue;}
         const existing=materials.find(m=>normalize(m.name)===normalize(row.name));
         if(existing){
-          // Update existing material
           await C("rm_stock_materials").doc(existing.id).update({
             category:row.category||existing.category,unit:row.unit||existing.unit,
             reorderLevel:row.reorderLevel||existing.reorderLevel,supplier:row.supplier||existing.supplier,
@@ -4254,7 +4320,9 @@ function RawMaterialStockTab({role,user,showToast,sysUnits,sysRmCats,onAddRmCat,
           added++;
         }
       }
-      showToast(`Imported: ${added} materials${skipped?`, ${skipped} skipped`:""} ✓`);
+      const catMsg=newCats.length?` · ${newCats.length} new categor${newCats.length===1?"y":"ies"} added`:"";
+      const unitMsg=newUnits.length?` · ${newUnits.length} new unit${newUnits.length===1?"":"s"} added`:"";
+      showToast(`Imported: ${added} materials${skipped?`, ${skipped} skipped`:""}${catMsg}${unitMsg} ✓`);
     }}/>}
   </div>;
 }
