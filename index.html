@@ -466,16 +466,19 @@ const getFY=()=>{const d=new Date();const y=d.getFullYear()%100;return d.getMont
 const getFYFromDate=(dateStr)=>{if(!dateStr)return getFY();const d=new Date(dateStr);const y=d.getFullYear()%100;return d.getMonth()>=3?y+1:y;};
 const getFYLabel=(fy)=>`${String(fy-1).padStart(2,"0")}-${String(fy).padStart(2,"0")}`;
 
-function BatchCard({b,onClick,onDelete,onReprint,role}){
+function BatchCard({b,onClick,onDelete,onReprint,role,getBatchFY}){
   const sc=BS_COL[b.status]||"#94a3b8";
+  const fy=getBatchFY?getBatchFY(b):null;
+  const fyLabel=fy?getFYLabel(fy):null;
   return <div onClick={onClick} onMouseEnter={e=>e.currentTarget.style.background="#0f1f35"} onMouseLeave={e=>e.currentTarget.style.background="#080e1a"}
-    style={{background:"#080e1a",border:"1px solid #1e293b",borderLeft:`3px solid ${sc}`,borderRadius:"8px",padding:"8px 14px",cursor:"pointer",transition:"background 0.1s",display:"grid",gridTemplateColumns:"100px 1fr 1fr auto auto auto",gap:"8px",alignItems:"center",marginBottom:"4px"}}>
+    style={{background:"#080e1a",border:"1px solid #1e293b",borderLeft:`3px solid ${sc}`,borderRadius:"8px",padding:"8px 14px",cursor:"pointer",transition:"background 0.1s",display:"grid",gridTemplateColumns:"100px 1fr 1fr auto auto auto auto",gap:"8px",alignItems:"center",marginBottom:"4px"}}>
     <div style={{fontSize:"13px",fontWeight:"700",color:"#f1f5f9",fontFamily:"monospace"}}>{b.batchNo}</div>
     <div style={{minWidth:0}}>
       <div style={{fontSize:"12.5px",fontWeight:"600",color:"#e2e8f0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{b.productName}{b.shade?` · ${b.shade}`:""}</div>
       <div style={{fontSize:"10.5px",color:"#475569"}}>{b.category||""}</div>
     </div>
     <div style={{fontSize:"11px",color:"#64748b"}}>{b.batchSize} {b.unit} · {b.dateIssued}</div>
+    {fyLabel&&<span style={{fontSize:"10px",fontWeight:"700",color:"#64748b",background:"#1e293b",borderRadius:"5px",padding:"2px 6px",whiteSpace:"nowrap"}}>FY {fyLabel}</span>}
     <Bdg label={b.status} color={sc}/>
     {onReprint&&<button onClick={e=>{e.stopPropagation();onReprint(b);}} title="Reprint production sheet" style={{background:"none",border:"1px solid #334155",borderRadius:"5px",color:"#64748b",fontSize:"12px",padding:"2px 6px",cursor:"pointer"}}>🖨</button>}
     {(role==="admin")&&<button onClick={e=>{e.stopPropagation();onDelete(b.id)}} style={{background:"none",border:"none",color:"#334155",fontSize:"14px",padding:"2px 4px"}}>🗑</button>}
@@ -5219,7 +5222,8 @@ function MainApp({user,role,roles=[]}){
   const fb=batches.filter(b=>{
     const ms=batchFilter==="All"||b.status===batchFilter;
     const cs=batchCatFilter==="All"||b.category===batchCatFilter;
-    const fys=batchFYFilter==="All"||getBatchFY(b)===parseInt(batchFYFilter);
+    const bFY=getBatchFY(b);
+    const fys=batchFYFilter==="All"||String(bFY)===String(batchFYFilter);
     const mths=batchMonthFilter==="All"||(b.dateIssued||"").slice(5,7)===batchMonthFilter;
     const q=normalize(batchSearch);
     const match=!q||normalize(b.batchNo||"").includes(q)||normalize(b.productName||"").includes(q)||normalize(b.shade||"").includes(q);
@@ -5361,7 +5365,7 @@ function MainApp({user,role,roles=[]}){
             {["Batch #","Product","Size · Date","Status",""].map(h=><div key={h} style={{fontSize:"9px",fontWeight:"700",color:"#334155",textTransform:"uppercase",letterSpacing:"0.07em"}}>{h}</div>)}
           </div>}
           {fb.length===0?<div style={{textAlign:"center",padding:"40px 0"}}><div style={{fontSize:"30px",marginBottom:"8px"}}>📦</div><div style={{fontSize:"13px",color:"#475569"}}>No batches match filters.{canIssuer?" Click + Issue New Batch.":""}</div></div>
-            :fb.map(b=><BatchCard key={b.id} b={b} onClick={()=>setActiveBatch(b)}
+            :fb.map(b=><BatchCard key={b.id} b={b} onClick={()=>setActiveBatch(b)} getBatchFY={getBatchFY}
               onReprint={async(batch)=>{
                 try{
                   const bomSnap=await C("bom_products").where("productName","==",batch.productName).limit(1).get();
