@@ -4789,7 +4789,9 @@ function TasksTab({user,roles,showToast,allRoles,allProfiles}){
   const [subTab,setSubTab]=useState("pending");
   const [showCreate,setShowCreate]=useState(false);
   const [saving,setSaving]=useState(false);
-  const [completeTask,setCompleteTask]=useState(null); // {id, notes}
+  const [completeTask,setCompleteTask]=useState(null);
+  const [reassignTask,setReassignTask]=useState(null); // {id, assignedTo, title}
+  const [completedSortUser,setCompletedSortUser]=useState("All"); // filter by user
 
   const blankTask={title:"",description:"",assignedTo:user.email,dueDate:"",priority:"Normal"};
   const [form,setForm]=useState({...blankTask});
@@ -4804,6 +4806,28 @@ function TasksTab({user,roles,showToast,allRoles,allProfiles}){
     const nb=allProfiles[b]?.displayName||b;
     return na.localeCompare(nb);
   });
+
+  useEffect(()=>{
+    // Auto-delete completed tasks older than 60 days
+    const cutoff=new Date();cutoff.setDate(cutoff.getDate()-60);
+    const cutoffStr=cutoff.toISOString().slice(0,10);
+    C("tasks").where("status","==","completed").get().then(snap=>{
+      const old=snap.docs.filter(d=>(d.data().completedAt||"")<=cutoffStr);
+      if(old.length){const b=db.batch();old.slice(0,20).forEach(d=>b.delete(C("tasks").doc(d.id)));b.commit().catch(()=>{});}
+    }).catch(()=>{});
+  },[]);
+
+  const reassign=async()=>{
+    if(!reassignTask?.assignedTo)return;
+    setSaving(true);
+    try{
+      await C("tasks").doc(reassignTask.id).update({status:"pending",assignedTo:reassignTask.assignedTo,reassignedBy:user.email,reassignedAt:today(),completedAt:null,completionNotes:"",completedBy:null});
+      if(reassignTask.assignedTo!==user.email)
+        await C("notifications").add({assignedTo:reassignTask.assignedTo,title:"Task reassigned: "+reassignTask.title,message:"Reassigned by "+(allProfiles[user.email]?.displayName||user.email),type:"task_assigned",read:false,_createdAt:ts()});
+      showToast("Task reassigned ✓");setReassignTask(null);
+    }catch(e){showToast("Error: "+e.message,"error");}
+    setSaving(false);
+  };
 
   useEffect(()=>{
     // Admin sees all tasks. Others see tasks assigned TO them OR tasks they assigned.
@@ -4949,23 +4973,69 @@ function TasksTab({user,roles,showToast,allRoles,allProfiles}){
 
     {/* COMPLETED tab */}
     {subTab==="completed"&&!loading&&<div>
+      {/* Sort & filter controls */}
+      <div style={{display:"flex",gap:"8px",alignItems:"center",marginBottom:"10px",flexWrap:"wrap"}}>
+        <span style={{fontSize:"12px",color:"#475569",fontWeight:"600"}}>Filter by user:</span>
+        <select style={{...sl,width:"200px",fontSize:"12px",padding:"5px 8px"}} value={completedSortUser} onChange={e=>setCompletedSortUser(e.target.value)}>
+          <option value="All">All Users</option>
+          {[...new Set(completed.map(t=>t.assignedTo))].sort().map(e=><option key={e} value={e}>{allProfiles[e]?.displayName||e}</option>)}
+        </select>
+        <span style={{fontSize:"11px",color:"#334155",marginLeft:"4px"}}>
+          {completed.filter(t=>completedSortUser==="All"||t.assignedTo===completedSortUser).length} tasks
+        </span>
+        <span style={{fontSize:"10px",color:"#334155",marginLeft:"auto",fontStyle:"italic"}}>
+          ⏳ Completed tasks auto-delete after 60 days
+        </span>
+      </div>
+
       {completed.length===0&&<div style={{textAlign:"center",padding:"50px 0"}}><div style={{fontSize:"36px"}}>📋</div><div style={{fontSize:"13px",color:"#475569",marginTop:"8px"}}>No completed tasks yet</div></div>}
-      {completed.map(task=>{
-        const assigneeName=allProfiles[task.assignedTo]?.displayName||task.assignedTo;
-        return <div key={task.id} style={{background:"#0b1220",border:"1px solid #1e293b",borderLeft:"3px solid #22c55e",borderRadius:"10px",padding:"12px 16px",marginBottom:"6px",opacity:0.85}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:"8px"}}>
-            <div style={{flex:1}}>
-              <div style={{fontSize:"13px",fontWeight:"700",color:"#94a3b8",marginBottom:"3px"}}>✅ {task.title}</div>
-              {task.completionNotes&&<div style={{fontSize:"12px",color:"#475569",marginBottom:"3px",fontStyle:"italic"}}>"{task.completionNotes}"</div>}
-              <div style={{fontSize:"11px",color:"#334155",display:"flex",gap:"12px",flexWrap:"wrap"}}>
-                <span>Assigned: {task.assignedAt}</span>
-                <span>Completed: {task.completedAt}</span>
-                {canAssign&&<span>By: {assigneeName}</span>}
-                {task.completedBy&&task.completedBy!==task.assignedTo&&<span>Signed off: {allProfiles[task.completedBy]?.displayName||task.completedBy}</span>}
+
+      {/* Group by user if "All" selected */}
+      {(completedSortUser==="All"
+        ?[...new Set(completed.map(t=>t.assignedTo))].sort()
+        :[completedSortUser]
+      ).map(userEmail=>{
+        const userTasks=completed.filter(t=>t.assignedTo===userEmail);
+        if(!userTasks.length)return null;
+        const userName=allProfiles[userEmail]?.displayName||userEmail;
+        return <div key={userEmail} style={{marginBottom:"14px"}}>
+          {completedSortUser==="All"&&<div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"6px",paddingBottom:"4px",borderBottom:"1px solid #1e293b"}}>
+            👤 {userName} — {userTasks.length} task{userTasks.length!==1?"s":""}
+          </div>}
+          {userTasks.map(task=>{
+            const isReassigningThis=reassignTask?.id===task.id;
+            const daysSince=task.completedAt?Math.floor((new Date()-new Date(task.completedAt))/(86400000)):null;
+            const daysLeft=daysSince!==null?60-daysSince:null;
+            return <div key={task.id} style={{background:"#0b1220",border:"1px solid #1e293b",borderLeft:"3px solid #22c55e",borderRadius:"10px",padding:"12px 16px",marginBottom:"6px"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:"8px",flexWrap:"wrap"}}>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:"13px",fontWeight:"700",color:"#94a3b8",marginBottom:"3px"}}>✅ {task.title}</div>
+                  {task.completionNotes&&<div style={{fontSize:"12px",color:"#475569",marginBottom:"3px",fontStyle:"italic"}}>"{task.completionNotes}"</div>}
+                  <div style={{fontSize:"11px",color:"#334155",display:"flex",gap:"10px",flexWrap:"wrap"}}>
+                    <span>Assigned: {task.assignedAt}</span>
+                    <span>Completed: {task.completedAt}</span>
+                    {canAssign&&completedSortUser==="All"&&<span>By: {userName}</span>}
+                    {daysLeft!==null&&daysLeft<=14&&<span style={{color:daysLeft<=3?"#ef4444":"#f59e0b"}}>🗑 Auto-deletes in {daysLeft}d</span>}
+                  </div>
+                </div>
+                <div style={{display:"flex",gap:"6px",flexShrink:0}}>
+                  {canAssign&&!isReassigningThis&&<Btn label="↩ Reassign" onClick={()=>setReassignTask({id:task.id,title:task.title,assignedTo:task.assignedTo})} color="#f59e0b" small outline/>}
+                  {(isAdmin||task.assignedBy===user.email)&&<button onClick={()=>deleteTask(task.id)} style={{background:"none",border:"none",color:"#334155",cursor:"pointer",fontSize:"14px"}}>🗑</button>}
+                </div>
               </div>
-            </div>
-            {isAdmin&&<button onClick={()=>deleteTask(task.id)} style={{background:"none",border:"none",color:"#334155",cursor:"pointer",fontSize:"14px"}}>🗑</button>}
-          </div>
+              {/* Reassign form */}
+              {isReassigningThis&&<div style={{marginTop:"10px",paddingTop:"10px",borderTop:"1px solid #1e293b"}}>
+                <div style={{fontSize:"12px",color:"#f59e0b",fontWeight:"600",marginBottom:"8px"}}>↩ Reassign Task — moves back to Pending</div>
+                <div style={{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap"}}>
+                  <select style={{...sl,flex:1}} value={reassignTask.assignedTo} onChange={e=>setReassignTask({...reassignTask,assignedTo:e.target.value})}>
+                    {assignableUsers.map(e=><option key={e} value={e}>{allProfiles[e]?.displayName?`${allProfiles[e].displayName} (${e})`:e}</option>)}
+                  </select>
+                  <Btn label={saving?"Saving…":"↩ Confirm Reassign"} onClick={reassign} disabled={saving} color="#f59e0b" small/>
+                  <Btn label="Cancel" onClick={()=>setReassignTask(null)} outline color="#475569" small/>
+                </div>
+              </div>}
+            </div>;
+          })}
         </div>;
       })}
     </div>}
