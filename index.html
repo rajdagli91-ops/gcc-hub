@@ -280,6 +280,7 @@ const CAN_SEE = {
   complaints:["admin","issuer","qc","sales"],
   rd:       ["admin","qc"],
   bom:      ["admin","issuer","qc"],
+  tasks:    ["admin","issuer","qc","sales","store"],
   testimonials:["admin","sales"],
   stock:    ["admin","store","qc","issuer"],
   users:    ["admin"],
@@ -1803,8 +1804,13 @@ function RMDetailView({entry,showToast}){
 // ══════════════════════════════════════════════════════════
 // DASHBOARD TAB
 // ══════════════════════════════════════════════════════════
-function DashboardTab({role,user}){
+function DashboardTab({role,user,onNavigate}){
   const [counts,setCounts]=useState({batches:0,activeBatches:0,openComplaints:0,rdProjects:0,rmTests:0,qcPending:0});
+  const [myTasks,setMyTasks]=useState([]);
+  useEffect(()=>{
+    const u=C("tasks").where("assignedTo","==",user.email).where("status","==","pending").orderBy("_createdAt","desc").onSnapshot(s=>setMyTasks(s.docs.map(d=>({id:d.id,...d.data()}))),()=>{});
+    return u;
+  },[user?.email]);
   useEffect(()=>{
     // For sales: only count their own open complaints
     const complaintsQuery=role==="sales"&&user?.email
@@ -1840,6 +1846,33 @@ function DashboardTab({role,user}){
         <div style={{fontSize:"28px",fontWeight:"700",color:t.color,marginBottom:"4px"}}>{t.val}</div>
         <div style={{fontSize:"12px",color:"#475569",fontWeight:"600"}}>{t.label}</div>
       </div>)}
+    </div>
+    {/* My pending tasks */}
+    <div style={{marginTop:"20px",background:"#0f172a",border:`1px solid ${myTasks.length?"#1e3a5f":"#1e293b"}`,borderRadius:"12px",padding:"16px 18px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"10px"}}>
+        <div style={{fontSize:"12px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.1em"}}>
+          📋 My Pending Tasks {myTasks.length>0&&<span style={{background:"#ef4444",color:"#fff",borderRadius:"99px",fontSize:"10px",padding:"1px 7px",marginLeft:"6px"}}>{myTasks.length}</span>}
+        </div>
+        {onNavigate&&<button onClick={()=>onNavigate("tasks")} style={{background:"none",border:"1px solid #1e293b",borderRadius:"6px",padding:"3px 10px",color:"#64748b",fontSize:"11px",cursor:"pointer"}}>View All →</button>}
+      </div>
+      {myTasks.length===0
+        ?<div style={{fontSize:"12px",color:"#334155",fontStyle:"italic"}}>No pending tasks — you're all caught up ✓</div>
+        :myTasks.slice(0,5).map(task=>{
+          const isOverdue=task.dueDate&&task.dueDate<today();
+          const PRIORITY_COLORS={High:"#ef4444",Normal:"#3b82f6",Low:"#22c55e"};
+          return <div key={task.id} style={{display:"flex",gap:"10px",alignItems:"flex-start",padding:"8px 10px",background:"#080d18",borderRadius:"8px",marginBottom:"5px",border:`1px solid ${isOverdue?"#7f1d1d":"#1e293b"}`}}>
+            <span style={{fontSize:"14px",marginTop:"1px"}}>📌</span>
+            <div style={{flex:1}}>
+              <div style={{fontSize:"13px",fontWeight:"600",color:"#e2e8f0"}}>{task.title}</div>
+              <div style={{fontSize:"11px",color:"#475569",display:"flex",gap:"8px",flexWrap:"wrap",marginTop:"2px"}}>
+                <span>By: {task.assignedBy}</span>
+                {task.dueDate&&<span style={{color:isOverdue?"#ef4444":"#64748b"}}>⏰ {task.dueDate}{isOverdue?" (Overdue!)":""}</span>}
+                <Bdg label={task.priority||"Normal"} color={PRIORITY_COLORS[task.priority||"Normal"]} small/>
+              </div>
+            </div>
+          </div>;
+        })}
+      {myTasks.length>5&&<div style={{fontSize:"11px",color:"#475569",textAlign:"center",marginTop:"6px"}}>+{myTasks.length-5} more — <button onClick={()=>onNavigate&&onNavigate("tasks")} style={{background:"none",border:"none",color:"#3b82f6",cursor:"pointer",fontSize:"11px"}}>view all</button></div>}
     </div>
     <div style={{marginTop:"20px",background:"#0f172a",border:"1px solid #1e293b",borderRadius:"12px",padding:"16px 18px"}}>
       <div style={{fontSize:"12px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:"10px"}}>Your Access Level</div>
@@ -4726,6 +4759,180 @@ function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes,sysQcParams}
   </div>;
 }
 
+// ══════════════════════════════════════════════════════════
+// TASKS MODULE
+// ══════════════════════════════════════════════════════════
+function TasksTab({user,roles,showToast,allRoles,allProfiles}){
+  const isAdmin=roles.includes("admin");
+  const canAssign=roles.some(r=>["admin","issuer"].includes(r));
+  const [tasks,setTasks]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [subTab,setSubTab]=useState("pending");
+  const [showCreate,setShowCreate]=useState(false);
+  const [saving,setSaving]=useState(false);
+  const [completeTask,setCompleteTask]=useState(null); // {id, notes}
+
+  const blankTask={title:"",description:"",assignedTo:user.email,dueDate:"",priority:"Normal"};
+  const [form,setForm]=useState({...blankTask});
+
+  // All assignable users
+  const assignableUsers=[...new Set([...Object.keys(allRoles),...ADMIN_EMAILS])].sort();
+
+  useEffect(()=>{
+    // Admin/Issuer: see all tasks. Others: only own tasks.
+    const q=canAssign
+      ?C("tasks").orderBy("_createdAt","desc")
+      :C("tasks").where("assignedTo","==",user.email).orderBy("_createdAt","desc");
+    const u=q.onSnapshot(s=>{setTasks(s.docs.map(d=>({id:d.id,...d.data()})));setLoading(false);},()=>setLoading(false));
+    return u;
+  },[]);
+
+  const createTask=async()=>{
+    if(!form.title.trim())return showToast("Task title required","error");
+    if(!form.assignedTo)return showToast("Assign to someone","error");
+    setSaving(true);
+    try{
+      const taskRef=await C("tasks").add({...form,status:"pending",assignedBy:user.email,assignedAt:today(),_createdAt:ts()});
+      // Create notification for assignee (if not self-assigning)
+      if(form.assignedTo!==user.email){
+        await C("notifications").add({
+          assignedTo:form.assignedTo,
+          title:"New task assigned: "+form.title,
+          message:"Assigned by "+(allProfiles[user.email]?.displayName||user.email)+(form.dueDate?" · Due: "+form.dueDate:""),
+          taskId:taskRef.id,type:"task_assigned",read:false,_createdAt:ts()
+        });
+      }
+      showToast("Task assigned ✓");setShowCreate(false);setForm({...blankTask});
+    }catch(e){showToast("Error: "+e.message,"error");}
+    setSaving(false);
+  };
+
+  const markComplete=async(task,notes)=>{
+    setSaving(true);
+    try{
+      await C("tasks").doc(task.id).update({status:"completed",completedAt:today(),completionNotes:notes||"",completedBy:user.email});
+      showToast("Task marked complete ✓");setCompleteTask(null);
+    }catch(e){showToast("Error: "+e.message,"error");}
+    setSaving(false);
+  };
+
+  const deleteTask=async(id)=>{
+    if(!confirm("Delete this task?"))return;
+    await C("tasks").doc(id).delete();
+    showToast("Deleted","error");
+  };
+
+  const PRIORITY_COLORS={High:"#ef4444",Normal:"#3b82f6",Low:"#22c55e"};
+  const pending=tasks.filter(t=>t.status==="pending");
+  const completed=tasks.filter(t=>t.status==="completed");
+  const myPending=pending.filter(t=>t.assignedTo===user.email);
+
+  return <div>
+    <SectionHead title="✅ Tasks"/>
+    <div style={{display:"flex",gap:"8px",alignItems:"center",marginBottom:"12px",flexWrap:"wrap"}}>
+      {["pending","completed"].map(s=><button key={s} onClick={()=>setSubTab(s)} style={{background:subTab===s?"#1e293b":"transparent",border:"none",borderBottom:subTab===s?"2px solid #3b82f6":"2px solid transparent",color:subTab===s?"#f1f5f9":"#64748b",padding:"7px 16px",cursor:"pointer",fontSize:"13px",fontWeight:"600",borderRadius:"8px 8px 0 0"}}>
+        {s==="pending"?"📋 Pending":"✅ Completed"}
+        <span style={{fontSize:"11px",marginLeft:"5px",background:"#0b1220",padding:"1px 6px",borderRadius:"99px",color:"#475569"}}>{s==="pending"?pending.length:completed.length}</span>
+      </button>)}
+      {canAssign&&<Btn label="+ Assign Task" onClick={()=>{setForm({...blankTask});setShowCreate(true);}} color="#3b82f6" style={{marginLeft:"auto"}}/>}
+    </div>
+
+    {/* Create task form */}
+    {showCreate&&canAssign&&<div style={{background:"#080d18",border:"1px solid #3b82f630",borderRadius:"12px",padding:"16px",marginBottom:"14px"}}>
+      <div style={{fontSize:"13px",fontWeight:"700",color:"#93c5fd",marginBottom:"12px"}}>📋 Assign New Task</div>
+      <Grid2>
+        <Field label="Task Title *"><input style={inp} value={form.title} onChange={e=>setForm({...form,title:e.target.value})} placeholder="e.g. Check batch 0042 QC parameters"/></Field>
+        <Field label="Assign To *">
+          <select style={sl} value={form.assignedTo} onChange={e=>setForm({...form,assignedTo:e.target.value})}>
+            {assignableUsers.map(e=><option key={e} value={e}>{allProfiles[e]?.displayName||e}</option>)}
+          </select>
+        </Field>
+      </Grid2>
+      <Field label="Description / Instructions"><textarea style={{...inp,minHeight:"70px",resize:"vertical"}} value={form.description} onChange={e=>setForm({...form,description:e.target.value})} placeholder="Detailed instructions (optional)"/></Field>
+      <Grid2>
+        <Field label="Due Date (optional)"><input type="date" style={inp} value={form.dueDate} onChange={e=>setForm({...form,dueDate:e.target.value})}/></Field>
+        <Field label="Priority">
+          <select style={sl} value={form.priority} onChange={e=>setForm({...form,priority:e.target.value})}>
+            {["High","Normal","Low"].map(p=><option key={p}>{p}</option>)}
+          </select>
+        </Field>
+      </Grid2>
+      <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
+        <Btn label="Cancel" onClick={()=>setShowCreate(false)} outline color="#475569" small/>
+        <Btn label={saving?"Saving…":"✓ Assign Task"} onClick={createTask} disabled={saving} color="#3b82f6" small/>
+      </div>
+    </div>}
+
+    {loading&&<div style={{textAlign:"center",padding:"40px",color:"#475569"}}>Loading…</div>}
+
+    {/* PENDING tab */}
+    {subTab==="pending"&&!loading&&<div>
+      {pending.length===0&&<div style={{textAlign:"center",padding:"50px 0"}}><div style={{fontSize:"36px"}}>✅</div><div style={{fontSize:"13px",color:"#475569",marginTop:"8px"}}>No pending tasks</div></div>}
+      {pending.map(task=>{
+        const isOverdue=task.dueDate&&task.dueDate<today()&&task.status==="pending";
+        const isMine=task.assignedTo===user.email;
+        const assigneeName=allProfiles[task.assignedTo]?.displayName||task.assignedTo;
+        const assignerName=allProfiles[task.assignedBy]?.displayName||task.assignedBy;
+        const isCompletingThis=completeTask?.id===task.id;
+        return <div key={task.id} style={{background:"#0f172a",border:`1px solid ${isOverdue?"#7f1d1d":isMine?"#1e3a5f":"#1e293b"}`,borderLeft:`3px solid ${PRIORITY_COLORS[task.priority]||"#3b82f6"}`,borderRadius:"10px",padding:"13px 16px",marginBottom:"8px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:"8px",flexWrap:"wrap"}}>
+            <div style={{flex:1}}>
+              <div style={{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap",marginBottom:"4px"}}>
+                <span style={{fontSize:"13px",fontWeight:"700",color:"#f1f5f9"}}>{task.title}</span>
+                <Bdg label={task.priority} color={PRIORITY_COLORS[task.priority]||"#3b82f6"} small/>
+                {isOverdue&&<Bdg label="⚠️ Overdue" color="#ef4444" small/>}
+                {isMine&&<Bdg label="👤 Assigned to you" color="#22c55e" small/>}
+              </div>
+              {task.description&&<div style={{fontSize:"12px",color:"#64748b",marginBottom:"4px"}}>{task.description}</div>}
+              <div style={{fontSize:"11px",color:"#475569",display:"flex",gap:"12px",flexWrap:"wrap"}}>
+                <span>📅 Assigned: {task.assignedAt}</span>
+                {task.dueDate&&<span style={{color:isOverdue?"#ef4444":"#64748b"}}>⏰ Due: {task.dueDate}</span>}
+                {canAssign&&<span>👤 To: {assigneeName}</span>}
+                <span>Assigned by: {assignerName}</span>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:"6px",flexShrink:0}}>
+              {isMine&&!isCompletingThis&&<Btn label="✅ Mark Complete" onClick={()=>setCompleteTask({id:task.id,notes:""})} color="#22c55e" small/>}
+              {isAdmin&&<button onClick={()=>deleteTask(task.id)} style={{background:"none",border:"none",color:"#334155",cursor:"pointer",fontSize:"14px"}}>🗑</button>}
+            </div>
+          </div>
+          {/* Completion form */}
+          {isCompletingThis&&<div style={{marginTop:"10px",paddingTop:"10px",borderTop:"1px solid #1e293b"}}>
+            <Field label="Completion Notes (optional)"><textarea style={{...inp,minHeight:"60px",resize:"vertical"}} value={completeTask.notes} onChange={e=>setCompleteTask({...completeTask,notes:e.target.value})} placeholder="What was done, any observations…"/></Field>
+            <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",marginTop:"8px"}}>
+              <Btn label="Cancel" onClick={()=>setCompleteTask(null)} outline color="#475569" small/>
+              <Btn label={saving?"Saving…":"✅ Confirm Complete"} onClick={()=>markComplete(task,completeTask.notes)} disabled={saving} color="#22c55e" small/>
+            </div>
+          </div>}
+        </div>;
+      })}
+    </div>}
+
+    {/* COMPLETED tab */}
+    {subTab==="completed"&&!loading&&<div>
+      {completed.length===0&&<div style={{textAlign:"center",padding:"50px 0"}}><div style={{fontSize:"36px"}}>📋</div><div style={{fontSize:"13px",color:"#475569",marginTop:"8px"}}>No completed tasks yet</div></div>}
+      {completed.map(task=>{
+        const assigneeName=allProfiles[task.assignedTo]?.displayName||task.assignedTo;
+        return <div key={task.id} style={{background:"#0b1220",border:"1px solid #1e293b",borderLeft:"3px solid #22c55e",borderRadius:"10px",padding:"12px 16px",marginBottom:"6px",opacity:0.85}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:"8px"}}>
+            <div style={{flex:1}}>
+              <div style={{fontSize:"13px",fontWeight:"700",color:"#94a3b8",marginBottom:"3px"}}>✅ {task.title}</div>
+              {task.completionNotes&&<div style={{fontSize:"12px",color:"#475569",marginBottom:"3px",fontStyle:"italic"}}>"{task.completionNotes}"</div>}
+              <div style={{fontSize:"11px",color:"#334155",display:"flex",gap:"12px",flexWrap:"wrap"}}>
+                <span>Assigned: {task.assignedAt}</span>
+                <span>Completed: {task.completedAt}</span>
+                {canAssign&&<span>By: {assigneeName}</span>}
+                {task.completedBy&&task.completedBy!==task.assignedTo&&<span>Signed off: {allProfiles[task.completedBy]?.displayName||task.completedBy}</span>}
+              </div>
+            </div>
+            {isAdmin&&<button onClick={()=>deleteTask(task.id)} style={{background:"none",border:"none",color:"#334155",cursor:"pointer",fontSize:"14px"}}>🗑</button>}
+          </div>
+        </div>;
+      })}
+    </div>}
+  </div>;
+}
+
 function MainApp({user,role,roles=[]}){
   const isAdmin=roles.includes("admin");
   // Helper: does user have ANY of the given roles?
@@ -4766,6 +4973,10 @@ function MainApp({user,role,roles=[]}){
     try{await C("settings").doc("products").set({units:updated},{merge:true});}catch(e){}
   };
   const [oldStocks,setOldStocks]=useState([]);
+  const [allRoles,setAllRoles]=useState({});       // email -> roles array (for task assignment)
+  const [allProfiles,setAllProfiles]=useState({}); // email -> profile
+  const [notifications,setNotifications]=useState([]);  // unread notifications for current user
+  const [showNotifs,setShowNotifs]=useState(false);
 
   // Data
   const [batches,setBatches]=useState([]);
@@ -4833,6 +5044,11 @@ function MainApp({user,role,roles=[]}){
 
   useEffect(()=>{
     const subs=[];
+    // All roles & profiles (for task assignment dropdown)
+    subs.push(C("roles").onSnapshot(s=>{const r={};s.docs.forEach(d=>{const dat=d.data();r[d.id]=dat.roles||(dat.role?[dat.role]:[]);});setAllRoles(r);}));
+    subs.push(C("userProfiles").onSnapshot(s=>{const p={};s.docs.forEach(d=>{const dat=d.data();if(dat.email)p[dat.email]={...dat,uid:d.id};});setAllProfiles(p);}));
+    // Notifications for current user
+    subs.push(C("notifications").where("assignedTo","==",user.email).where("read","==",false).orderBy("_createdAt","desc").onSnapshot(s=>setNotifications(s.docs.map(d=>({id:d.id,...d.data()}))),()=>{}));
     // Load product/QC settings for all roles
     C("settings").doc("products").get().then(snap=>{
       if(snap.exists){const d=snap.data();
@@ -5014,6 +5230,7 @@ function MainApp({user,role,roles=[]}){
     {key:"complaints",label:"⚠️ Complaints"},
     {key:"rd",label:"🧪 R&D & QC"},
     {key:"bom",label:"📋 BOM"},
+    {key:"tasks",label:"✅ Tasks"},
     {key:"stock",label:"🏪 RM Stock"},
     {key:"testimonials",label:"⭐ Testimonials"},
     {key:"users",label:"👥 Users"},
@@ -5045,7 +5262,29 @@ function MainApp({user,role,roles=[]}){
                 <span style={{fontSize:"11px",color:"#334155"}}>{user.email}</span>
                 <span style={{fontSize:"10px",fontWeight:"700",padding:"2px 8px",borderRadius:"99px",background:`${ROLE_COLORS[role]}18`,color:ROLE_COLORS[role],border:`1px solid ${ROLE_COLORS[role]}30`}}>{ROLE_LABELS[role]}</span>
               </div>
-              <div style={{display:"flex",gap:"4px"}}>
+              <div style={{display:"flex",gap:"4px",alignItems:"center"}}>
+                {/* 🔔 Notification bell */}
+                <div style={{position:"relative"}}>
+                  <button onClick={()=>setShowNotifs(v=>!v)} style={{background:"none",border:"1px solid #1e293b",borderRadius:"7px",padding:"4px 10px",color:notifications.length?"#f59e0b":"#475569",fontSize:"15px",cursor:"pointer",position:"relative"}}>
+                    🔔{notifications.length>0&&<span style={{position:"absolute",top:"-4px",right:"-4px",background:"#ef4444",color:"#fff",borderRadius:"99px",fontSize:"9px",fontWeight:"700",padding:"1px 4px",minWidth:"14px",textAlign:"center"}}>{notifications.length}</span>}
+                  </button>
+                  {showNotifs&&<div style={{position:"absolute",right:0,top:"36px",width:"300px",background:"#0f172a",border:"1px solid #1e293b",borderRadius:"10px",boxShadow:"0 10px 40px rgba(0,0,0,0.5)",zIndex:999}}>
+                    <div style={{padding:"10px 14px",borderBottom:"1px solid #1e293b",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                      <span style={{fontSize:"12px",fontWeight:"700",color:"#f1f5f9"}}>Notifications</span>
+                      {notifications.length>0&&<button onClick={async()=>{await Promise.all(notifications.map(n=>C("notifications").doc(n.id).update({read:true})));setShowNotifs(false);}} style={{background:"none",border:"none",color:"#64748b",cursor:"pointer",fontSize:"11px"}}>Mark all read</button>}
+                    </div>
+                    {notifications.length===0?<div style={{padding:"20px",textAlign:"center",color:"#334155",fontSize:"12px"}}>No new notifications</div>
+                    :notifications.map(n=><div key={n.id} style={{padding:"10px 14px",borderBottom:"1px solid #1e293b",display:"flex",gap:"8px",alignItems:"flex-start"}}>
+                      <span style={{fontSize:"16px"}}>📋</span>
+                      <div style={{flex:1}}>
+                        <div style={{fontSize:"12px",fontWeight:"600",color:"#e2e8f0"}}>{n.title}</div>
+                        <div style={{fontSize:"11px",color:"#64748b"}}>{n.message}</div>
+                        <div style={{fontSize:"10px",color:"#334155",marginTop:"2px"}}>{n._createdAt?.toDate?.()?.toLocaleDateString("en-IN")||""}</div>
+                      </div>
+                      <button onClick={()=>C("notifications").doc(n.id).update({read:true})} style={{background:"none",border:"none",color:"#334155",cursor:"pointer",fontSize:"13px"}}>×</button>
+                    </div>)}
+                  </div>}
+                </div>
                 <button onClick={()=>setShowChangePw(true)} style={{background:"none",border:"1px solid #1e3a5f",borderRadius:"7px",padding:"4px 10px",color:"#93c5fd",fontSize:"11px",fontWeight:"600",cursor:"pointer"}}>🔑 Change PW</button>
                 <button onClick={()=>auth.signOut()} style={{background:"none",border:"1px solid #1e293b",borderRadius:"7px",padding:"4px 12px",color:"#475569",fontSize:"11px",fontWeight:"600",cursor:"pointer"}}>Sign Out</button>
               </div>
@@ -5062,7 +5301,7 @@ function MainApp({user,role,roles=[]}){
     <div style={{maxWidth:"1000px",margin:"0 auto",padding:"24px 28px 0"}}>
 
       {/* DASHBOARD */}
-      {tab==="dashboard"&&<DashboardTab role={role} user={user}/>}
+      {tab==="dashboard"&&<DashboardTab role={role} user={user} onNavigate={setTab}/>}
 
       {/* BATCHES */}
       {tab==="batches"&&<>
@@ -5162,6 +5401,7 @@ function MainApp({user,role,roles=[]}){
         />}
       </>}
       {tab==="bom"&&<BOMTab role={role} roles={roles} user={user} showToast={showToast} sysProducts={sysProducts} sysPackSizes={sysPackSizes} sysQcParams={sysQcParams}/>}
+      {tab==="tasks"&&<TasksTab user={user} roles={roles} showToast={showToast} allRoles={allRoles} allProfiles={allProfiles}/>}
       {tab==="stock"&&<RawMaterialStockTab role={role} user={user} showToast={showToast} sysUnits={sysUnits} sysRmCats={sysRmCats} onAddRmCat={addGlobalRmCat} onAddUnit={addGlobalUnit}/>}
       {tab==="testimonials"&&<TestimonialsTab role={role} user={user} showToast={showToast}/>}
       {tab==="users"&&<UsersTab currentUser={user}/>}
