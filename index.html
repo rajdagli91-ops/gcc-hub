@@ -4794,8 +4794,16 @@ function TasksTab({user,roles,showToast,allRoles,allProfiles}){
   const blankTask={title:"",description:"",assignedTo:user.email,dueDate:"",priority:"Normal"};
   const [form,setForm]=useState({...blankTask});
 
-  // All assignable users
-  const assignableUsers=[...new Set([...Object.keys(allRoles),...ADMIN_EMAILS])].sort();
+  // Only show users who actually exist in the system (have logged in or have a role)
+  const assignableUsers=[...new Set([
+    ...Object.keys(allProfiles),   // users who have logged in
+    ...Object.keys(allRoles),      // users with assigned roles
+    user.email                     // always include self
+  ])].filter(Boolean).sort((a,b)=>{
+    const na=allProfiles[a]?.displayName||a;
+    const nb=allProfiles[b]?.displayName||b;
+    return na.localeCompare(nb);
+  });
 
   useEffect(()=>{
     // Admin sees all tasks. Others see tasks assigned TO them OR tasks they assigned.
@@ -4875,7 +4883,7 @@ function TasksTab({user,roles,showToast,allRoles,allProfiles}){
         <Field label="Task Title *"><input style={inp} value={form.title} onChange={e=>setForm({...form,title:e.target.value})} placeholder="e.g. Check batch 0042 QC parameters"/></Field>
         <Field label="Assign To *">
           <select style={sl} value={form.assignedTo} onChange={e=>setForm({...form,assignedTo:e.target.value})}>
-            {assignableUsers.map(e=><option key={e} value={e}>{allProfiles[e]?.displayName||e}</option>)}
+            {assignableUsers.map(e=><option key={e} value={e}>{allProfiles[e]?.displayName?`${allProfiles[e].displayName} (${e})`:e}</option>)}
           </select>
         </Field>
       </Grid2>
