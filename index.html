@@ -1808,7 +1808,11 @@ function DashboardTab({role,user,onNavigate}){
   const [counts,setCounts]=useState({batches:0,activeBatches:0,openComplaints:0,rdProjects:0,rmTests:0,qcPending:0});
   const [myTasks,setMyTasks]=useState([]);
   useEffect(()=>{
-    const u=C("tasks").where("assignedTo","==",user.email).where("status","==","pending").orderBy("_createdAt","desc").onSnapshot(s=>setMyTasks(s.docs.map(d=>({id:d.id,...d.data()}))),()=>{});
+    const u=C("tasks").where("assignedTo","==",user.email).where("status","==","pending")
+      .onSnapshot(s=>{
+        const sorted=s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>b._createdAt?.seconds-a._createdAt?.seconds);
+        setMyTasks(sorted);
+      },()=>{});
     return u;
   },[user?.email]);
   useEffect(()=>{
@@ -4779,11 +4783,23 @@ function TasksTab({user,roles,showToast,allRoles,allProfiles}){
   const assignableUsers=[...new Set([...Object.keys(allRoles),...ADMIN_EMAILS])].sort();
 
   useEffect(()=>{
-    // Admin/Issuer: see all tasks. Others: only own tasks.
-    const q=canAssign
-      ?C("tasks").orderBy("_createdAt","desc")
-      :C("tasks").where("assignedTo","==",user.email).orderBy("_createdAt","desc");
-    const u=q.onSnapshot(s=>{setTasks(s.docs.map(d=>({id:d.id,...d.data()})));setLoading(false);},()=>setLoading(false));
+    // Admin sees all tasks. Others see tasks assigned TO them OR tasks they assigned.
+    const q=isAdmin
+      ?C("tasks")
+      :C("tasks").where("assignedTo","==",user.email);
+    const u=q.onSnapshot(s=>{
+      let all=s.docs.map(d=>({id:d.id,...d.data()}));
+      // For non-admin: also show tasks the user assigned to others (merged client-side)
+      if(!isAdmin){
+        C("tasks").where("assignedBy","==",user.email).get().then(snap=>{
+          const assigned=snap.docs.map(d=>({id:d.id,...d.data()}));
+          const merged=[...all,...assigned.filter(t=>!all.find(x=>x.id===t.id))];
+          setTasks(merged.sort((a,b)=>(b._createdAt?.seconds||0)-(a._createdAt?.seconds||0)));
+        }).catch(()=>{});
+      }
+      all.sort((a,b)=>(b._createdAt?.seconds||0)-(a._createdAt?.seconds||0));
+      setTasks(all);setLoading(false);
+    },()=>setLoading(false));
     return u;
   },[]);
 
@@ -4893,7 +4909,7 @@ function TasksTab({user,roles,showToast,allRoles,allProfiles}){
             </div>
             <div style={{display:"flex",gap:"6px",flexShrink:0}}>
               {isMine&&!isCompletingThis&&<Btn label="✅ Mark Complete" onClick={()=>setCompleteTask({id:task.id,notes:""})} color="#22c55e" small/>}
-              {isAdmin&&<button onClick={()=>deleteTask(task.id)} style={{background:"none",border:"none",color:"#334155",cursor:"pointer",fontSize:"14px"}}>🗑</button>}
+              {(isAdmin||task.assignedBy===user.email)&&<button onClick={()=>deleteTask(task.id)} style={{background:"none",border:"none",color:"#334155",cursor:"pointer",fontSize:"14px"}}>🗑</button>}
             </div>
           </div>
           {/* Completion form */}
@@ -5047,8 +5063,9 @@ function MainApp({user,role,roles=[]}){
     // All roles & profiles (for task assignment dropdown)
     subs.push(C("roles").onSnapshot(s=>{const r={};s.docs.forEach(d=>{const dat=d.data();r[d.id]=dat.roles||(dat.role?[dat.role]:[]);});setAllRoles(r);}));
     subs.push(C("userProfiles").onSnapshot(s=>{const p={};s.docs.forEach(d=>{const dat=d.data();if(dat.email)p[dat.email]={...dat,uid:d.id};});setAllProfiles(p);}));
-    // Notifications for current user
-    subs.push(C("notifications").where("assignedTo","==",user.email).where("read","==",false).orderBy("_createdAt","desc").onSnapshot(s=>setNotifications(s.docs.map(d=>({id:d.id,...d.data()}))),()=>{}));
+    // Notifications for current user — simple query, sort client-side
+    subs.push(C("notifications").where("assignedTo","==",user.email).where("read","==",false)
+      .onSnapshot(s=>setNotifications(s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b._createdAt?.seconds||0)-(a._createdAt?.seconds||0))),()=>{}));
     // Load product/QC settings for all roles
     C("settings").doc("products").get().then(snap=>{
       if(snap.exists){const d=snap.data();
