@@ -462,6 +462,8 @@ function StageBox({icon,title,done,active,children,editForm,editLabel,onEdit,onE
 
 // Financial year helper — April 1 = new FY. Returns 2-digit year ending (e.g. 26 for FY 2025-26)
 const getFY=()=>{const d=new Date();const y=d.getFullYear()%100;return d.getMonth()>=3?y+1:y;};
+// Get FY from a specific date string (YYYY-MM-DD) — April onwards = new FY
+const getFYFromDate=(dateStr)=>{if(!dateStr)return getFY();const d=new Date(dateStr);const y=d.getFullYear()%100;return d.getMonth()>=3?y+1:y;};
 const getFYLabel=(fy)=>`${String(fy-1).padStart(2,"0")}-${String(fy).padStart(2,"0")}`;
 
 function BatchCard({b,onClick,onDelete,onReprint,role}){
@@ -5122,7 +5124,8 @@ function MainApp({user,role,roles=[]}){
     if(!batchForm.productName.trim()||!batchForm.category)return showToast("Category and product required","error");
     if(saving)return;setSaving(true);
     try{
-      const fy=getFY();
+      // FY is determined by the issue DATE, not today — so a March batch goes into the correct FY
+      const fy=getFYFromDate(batchForm.dateIssued);
       const snap=await C("batches").where("fyYear","==",fy).get();
       const maxSeq=snap.docs.reduce((m,d)=>{const n=parseInt(d.data().batchSeq||0);return Math.max(m,n);},0);
       const seq=maxSeq+1;
@@ -5205,10 +5208,10 @@ function MainApp({user,role,roles=[]}){
     </div>;
   }
 
-  // Infer FY from batch — uses stored fyYear if available, else derives from dateIssued
+  // FY is always derived from dateIssued (source of truth) — stored fyYear was unreliable before this fix
   const getBatchFY=(b)=>{
-    if(b.fyYear)return b.fyYear;
-    if(b.dateIssued){const d=new Date(b.dateIssued);const y=d.getFullYear()%100;return d.getMonth()>=3?y+1:y;}
+    if(b.dateIssued) return getFYFromDate(b.dateIssued);
+    if(b.fyYear) return b.fyYear;
     return getFY();
   };
 
@@ -5217,12 +5220,11 @@ function MainApp({user,role,roles=[]}){
     const ms=batchFilter==="All"||b.status===batchFilter;
     const cs=batchCatFilter==="All"||b.category===batchCatFilter;
     const fys=batchFYFilter==="All"||getBatchFY(b)===parseInt(batchFYFilter);
-    // Month filter: compare just MM part of dateIssued (e.g. "05" for May)
     const mths=batchMonthFilter==="All"||(b.dateIssued||"").slice(5,7)===batchMonthFilter;
     const q=normalize(batchSearch);
     const match=!q||normalize(b.batchNo||"").includes(q)||normalize(b.productName||"").includes(q)||normalize(b.shade||"").includes(q);
     return ms&&cs&&fys&&mths&&match;
-  });
+  }).sort((a,b)=>(b.dateIssued||"").localeCompare(a.dateIssued||""));
   const isSalesOnly=roles.includes("sales")&&!roles.some(r=>["admin","qc","issuer"].includes(r));
   const fc=complaints.filter(c=>{
     if(isSalesOnly&&c.addedBy!==user.email)return false;
