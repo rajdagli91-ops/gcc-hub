@@ -2604,46 +2604,55 @@ function OldStockCard({s,canEdit,onToggle,onDelete}){
 // ══════════════════════════════════════════════════════════
 function FYArchiveTab({showToast}){
   const curFY=getFY();
-  const [selFY,setSelFY]=useState(String(curFY-1)); // default = previous FY
+  const [selFY,setSelFY]=useState(String(curFY-1));
   const [counts,setCounts]=useState(null);
   const [loading,setLoading]=useState(false);
   const [exporting,setExporting]=useState(false);
   const [deleting,setDeleting]=useState(false);
-  const [step,setStep]=useState("idle"); // idle | confirm | done
+  const [step,setStep]=useState("idle");
 
-  // FY date range: April 1 (year-1) to March 31 (year)
   const fyRange=(fy)=>{
     const fy_=parseInt(fy);
     return {from:`20${String(fy_-1).padStart(2,"0")}-04-01`, to:`20${String(fy_).padStart(2,"0")}-03-31`};
   };
-  const inFY=(dateStr,fy)=>{
-    if(!dateStr)return false;
-    const {from,to}=fyRange(fy);
-    return dateStr>=from&&dateStr<=to;
-  };
+  const inFY=(dateStr,fy)=>{if(!dateStr)return false;const {from,to}=fyRange(fy);return dateStr>=from&&dateStr<=to;};
+
+  // ALWAYS derive FY from dateIssued — same logic as getBatchFY in MainApp
   const getBFY=(b)=>{
-    if(b.fyYear)return String(b.fyYear);
     if(b.dateIssued){const d=new Date(b.dateIssued);const y=d.getFullYear()%100;return String(d.getMonth()>=3?y+1:y);}
+    if(b.fyYear)return String(b.fyYear);
     return String(curFY);
   };
 
   const loadCounts=async(fy)=>{
     setLoading(true);setCounts(null);
     try{
-      const [bSnap,cSnap,osSnap]=await Promise.all([
+      const [bSnap,cSnap,osSnap,rdSnap,txSnap]=await Promise.all([
         C("batches").get(),
         C("complaints").get(),
-        C("old_stock").get()
+        C("old_stock").get(),
+        C("rd_projects").get(),
+        C("rm_stock_transactions").get()
       ]);
+      const {from,to}=fyRange(fy);
       const batches=bSnap.docs.filter(d=>getBFY(d.data())===fy);
       const complaints=cSnap.docs.filter(d=>inFY(d.data().dateCreated,fy));
       const oldStock=osSnap.docs.filter(d=>inFY(d.data().dateAdded,fy));
-      setCounts({batches:batches.length,complaints:complaints.length,oldStock:oldStock.length,
-        batchIds:batches.map(d=>d.id),complaintIds:complaints.map(d=>d.id),oldStockIds:oldStock.map(d=>d.id),
+      const rdProjects=rdSnap.docs.filter(d=>inFY(d.data().startDate||d.data()._createdAt?.toDate?.()?.toISOString?.()?.slice(0,10),fy));
+      const rmConsumption=txSnap.docs.filter(d=>{const dat=d.data();return dat.type==="consumption"&&inFY(dat.date,fy);});
+      setCounts({
+        batches:batches.length, complaints:complaints.length, oldStock:oldStock.length,
+        rdProjects:rdProjects.length, rmConsumption:rmConsumption.length,
+        batchIds:batches.map(d=>d.id), complaintIds:complaints.map(d=>d.id), oldStockIds:oldStock.map(d=>d.id),
+        rmConsumptionIds:rmConsumption.map(d=>d.id),
+        // R&D never deleted — no rdIds in delete
         batchDocs:batches.map(d=>({id:d.id,...d.data()})),
         complaintDocs:complaints.map(d=>({id:d.id,...d.data()})),
-        oldStockDocs:oldStock.map(d=>({id:d.id,...d.data()}))});
-    }catch(e){showToast("Error loading data: "+e.message,"error");}
+        oldStockDocs:oldStock.map(d=>({id:d.id,...d.data()})),
+        rdDocs:rdProjects.map(d=>({id:d.id,...d.data()})),
+        rmConsumptionDocs:rmConsumption.map(d=>({id:d.id,...d.data()}))
+      });
+    }catch(e){showToast("Error loading: "+e.message,"error");}
     setLoading(false);
   };
 
@@ -2658,48 +2667,51 @@ function FYArchiveTab({showToast}){
       const fy=parseInt(selFY);
       const label=getFYLabel(fy);
 
-      // ── Summary sheet ──
+      // ── Summary ──
       const sumRows=[
-        [`GCC Operations Hub — Financial Year ${label} Archive`],
-        [`Exported on: ${new Date().toLocaleDateString("en-IN")}`],[""],
-        ["Data Type","Count"],
-        ["Batches",counts.batches],
-        ["Complaints",counts.complaints],
-        ["Old/Rejected Stock Entries",counts.oldStock],
+        [`GCC Operations Hub — FY ${label} Archive`],[`Exported: ${new Date().toLocaleDateString("en-IN")}`],[""],
+        ["Data Type","Count","Action on Archive"],
+        ["Batches",counts.batches,"Deleted after export"],
+        ["Complaints",counts.complaints,"Deleted after export"],
+        ["Old/Rejected Stock",counts.oldStock,"Deleted after export"],
+        ["R&D Projects",counts.rdProjects,"Exported only — NOT deleted"],
+        ["RM Consumption Transactions",counts.rmConsumption,"Deleted after export"],
       ];
-      const wsSum=XLSX.utils.aoa_to_sheet(sumRows);
-      wsSum["!cols"]=[{wch:40},{wch:15}];
-      XLSX.utils.book_append_sheet(wb,wsSum,"📋 Summary");
+      const wsSum=XLSX.utils.aoa_to_sheet(sumRows);wsSum["!cols"]=[{wch:36},{wch:10},{wch:30}];
+      XLSX.utils.book_append_sheet(wb,wsSum,"Summary");
 
-      // ── Batches sheet ──
-      const bRows=[["Batch No","Category","Product","Shade","Batch Size","Unit","Status","Date Issued","Issued By","Actual Qty Produced","QC Result","QC By","QC Date","Total Packed","Packing Date","Packed By"]];
-      counts.batchDocs.forEach(b=>{
-        bRows.push([b.batchNo,b.category||"",b.productName||"",b.shade||"",b.batchSize||"",b.unit||"",b.status||"",b.dateIssued||"",b.issuedBy||"",b.production?.actualQty||"",b.qc?.result||"",b.qc?.qcBy||"",b.qc?.qcDate||"",b.packing?.totalQty||"",b.packing?.packingDate||"",b.packing?.packedBy||""]);
-      });
-      const wsBatch=XLSX.utils.aoa_to_sheet(bRows);
-      wsBatch["!cols"]=[{wch:12},{wch:16},{wch:30},{wch:16},{wch:12},{wch:8},{wch:14},{wch:14},{wch:24},{wch:14},{wch:10},{wch:20},{wch:12},{wch:14},{wch:14},{wch:20}];
-      XLSX.utils.book_append_sheet(wb,wsBatch,"📦 Batches");
+      // ── Batches ──
+      const bRows=[["Batch No","FY","Category","Product","Shade","Batch Size","Unit","Status","Date Issued","Issued By","Actual Qty","QC Result","QC By","QC Date","Packed Qty","Packed By"]];
+      counts.batchDocs.forEach(b=>{bRows.push([b.batchNo,getFYLabel(parseInt(getBFY(b))),b.category||"",b.productName||"",b.shade||"",b.batchSize||"",b.unit||"",b.status||"",b.dateIssued||"",b.issuedBy||"",b.production?.actualQty||"",b.qc?.result||"",b.qc?.qcBy||"",b.qc?.qcDate||"",b.packing?.totalQty||"",b.packing?.packedBy||""]);});
+      const wsBatch=XLSX.utils.aoa_to_sheet(bRows);wsBatch["!cols"]=[{wch:12},{wch:10},{wch:16},{wch:30},{wch:16},{wch:10},{wch:8},{wch:14},{wch:14},{wch:24},{wch:12},{wch:10},{wch:20},{wch:12},{wch:12},{wch:20}];
+      XLSX.utils.book_append_sheet(wb,wsBatch,"Batches");
 
-      // ── Complaints sheet ──
-      const cRows=[["Customer","Product","Batch No","Date Raised","Status","QC Response","Days to Respond","Added By","Rounds"]];
-      counts.complaintDocs.forEach(c=>{
-        const qcR=c.qcResponses?.[0];
-        const days=qcR?.responseDate?(new Date(qcR.responseDate)-new Date(c.dateCreated||""))/(86400000):null;
-        cRows.push([c.customerName||"",c.productName||"",c.batchNo||"",c.dateCreated||"",c.status||"",qcR?.findings||qcR?.action||"",days!==null?Math.round(days):"",c.addedBy||"",c.currentRound||1]);
-      });
-      const wsComp=XLSX.utils.aoa_to_sheet(cRows);
-      wsComp["!cols"]=[{wch:24},{wch:28},{wch:12},{wch:14},{wch:16},{wch:40},{wch:14},{wch:28},{wch:8}];
-      XLSX.utils.book_append_sheet(wb,wsComp,"⚠️ Complaints");
+      // ── Complaints ──
+      const cRows=[["Customer","Product","Batch No","Date Raised","Status","QC Response","Days to Respond","Added By"]];
+      counts.complaintDocs.forEach(c=>{const qcR=c.qcResponses?.[0];const days=qcR?.responseDate?(new Date(qcR.responseDate)-new Date(c.dateCreated||""))/(86400000):null;cRows.push([c.customerName||"",c.productName||"",c.batchNo||"",c.dateCreated||"",c.status||"",qcR?.findings||qcR?.action||"",days!==null?Math.round(days):"",c.addedBy||""]);});
+      const wsComp=XLSX.utils.aoa_to_sheet(cRows);wsComp["!cols"]=[{wch:24},{wch:28},{wch:12},{wch:14},{wch:16},{wch:40},{wch:14},{wch:28}];
+      XLSX.utils.book_append_sheet(wb,wsComp,"Complaints");
 
-      // ── Old/Rejected Stock sheet ──
+      // ── Old Stock ──
       const osRows=[["Product","Category","Qty","Unit","Status","Batch Ref","Date Added","Notes"]];
       counts.oldStockDocs.forEach(s=>{osRows.push([s.productName||"",s.category||"",s.qty||"",s.unit||"",s.status||"",s.batchRef||"",s.dateAdded||"",s.notes||""]);});
-      const wsOS=XLSX.utils.aoa_to_sheet(osRows);
-      wsOS["!cols"]=[{wch:28},{wch:16},{wch:10},{wch:8},{wch:12},{wch:14},{wch:14},{wch:40}];
-      XLSX.utils.book_append_sheet(wb,wsOS,"🔄 Old Stock");
+      const wsOS=XLSX.utils.aoa_to_sheet(osRows);wsOS["!cols"]=[{wch:28},{wch:16},{wch:10},{wch:8},{wch:12},{wch:14},{wch:14},{wch:40}];
+      XLSX.utils.book_append_sheet(wb,wsOS,"Old Stock");
+
+      // ── R&D Projects (full details) ──
+      const rdRows=[["Project Name","Category","Paint Type","Status","Start Date","End Date","Created By","Trials Count","Notes"]];
+      counts.rdDocs.forEach(p=>{rdRows.push([p.name||p.productName||"",p.category||"",p.paintType||"",p.status||"",p.startDate||"",p.endDate||"",p.createdBy||"",(p.trials||[]).length,p.notes||"",]);});
+      const wsRD=XLSX.utils.aoa_to_sheet(rdRows);wsRD["!cols"]=[{wch:32},{wch:16},{wch:16},{wch:14},{wch:14},{wch:14},{wch:24},{wch:12},{wch:40}];
+      XLSX.utils.book_append_sheet(wb,wsRD,"R&D Projects");
+
+      // ── RM Consumption ──
+      const rmRows=[["Date","Material","Unit","Qty Consumed","Stock After","Added By","Notes"]];
+      counts.rmConsumptionDocs.sort((a,b)=>(a.date||"").localeCompare(b.date||"")).forEach(t=>{rmRows.push([t.date||"",t.materialName||"",t.unit||"",t.qty||"",t.stockAfter||"",t.addedBy||"",t.notes||""]);});
+      const wsRM=XLSX.utils.aoa_to_sheet(rmRows);wsRM["!cols"]=[{wch:14},{wch:28},{wch:8},{wch:12},{wch:12},{wch:24},{wch:32}];
+      XLSX.utils.book_append_sheet(wb,wsRM,"RM Consumption");
 
       XLSX.writeFile(wb,`GCC_FY_${label.replace("-","_")}_Archive.xlsx`);
-      showToast(`FY ${label} data exported ✓`);
+      showToast(`FY ${label} archive exported ✓ — ${counts.rdProjects} R&D projects included (not deleted)`);
     }catch(e){showToast("Export failed: "+e.message,"error");}
     setExporting(false);
   };
@@ -2708,7 +2720,6 @@ function FYArchiveTab({showToast}){
     if(!counts)return;
     setDeleting(true);
     try{
-      // Delete in batches of 20 (Firestore limit)
       const deleteAll=async(ids,col)=>{
         for(let i=0;i<ids.length;i+=20){
           const wb_=db.batch();
@@ -2716,14 +2727,15 @@ function FYArchiveTab({showToast}){
           await wb_.commit();
         }
       };
+      // R&D projects are NEVER deleted
       await Promise.all([
         deleteAll(counts.batchIds,"batches"),
         deleteAll(counts.complaintIds,"complaints"),
         deleteAll(counts.oldStockIds,"old_stock"),
+        deleteAll(counts.rmConsumptionIds,"rm_stock_transactions"),
       ]);
-      showToast(`FY ${getFYLabel(parseInt(selFY))} data deleted ✓`);
-      setStep("done");
-      loadCounts(selFY);
+      showToast(`FY ${getFYLabel(parseInt(selFY))} data deleted ✓ (R&D projects kept)`);
+      setStep("done");loadCounts(selFY);
     }catch(e){showToast("Delete failed: "+e.message,"error");}
     setDeleting(false);
   };
@@ -2731,47 +2743,45 @@ function FYArchiveTab({showToast}){
   const fy_=parseInt(selFY);
   const label=getFYLabel(fy_);
   const isPrevFY=fy_<curFY;
+  const totalCount=(counts?.batches||0)+(counts?.complaints||0)+(counts?.oldStock||0)+(counts?.rmConsumption||0);
 
   return <div>
-    <InfoBox color="#f59e0b">⚠️ This section is for archiving completed financial years. Always export data before deleting. Current FY: <strong style={{color:"#fcd34d"}}>FY {getFYLabel(curFY)}</strong></InfoBox>
+    <InfoBox color="#f59e0b">⚠️ Archive completed financial years. R&D projects are NEVER deleted. Current FY: <strong style={{color:"#fcd34d"}}>FY {getFYLabel(curFY)}</strong></InfoBox>
 
-    {/* FY Selector */}
     <div style={{display:"flex",gap:"12px",alignItems:"flex-end",flexWrap:"wrap",marginBottom:"16px"}}>
       <Field label="Select Financial Year">
         <select style={{...sl,width:"160px"}} value={selFY} onChange={e=>{setSelFY(e.target.value);setStep("idle");}}>
           {Array.from({length:5},(_,i)=>curFY-1-i).map(fy=><option key={fy} value={String(fy)}>FY {getFYLabel(fy)} {fy<curFY?"(Completed)":"(Current)"}</option>)}
         </select>
       </Field>
-      {!isPrevFY&&<InfoBox color="#ef4444">Current FY cannot be archived. Select a previous FY.</InfoBox>}
+      {!isPrevFY&&<InfoBox color="#ef4444">Current FY cannot be archived.</InfoBox>}
     </div>
 
-    {/* Counts */}
     {loading&&<div style={{fontSize:"13px",color:"#475569",padding:"10px 0"}}>⏳ Loading data counts…</div>}
     {counts&&isPrevFY&&step!=="done"&&<>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"10px",marginBottom:"16px"}}>
-        {[["📦 Batches",counts.batches,"#3b82f6"],["⚠️ Complaints",counts.complaints,"#ef4444"],["🔄 Old Stock",counts.oldStock,"#f59e0b"]].map(([lbl,count,color])=>(
-          <div key={lbl} style={{background:"#0b1220",border:`1px solid ${color}30`,borderRadius:"10px",padding:"14px 16px",textAlign:"center"}}>
-            <div style={{fontSize:"24px",fontWeight:"700",color}}>{count}</div>
-            <div style={{fontSize:"12px",color:"#64748b",marginTop:"3px"}}>{lbl}</div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:"10px",marginBottom:"16px"}}>
+        {[["📦 Batches",counts.batches,"#3b82f6","Deleted"],["⚠️ Complaints",counts.complaints,"#ef4444","Deleted"],["🔄 Old Stock",counts.oldStock,"#f59e0b","Deleted"],["🧪 R&D Projects",counts.rdProjects,"#22c55e","Kept ✓"],["📉 RM Consumption",counts.rmConsumption,"#a855f7","Deleted"]].map(([lbl,count,color,action])=>(
+          <div key={lbl} style={{background:"#0b1220",border:`1px solid ${color}30`,borderRadius:"10px",padding:"12px 14px",textAlign:"center"}}>
+            <div style={{fontSize:"22px",fontWeight:"700",color}}>{count}</div>
+            <div style={{fontSize:"11px",color:"#64748b",marginTop:"2px"}}>{lbl}</div>
+            <div style={{fontSize:"9px",color:action==="Kept ✓"?"#22c55e":"#475569",marginTop:"2px",fontWeight:"600"}}>{action}</div>
           </div>
         ))}
       </div>
 
-      {/* Export */}
       <div style={{background:"#052e16",border:"1px solid #166534",borderRadius:"10px",padding:"16px",marginBottom:"12px"}}>
         <div style={{fontSize:"13px",fontWeight:"700",color:"#22c55e",marginBottom:"6px"}}>Step 1: Export FY {label} Data</div>
-        <div style={{fontSize:"12px",color:"#86efac",marginBottom:"12px"}}>Download all batches, complaints and old stock as an Excel file before deleting. This file is your permanent record.</div>
-        <Btn label={exporting?"Exporting…":`📥 Download FY ${label} Archive (Excel)`} onClick={exportFY} disabled={exporting||counts.batches+counts.complaints+counts.oldStock===0} color="#22c55e"/>
-        {counts.batches+counts.complaints+counts.oldStock===0&&<div style={{fontSize:"12px",color:"#334155",marginTop:"6px"}}>No data found for FY {label}.</div>}
+        <div style={{fontSize:"12px",color:"#86efac",marginBottom:"12px"}}>Downloads Batches, Complaints, Old Stock, R&D Projects and RM Consumption as separate Excel sheets. R&D projects are exported but <strong>never deleted</strong> from the system.</div>
+        <Btn label={exporting?"Exporting…":`📥 Download FY ${label} Archive (Excel)`} onClick={exportFY} disabled={exporting||totalCount+counts.rdProjects===0} color="#22c55e"/>
+        {totalCount+counts.rdProjects===0&&<div style={{fontSize:"12px",color:"#334155",marginTop:"6px"}}>No data found for FY {label}.</div>}
       </div>
 
-      {/* Delete */}
-      {counts.batches+counts.complaints+counts.oldStock>0&&<div style={{background:"#450a0a",border:"1px solid #7f1d1d",borderRadius:"10px",padding:"16px"}}>
+      {totalCount>0&&<div style={{background:"#450a0a",border:"1px solid #7f1d1d",borderRadius:"10px",padding:"16px"}}>
         <div style={{fontSize:"13px",fontWeight:"700",color:"#ef4444",marginBottom:"6px"}}>Step 2: Delete FY {label} Data</div>
-        <div style={{fontSize:"12px",color:"#fca5a5",marginBottom:"12px"}}>Permanently deletes {counts.batches} batches, {counts.complaints} complaints and {counts.oldStock} old stock entries. <strong>This cannot be undone.</strong> Export first.</div>
-        {step==="idle"&&<Btn label={`🗑 Delete All FY ${label} Data`} onClick={()=>setStep("confirm")} color="#ef4444" outline/>}
+        <div style={{fontSize:"12px",color:"#fca5a5",marginBottom:"12px"}}>Permanently deletes {counts.batches} batches, {counts.complaints} complaints, {counts.oldStock} old stock, {counts.rmConsumption} RM consumption records. <strong>R&D projects ({counts.rdProjects}) are NOT deleted.</strong></div>
+        {step==="idle"&&<Btn label={`🗑 Delete FY ${label} Data (excl. R&D)`} onClick={()=>setStep("confirm")} color="#ef4444" outline/>}
         {step==="confirm"&&<div>
-          <div style={{fontSize:"13px",fontWeight:"700",color:"#ef4444",marginBottom:"10px"}}>⚠️ Are you absolutely sure? Type the FY label to confirm:</div>
+          <div style={{fontSize:"13px",fontWeight:"700",color:"#ef4444",marginBottom:"10px"}}>⚠️ Type the FY label to confirm deletion:</div>
           <ConfirmDelete expected={label} onConfirm={deleteFY} onCancel={()=>setStep("idle")} saving={deleting}/>
         </div>}
       </div>}
