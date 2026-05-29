@@ -89,7 +89,7 @@ window.onerror=function(msg,src,line,col,err){
 <script>
 // Print production sheet — extracted from Babel to avoid large template literal issues
 // Print production sheet — opens in new window, auto-prints
-function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, chargingDate, packSizes, issueDate, extraConfig){
+function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, chargingDate, packSizes, issueDate, extraConfig, sysQcParams){
   const bs=parseFloat(batchSize)||parseFloat(bom.baseBatchSize)||100;
   const base=parseFloat(bom.baseBatchSize)||100;
   const factor=bs/base;
@@ -116,19 +116,18 @@ function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, char
   // Total row
   const totalStd=(bom.ingredients||[]).filter(i=>!i.isProcess).reduce((s,i)=>s+(parseFloat(i.standardQty)||0),0);
   const totalCurr=(totalStd*factor).toFixed(3).replace(/\.?0+$/,"");
-  // Normalise qcTests — support both old {sd,tf,...} and new [{name,standard},...] formats
+  // Normalise qcTests — product-specific params take priority; if empty, fall back to category defaults
   const _qcRaw=bom.qcTests||{};
-  const qcParams=Array.isArray(_qcRaw)
-    ?_qcRaw
-    :[
-      {name:"SD (Drying)",standard:_qcRaw.sd||""},
-      {name:"TF (Drying)",standard:_qcRaw.tf||""},
-      {name:"HD (Drying)",standard:_qcRaw.hd||""},
-      {name:"Colour",standard:_qcRaw.colour||""},
-      {name:"Finish",standard:_qcRaw.finish||""},
-      {name:"Viscosity",standard:_qcRaw.viscosity||""},
-      {name:"Specific Gravity",standard:_qcRaw.sg||""},
-      ...(_qcRaw.remarks?[{name:"Remarks",standard:_qcRaw.remarks}]:[])
+  var productQcParams=Array.isArray(_qcRaw)?_qcRaw:[];
+  // Fall back to category defaults if no product-specific params
+  if(!productQcParams.length&&sysQcParams&&bom.category&&sysQcParams[bom.category]){
+    productQcParams=(sysQcParams[bom.category]||[]).map(function(p){return typeof p==='string'?{name:p,standard:''}:{name:p.name||'',standard:''};});
+  }
+  const qcParams=productQcParams.length?productQcParams:[
+      {name:"SD (Drying)",standard:_qcRaw.sd||""},{name:"TF (Drying)",standard:_qcRaw.tf||""},
+      {name:"HD (Drying)",standard:_qcRaw.hd||""},{name:"Colour",standard:_qcRaw.colour||""},
+      {name:"Finish",standard:_qcRaw.finish||""},{name:"Viscosity",standard:_qcRaw.viscosity||""},
+      {name:"Specific Gravity",standard:_qcRaw.sg||""}
     ].filter(p=>p.standard);
   // Get pack sizes for this product's category from settings
   var catPackSizes=[];
@@ -4469,42 +4468,73 @@ function BOMForm({form,setForm,saving,isEdit,onCancel,onSave,sysProducts,sysQcPa
       </div>
     </div>
 
-    {/* QC Test Parameters — dynamic, add/edit/remove, reorder */}
+    {/* QC Test Parameters — Category defaults + Product-specific additions */}
     <div style={{marginBottom:"14px"}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"6px"}}>
-        <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em"}}>QC Test Parameters</div>
-        <div style={{display:"flex",gap:"6px",alignItems:"center"}}>
-          {form.category&&(sysQcParams||DEFAULT_QC_PARAMS)[form.category]?.length>0&&
-            <button onClick={syncQCFromSettings} title="Load parameter names from Settings → QC Parameters for this category"
-              style={{background:"#0f1d35",border:"1px solid #2563eb40",borderRadius:"6px",padding:"3px 10px",color:"#93c5fd",cursor:"pointer",fontSize:"11px",fontWeight:"600"}}>
-              🔄 Sync from Settings ({form.category})
-            </button>}
-        </div>
-      </div>
-      <div style={{border:"1px solid #1e293b",borderRadius:"8px",overflow:"hidden",marginBottom:"6px"}}>
-        <div style={{display:"grid",gridTemplateColumns:"28px 2fr 2fr 28px",background:"#0b1220",padding:"6px 10px",gap:"6px"}}>
-          {["↕","Parameter Name","Standard / Expected Value",""].map(h=><div key={h} style={{fontSize:"9px",fontWeight:"700",color:"#334155",textTransform:"uppercase"}}>{h}</div>)}
-        </div>
-        {(form.qcTests||[]).map((p,i)=><div key={p.id||i} style={{display:"grid",gridTemplateColumns:"28px 2fr 2fr 28px",padding:"5px 10px",gap:"6px",borderTop:"1px solid #1e293b",alignItems:"center"}}>
-          <div style={{display:"flex",flexDirection:"column",gap:"1px"}}>
-            <button onClick={()=>{const arr=[...(form.qcTests||[])];if(i===0)return;[arr[i-1],arr[i]]=[arr[i],arr[i-1]];setForm({...form,qcTests:arr});}} style={{background:"none",border:"none",color:i===0?"#1e293b":"#334155",cursor:i===0?"default":"pointer",fontSize:"10px",padding:"1px",lineHeight:1}}>▲</button>
-            <button onClick={()=>{const arr=[...(form.qcTests||[])];if(i===arr.length-1)return;[arr[i],arr[i+1]]=[arr[i+1],arr[i]];setForm({...form,qcTests:arr});}} style={{background:"none",border:"none",color:i===(form.qcTests||[]).length-1?"#1e293b":"#334155",cursor:i===(form.qcTests||[]).length-1?"default":"pointer",fontSize:"10px",padding:"1px",lineHeight:1}}>▼</button>
+      <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"8px"}}>QC Test Parameters</div>
+
+      {/* Part 1: Category defaults (read-only, from Settings) */}
+      <div style={{marginBottom:"10px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"5px"}}>
+          <div style={{fontSize:"11px",color:"#475569",fontWeight:"600"}}>
+            📂 Category Defaults — <span style={{color:"#93c5fd"}}>{form.category||"(select a category)"}</span>
+            <span style={{color:"#334155",fontWeight:"400",marginLeft:"6px"}}>· from Settings · used if no product-specific params below</span>
           </div>
-          <input style={sml} value={p.name||""} onChange={e=>{const arr=[...(form.qcTests||[])];arr[i]={...arr[i],name:e.target.value};setForm({...form,qcTests:arr});}} placeholder="e.g. Viscosity, Drying SF, Colour"/>
-          <input style={sml} value={p.standard||""} onChange={e=>{const arr=[...(form.qcTests||[])];arr[i]={...arr[i],standard:e.target.value};setForm({...form,qcTests:arr});}} placeholder="e.g. 120 SEC, 2 Hrs, BUS GREEN"/>
-          <button onClick={()=>setForm({...form,qcTests:(form.qcTests||[]).filter((_,j)=>j!==i)})} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"14px",padding:0}}>×</button>
-        </div>)}
-        {!(form.qcTests||[]).length&&<div style={{padding:"10px 12px",fontSize:"12px",color:"#334155",fontStyle:"italic"}}>No test parameters yet. Add parameters below.</div>}
+          {form.category&&<button onClick={syncQCFromSettings} style={{background:"#0f1d35",border:"1px solid #2563eb40",borderRadius:"5px",padding:"2px 8px",color:"#93c5fd",cursor:"pointer",fontSize:"10px",fontWeight:"600"}}>🔄 Refresh</button>}
+        </div>
+        <div style={{border:"1px solid #1e3a5f",borderRadius:"6px",overflow:"hidden",background:"#060d1a",opacity:0.85}}>
+          {(()=>{
+            const catParams=form.category?(sysQcParams||DEFAULT_QC_PARAMS)[form.category]||[]:[];
+            if(!catParams.length)return <div style={{padding:"8px 12px",fontSize:"11px",color:"#334155",fontStyle:"italic"}}>No category parameters defined in Settings for {form.category||"this category"}.</div>;
+            return catParams.map((p,i)=>{
+              const nm=typeof p==="string"?p:(p.name||"");
+              return <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 1fr",padding:"4px 10px",borderTop:i?`1px solid #0f1d35`:"none",gap:"8px",alignItems:"center"}}>
+                <div style={{fontSize:"11px",color:"#64748b"}}>{nm}</div>
+                <div style={{fontSize:"10px",color:"#334155",fontStyle:"italic"}}>standard set in product below</div>
+              </div>;
+            });
+          })()}
+        </div>
       </div>
-      <div style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>
-        <button onClick={()=>setForm({...form,qcTests:[...(form.qcTests||[]),{id:newId(),name:"",standard:""}]})}
-          style={{background:"none",border:"1px dashed #22c55e50",borderRadius:"6px",padding:"5px 12px",color:"#22c55e",cursor:"pointer",fontSize:"12px"}}>+ Add Parameter</button>
-        <button onClick={()=>setForm({...form,qcTests:[...(form.qcTests||[]),...[
-          {id:newId(),name:"SD (Drying)",standard:""},{id:newId(),name:"TF (Drying)",standard:""},
-          {id:newId(),name:"HD (Drying)",standard:""},{id:newId(),name:"Colour",standard:""},
-          {id:newId(),name:"Finish",standard:""},{id:newId(),name:"Viscosity",standard:""},
-          {id:newId(),name:"Specific Gravity",standard:""}
-        ]]})} style={{background:"none",border:"1px dashed #3b82f650",borderRadius:"6px",padding:"5px 12px",color:"#64748b",cursor:"pointer",fontSize:"12px"}}>+ Add Standard Set</button>
+
+      {/* Part 2: Product-specific parameters (editable) */}
+      <div>
+        <div style={{fontSize:"11px",color:"#475569",fontWeight:"600",marginBottom:"5px"}}>
+          🧪 Product-specific Parameters — <span style={{color:"#22c55e"}}>Standard values + any extra params just for this product</span>
+        </div>
+        <div style={{border:"1px solid #1e293b",borderRadius:"8px",overflow:"hidden",marginBottom:"6px"}}>
+          <div style={{display:"grid",gridTemplateColumns:"28px 2fr 2fr 28px",background:"#0b1220",padding:"6px 10px",gap:"6px"}}>
+            {["↕","Parameter Name","Standard / Expected Value",""].map(h=><div key={h} style={{fontSize:"9px",fontWeight:"700",color:"#334155",textTransform:"uppercase"}}>{h}</div>)}
+          </div>
+          {(form.qcTests||[]).map((p,i)=><div key={p.id||i} style={{display:"grid",gridTemplateColumns:"28px 2fr 2fr 28px",padding:"5px 10px",gap:"6px",borderTop:"1px solid #1e293b",alignItems:"center"}}>
+            <div style={{display:"flex",flexDirection:"column",gap:"1px"}}>
+              <button onClick={()=>{const arr=[...(form.qcTests||[])];if(i===0)return;[arr[i-1],arr[i]]=[arr[i],arr[i-1]];setForm({...form,qcTests:arr});}} style={{background:"none",border:"none",color:i===0?"#1e293b":"#334155",cursor:i===0?"default":"pointer",fontSize:"10px",padding:"1px",lineHeight:1}}>▲</button>
+              <button onClick={()=>{const arr=[...(form.qcTests||[])];if(i===arr.length-1)return;[arr[i],arr[i+1]]=[arr[i+1],arr[i]];setForm({...form,qcTests:arr});}} style={{background:"none",border:"none",color:i===(form.qcTests||[]).length-1?"#1e293b":"#334155",cursor:i===(form.qcTests||[]).length-1?"default":"pointer",fontSize:"10px",padding:"1px",lineHeight:1}}>▼</button>
+            </div>
+            <input style={sml} value={p.name||""} onChange={e=>{const arr=[...(form.qcTests||[])];arr[i]={...arr[i],name:e.target.value};setForm({...form,qcTests:arr});}} placeholder="Parameter name"/>
+            <input style={sml} value={p.standard||""} onChange={e=>{const arr=[...(form.qcTests||[])];arr[i]={...arr[i],standard:e.target.value};setForm({...form,qcTests:arr});}} placeholder="Standard value"/>
+            <button onClick={()=>setForm({...form,qcTests:(form.qcTests||[]).filter((_,j)=>j!==i)})} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"14px",padding:0}}>×</button>
+          </div>)}
+          {!(form.qcTests||[]).length&&<div style={{padding:"10px 12px",fontSize:"12px",color:"#334155",fontStyle:"italic"}}>
+            No product-specific parameters added. Category defaults will be used for printing.
+          </div>}
+        </div>
+        <div style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>
+          <button onClick={()=>{
+            // Pre-fill from category defaults so user can set standard values
+            const catParams=form.category?(sysQcParams||DEFAULT_QC_PARAMS)[form.category]||[]:[];
+            const mapped=catParams.map(p=>{const nm=typeof p==="string"?p:(p.name||"");const ex=(form.qcTests||[]).find(q=>q.name===nm);return ex||{id:newId(),name:nm,standard:""};});
+            setForm({...form,qcTests:mapped});
+          }} style={{background:"#052e16",border:"1px solid #166534",borderRadius:"6px",padding:"5px 12px",color:"#22c55e",cursor:"pointer",fontSize:"12px"}}>
+            ↓ Fill from Category Defaults
+          </button>
+          <button onClick={()=>setForm({...form,qcTests:[...(form.qcTests||[]),{id:newId(),name:"",standard:""}]})}
+            style={{background:"none",border:"1px dashed #334155",borderRadius:"6px",padding:"5px 12px",color:"#475569",cursor:"pointer",fontSize:"12px"}}>+ Add Extra Parameter</button>
+          <button onClick={()=>setForm({...form,qcTests:[]})}
+            style={{background:"none",border:"1px dashed #7f1d1d",borderRadius:"6px",padding:"5px 12px",color:"#475569",cursor:"pointer",fontSize:"12px"}}>↺ Clear (use category defaults)</button>
+        </div>
+        {!(form.qcTests||[]).length&&form.category&&<div style={{fontSize:"10.5px",color:"#22c55e",marginTop:"6px",background:"#052e16",borderRadius:"6px",padding:"5px 10px"}}>
+          ✓ Will print category defaults for <strong>{form.category}</strong> ({((sysQcParams||DEFAULT_QC_PARAMS)[form.category]||[]).length} parameters)
+        </div>}
       </div>
     </div>
 
@@ -4555,7 +4585,7 @@ function BOMForm({form,setForm,saving,isEdit,onCancel,onSave,sysProducts,sysQcPa
 }
 
 // Print dialog component — extracted to avoid remount
-function PrintDialog({bom,packSizes,onClose}){
+function PrintDialog({bom,packSizes,sysQcParams,onClose}){
   const [batchSize,setBatchSize]=useState(bom.baseBatchSize||"100");
   const [batchNo,setBatchNo]=useState("");
   const storedExtra=bom.extraAdditions||{items:["Dhoyela","Extra Output","Dhoyela"],blankRows:2};
@@ -4594,7 +4624,7 @@ function PrintDialog({bom,packSizes,onClose}){
 
     <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
       <Btn label="Cancel" onClick={onClose} outline color="#475569" small/>
-      <Btn label="🖨 Open Print Preview" onClick={()=>{printProductionSheet(bom,batchSize,batchNo,"","","",packSizes,"",{items:extraItems,blankRows});onClose();}} color="#22c55e" small/>
+      <Btn label="🖨 Open Print Preview" onClick={()=>{printProductionSheet(bom,batchSize,batchNo,"","","",packSizes,"",{items:extraItems,blankRows},sysQcParams);onClose();}} color="#22c55e" small/>
     </div>
   </div>;
 }
@@ -4740,7 +4770,7 @@ function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes,sysQcParams}
 
         {/* Print dialog */}
         {isOpen&&mode==="print"&&<div style={{padding:"14px 16px",borderTop:"1px solid #1e293b",background:"#080d18"}}>
-          <PrintDialog bom={b} packSizes={sysPackSizes} onClose={()=>setActiveBOM(null)}/>
+          <PrintDialog bom={b} packSizes={sysPackSizes} sysQcParams={sysQcParams} onClose={()=>setActiveBOM(null)}/>
         </div>}
 
         {/* Edit form */}
@@ -4769,7 +4799,7 @@ function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes,sysQcParams}
                 <span style={{fontSize:"10px",color:"#334155",marginLeft:"8px"}}>{v.archivedAt?.toDate?.()?.toLocaleDateString("en-IN")||""}</span>
               </div>
               <div style={{display:"flex",gap:"6px"}}>
-                <Btn label="🖨 Print this version" onClick={()=>printProductionSheet(v,v.baseBatchSize,"","","","",sysPackSizes,"",v.extraAdditions||{})} color="#64748b" small outline/>
+                <Btn label="🖨 Print this version" onClick={()=>printProductionSheet(v,v.baseBatchSize,"","","","",sysPackSizes,"",v.extraAdditions||{},sysQcParams)} color="#64748b" small outline/>
                 {canEdit&&<Btn label="⬆ Restore as Current" onClick={async()=>{if(!confirm("Restore v"+v.currentVersion+" as current BOM? Current will be archived."))return;const curr=boms.find(x=>x.id===b.id);if(curr)await C("bom_versions").add({...curr,productId:b.id,archivedAt:ts(),archivedBy:user.email});await C("bom_products").doc(b.id).update({...v,currentVersion:(curr?.currentVersion||1)+1,updatedBy:user.email,updatedAt:ts()});await C("bom_versions").doc(v.id).delete();showToast("Version restored ✓");}} color="#f59e0b" small/>}
               </div>
             </div>)}
@@ -5266,7 +5296,7 @@ function MainApp({user,role,roles=[]}){
         if(!bomSnap.empty){
           const bom=bomSnap.docs[0].data();
           if(window.confirm(`Batch ${bNo} issued ✓\n\nPrint production sheet for ${batchForm.productName} (${batchForm.batchSize} ${batchForm.unit})?`)){
-            printProductionSheet(bom,batchForm.batchSize,bNo,"","","",sysPackSizes,batchForm.dateIssued,bom.extraAdditions||{});
+            printProductionSheet(bom,batchForm.batchSize,bNo,"","","",sysPackSizes,batchForm.dateIssued,bom.extraAdditions||{},sysQcParams);
           }
         }else{
           showToast(`Batch ${bNo} issued ✓ (No BOM found for this product)`);
@@ -5496,7 +5526,7 @@ function MainApp({user,role,roles=[]}){
                 try{
                   const bomSnap=await C("bom_products").where("productName","==",batch.productName).limit(1).get();
                   if(!bomSnap.empty){
-                    printProductionSheet(bomSnap.docs[0].data(),batch.batchSize,batch.batchNo,"","","",sysPackSizes,batch.dateIssued,bomSnap.docs[0].data().extraAdditions||{});
+                    printProductionSheet(bomSnap.docs[0].data(),batch.batchSize,batch.batchNo,"","","",sysPackSizes,batch.dateIssued,bomSnap.docs[0].data().extraAdditions||{},sysQcParams);
                   }else{
                     showToast("No BOM found for "+batch.productName+". Create a BOM in the 📋 BOM tab first.","error");
                   }
