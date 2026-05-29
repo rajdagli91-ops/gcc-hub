@@ -4509,6 +4509,43 @@ function BOMForm({form,setForm,saving,isEdit,onCancel,onSave,sysProducts,sysQcPa
     </div>
 
 
+    {/* Extra Additions */}
+    <div style={{marginBottom:"14px"}}>
+      <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"6px"}}>Extra Additions (printed on production sheet)</div>
+      <div style={{border:"1px solid #1e293b",borderRadius:"8px",overflow:"hidden",marginBottom:"6px"}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 28px",background:"#0b1220",padding:"5px 10px",gap:"6px"}}>
+          <div style={{fontSize:"9px",fontWeight:"700",color:"#334155",textTransform:"uppercase"}}>Row Label</div>
+          <div/>
+        </div>
+        {((form.extraAdditions||{}).items||["Dhoyela","Extra Output","Dhoyela"]).map((item,i)=>{
+          const items=(form.extraAdditions||{}).items||["Dhoyela","Extra Output","Dhoyela"];
+          const isHighlight=item==="Extra Output"||item.toLowerCase().includes("extra output");
+          return <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 28px",padding:"5px 10px",gap:"6px",borderTop:"1px solid #1e293b",alignItems:"center",background:isHighlight?"#0a1520":"#080d18"}}>
+            <input style={{...sml,color:isHighlight?"#93c5fd":"#e2e8f0"}} value={item}
+              onChange={e=>{const arr=[...items];arr[i]=e.target.value;setForm({...form,extraAdditions:{...(form.extraAdditions||{}),items:arr}});}}
+              placeholder="e.g. Dhoyela or Extra Output"/>
+            <button onClick={()=>{const arr=items.filter((_,idx)=>idx!==i);setForm({...form,extraAdditions:{...(form.extraAdditions||{}),items:arr}});}}
+              style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"14px",padding:0}}>×</button>
+          </div>;
+        })}
+        {!((form.extraAdditions||{}).items||[]).length&&<div style={{padding:"8px 10px",fontSize:"12px",color:"#334155",fontStyle:"italic"}}>No extra addition rows.</div>}
+      </div>
+      <div style={{display:"flex",gap:"8px",flexWrap:"wrap",alignItems:"center"}}>
+        <button onClick={()=>setForm({...form,extraAdditions:{...(form.extraAdditions||{}),items:[...((form.extraAdditions||{}).items||[]),"Dhoyela"]}})}
+          style={{background:"none",border:"1px dashed #334155",borderRadius:"6px",padding:"4px 10px",color:"#64748b",cursor:"pointer",fontSize:"12px"}}>+ Dhoyela</button>
+        <button onClick={()=>setForm({...form,extraAdditions:{...(form.extraAdditions||{}),items:[...((form.extraAdditions||{}).items||[]),"Extra Output"]}})}
+          style={{background:"none",border:"1px dashed #2563eb50",borderRadius:"6px",padding:"4px 10px",color:"#93c5fd",cursor:"pointer",fontSize:"12px"}}>+ Extra Output</button>
+        <button onClick={()=>setForm({...form,extraAdditions:{...(form.extraAdditions||{}),items:[...((form.extraAdditions||{}).items||[]),""]}})}
+          style={{background:"none",border:"1px dashed #1e293b",borderRadius:"6px",padding:"4px 10px",color:"#475569",cursor:"pointer",fontSize:"12px"}}>+ Custom Row</button>
+        <div style={{display:"flex",alignItems:"center",gap:"6px",marginLeft:"auto"}}>
+          <span style={{fontSize:"11px",color:"#475569"}}>Blank rows:</span>
+          <input type="number" min="0" max="8" value={(form.extraAdditions||{}).blankRows??2}
+            onChange={e=>setForm({...form,extraAdditions:{...(form.extraAdditions||{}),blankRows:parseInt(e.target.value)||0}})}
+            style={{...sml,width:"48px",textAlign:"center"}}/>
+        </div>
+      </div>
+    </div>
+
     {isEdit&&<InfoBox color="#f59e0b">Saving will create a new version and archive the current BOM for future reference.</InfoBox>}
     <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
       <Btn label="Cancel" onClick={onCancel} outline color="#475569" small/>
@@ -4521,9 +4558,9 @@ function BOMForm({form,setForm,saving,isEdit,onCancel,onSave,sysProducts,sysQcPa
 function PrintDialog({bom,packSizes,onClose}){
   const [batchSize,setBatchSize]=useState(bom.baseBatchSize||"100");
   const [batchNo,setBatchNo]=useState("");
-  // Extra additions config — default: Dhoyela, Extra Output, Dhoyela
-  const [extraItems,setExtraItems]=useState(["Dhoyela","Extra Output","Dhoyela"]);
-  const [blankRows,setBlankRows]=useState(2);
+  const storedExtra=bom.extraAdditions||{items:["Dhoyela","Extra Output","Dhoyela"],blankRows:2};
+  const [extraItems,setExtraItems]=useState([...(storedExtra.items||["Dhoyela","Extra Output","Dhoyela"])]);
+  const [blankRows,setBlankRows]=useState(storedExtra.blankRows??2);
   const addItem=(label)=>setExtraItems(v=>[...v,label]);
   const removeItem=(i)=>setExtraItems(v=>v.filter((_,idx)=>idx!==i));
 
@@ -4582,7 +4619,8 @@ function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes,sysQcParams}
   const blankBOM={productName:"",category:"",baseBatchSize:"100",baseUnit:"L",
     ingredients:[{id:newId(),name:"",standardQty:"",isProcess:false}],
     qcTests:defaultQCParams(""),
-    packingSizes:[]};
+    packingSizes:[],
+    extraAdditions:{items:["Dhoyela","Extra Output","Dhoyela"],blankRows:2}};
   const [form,setForm]=useState({...blankBOM});
 
   useEffect(()=>{
@@ -4731,7 +4769,7 @@ function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes,sysQcParams}
                 <span style={{fontSize:"10px",color:"#334155",marginLeft:"8px"}}>{v.archivedAt?.toDate?.()?.toLocaleDateString("en-IN")||""}</span>
               </div>
               <div style={{display:"flex",gap:"6px"}}>
-                <Btn label="🖨 Print this version" onClick={()=>printProductionSheet(v,v.baseBatchSize,"","","","",sysPackSizes,"")} color="#64748b" small outline/>
+                <Btn label="🖨 Print this version" onClick={()=>printProductionSheet(v,v.baseBatchSize,"","","","",sysPackSizes,"",v.extraAdditions||{})} color="#64748b" small outline/>
                 {canEdit&&<Btn label="⬆ Restore as Current" onClick={async()=>{if(!confirm("Restore v"+v.currentVersion+" as current BOM? Current will be archived."))return;const curr=boms.find(x=>x.id===b.id);if(curr)await C("bom_versions").add({...curr,productId:b.id,archivedAt:ts(),archivedBy:user.email});await C("bom_products").doc(b.id).update({...v,currentVersion:(curr?.currentVersion||1)+1,updatedBy:user.email,updatedAt:ts()});await C("bom_versions").doc(v.id).delete();showToast("Version restored ✓");}} color="#f59e0b" small/>}
               </div>
             </div>)}
@@ -5228,7 +5266,7 @@ function MainApp({user,role,roles=[]}){
         if(!bomSnap.empty){
           const bom=bomSnap.docs[0].data();
           if(window.confirm(`Batch ${bNo} issued ✓\n\nPrint production sheet for ${batchForm.productName} (${batchForm.batchSize} ${batchForm.unit})?`)){
-            printProductionSheet(bom,batchForm.batchSize,bNo,"","","",sysPackSizes,batchForm.dateIssued);
+            printProductionSheet(bom,batchForm.batchSize,bNo,"","","",sysPackSizes,batchForm.dateIssued,bom.extraAdditions||{});
           }
         }else{
           showToast(`Batch ${bNo} issued ✓ (No BOM found for this product)`);
@@ -5458,7 +5496,7 @@ function MainApp({user,role,roles=[]}){
                 try{
                   const bomSnap=await C("bom_products").where("productName","==",batch.productName).limit(1).get();
                   if(!bomSnap.empty){
-                    printProductionSheet(bomSnap.docs[0].data(),batch.batchSize,batch.batchNo,"","","",sysPackSizes,batch.dateIssued);
+                    printProductionSheet(bomSnap.docs[0].data(),batch.batchSize,batch.batchNo,"","","",sysPackSizes,batch.dateIssued,bomSnap.docs[0].data().extraAdditions||{});
                   }else{
                     showToast("No BOM found for "+batch.productName+". Create a BOM in the 📋 BOM tab first.","error");
                   }
