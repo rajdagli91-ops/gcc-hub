@@ -139,36 +139,36 @@ function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, char
     }).filter(Boolean);
   }
   var packRows=catPackSizes.length
-    ?catPackSizes.map(function(s){return '<tr><td style="border:1px solid #999;padding:10px 6px;font-size:11px">'+s+'</td><td style="border:1px solid #999;padding:10px 6px;min-width:80px">&nbsp;</td></tr>';}).join("")
+    ?catPackSizes.map(function(s){return '<tr><td style="border:1px solid #999;padding:10px 6px;font-size:12px">'+s+'</td><td style="border:1px solid #999;padding:10px 6px;min-width:80px">&nbsp;</td></tr>';}).join("")
     :'<tr><td style="border:1px solid #999;padding:10px 6px">&nbsp;</td><td style="border:1px solid #999;padding:10px 6px">&nbsp;</td></tr><tr><td style="border:1px solid #999;padding:10px 6px">&nbsp;</td><td style="border:1px solid #999;padding:10px 6px">&nbsp;</td></tr><tr><td style="border:1px solid #999;padding:10px 6px">&nbsp;</td><td style="border:1px solid #999;padding:10px 6px">&nbsp;</td></tr>';
   const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Production Sheet — ${bom.productName}</title>
 <style>
-  body{font-family:Arial,sans-serif;margin:0;padding:12px;font-size:12px;}
-  .header-table{width:100%;border-collapse:collapse;margin-bottom:6px;}
-  .header-table td{padding:3px 5px;font-size:11px;}
-  .co-name{font-size:16px;font-weight:800;letter-spacing:1px;}
-  .sheet-title{font-size:14px;font-weight:700;text-align:center;}
-  .prod-name{font-size:13px;font-weight:700;border:1px solid #000;padding:4px 8px;margin-bottom:6px;}
-  .main-table{width:100%;border-collapse:collapse;margin-bottom:6px;}
-  .main-table th{border:1px solid #000;padding:5px 5px;background:#d0d0d0;font-size:10px;text-align:center;}
-  .main-table td{border:1px solid #999;padding:7px 5px;font-size:11px;min-height:24px;}
-  .right-table{width:100%;border-collapse:collapse;font-size:11px;}
-  .right-table td{border:1px solid #999;padding:3px 5px;}
-  .section-head{font-weight:700;background:#e0e0e0;padding:2px 4px;font-size:10px;text-transform:uppercase;}
-  .footer-row{display:flex;justify-content:space-between;margin-top:10px;font-size:11px;}
-  /* Portrait lock — placed outside @media to take effect before printing */
-  @page{size:210mm 297mm portrait;margin:8mm;}
-  @page :first{size:210mm 297mm portrait;margin:8mm;}
+  body{font-family:Arial,sans-serif;margin:0;padding:10px 12px 10px 20px;font-size:13px;}
+  .header-table{width:100%;border-collapse:collapse;margin-bottom:8px;}
+  .header-table td{padding:4px 6px;font-size:12px;}
+  .co-name{font-size:18px;font-weight:800;letter-spacing:1px;}
+  .sheet-title{font-size:15px;font-weight:700;text-align:center;}
+  .prod-name{font-size:14px;font-weight:700;border:1px solid #000;padding:5px 8px;margin-bottom:7px;}
+  .main-table{width:100%;border-collapse:collapse;margin-bottom:7px;}
+  .main-table th{border:1px solid #000;padding:6px 5px;background:#d0d0d0;font-size:11px;text-align:center;}
+  .main-table td{border:1px solid #999;padding:8px 6px;font-size:12px;min-height:26px;}
+  .right-table{width:100%;border-collapse:collapse;font-size:12px;}
+  .right-table td{border:1px solid #999;padding:5px 6px;}
+  .section-head{font-weight:700;background:#e0e0e0;padding:3px 5px;font-size:11px;text-transform:uppercase;}
+  .footer-row{display:flex;justify-content:space-between;margin-top:12px;font-size:12px;}
+  /* Portrait lock — left margin larger for filing */
+  @page{size:210mm 297mm portrait;margin:8mm 8mm 8mm 20mm;}
+  @page :first{size:210mm 297mm portrait;margin:8mm 8mm 8mm 20mm;}
   @media print{
     html{width:210mm!important;max-width:210mm!important;}
-    body{width:194mm!important;max-width:194mm!important;margin:0!important;padding:0!important;}
-    table{max-width:194mm!important;width:100%!important;}
-    @page{size:210mm 297mm portrait;margin:8mm;}
+    body{width:182mm!important;max-width:182mm!important;margin:0!important;padding:0!important;}
+    table{max-width:182mm!important;width:100%!important;}
+    @page{size:210mm 297mm portrait;margin:8mm 8mm 8mm 20mm;}
     tr{page-break-inside:avoid;}
   }
 </style>
 </head>
-<body style="width:194mm;max-width:194mm;font-family:Arial,sans-serif;font-size:11px;margin:0;padding:4px;box-sizing:border-box;">
+<body style="width:182mm;max-width:182mm;font-family:Arial,sans-serif;font-size:13px;margin:0;padding:10px;box-sizing:border-box;">
 <table class="header-table">
   <tr>
     <td style="width:30%"><span class="co-name">VEEBEE</span><br><span style="font-size:9px">G.C.C/7.2.1/F/03</span></td>
@@ -2413,22 +2413,33 @@ function UsersTab({currentUser}){
                 })}
               </div>)}
             </div>
-            {/* Quick presets */}
-            <div style={{marginBottom:"10px"}}>
-              <div style={{fontSize:"10px",fontWeight:"700",color:"#334155",textTransform:"uppercase",marginBottom:"6px"}}>Quick Presets:</div>
-              <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
+            {/* Quick presets — prominent at top */}
+            <div style={{marginBottom:"12px",background:"#0b1220",border:"1px solid #1e3a5f",borderRadius:"8px",padding:"10px 12px"}}>
+              <div style={{fontSize:"10px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"8px"}}>⚡ Quick Presets — click to apply</div>
+              <div style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>
                 {[
-                  {label:"📦 Issuer",perms:["batches_view","batches_issue","bom_view","bom_edit","complaints_view_all","tasks_own","tasks_assign","stock_view","settings_products"]},
-                  {label:"🔬 QC",perms:["batches_view","batches_qc","rd_view","rd_edit","bom_view","bom_edit","complaints_view_all","complaints_respond","tasks_own","stock_view","settings_advanced"]},
-                  {label:"💼 Sales",perms:["complaints_add","complaints_view_all","tasks_own","testimonials"]},
-                  {label:"🏪 Store",perms:["stock_view","stock_consume","tasks_own"]},
-                  {label:"Clear All",perms:[]},
-                ].map(preset=><button key={preset.label} onClick={()=>setEditPerms(preset.perms)} style={{background:"#0b1220",border:"1px solid #334155",borderRadius:"6px",padding:"4px 10px",color:"#64748b",cursor:"pointer",fontSize:"11px",fontWeight:"600"}}>{preset.label}</button>)}
+                  {label:"📦 Issuer",color:"#f59e0b",perms:["batches_view","batches_issue","bom_view","bom_edit","complaints_view_all","tasks_own","tasks_assign","stock_view","settings_products"]},
+                  {label:"🔬 QC",color:"#22c55e",perms:["batches_view","batches_qc","rd_view","rd_edit","bom_view","bom_edit","complaints_view_all","complaints_respond","tasks_own","stock_view","settings_advanced"]},
+                  {label:"💼 Sales",color:"#a855f7",perms:["complaints_add","complaints_view_all","tasks_own","testimonials"]},
+                  {label:"🏪 Store",color:"#38bdf8",perms:["stock_view","stock_consume","tasks_own"]},
+                  {label:"🧪 QC + R&D",color:"#34d399",perms:["batches_view","batches_qc","rd_view","rd_edit","bom_view","bom_edit","complaints_view_all","complaints_respond","tasks_own","stock_view","settings_products","settings_advanced"]},
+                  {label:"Clear All",color:"#475569",perms:[]},
+                ].map(preset=>{
+                  const isActive=preset.perms.length>0&&preset.perms.every(p=>editPerms.includes(p))&&editPerms.length===preset.perms.length;
+                  return <button key={preset.label} onClick={()=>setEditPerms(preset.perms)} style={{
+                    background:isActive?`${preset.color}20`:"#060d1a",
+                    border:`1px solid ${isActive?preset.color:"#334155"}`,
+                    borderRadius:"8px",padding:"6px 14px",
+                    color:isActive?preset.color:"#64748b",
+                    cursor:"pointer",fontSize:"12px",fontWeight:"700",
+                    transition:"all 0.15s"
+                  }}>{preset.label}</button>;
+                })}
               </div>
+              {editPerms.length>0&&<div style={{fontSize:"11px",color:"#64748b",marginTop:"8px"}}>
+                ✓ {editPerms.length} permission{editPerms.length!==1?"s":""} selected
+              </div>}
             </div>
-            {editPerms.length>0&&<div style={{fontSize:"11px",color:"#64748b",background:"#0b1220",border:"1px solid #1e293b",borderRadius:"6px",padding:"5px 10px",marginBottom:"8px"}}>
-              ✓ {editPerms.length} permission{editPerms.length!==1?"s":""}  selected
-            </div>}
             <div style={{display:"flex",gap:"8px"}}>
               <Btn label={saving===email?"Saving…":"✓ Save Permissions"} onClick={()=>saveRoleEdit(email)} disabled={saving===email} color="#3b82f6" small/>
               <Btn label="Cancel" onClick={()=>setEditingRole(null)} outline color="#475569" small/>
