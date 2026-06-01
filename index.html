@@ -5685,6 +5685,8 @@ function MainApp({user,role,roles=[],permissions=[]}){
                     </div>)}
                   </div>}
                 </div>
+                {/* 📖 Guide button */}
+                <button onClick={()=>window.open("gcc_hub_guide.html","_blank")} title="Open User Guide" style={{background:"none",border:"1px solid #1e3a5f",borderRadius:"7px",padding:"4px 10px",color:"#93c5fd",fontSize:"11px",fontWeight:"600",cursor:"pointer"}}>📖 Guide</button>
                 <button onClick={()=>setShowChangePw(true)} style={{background:"none",border:"1px solid #1e3a5f",borderRadius:"7px",padding:"4px 10px",color:"#93c5fd",fontSize:"11px",fontWeight:"600",cursor:"pointer"}}>🔑 Change PW</button>
                 <button onClick={()=>auth.signOut()} style={{background:"none",border:"1px solid #1e293b",borderRadius:"7px",padding:"4px 12px",color:"#475569",fontSize:"11px",fontWeight:"600",cursor:"pointer"}}>Sign Out</button>
               </div>
