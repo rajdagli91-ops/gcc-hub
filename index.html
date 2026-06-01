@@ -40,7 +40,9 @@ button{font-family:'DM Sans',sans-serif;cursor:pointer}
   .print-report .pr-info td:first-child{font-weight:bold;width:32%;color:#333!important}
   /* Two reports side by side on one A4 sheet */
   .print-report{width:50%;float:left;box-sizing:border-box;padding:4mm}
-  @page{size:A4 landscape;margin:6mm}
+  /* Force portrait A4 for all printing from this app */
+  @page{size:210mm 297mm portrait;margin:8mm}
+  @page :first{size:210mm 297mm portrait}
 }
 .print-report{display:none}
 </style>
@@ -139,7 +141,7 @@ function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, char
   var packRows=catPackSizes.length
     ?catPackSizes.map(function(s){return '<tr><td style="border:1px solid #999;padding:10px 6px;font-size:11px">'+s+'</td><td style="border:1px solid #999;padding:10px 6px;min-width:80px">&nbsp;</td></tr>';}).join("")
     :'<tr><td style="border:1px solid #999;padding:10px 6px">&nbsp;</td><td style="border:1px solid #999;padding:10px 6px">&nbsp;</td></tr><tr><td style="border:1px solid #999;padding:10px 6px">&nbsp;</td><td style="border:1px solid #999;padding:10px 6px">&nbsp;</td></tr><tr><td style="border:1px solid #999;padding:10px 6px">&nbsp;</td><td style="border:1px solid #999;padding:10px 6px">&nbsp;</td></tr>';
-  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Production Sheet — ${bom.productName}</title>
+  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Production Sheet — ${bom.productName}</title>
 <style>
   body{font-family:Arial,sans-serif;margin:0;padding:12px;font-size:12px;}
   .header-table{width:100%;border-collapse:collapse;margin-bottom:6px;}
@@ -154,8 +156,19 @@ function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, char
   .right-table td{border:1px solid #999;padding:3px 5px;}
   .section-head{font-weight:700;background:#e0e0e0;padding:2px 4px;font-size:10px;text-transform:uppercase;}
   .footer-row{display:flex;justify-content:space-between;margin-top:10px;font-size:11px;}
-  @media print{body{margin:0;padding:8px;} @page{margin:8mm;size:A4;}}
-</style></head><body>
+  /* Portrait lock — placed outside @media to take effect before printing */
+  @page{size:210mm 297mm portrait;margin:8mm;}
+  @page :first{size:210mm 297mm portrait;margin:8mm;}
+  @media print{
+    html{width:210mm!important;max-width:210mm!important;}
+    body{width:194mm!important;max-width:194mm!important;margin:0!important;padding:0!important;}
+    table{max-width:194mm!important;width:100%!important;}
+    @page{size:210mm 297mm portrait;margin:8mm;}
+    tr{page-break-inside:avoid;}
+  }
+</style>
+</head>
+<body style="width:194mm;max-width:194mm;font-family:Arial,sans-serif;font-size:11px;margin:0;padding:4px;box-sizing:border-box;">
 <table class="header-table">
   <tr>
     <td style="width:30%"><span class="co-name">VEEBEE</span><br><span style="font-size:9px">G.C.C/7.2.1/F/03</span></td>
@@ -254,7 +267,7 @@ function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, char
   <div>Check by: ________________________________</div>
   <div>Prepared by: ________________________________</div>
 </div>
-<script>window.onload=()=>{window.print();}<\/script>
+<script>window.onload=()=>{setTimeout(()=>{window.focus();window.print();},400);}<\/script>
 </body></html>`;
   const w=window.open("","_blank");
   w.document.write(html);w.document.close();
@@ -271,6 +284,74 @@ const db = window._db;
 const ADMIN_EMAILS = ["r-and-d-gcc@gmail.com","raj@gujaratcolours.com","rajdagli91@gmail.com","vijayddagli@gmail.com"];
 const ROLE_LABELS = {admin:"🔑 Admin",issuer:"📦 Issuer",qc:"🔬 QC",sales:"💼 Sales",store:"🏪 Store"};
 const ROLE_COLORS = {admin:"#3b82f6",issuer:"#f59e0b",qc:"#22c55e",sales:"#a855f7",store:"#38bdf8"};
+
+// ── Granular Permissions System ──
+const PERMISSION_GROUPS=[
+  {key:"batches",  label:"📦 Batches",    perms:[
+    {k:"batches_view",   l:"View batches"},
+    {k:"batches_issue",  l:"Issue new batches"},
+    {k:"batches_qc",     l:"Enter production & QC details"},
+  ]},
+  {key:"complaints",label:"⚠️ Complaints", perms:[
+    {k:"complaints_view_all", l:"View all complaints"},
+    {k:"complaints_add",      l:"Add complaints"},
+    {k:"complaints_respond",  l:"Respond / close complaints"},
+  ]},
+  {key:"rd",       label:"🧪 R&D & QC",   perms:[
+    {k:"rd_view",  l:"View R&D projects & RM tests"},
+    {k:"rd_edit",  l:"Create / edit R&D projects"},
+  ]},
+  {key:"bom",      label:"📋 BOM",         perms:[
+    {k:"bom_view", l:"View BOMs"},
+    {k:"bom_edit", l:"Create / edit BOMs & print sheets"},
+  ]},
+  {key:"tasks",    label:"✅ Tasks",       perms:[
+    {k:"tasks_own",    l:"View & complete own tasks"},
+    {k:"tasks_assign", l:"Assign tasks to others"},
+  ]},
+  {key:"stock",    label:"🏪 RM Stock",    perms:[
+    {k:"stock_view",    l:"View stock levels"},
+    {k:"stock_consume", l:"Record daily consumption"},
+    {k:"stock_manage",  l:"Add / edit materials & import"},
+  ]},
+  {key:"testimonials",label:"⭐ Testimonials",perms:[
+    {k:"testimonials",l:"View & manage testimonials"},
+  ]},
+  {key:"settings", label:"⚙️ Settings",    perms:[
+    {k:"settings_products", l:"Products, categories & pack sizes"},
+    {k:"settings_advanced", l:"Units, paint types, RM categories"},
+  ]},
+];
+
+// Derive a display label from permissions (for badge)
+const labelFromPerms=(perms)=>{
+  if(!perms||!perms.length)return null;
+  const p=new Set(perms);
+  if(p.has("batches_qc")&&p.has("rd_edit"))return"QC";
+  if(p.has("batches_issue"))return"Issuer";
+  if(p.has("complaints_add")&&!p.has("batches_view"))return"Sales";
+  if(p.has("stock_consume")&&!p.has("batches_view"))return"Store";
+  return"Custom";
+};
+
+// Check if user has a specific permission (supports both old roles and new permissions)
+const userHasPerm=(roles,permissions,perm)=>{
+  if(!permissions||!permissions.length){
+    // Fall back to role-based check
+    const rolePermsMap={
+      admin:["batches_view","batches_issue","batches_qc","complaints_view_all","complaints_add","complaints_respond","rd_view","rd_edit","bom_view","bom_edit","tasks_own","tasks_assign","stock_view","stock_consume","stock_manage","testimonials","settings_products","settings_advanced"],
+      issuer:["batches_view","batches_issue","bom_view","bom_edit","complaints_view_all","tasks_own","tasks_assign","stock_view","settings_products"],
+      qc:["batches_view","batches_qc","rd_view","rd_edit","bom_view","bom_edit","complaints_view_all","complaints_respond","tasks_own","stock_view","settings_advanced"],
+      sales:["complaints_add","complaints_view_all","tasks_own","testimonials"],
+      store:["stock_view","stock_consume","tasks_own"],
+    };
+    return (roles||[]).some(r=>r==="admin"||(rolePermsMap[r]||[]).includes(perm));
+  }
+  if((roles||[]).includes("admin"))return true;
+  return permissions.includes(perm);
+};
+
+
 
 // Tab access per role
 const CAN_SEE = {
@@ -1953,7 +2034,7 @@ function TestimonialsTab({role,user,showToast}){
   .photos{display:flex;flex-wrap:wrap;gap:10px;margin-top:20px;}
   .photos img{width:200px;height:150px;object-fit:cover;border-radius:6px;border:1px solid #ddd;}
   .footer{border-top:1px solid #ccc;padding-top:10px;margin-top:20px;font-size:9pt;color:#999;text-align:center;}
-  @media print{body{margin:20px;} @page{margin:15mm;}}
+  @media print{body{margin:20px;} @page{margin:15mm;size:A4 portrait;}}
 </style></head><body>
 <div class="header">
   <div class="company">Gujarat Colours &amp; Coatings Pvt Ltd</div>
@@ -2091,9 +2172,11 @@ ${imgs.length>0?`<div class="photos">${imgs.slice(0,4).map(i=>`<img src="${i.url
 
 function UsersTab({currentUser}){
   const [profiles,setProfiles]=useState({});  // uid/email -> {email, displayName}
-  const [roles,setRoles]=useState({});         // email -> role
+  const [roles,setRoles]=useState({});         // email -> roles array
+  const [userPerms,setUserPerms]=useState({}); // email -> permissions array
   const [editingRole,setEditingRole]=useState(null);
-  const [editRoleVals,setEditRoleVals]=useState([]); // array of selected roles
+  const [editRoleVals,setEditRoleVals]=useState([]);
+  const [editPerms,setEditPerms]=useState([]);
   const [saving,setSaving]=useState(null);
   const [localToast,setLocalToast]=useState(null);
   const showLT=(msg,type="success")=>{setLocalToast({msg,type});setTimeout(()=>setLocalToast(null),3000);};
@@ -2117,11 +2200,11 @@ function UsersTab({currentUser}){
     });
     // Load roles — this is the source of truth for all users
     const unsub2=C("roles").onSnapshot(snap=>{
-      const r={};snap.docs.forEach(d=>{
+      const r={};const p={};snap.docs.forEach(d=>{
         const data=d.data();
-        // Support both old {role:"x"} and new {roles:["x","y"]} formats
         r[d.id]=data.roles||(data.role?[data.role]:[]);
-      });setRoles(r);
+        p[d.id]=data.permissions||[];
+      });setRoles(r);setUserPerms(p);
     });
     return()=>{unsub1();unsub2();};
   },[]);
@@ -2166,13 +2249,13 @@ function UsersTab({currentUser}){
   };
 
   const saveRoleEdit=async(email)=>{
-    if(!editRoleVals.length)return showLT("Select at least one role","error");
+    if(!editPerms.length&&!editRoleVals.length)return showLT("Select at least one permission","error");
     setSaving(email);
     try{
-      const prim=primaryRole(editRoleVals);
-      await C("roles").doc(email).set({roles:editRoleVals,role:prim,assignedBy:currentUser.email,assignedAt:ts()},{merge:true});
-      setEditingRole(null);showLT(`Roles updated ✓`);
-    }catch(e){showLT("Error updating role","error");}
+      const prim=editRoleVals.length?primaryRole(editRoleVals):"store";
+      await C("roles").doc(email).set({roles:editRoleVals,role:prim,permissions:editPerms,assignedBy:currentUser.email,assignedAt:ts()},{merge:true});
+      setEditingRole(null);showLT("Permissions saved ✓");
+    }catch(e){showLT("Error: "+e.message,"error");}
     setSaving(null);
   };
 
@@ -2283,6 +2366,7 @@ function UsersTab({currentUser}){
       :allEmails.map(email=>{
         const isHardAdmin=ADMIN_EMAILS.includes(email);
         const currentRoles=isHardAdmin?["admin"]:(roles[email]||[]);
+        const currentPerms=isHardAdmin?[]:userPerms[email]||[];
         const currentRole=primaryRole(currentRoles)||"—";
         const rc=ROLE_COLORS[currentRole]||"#475569";
         const name=profiles[email]?.displayName||"";
@@ -2294,15 +2378,19 @@ function UsersTab({currentUser}){
               {name&&<div style={{fontSize:"13px",fontWeight:"700",color:"#f1f5f9",marginBottom:"2px"}}>{name}</div>}
               <div style={{fontSize:name?"12px":"13.5px",fontWeight:name?"400":"600",color:name?"#64748b":"#e2e8f0",marginBottom:"4px"}}>{email}</div>
               <div style={{display:"flex",gap:"6px",flexWrap:"wrap",alignItems:"center"}}>
-                {currentRoles.length>0
-                  ?currentRoles.map(r=><Bdg key={r} label={ROLE_LABELS[r]||r} color={ROLE_COLORS[r]||"#475569"} small/>)
-                  :<span style={{fontSize:"11px",color:"#ef4444",fontStyle:"italic"}}>No role assigned</span>}
+                {isHardAdmin
+                  ?<Bdg label="🔑 Admin" color="#3b82f6" small/>
+                  :currentPerms.length>0
+                    ?<span style={{fontSize:"11px",color:"#3b82f6",background:"#0f1d35",border:"1px solid #2563eb40",borderRadius:"6px",padding:"2px 8px",fontWeight:"600"}}>🔐 Custom ({currentPerms.length} permissions)</span>
+                    :currentRoles.length>0
+                      ?currentRoles.map(r=><Bdg key={r} label={ROLE_LABELS[r]||r} color={ROLE_COLORS[r]||"#475569"} small/>)
+                      :<span style={{fontSize:"11px",color:"#ef4444",fontStyle:"italic"}}>No permissions assigned</span>}
                 {isHardAdmin&&<span style={{fontSize:"10px",color:"#475569",fontStyle:"italic"}}>· hardcoded admin</span>}
               </div>
             </div>
             {!isHardAdmin&&<div style={{display:"flex",gap:"6px",alignItems:"center",flexWrap:"wrap",flexShrink:0}}>
-              <button onClick={()=>{setEditingRole(isEditing?null:email);setEditRoleVals([...currentRoles]);}}
-                style={{background:"#1e293b",border:"1px solid #334155",borderRadius:"6px",padding:"5px 10px",color:"#94a3b8",fontSize:"11.5px",fontWeight:"700",cursor:"pointer"}}>✏️ Roles</button>
+              <button onClick={()=>{setEditingRole(isEditing?null:email);setEditRoleVals([...currentRoles]);setEditPerms([...currentPerms]);}}
+                style={{background:"#1e293b",border:"1px solid #334155",borderRadius:"6px",padding:"5px 10px",color:"#94a3b8",fontSize:"11.5px",fontWeight:"700",cursor:"pointer"}}>🔐 Permissions</button>
               <button onClick={()=>setEditPassEmail(editPassEmail===email?null:email)}
                 style={{background:"#1e3a5f",border:"1px solid #2563eb",borderRadius:"6px",padding:"5px 10px",color:"#93c5fd",fontSize:"11.5px",fontWeight:"700",cursor:"pointer"}}>🔑 Reset PW</button>
               <button onClick={()=>removeAccess(email)}
@@ -2310,31 +2398,39 @@ function UsersTab({currentUser}){
             </div>}
           </div>
 
-          {/* Multi-role checkbox edit */}
+          {/* Permission matrix editor */}
           {isEditing&&!isHardAdmin&&<div style={{marginTop:"10px",paddingTop:"10px",borderTop:"1px solid #1e293b"}}>
-            <div style={{fontSize:"12px",color:"#64748b",fontWeight:"600",marginBottom:"8px"}}>Select roles (user can have multiple):</div>
-            <div style={{display:"flex",gap:"8px",flexWrap:"wrap",marginBottom:"10px"}}>
-              {["admin","issuer","qc","sales","store"].map(r=>{
-                const checked=editRoleVals.includes(r);
-                const toggle=()=>setEditRoleVals(checked?editRoleVals.filter(x=>x!==r):[...editRoleVals,r]);
-                return <button key={r} onClick={toggle} style={{
-                  background:checked?`${ROLE_COLORS[r]}25`:"none",
-                  border:`2px solid ${checked?ROLE_COLORS[r]:"#334155"}`,
-                  borderRadius:"8px",padding:"7px 14px",
-                  color:checked?ROLE_COLORS[r]:"#475569",
-                  fontSize:"12.5px",fontWeight:"700",cursor:"pointer",
-                  display:"flex",alignItems:"center",gap:"6px"
-                }}>
-                  <span style={{fontSize:"14px"}}>{checked?"☑":"☐"}</span>
-                  {ROLE_LABELS[r]}
-                </button>;
-              })}
+            <div style={{fontSize:"12px",fontWeight:"700",color:"#93c5fd",marginBottom:"10px"}}>🔐 Set Permissions for {name||email}</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px",marginBottom:"10px"}}>
+              {PERMISSION_GROUPS.map(group=><div key={group.key} style={{background:"#060d1a",border:"1px solid #1e293b",borderRadius:"8px",padding:"10px 12px"}}>
+                <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",marginBottom:"7px"}}>{group.label}</div>
+                {group.perms.map(p=>{
+                  const checked=editPerms.includes(p.k);
+                  return <label key={p.k} style={{display:"flex",alignItems:"center",gap:"7px",marginBottom:"4px",cursor:"pointer"}}>
+                    <input type="checkbox" checked={checked} onChange={e=>setEditPerms(checked?editPerms.filter(x=>x!==p.k):[...editPerms,p.k])} style={{cursor:"pointer",width:"14px",height:"14px",accentColor:"#3b82f6"}}/>
+                    <span style={{fontSize:"12px",color:checked?"#e2e8f0":"#475569"}}>{p.l}</span>
+                  </label>;
+                })}
+              </div>)}
             </div>
-            {editRoleVals.length>1&&<div style={{fontSize:"11px",color:"#64748b",marginBottom:"8px",background:"#0b1220",border:"1px solid #1e293b",borderRadius:"6px",padding:"5px 10px"}}>
-              Primary role (highest privilege): <strong style={{color:ROLE_COLORS[primaryRole(editRoleVals)]}}>{ROLE_LABELS[primaryRole(editRoleVals)]}</strong>
+            {/* Quick presets */}
+            <div style={{marginBottom:"10px"}}>
+              <div style={{fontSize:"10px",fontWeight:"700",color:"#334155",textTransform:"uppercase",marginBottom:"6px"}}>Quick Presets:</div>
+              <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
+                {[
+                  {label:"📦 Issuer",perms:["batches_view","batches_issue","bom_view","bom_edit","complaints_view_all","tasks_own","tasks_assign","stock_view","settings_products"]},
+                  {label:"🔬 QC",perms:["batches_view","batches_qc","rd_view","rd_edit","bom_view","bom_edit","complaints_view_all","complaints_respond","tasks_own","stock_view","settings_advanced"]},
+                  {label:"💼 Sales",perms:["complaints_add","complaints_view_all","tasks_own","testimonials"]},
+                  {label:"🏪 Store",perms:["stock_view","stock_consume","tasks_own"]},
+                  {label:"Clear All",perms:[]},
+                ].map(preset=><button key={preset.label} onClick={()=>setEditPerms(preset.perms)} style={{background:"#0b1220",border:"1px solid #334155",borderRadius:"6px",padding:"4px 10px",color:"#64748b",cursor:"pointer",fontSize:"11px",fontWeight:"600"}}>{preset.label}</button>)}
+              </div>
+            </div>
+            {editPerms.length>0&&<div style={{fontSize:"11px",color:"#64748b",background:"#0b1220",border:"1px solid #1e293b",borderRadius:"6px",padding:"5px 10px",marginBottom:"8px"}}>
+              ✓ {editPerms.length} permission{editPerms.length!==1?"s":""}  selected
             </div>}
             <div style={{display:"flex",gap:"8px"}}>
-              <Btn label={saving===email?"Saving…":"✓ Save Roles"} onClick={()=>saveRoleEdit(email)} disabled={saving===email} color="#22c55e" small/>
+              <Btn label={saving===email?"Saving…":"✓ Save Permissions"} onClick={()=>saveRoleEdit(email)} disabled={saving===email} color="#3b82f6" small/>
               <Btn label="Cancel" onClick={()=>setEditingRole(null)} outline color="#475569" small/>
             </div>
           </div>}
@@ -4569,7 +4665,7 @@ function BOMForm({form,setForm,saving,isEdit,onCancel,onSave,sysProducts,sysQcPa
           style={{background:"none",border:"1px dashed #1e293b",borderRadius:"6px",padding:"4px 10px",color:"#475569",cursor:"pointer",fontSize:"12px"}}>+ Custom Row</button>
         <div style={{display:"flex",alignItems:"center",gap:"6px",marginLeft:"auto"}}>
           <span style={{fontSize:"11px",color:"#475569"}}>Blank rows:</span>
-          <input type="number" min="0" max="8" value={(form.extraAdditions||{}).blankRows??2}
+          <input type="number" min="0" max="8" value={(form.extraAdditions||{}).blankRows!=null?(form.extraAdditions||{}).blankRows:2}
             onChange={e=>setForm({...form,extraAdditions:{...(form.extraAdditions||{}),blankRows:parseInt(e.target.value)||0}})}
             style={{...sml,width:"48px",textAlign:"center"}}/>
         </div>
@@ -4590,7 +4686,7 @@ function PrintDialog({bom,packSizes,sysQcParams,onClose}){
   const [batchNo,setBatchNo]=useState("");
   const storedExtra=bom.extraAdditions||{items:["Dhoyela","Extra Output","Dhoyela"],blankRows:2};
   const [extraItems,setExtraItems]=useState([...(storedExtra.items||["Dhoyela","Extra Output","Dhoyela"])]);
-  const [blankRows,setBlankRows]=useState(storedExtra.blankRows??2);
+  const [blankRows,setBlankRows]=useState(storedExtra.blankRows!=null?storedExtra.blankRows:2);
   const addItem=(label)=>setExtraItems(v=>[...v,label]);
   const removeItem=(i)=>setExtraItems(v=>v.filter((_,idx)=>idx!==i));
 
@@ -4637,7 +4733,8 @@ function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes,sysQcParams}
   const [loading,setLoading]=useState(true);
   const [search,setSearch]=useState("");
   const [filterCat,setFilterCat]=useState("All");
-  const [activeBOM,setActiveBOM]=useState(null); // {bom, mode: "view"|"edit"|"print"|"history"}
+  const [groupByCat,setGroupByCat]=useState(false);
+  const [activeBOM,setActiveBOM]=useState(null);
   const [showCreate,setShowCreate]=useState(false);
   const [saving,setSaving]=useState(false);
 
@@ -4714,49 +4811,27 @@ function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes,sysQcParams}
     const cs=filterCat==="All"||b.category===filterCat;
     return cs&&(!q||normalize(b.productName||"").includes(q));
   });
+  // When grouped: sort by category then product name
+  const fbSorted=groupByCat?[...fb].sort((a,b)=>{const cc=(a.category||"").localeCompare(b.category||"");return cc||a.productName.localeCompare(b.productName);}):[...fb];
+  // Group into {cat: [boms]}
+  const grouped=fbSorted.reduce((acc,b)=>{const c=b.category||"(No Category)";if(!acc[c])acc[c]=[];acc[c].push(b);return acc;},{});
 
-  return <div>
-    <SectionHead title="📋 Bill of Materials"/>
-    <div style={{display:"flex",gap:"8px",flexWrap:"wrap",alignItems:"center",marginBottom:"12px"}}>
-      <input placeholder="Search product…" value={search} onChange={e=>setSearch(e.target.value)} style={{...inp,maxWidth:"200px",padding:"7px 10px",fontSize:"12.5px"}}/>
-      <select value={filterCat} onChange={e=>setFilterCat(e.target.value)} style={{...sl,width:"130px",padding:"7px 6px",fontSize:"12px"}}>
-        <option value="All">All Categories</option>
-        {cats.map(c=><option key={c}>{c}</option>)}
-      </select>
-      <span style={{fontSize:"11px",color:"#334155"}}>{fb.length} BOM{fb.length!==1?"s":""}</span>
-      <div style={{marginLeft:"auto",display:"flex",gap:"8px"}}>
-        <Btn label="📥 Export All (CSV)" onClick={exportAllBOMs} color="#64748b" small outline/>
-        {canEdit&&<Btn label="+ Create BOM" onClick={()=>{setForm({...blankBOM});setShowCreate(true);setActiveBOM(null);}} color="#3b82f6"/>}
-      </div>
-    </div>
-
-    {/* Create form */}
-    {showCreate&&<div style={{background:"#080d18",border:"1px solid #3b82f630",borderRadius:"12px",padding:"18px",marginBottom:"16px"}}>
-      <div style={{fontSize:"13px",fontWeight:"700",color:"#93c5fd",marginBottom:"14px"}}>📋 New Bill of Materials</div>
-      <BOMForm form={form} setForm={setForm} saving={saving} isEdit={false} onCancel={()=>{setShowCreate(false);setForm({...blankBOM});}} onSave={()=>saveBOM(false)} sysProducts={sysProducts} sysQcParams={sysQcParams}/>
-    </div>}
-
-    {loading&&<div style={{textAlign:"center",padding:"40px",color:"#475569"}}>Loading…</div>}
-    {!loading&&fb.length===0&&!showCreate&&<div style={{textAlign:"center",padding:"50px 0"}}>
-      <div style={{fontSize:"36px"}}>📋</div>
-      <div style={{fontSize:"13px",color:"#475569",marginTop:"8px"}}>{canEdit?"No BOMs yet. Create your first BOM to print production sheets.":"No BOMs found."}</div>
-    </div>}
-
-    {/* BOM cards */}
-    {fb.map(b=>{
-      const isOpen=activeBOM?.bom?.id===b.id;
-      const mode=activeBOM?.mode;
-      const bVersions=versions.filter(v=>v.productId===b.id).sort((a,z)=>z.currentVersion-a.currentVersion);
-      const totalIngr=(b.ingredients||[]).filter(i=>!i.isProcess).length;
-      const totalStd=(b.ingredients||[]).filter(i=>!i.isProcess).reduce((s,i)=>s+(parseFloat(i.standardQty)||0),0);
-
-      return <div key={b.id} style={{background:"#0f172a",border:"1px solid #1e293b",borderLeft:"3px solid #3b82f6",borderRadius:"12px",marginBottom:"10px",overflow:"hidden"}}>
+  const renderBOMCard=(b,isLastInGroup=false)=>{
+    const isOpen=activeBOM?.bom?.id===b.id;
+    const mode=activeBOM?.mode;
+    const bVersions=versions.filter(v=>v.productId===b.id).sort((a,z)=>z.currentVersion-a.currentVersion);
+    const totalIngr=(b.ingredients||[]).filter(i=>!i.isProcess).length;
+    const totalStd=(b.ingredients||[]).filter(i=>!i.isProcess).reduce((s,i)=>s+(parseFloat(i.standardQty)||0),0);
+    const borderStyle=groupByCat&&filterCat==="All"
+      ?{border:"none",borderLeft:"3px solid #3b82f6",borderBottom:isLastInGroup?"none":"1px solid #1e293b",borderRadius:0,marginBottom:0}
+      :{border:"1px solid #1e293b",borderLeft:"3px solid #3b82f6",borderRadius:"12px",marginBottom:"10px"};
+    return <div key={b.id} style={{background:"#0f172a",overflow:"hidden",...borderStyle}}>
         {/* Card header */}
         <div style={{padding:"13px 16px",display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:"8px"}}>
           <div style={{flex:1,cursor:"pointer"}} onClick={()=>setActiveBOM(isOpen&&mode==="view"?null:{bom:b,mode:"view"})}>
             <div style={{fontSize:"14px",fontWeight:"700",color:"#f1f5f9"}}>{b.productName}</div>
             <div style={{fontSize:"11.5px",color:"#475569",marginTop:"2px"}}>
-              {b.category&&<span>{b.category} · </span>}Base: {b.baseBatchSize} {b.baseUnit} · {totalIngr} ingredients · Total: {totalStd.toFixed(2)}{b.baseUnit} · v{b.currentVersion||1}
+              {(!groupByCat||filterCat!=="All")&&b.category&&<span>{b.category} · </span>}Base: {b.baseBatchSize} {b.baseUnit} · {totalIngr} ingredients · Total: {totalStd.toFixed(2)}{b.baseUnit} · v{b.currentVersion||1}
               {bVersions.length>0&&<span style={{color:"#64748b",marginLeft:"6px"}}>· {bVersions.length} archived version{bVersions.length!==1?"s":""}</span>}
             </div>
           </div>
@@ -4842,7 +4917,52 @@ function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes,sysQcParams}
           </div>
         </div>}
       </div>;
-    })}
+  };
+
+
+  return <div>
+    <SectionHead title="📋 Bill of Materials"/>
+    <div style={{display:"flex",gap:"8px",flexWrap:"wrap",alignItems:"center",marginBottom:"12px"}}>
+      <input placeholder="Search product…" value={search} onChange={e=>setSearch(e.target.value)} style={{...inp,maxWidth:"200px",padding:"7px 10px",fontSize:"12.5px"}}/>
+      <select value={filterCat} onChange={e=>setFilterCat(e.target.value)} style={{...sl,width:"140px",padding:"7px 6px",fontSize:"12px"}}>
+        <option value="All">All Categories</option>
+        {cats.map(c=><option key={c}>{c}</option>)}
+      </select>
+      <button onClick={()=>setGroupByCat(v=>!v)} style={{background:groupByCat?"#1e3a5f":"#1e293b",border:`1px solid ${groupByCat?"#3b82f6":"#334155"}`,borderRadius:"6px",padding:"5px 12px",color:groupByCat?"#93c5fd":"#475569",cursor:"pointer",fontSize:"12px",fontWeight:"600"}}>
+        {groupByCat?"📂 Grouped":"☰ List"}
+      </button>
+      <span style={{fontSize:"11px",color:"#334155"}}>{fb.length} BOM{fb.length!==1?"s":""}</span>
+      <div style={{marginLeft:"auto",display:"flex",gap:"8px"}}>
+        <Btn label="📥 Export All (CSV)" onClick={exportAllBOMs} color="#64748b" small outline/>
+        {canEdit&&<Btn label="+ Create BOM" onClick={()=>{setForm({...blankBOM});setShowCreate(true);setActiveBOM(null);}} color="#3b82f6"/>}
+      </div>
+    </div>
+
+    {/* Create form */}
+    {showCreate&&<div style={{background:"#080d18",border:"1px solid #3b82f630",borderRadius:"12px",padding:"18px",marginBottom:"16px"}}>
+      <div style={{fontSize:"13px",fontWeight:"700",color:"#93c5fd",marginBottom:"14px"}}>📋 New Bill of Materials</div>
+      <BOMForm form={form} setForm={setForm} saving={saving} isEdit={false} onCancel={()=>{setShowCreate(false);setForm({...blankBOM});}} onSave={()=>saveBOM(false)} sysProducts={sysProducts} sysQcParams={sysQcParams}/>
+    </div>}
+
+    {loading&&<div style={{textAlign:"center",padding:"40px",color:"#475569"}}>Loading…</div>}
+    {!loading&&fb.length===0&&!showCreate&&<div style={{textAlign:"center",padding:"50px 0"}}>
+      <div style={{fontSize:"36px"}}>📋</div>
+      <div style={{fontSize:"13px",color:"#475569",marginTop:"8px"}}>{canEdit?"No BOMs yet. Create your first BOM to print production sheets.":"No BOMs found."}</div>
+    </div>}
+
+    {/* BOM cards — grouped or flat */}
+    {groupByCat&&filterCat==="All"
+      ?Object.entries(grouped).map(([cat,catBoms])=><div key={cat} style={{marginBottom:"16px"}}>
+          <div style={{fontSize:"12px",fontWeight:"700",color:"#93c5fd",textTransform:"uppercase",letterSpacing:"0.08em",padding:"6px 12px",background:"#0f1d35",border:"1px solid #1e3a5f",borderRadius:"8px 8px 0 0",display:"flex",alignItems:"center",gap:"10px"}}>
+            <span>📂 {cat}</span>
+            <span style={{fontSize:"11px",color:"#475569",fontWeight:"400"}}>{catBoms.length} product{catBoms.length!==1?"s":""}</span>
+          </div>
+          <div style={{border:"1px solid #1e3a5f",borderTop:"none",borderRadius:"0 0 8px 8px",overflow:"hidden"}}>
+            {catBoms.map((b,idx)=>renderBOMCard(b,idx===catBoms.length-1))}
+          </div>
+        </div>)
+      :fbSorted.map(b=>renderBOMCard(b,false))
+    }
   </div>;
 }
 
@@ -4861,7 +4981,7 @@ function TasksTab({user,roles,showToast,allRoles,allProfiles}){
   const [reassignTask,setReassignTask]=useState(null); // {id, assignedTo, title}
   const [completedSortUser,setCompletedSortUser]=useState("All"); // filter by user
 
-  const blankTask={title:"",description:"",assignedTo:user.email,dueDate:"",priority:"Normal"};
+  const blankTask={title:"",description:"",assignedTo:user.email,dueDate:"",priority:"Normal",category:"General",formula:{name:"",type:"Paint",ingredients:[{id:newId(),name:"",qty:"",unit:""}]}};
   const [form,setForm]=useState({...blankTask});
 
   // Only show users who actually exist in the system (have logged in or have a role)
@@ -4923,17 +5043,43 @@ function TasksTab({user,roles,showToast,allRoles,allProfiles}){
     if(!form.assignedTo)return showToast("Assign to someone","error");
     setSaving(true);
     try{
-      const taskRef=await C("tasks").add({...form,status:"pending",assignedBy:user.email,assignedAt:today(),_createdAt:ts()});
-      // Create notification for assignee (if not self-assigning)
+      const isRD=form.category==="R&D";
+      const hasFormula=isRD&&form.formula?.name?.trim()&&form.formula?.ingredients?.some(r=>r.name.trim());
+      const taskData={...form,status:"pending",assignedBy:user.email,assignedAt:today(),_createdAt:ts()};
+      // Only store formula if R&D + has content
+      if(!hasFormula)delete taskData.formula;
+      const taskRef=await C("tasks").add(taskData);
+
+      // If R&D task with formula → also create an R&D project entry
+      if(hasFormula){
+        const validIngredients=form.formula.ingredients.filter(r=>r.name.trim());
+        await C("rd_projects").add({
+          projectName:form.formula.name,
+          paintType:form.formula.type,
+          formulationType:"Task Formula",
+          taskId:taskRef.id,
+          taskTitle:form.title,
+          assignedTo:form.assignedTo,
+          ingredients:validIngredients,
+          status:"Ongoing",
+          createdBy:user.email,
+          startDate:today(),
+          notes:"Formula added via task: "+form.title,
+          _createdAt:ts()
+        });
+      }
+
+      // Notification
       if(form.assignedTo!==user.email){
         await C("notifications").add({
           assignedTo:form.assignedTo,
-          title:"New task assigned: "+form.title,
-          message:"Assigned by "+(allProfiles[user.email]?.displayName||user.email)+(form.dueDate?" · Due: "+form.dueDate:""),
+          title:(isRD?"🧪 R&D Task: ":"📋 New task: ")+form.title,
+          message:"Assigned by "+(allProfiles[user.email]?.displayName||user.email)+(form.dueDate?" · Due: "+form.dueDate:"")+(hasFormula?" · Includes formula: "+form.formula.name:""),
           taskId:taskRef.id,type:"task_assigned",read:false,_createdAt:ts()
         });
       }
-      showToast("Task assigned ✓");setShowCreate(false);setForm({...blankTask});
+      showToast("Task assigned ✓"+(hasFormula?" · Formula saved to R&D":""));
+      setShowCreate(false);setForm({...blankTask});
     }catch(e){showToast("Error: "+e.message,"error");}
     setSaving(false);
   };
@@ -4988,6 +5134,40 @@ function TasksTab({user,roles,showToast,allRoles,allProfiles}){
           </select>
         </Field>
       </Grid2>
+      <Field label="Category">
+        <div style={{display:"flex",gap:"8px"}}>
+          {["General","R&D"].map(cat=><button key={cat} onClick={()=>setForm({...form,category:cat})} style={{background:form.category===cat?(cat==="R&D"?"#0d1f10":"#0f1d35"):"#0b1220",border:`1px solid ${form.category===cat?(cat==="R&D"?"#22c55e":"#3b82f6"):"#334155"}`,borderRadius:"7px",padding:"6px 16px",color:form.category===cat?(cat==="R&D"?"#86efac":"#93c5fd"):"#475569",cursor:"pointer",fontSize:"12px",fontWeight:"600"}}>
+            {cat==="R&D"?"🧪 R&D":"📋 General"}
+          </button>)}
+        </div>
+      </Field>
+
+      {/* R&D Formula Editor — only shown when R&D category selected */}
+      {form.category==="R&D"&&<div style={{background:"#060d0a",border:"1px solid #22c55e30",borderRadius:"10px",padding:"14px",marginTop:"2px",marginBottom:"4px"}}>
+        <div style={{fontSize:"12px",fontWeight:"700",color:"#86efac",marginBottom:"10px"}}>🧪 Formula (optional) — will be saved to R&D Projects</div>
+        <Grid2>
+          <Field label="Formula / Product Name"><input style={inp} value={form.formula?.name||""} onChange={e=>setForm({...form,formula:{...form.formula,name:e.target.value}})} placeholder="e.g. Trial Enamel White 01"/></Field>
+          <Field label="Type">
+            <select style={sl} value={form.formula?.type||"Paint"} onChange={e=>setForm({...form,formula:{...form.formula,type:e.target.value}})}>
+              {["Paint","Thinner","Varnish","Primer","Putty","Other"].map(t=><option key={t}>{t}</option>)}
+            </select>
+          </Field>
+        </Grid2>
+        <div style={{border:"1px solid #1e3a2f",borderRadius:"8px",overflow:"hidden",marginBottom:"8px"}}>
+          <div style={{display:"grid",gridTemplateColumns:"2fr 80px 80px 28px",background:"#0a1a0f",padding:"6px 10px",gap:"6px"}}>
+            {["Ingredient / Raw Material","Qty","Unit",""].map(h=><div key={h} style={{fontSize:"9px",fontWeight:"700",color:"#334155",textTransform:"uppercase"}}>{h}</div>)}
+          </div>
+          {(form.formula?.ingredients||[]).map((row,i)=><div key={row.id||i} style={{display:"grid",gridTemplateColumns:"2fr 80px 80px 28px",padding:"5px 10px",gap:"6px",borderTop:"1px solid #1e293b",alignItems:"center"}}>
+            <input style={sml} value={row.name} onChange={e=>{const arr=[...(form.formula.ingredients||[])];arr[i]={...arr[i],name:e.target.value};setForm({...form,formula:{...form.formula,ingredients:arr}});}} placeholder="e.g. TiO2, Linseed Oil"/>
+            <input style={{...sml,textAlign:"center"}} type="number" min="0" step="0.01" value={row.qty} onChange={e=>{const arr=[...(form.formula.ingredients||[])];arr[i]={...arr[i],qty:e.target.value};setForm({...form,formula:{...form.formula,ingredients:arr}});}} placeholder="0"/>
+            <input style={sml} value={row.unit} onChange={e=>{const arr=[...(form.formula.ingredients||[])];arr[i]={...arr[i],unit:e.target.value};setForm({...form,formula:{...form.formula,ingredients:arr}});}} placeholder="kg/L"/>
+            <button onClick={()=>{const arr=(form.formula.ingredients||[]).filter((_,j)=>j!==i);setForm({...form,formula:{...form.formula,ingredients:arr.length?arr:[{id:newId(),name:"",qty:"",unit:""}]}});}} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"14px",padding:0}}>×</button>
+          </div>)}
+        </div>
+        <button onClick={()=>setForm({...form,formula:{...form.formula,ingredients:[...(form.formula.ingredients||[]),{id:newId(),name:"",qty:"",unit:""}]}})} style={{background:"none",border:"1px dashed #1e3a2f",borderRadius:"6px",padding:"4px 12px",color:"#4ade80",cursor:"pointer",fontSize:"12px"}}>+ Add Ingredient</button>
+        {!(form.formula?.name?.trim())&&<div style={{fontSize:"10.5px",color:"#334155",marginTop:"6px",fontStyle:"italic"}}>Formula name required for it to be saved to R&D Projects.</div>}
+      </div>}
+
       <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
         <Btn label="Cancel" onClick={()=>setShowCreate(false)} outline color="#475569" small/>
         <Btn label={saving?"Saving…":"✓ Assign Task"} onClick={createTask} disabled={saving} color="#3b82f6" small/>
@@ -5010,11 +5190,15 @@ function TasksTab({user,roles,showToast,allRoles,allProfiles}){
             <div style={{flex:1}}>
               <div style={{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap",marginBottom:"4px"}}>
                 <span style={{fontSize:"13px",fontWeight:"700",color:"#f1f5f9"}}>{task.title}</span>
+                {task.category==="R&D"&&<Bdg label="🧪 R&D" color="#22c55e" small/>}
                 <Bdg label={task.priority} color={PRIORITY_COLORS[task.priority]||"#3b82f6"} small/>
                 {isOverdue&&<Bdg label="⚠️ Overdue" color="#ef4444" small/>}
                 {isMine&&<Bdg label="👤 Assigned to you" color="#22c55e" small/>}
               </div>
               {task.description&&<div style={{fontSize:"12px",color:"#64748b",marginBottom:"4px"}}>{task.description}</div>}
+              {task.formula?.name&&<div style={{fontSize:"11px",background:"#0a1a0f",border:"1px solid #22c55e20",borderRadius:"6px",padding:"5px 10px",marginBottom:"4px",color:"#86efac"}}>
+                🧪 Formula: <strong>{task.formula.name}</strong> ({task.formula.type}) · {(task.formula.ingredients||[]).filter(r=>r.name).length} ingredients
+              </div>}
               <div style={{fontSize:"11px",color:"#475569",display:"flex",gap:"12px",flexWrap:"wrap"}}>
                 <span>📅 Assigned: {task.assignedAt}</span>
                 {task.dueDate&&<span style={{color:isOverdue?"#ef4444":"#64748b"}}>⏰ Due: {task.dueDate}</span>}
@@ -5110,12 +5294,11 @@ function TasksTab({user,roles,showToast,allRoles,allProfiles}){
   </div>;
 }
 
-function MainApp({user,role,roles=[]}){
+function MainApp({user,role,roles=[],permissions=[]}){
   const isAdmin=roles.includes("admin");
-  // Helper: does user have ANY of the given roles?
-  const hasRole=(...rs)=>rs.some(r=>roles.includes(r));
-  const canQC=hasRole("admin","qc");
-  const canIssuer=hasRole("admin","issuer");
+  const hp=(perm)=>userHasPerm(roles,permissions,perm); // check permission helper
+  const canQC=isAdmin||roles.includes("qc")||hp("batches_qc");
+  const canIssuer=isAdmin||roles.includes("issuer")||hp("batches_issue");
   const [tab,setTab]=useState(CAN_SEE.dashboard.some(r=>(roles.length?roles:[role]).includes(r))?"dashboard":"complaints");
   const [settingsDirty,setSettingsDirty]=useState(false);
   const [pendingMainTab,setPendingMainTab]=useState(null);
@@ -5414,7 +5597,22 @@ function MainApp({user,role,roles=[]}){
     {key:"testimonials",label:"⭐ Testimonials"},
     {key:"users",label:"👥 Users"},
     {key:"settings",label:"⚙️ Settings"},
-  ].filter(t=>CAN_SEE[t.key]?.some(r=>roles.includes(r)));
+  ].filter(t=>{
+    if(isAdmin)return true;
+    const permMap={
+      dashboard:true,
+      batches:hp("batches_view"),
+      complaints:hp("complaints_view_all")||hp("complaints_add"),
+      rd:hp("rd_view"),
+      bom:hp("bom_view"),
+      tasks:hp("tasks_own"),
+      testimonials:hp("testimonials"),
+      stock:hp("stock_view"),
+      users:isAdmin,
+      settings:hp("settings_products")||hp("settings_advanced"),
+    };
+    const pv=permMap[t.key];return pv!=null?pv:(CAN_SEE[t.key]?.some(r=>roles.includes(r))||false);
+  });
 
   return <div style={{minHeight:"100vh",background:"#060b16",fontFamily:"'DM Sans',sans-serif",color:"#e2e8f0",paddingBottom:"48px"}}>
     <style>{`@keyframes slideDown{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)}}@keyframes fadeIn{from{opacity:0;transform:translateX(-50%) translateY(8px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}`}</style>
@@ -5849,7 +6047,6 @@ function MainApp({user,role,roles=[]}){
 // ══════════════════════════════════════════════════════════
 // ROOT
 // ══════════════════════════════════════════════════════════
-// Role priority — used to derive primary role from multi-role array
 const ROLE_PRIORITY=["admin","qc","issuer","sales","store"];
 const primaryRole=(rolesArr)=>ROLE_PRIORITY.find(r=>(rolesArr||[]).includes(r))||rolesArr?.[0]||null;
 
@@ -5857,6 +6054,7 @@ function App(){
   const [user,setUser]=useState(undefined);
   const [role,setRole]=useState(null);     // primary role (for backward compat)
   const [roles,setRoles]=useState([]);     // full roles array
+  const [permissions,setPermissions]=useState([]); // granular permissions array
   const [loading,setLoading]=useState(false);
 
   useEffect(()=>{
@@ -5870,7 +6068,7 @@ function App(){
         if(ADMIN_EMAILS.includes(u.email)){
           db.collection("passwordResets").doc(u.email).delete().catch(()=>{});
           db.collection("bannedUsers").doc(u.email).delete().catch(()=>{});
-          setRole("admin");setRoles(["admin"]);setLoading(false);return;
+          setRole("admin");setRoles(["admin"]);setPermissions([]);setLoading(false);return;
         }
 
         // ── Ban check (non-admin only) ──
@@ -5908,12 +6106,13 @@ function App(){
         try{
           const snap=await db.collection("roles").doc(u.email).get();
           if(snap.exists){
-            // Support both old {role:"x"} and new {roles:["x","y"]} formats
             const data=snap.data();
             const rolesArr=data.roles||(data.role?[data.role]:[]);
-            const prim=primaryRole(rolesArr);
+            const permsArr=data.permissions||[];
+            const prim=primaryRole(rolesArr)||"store";
             setRoles(rolesArr);setRole(prim);
-          }else{setRoles([]);setRole(null);}
+            setPermissions(permsArr);
+          }else{setRoles([]);setRole(null);setPermissions([]);}
         }catch(e){setRoles([]);setRole(null);}
         setLoading(false);
       }else{setRoles([]);setRole(null);setLoading(false);}
@@ -5924,7 +6123,7 @@ function App(){
   if(user===undefined||loading)return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",color:"#475569",fontSize:"14px"}}>Loading…</div>;
   if(!user)return <LoginScreen/>;
   if(!role)return <NoAccessScreen/>;
-  return <MainApp user={user} role={role} roles={roles}/>;
+  return <MainApp user={user} role={role} roles={roles} permissions={permissions}/>;
 }
 
 ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
