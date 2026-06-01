@@ -1920,12 +1920,12 @@ function DashboardTab({role,user,onNavigate}){
   },[role,user?.email]);
 
   const tiles=[
-    {label:"Active Batches",val:counts.activeBatches,color:"#3b82f6",icon:"📦",roles:["admin","issuer","qc"]},
-    {label:"QC Pending",val:counts.qcPending,color:"#a855f7",icon:"🔬",roles:["admin","qc"]},
-    {label:role==="sales"?"My Open Complaints":"Open Complaints",val:counts.openComplaints,color:"#ef4444",icon:"⚠️",roles:["admin","issuer","qc","sales"]},
-    {label:"R&D Projects",val:counts.rdProjects,color:"#22c55e",icon:"🧪",roles:["admin","qc"]},
-    {label:"RM Tests",val:counts.rmTests,color:"#f59e0b",icon:"🧫",roles:["admin","qc"]},
-    {label:"Total Batches",val:counts.batches,color:"#64748b",icon:"📋",roles:["admin","issuer"]},
+    {label:"Active Batches",val:counts.activeBatches,color:"#3b82f6",icon:"📦",tab:"batches",hint:"View active batches",roles:["admin","issuer","qc"]},
+    {label:"QC Pending",val:counts.qcPending,color:"#a855f7",icon:"🔬",tab:"batches",hint:"View batches awaiting QC",roles:["admin","qc"]},
+    {label:role==="sales"?"My Open Complaints":"Open Complaints",val:counts.openComplaints,color:"#ef4444",icon:"⚠️",tab:"complaints",hint:"Go to Complaints",roles:["admin","issuer","qc","sales"]},
+    {label:"R&D Projects",val:counts.rdProjects,color:"#22c55e",icon:"🧪",tab:"rd",hint:"Go to R&D & QC",roles:["admin","qc"]},
+    {label:"RM Tests",val:counts.rmTests,color:"#f59e0b",icon:"🧫",tab:"rd",hint:"Go to R&D & QC",roles:["admin","qc"]},
+    {label:"Total Batches",val:counts.batches,color:"#64748b",icon:"📋",tab:"batches",hint:"View all batches",roles:["admin","issuer"]},
   ].filter(t=>t.roles.includes(role));
 
   return <div>
@@ -1934,11 +1934,19 @@ function DashboardTab({role,user,onNavigate}){
       <h2 style={{fontSize:"22px",fontWeight:"400",fontFamily:"'DM Serif Display',serif",color:"#f1f5f9"}}>Operations <span style={{fontStyle:"italic",color:"#3b82f6"}}>Overview</span></h2>
     </div>
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:"12px"}}>
-      {tiles.map(t=><div key={t.label} style={{background:"#0f172a",border:`1px solid #1e293b`,borderTop:`3px solid ${t.color}`,borderRadius:"12px",padding:"16px 18px",boxShadow:"0 2px 10px rgba(0,0,0,0.3)"}}>
-        <div style={{fontSize:"24px",marginBottom:"8px"}}>{t.icon}</div>
-        <div style={{fontSize:"28px",fontWeight:"700",color:t.color,marginBottom:"4px"}}>{t.val}</div>
-        <div style={{fontSize:"12px",color:"#475569",fontWeight:"600"}}>{t.label}</div>
-      </div>)}
+      {tiles.map(t=>{
+        const clickable=onNavigate&&t.tab;
+        return <div key={t.label} onClick={clickable?()=>onNavigate(t.tab):undefined}
+          title={t.hint}
+          onMouseEnter={e=>{if(clickable){e.currentTarget.style.background="#111827";e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow=`0 6px 20px ${t.color}30`;}}}
+          onMouseLeave={e=>{if(clickable){e.currentTarget.style.background="#0f172a";e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="0 2px 10px rgba(0,0,0,0.3)";}}}
+          style={{background:"#0f172a",border:`1px solid ${t.color}40`,borderTop:`3px solid ${t.color}`,borderRadius:"12px",padding:"16px 18px",boxShadow:"0 2px 10px rgba(0,0,0,0.3)",cursor:clickable?"pointer":"default",transition:"all 0.15s",position:"relative"}}>
+          <div style={{fontSize:"24px",marginBottom:"8px"}}>{t.icon}</div>
+          <div style={{fontSize:"28px",fontWeight:"700",color:t.color,marginBottom:"4px"}}>{t.val}</div>
+          <div style={{fontSize:"12px",color:"#475569",fontWeight:"600"}}>{t.label}</div>
+          {clickable&&<div style={{position:"absolute",bottom:"8px",right:"10px",fontSize:"10px",color:t.color,opacity:0.6}}>→</div>}
+        </div>;
+      })}
     </div>
     {/* My pending tasks */}
     <div style={{marginTop:"20px",background:"#0f172a",border:`1px solid ${myTasks.length?"#1e3a5f":"#1e293b"}`,borderRadius:"12px",padding:"16px 18px"}}>
