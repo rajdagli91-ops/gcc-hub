@@ -14,8 +14,9 @@ body{font-family:'Source Sans 3',sans-serif;color:var(--text);background:#fff;fo
 .lang-bar-label{font-size:11px;color:rgba(255,255,255,0.5);font-weight:600;letter-spacing:0.05em;margin-right:4px}
 .lang-btn{padding:4px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;border:1px solid rgba(255,255,255,0.25);background:transparent;color:rgba(255,255,255,0.65);font-family:inherit;transition:all 0.15s}
 .lang-btn.active,.lang-btn:hover{background:var(--orange);color:#000;border-color:var(--orange)}
-/* ── Translation spans — hidden by default, JS controls visibility ── */
-.t-en,.t-hi,.t-mr{display:none!important}
+/* ── Translation: English visible by default, JS handles switching ── */
+.t-hi,.t-mr{display:none}
+.t-en{display:inline}
 /* ── Print ── */
 @page{size:A4 portrait;margin:15mm 12mm 15mm 20mm}
 @media print{.lang-bar,.no-print{display:none!important}.page-break{page-break-before:always}.avoid-break{page-break-inside:avoid}body{padding-top:0;font-size:13px}}
@@ -114,9 +115,9 @@ code{background:#e2e8f0;padding:1px 6px;border-radius:4px;font-size:12px;color:#
 <!-- Language switcher -->
 <div class="lang-bar no-print">
   <span class="lang-bar-label">Language / भाषा / भाषा:</span>
-  <button class="lang-btn active" onclick="setLang('en')">English</button>
-  <button class="lang-btn" onclick="setLang('hi')">हिंदी</button>
-  <button class="lang-btn" onclick="setLang('mr')">मराठी</button>
+  <button class="lang-btn" data-lang="en" onclick="setLang('en')" style="background:#F5A31A;color:#000;border-color:#F5A31A">English</button>
+  <button class="lang-btn" data-lang="hi" onclick="setLang('hi')">हिंदी</button>
+  <button class="lang-btn" data-lang="mr" onclick="setLang('mr')">मराठी</button>
 </div>
 
 <!-- Helper: T(en,hi,mr) = inline trilingual span -->
@@ -466,27 +467,29 @@ code{background:#e2e8f0;padding:1px 6px;border-radius:4px;font-size:12px;color:#
 <script>
 function setLang(lang){
 function setLang(lang){
-  // Directly set display on every translation span — bypasses all CSS specificity issues
-  ['en','hi','mr'].forEach(function(l){
-    var show = (l === lang);
-    document.querySelectorAll('.t-'+l).forEach(function(el){
-      el.style.setProperty('display', show ? 'inline' : 'none', 'important');
-    });
+  var classes=['en','hi','mr'];
+  classes.forEach(function(l){
+    var els=document.querySelectorAll('.t-'+l);
+    for(var i=0;i<els.length;i++){
+      els[i].style.display=(l===lang)?'inline':'none';
+    }
   });
-  // Update active button
-  document.querySelectorAll('.lang-btn').forEach(function(btn){
-    btn.classList.toggle('active', btn.getAttribute('data-lang')===lang);
-  });
-  // Save preference & update lang attr
+  var btns=document.querySelectorAll('.lang-btn');
+  for(var i=0;i<btns.length;i++){
+    var d=btns[i].getAttribute('data-lang');
+    btns[i].style.background=d===lang?'#F5A31A':'transparent';
+    btns[i].style.color=d===lang?'#000':'rgba(255,255,255,0.65)';
+    btns[i].style.borderColor=d===lang?'#F5A31A':'rgba(255,255,255,0.25)';
+  }
+  document.documentElement.lang=lang;
   try{localStorage.setItem('gcc_lang',lang);}catch(e){}
-  document.documentElement.lang = lang;
 }
-// Run on page load
-window.addEventListener('DOMContentLoaded', function(){
-  var saved = 'en';
-  try{saved = localStorage.getItem('gcc_lang')||'en';}catch(e){}
-  setLang(saved);
-});
+// Run immediately when script loads
+(function(){
+  var saved='en';
+  try{saved=localStorage.getItem('gcc_lang')||'en';}catch(e){}
+  if(saved!=='en') setLang(saved);
+})();
 </script>
 </body>
 </html>
