@@ -109,6 +109,32 @@ code{background:#e2e8f0;padding:1px 6px;border-radius:4px;font-size:12px;color:#
 /* ── Footer ── */
 .guide-footer{background:var(--navy);color:rgba(255,255,255,0.5);padding:26px 60px;font-size:12px;display:flex;justify-content:space-between;align-items:center}
 </style>
+<script>
+function setLang(lang){
+  var classes=['en','hi','mr'];
+  classes.forEach(function(l){
+    var els=document.querySelectorAll('.t-'+l);
+    for(var i=0;i<els.length;i++){
+      els[i].style.display=(l===lang)?'inline':'none';
+    }
+  });
+  var btns=document.querySelectorAll('.lang-btn');
+  for(var i=0;i<btns.length;i++){
+    var d=btns[i].getAttribute('data-lang');
+    btns[i].style.background=d===lang?'#F5A31A':'transparent';
+    btns[i].style.color=d===lang?'#000':'rgba(255,255,255,0.65)';
+    btns[i].style.borderColor=d===lang?'#F5A31A':'rgba(255,255,255,0.25)';
+  }
+  document.documentElement.lang=lang;
+  try{localStorage.setItem('gcc_lang',lang);}catch(e){}
+}
+// Restore saved language after page loads
+window.onload=function(){
+  var saved='en';
+  try{saved=localStorage.getItem('gcc_lang')||'en';}catch(e){}
+  setLang(saved);
+};
+</script>
 </head>
 <body class="lang-en">
 
@@ -152,8 +178,7 @@ code{background:#e2e8f0;padding:1px 6px;border-radius:4px;font-size:12px;color:#
     <a class="toc-item" href="#qc"><span class="toc-num">04</span><span class="toc-dot" style="background:#22c55e"></span>QC <span class="t-en">Guide</span><span class="t-hi">गाइड</span><span class="t-mr">मार्गदर्शिका</span></a>
     <a class="toc-item" href="#sales"><span class="toc-num">05</span><span class="toc-dot" style="background:#a855f7"></span><span class="t-en">Sales Guide</span><span class="t-hi">सेल्स गाइड</span><span class="t-mr">सेल्स मार्गदर्शिका</span></a>
     <a class="toc-item" href="#store"><span class="toc-num">06</span><span class="toc-dot" style="background:#38bdf8"></span><span class="t-en">Store Guide</span><span class="t-hi">स्टोर गाइड</span><span class="t-mr">स्टोअर मार्गदर्शिका</span></a>
-    <a class="toc-item" href="#perms"><span class="toc-num">07</span><span class="t-en">Permissions Reference</span><span class="t-hi">अनुमतियां संदर्भ</span><span class="t-mr">परवानग्या संदर्भ</span></a>
-    <a class="toc-item" href="#gloss"><span class="toc-num">08</span><span class="t-en">Glossary &amp; Quick Ref</span><span class="t-hi">शब्दकोश एवं त्वरित संदर्भ</span><span class="t-mr">शब्दकोश व द्रुत संदर्भ</span></a>
+    <a class="toc-item" href="#gloss"><span class="toc-num">07</span><span class="t-en">Glossary &amp; Quick Ref</span><span class="t-hi">शब्दकोश एवं त्वरित संदर्भ</span><span class="t-mr">शब्दकोश व द्रुत संदर्भ</span></a>
   </div>
 </div>
 
@@ -396,34 +421,6 @@ code{background:#e2e8f0;padding:1px 6px;border-radius:4px;font-size:12px;color:#
 </div>
 </div>
 
-<!-- ══ PERMISSIONS ══ -->
-<div id="perms" class="page-break">
-<div class="sec-hdr">
-  <div class="role-tag" style="background:#f8fafc;color:#334155;border:1px solid #e2e8f0">&#128203; <span class="t-en">Reference</span><span class="t-hi">संदर्भ</span><span class="t-mr">संदर्भ</span></div>
-  <h2><span class="t-en">Permissions Summary</span><span class="t-hi">अनुमतियां सारांश</span><span class="t-mr">परवानग्या सारांश</span></h2>
-</div>
-<div class="content">
-  <table class="pt avoid-break">
-    <thead><tr><th><span class="t-en">Module</span><span class="t-hi">मॉड्यूल</span><span class="t-mr">मॉड्यूल</span></th><th style="color:#93c5fd">&#128273; Admin</th><th style="color:#fcd34d">&#128230; <span class="t-en">Issuer</span><span class="t-hi">इशूअर</span><span class="t-mr">इश्यूअर</span></th><th style="color:#86efac">&#128300; QC</th><th style="color:#d8b4fe">&#128188; <span class="t-en">Sales</span><span class="t-hi">सेल्स</span><span class="t-mr">सेल्स</span></th><th style="color:#7dd3fc">&#127978; <span class="t-en">Store</span><span class="t-hi">स्टोर</span><span class="t-mr">स्टोअर</span></th></tr></thead>
-    <tbody>
-      <tr><td><span class="t-en">View Batches</span><span class="t-hi">बैच देखें</span><span class="t-mr">बॅच पाहा</span></td><td class="pok">&#10003;</td><td class="pok">&#10003;</td><td class="pok">&#10003;</td><td class="pno">&#8211;</td><td class="pno">&#8211;</td></tr>
-      <tr><td><span class="t-en">Issue Batches</span><span class="t-hi">बैच जारी करें</span><span class="t-mr">बॅच जारी करा</span></td><td class="pok">&#10003;</td><td class="pok">&#10003;</td><td class="pno">&#8211;</td><td class="pno">&#8211;</td><td class="pno">&#8211;</td></tr>
-      <tr><td><span class="t-en">Production / QC Details</span><span class="t-hi">उत्पादन / QC विवरण</span><span class="t-mr">उत्पादन / QC तपशील</span></td><td class="pok">&#10003;</td><td class="pno">&#8211;</td><td class="pok">&#10003;</td><td class="pno">&#8211;</td><td class="pno">&#8211;</td></tr>
-      <tr><td><span class="t-en">View / Edit BOM</span><span class="t-hi">BOM देखें/बनाएं</span><span class="t-mr">BOM पाहा/तयार करा</span></td><td class="pok">&#10003;</td><td class="pok">&#10003;</td><td class="pno">&#8211;</td><td class="pno">&#8211;</td><td class="pno">&#8211;</td></tr>
-      <tr><td><span class="t-en">R&amp;D Projects</span><span class="t-hi">R&amp;D परियोजनाएं</span><span class="t-mr">R&amp;D प्रकल्प</span></td><td class="pok">&#10003;</td><td class="pno">&#8211;</td><td class="pok">&#10003;</td><td class="pno">&#8211;</td><td class="pno">&#8211;</td></tr>
-      <tr><td><span class="t-en">View All Complaints</span><span class="t-hi">सभी शिकायतें देखें</span><span class="t-mr">सर्व तक्रारी पाहा</span></td><td class="pok">&#10003;</td><td class="pok">&#10003;</td><td class="pok">&#10003;</td><td class="pok">&#10003;</td><td class="pno">&#8211;</td></tr>
-      <tr><td><span class="t-en">Add Complaints</span><span class="t-hi">शिकायत दर्ज करें</span><span class="t-mr">तक्रार नोंदवा</span></td><td class="pok">&#10003;</td><td class="pno">&#8211;</td><td class="pno">&#8211;</td><td class="pok">&#10003;</td><td class="pno">&#8211;</td></tr>
-      <tr><td><span class="t-en">Respond to Complaints</span><span class="t-hi">शिकायत का जवाब दें</span><span class="t-mr">तक्रारीला उत्तर द्या</span></td><td class="pok">&#10003;</td><td class="pno">&#8211;</td><td class="pok">&#10003;</td><td class="pno">&#8211;</td><td class="pno">&#8211;</td></tr>
-      <tr><td><span class="t-en">View RM Stock</span><span class="t-hi">RM स्टॉक देखें</span><span class="t-mr">RM स्टॉक पाहा</span></td><td class="pok">&#10003;</td><td class="pok">&#10003;</td><td class="pno">&#8211;</td><td class="pno">&#8211;</td><td class="pok">&#10003;</td></tr>
-      <tr><td><span class="t-en">Record Consumption</span><span class="t-hi">उपभोग दर्ज करें</span><span class="t-mr">वापर नोंदवा</span></td><td class="pok">&#10003;</td><td class="pok">&#10003;</td><td class="pno">&#8211;</td><td class="pno">&#8211;</td><td class="pok">&#10003;</td></tr>
-      <tr><td><span class="t-en"><strong>Assign Tasks</strong></span><span class="t-hi"><strong>कार्य सौंपें</strong></span><span class="t-mr"><strong>काम सोपवा</strong></span></td><td class="pok">&#10003; <span style="font-size:11px">only</span></td><td class="pno">&#8211;</td><td class="pno">&#8211;</td><td class="pno">&#8211;</td><td class="pno">&#8211;</td></tr>
-      <tr><td><span class="t-en">Complete Own Tasks</span><span class="t-hi">अपने कार्य पूर्ण करें</span><span class="t-mr">स्वतःचे काम पूर्ण करा</span></td><td class="pok">&#10003;</td><td class="pok">&#10003;</td><td class="pok">&#10003;</td><td class="pok">&#10003;</td><td class="pok">&#10003;</td></tr>
-      <tr><td><span class="t-en">Manage Users</span><span class="t-hi">उपयोगकर्ता प्रबंधन</span><span class="t-mr">वापरकर्ता व्यवस्थापन</span></td><td class="pok">&#10003; <span style="font-size:11px">only</span></td><td class="pno">&#8211;</td><td class="pno">&#8211;</td><td class="pno">&#8211;</td><td class="pno">&#8211;</td></tr>
-      <tr><td><span class="t-en">Settings &amp; Archive</span><span class="t-hi">Settings और Archive</span><span class="t-mr">Settings आणि Archive</span></td><td class="pok">&#10003; <span style="font-size:11px">only</span></td><td class="pno">&#8211;</td><td class="pno">&#8211;</td><td class="pno">&#8211;</td><td class="pno">&#8211;</td></tr>
-    </tbody>
-  </table>
-</div>
-</div>
 
 <!-- ══ GLOSSARY ══ -->
 <div id="gloss" class="page-break">
@@ -464,32 +461,6 @@ code{background:#e2e8f0;padding:1px 6px;border-radius:4px;font-size:12px;color:#
   <button onclick="window.print()" style="background:#0D3569;color:#fff;border:none;border-radius:10px;padding:11px 22px;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 4px 16px rgba(13,53,105,0.4);font-family:inherit">&#128424; Print / Save PDF</button>
 </div>
 
-<script>
-function setLang(lang){
-function setLang(lang){
-  var classes=['en','hi','mr'];
-  classes.forEach(function(l){
-    var els=document.querySelectorAll('.t-'+l);
-    for(var i=0;i<els.length;i++){
-      els[i].style.display=(l===lang)?'inline':'none';
-    }
-  });
-  var btns=document.querySelectorAll('.lang-btn');
-  for(var i=0;i<btns.length;i++){
-    var d=btns[i].getAttribute('data-lang');
-    btns[i].style.background=d===lang?'#F5A31A':'transparent';
-    btns[i].style.color=d===lang?'#000':'rgba(255,255,255,0.65)';
-    btns[i].style.borderColor=d===lang?'#F5A31A':'rgba(255,255,255,0.25)';
-  }
-  document.documentElement.lang=lang;
-  try{localStorage.setItem('gcc_lang',lang);}catch(e){}
-}
-// Run immediately when script loads
-(function(){
-  var saved='en';
-  try{saved=localStorage.getItem('gcc_lang')||'en';}catch(e){}
-  if(saved!=='en') setLang(saved);
-})();
-</script>
+
 </body>
 </html>
