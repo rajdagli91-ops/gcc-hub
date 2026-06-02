@@ -1911,19 +1911,21 @@ function DashboardTab({role,user,onNavigate}){
       :C("complaints").where("status","in",["Open","Under Review"]);
     Promise.all([
       C("batches").get(),
-      C("batches").where("status","in",["Issued","In Production","QC Pending","QC Pass","Packed"]).get(),
+      // Active = packing NOT yet done (Packed = fully finished)
+      C("batches").where("status","in",["Issued","In Production","QC Pending","QC Pass","QC Fail"]).get(),
       C("batches").where("status","==","QC Pending").get(),
       complaintsQuery.get(),
-      C("rd_projects").get(),
+      // R&D active = Ongoing or Pending Approval only (exclude Completed, Cancelled, On Hold)
+      C("rd_projects").where("status","in",["Ongoing","Pending Approval"]).get(),
       C("rm_tests").get()
     ]).then(([b,ab,qc,oc,rd,rm])=>setCounts({batches:b.size,activeBatches:ab.size,qcPending:qc.size,openComplaints:oc.size,rdProjects:rd.size,rmTests:rm.size}));
   },[role,user?.email]);
 
   const tiles=[
-    {label:"Active Batches",val:counts.activeBatches,color:"#3b82f6",icon:"📦",tab:"batches",hint:"View active batches",roles:["admin","issuer","qc"]},
+    {label:"Active Batches",val:counts.activeBatches,color:"#3b82f6",icon:"📦",tab:"batches",hint:"Batches pending packing (not yet Packed)",roles:["admin","issuer","qc"]},
     {label:"QC Pending",val:counts.qcPending,color:"#a855f7",icon:"🔬",tab:"batches",hint:"View batches awaiting QC",roles:["admin","qc"]},
     {label:role==="sales"?"My Open Complaints":"Open Complaints",val:counts.openComplaints,color:"#ef4444",icon:"⚠️",tab:"complaints",hint:"Go to Complaints",roles:["admin","issuer","qc","sales"]},
-    {label:"R&D Projects",val:counts.rdProjects,color:"#22c55e",icon:"🧪",tab:"rd",hint:"Go to R&D & QC",roles:["admin","qc"]},
+    {label:"R&D Active",val:counts.rdProjects,color:"#22c55e",icon:"🧪",tab:"rd",hint:"Ongoing R&D projects (excludes Completed/Cancelled)",roles:["admin","qc"]},
     {label:"RM Tests",val:counts.rmTests,color:"#f59e0b",icon:"🧫",tab:"rd",hint:"Go to R&D & QC",roles:["admin","qc"]},
     {label:"Total Batches",val:counts.batches,color:"#64748b",icon:"📋",tab:"batches",hint:"View all batches",roles:["admin","issuer"]},
   ].filter(t=>t.roles.includes(role));
