@@ -5322,6 +5322,25 @@ function TasksTab({user,roles,showToast,allRoles,allProfiles}){
 function MainApp({user,role,roles=[],permissions=[]}){
   const isAdmin=roles.includes("admin");
   const hp=(perm)=>userHasPerm(roles,permissions,perm); // check permission helper
+
+  // Global: pressing Escape clears any focused search/text input
+  useEffect(()=>{
+    const handler=(e)=>{
+      if(e.key==="Escape"){
+        const el=document.activeElement;
+        if(el&&(el.tagName==="INPUT"||el.tagName==="TEXTAREA")&&el.value){
+          e.preventDefault();
+          // Trigger React's synthetic onChange by setting nativeInputValueSetter
+          const nativeInputValueSetter=Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,"value").set;
+          nativeInputValueSetter.call(el,"");
+          el.dispatchEvent(new Event("input",{bubbles:true}));
+          el.blur();
+        }
+      }
+    };
+    document.addEventListener("keydown",handler);
+    return()=>document.removeEventListener("keydown",handler);
+  },[]);
   const canQC=isAdmin||roles.includes("qc")||hp("batches_qc");
   const canIssuer=isAdmin||roles.includes("issuer")||hp("batches_issue");
   const [tab,setTab]=useState(CAN_SEE.dashboard.some(r=>(roles.length?roles:[role]).includes(r))?"dashboard":"complaints");
