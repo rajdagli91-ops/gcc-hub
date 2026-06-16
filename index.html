@@ -4863,6 +4863,17 @@ function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes,sysQcParams}
           <div style={{display:"flex",gap:"6px",flexShrink:0,flexWrap:"wrap"}}>
             <Btn label="🖨 Print" onClick={()=>setActiveBOM({bom:b,mode:"print"})} color="#22c55e" small/>
             {bVersions.length>0&&<Btn label={`📚 History (${bVersions.length})`} onClick={()=>setActiveBOM(isOpen&&mode==="history"?null:{bom:b,mode:"history"})} color="#64748b" small outline/>}
+            {canEdit&&<Btn label="📋 Copy" onClick={()=>{
+              const copied={...blankBOM,...b,
+                productName:b.productName+" (Copy)",
+                ingredients:b.ingredients?.map(i=>({...i,id:newId()})),
+                qcTests:Array.isArray(b.qcTests)?b.qcTests.map(p=>({...p,id:newId()})):defaultQCParams(b.category),
+                extraAdditions:b.extraAdditions||blankBOM.extraAdditions,
+              };
+              delete copied.id;delete copied.currentVersion;delete copied.batchSeq;
+              setForm(copied);setShowCreate(true);setActiveBOM(null);
+              setTimeout(()=>window.scrollTo({top:0,behavior:"smooth"}),100);
+            }} color="#3b82f6" small outline/>}
             {canEdit&&<Btn label="✏️ Edit" onClick={()=>{setForm({...blankBOM,...b,ingredients:b.ingredients?.map(i=>({...i,id:i.id||newId()})),qcTests:Array.isArray(b.qcTests)?b.qcTests.map(p=>({...p,id:p.id||newId()})):defaultQCParams(b.category)});setActiveBOM({bom:b,mode:"edit"});setShowCreate(false);}} color="#f59e0b" small/>}
             {isAdmin&&<button onClick={()=>deleteBOM(b.id)} style={{background:"none",border:"none",color:"#334155",cursor:"pointer",fontSize:"14px"}}>🗑</button>}
           </div>
@@ -5316,6 +5327,150 @@ function TasksTab({user,roles,showToast,allRoles,allProfiles}){
         </div>;
       })}
     </div>}
+  </div>;
+}
+
+// ══════════════════════════════════════════════════════════
+// STAINER PIGMENT CALCULATOR
+// ══════════════════════════════════════════════════════════
+function StainerCalc(){
+  const [batchSize,setBatchSize]=useState("");
+  const [origPigment,setOrigPigment]=useState("");
+  const [stainerAmt,setStainerAmt]=useState("");
+  const [stainerPigment,setStainerPigment]=useState("");
+  const [targetPigment,setTargetPigment]=useState("");
+  const [basePigment,setBasePigment]=useState("0");
+  const [actualPigment,setActualPigment]=useState("");
+  const [mode,setMode]=useState("forward"); // forward=calc from stainer | reverse=calc from actual%
+
+  const B=parseFloat(batchSize)||0;
+  const P0=parseFloat(origPigment)||0;
+  const S=parseFloat(stainerAmt)||0;
+  const Ps=parseFloat(stainerPigment)||0;
+  const Pt=parseFloat(targetPigment)||0;
+  const Pb=parseFloat(basePigment)||0;
+  const Pact=parseFloat(actualPigment)||0;
+
+  // Total pigment mass after adding stainer
+  const totalPigmentMass=B*P0/100 + S*Ps/100;
+  const newTotal=B+S;
+  const newPigmentPct=newTotal>0?totalPigmentMass/newTotal*100:0;
+
+  // How much extra base to add to reach target (forward mode)
+  let extraBase=0,finalSize=0,finalPct=0;
+  if(mode==="forward"&&Pt>0&&newTotal>0){
+    if(Pt===Pb){extraBase=0;}
+    else{extraBase=(totalPigmentMass - Pt*newTotal/100)/(Pt/100 - Pb/100);}
+    extraBase=Math.max(0,extraBase);
+    finalSize=newTotal+extraBase;
+    finalPct=finalSize>0?(totalPigmentMass+extraBase*Pb/100)/finalSize*100:0;
+  }
+
+  // Reverse mode: given actual measured pigment%, calc how much base to add to hit target
+  let revExtraBase=0,revFinalSize=0;
+  if(mode==="reverse"&&Pact>0&&Pt>0&&B>0){
+    // Current pigment mass = B * Pact/100 (actual measured)
+    const actMass=B*Pact/100;
+    if(Pt===Pb){revExtraBase=0;}
+    else{revExtraBase=(actMass - Pt*B/100)/(Pt/100 - Pb/100);}
+    revExtraBase=Math.max(0,revExtraBase);
+    revFinalSize=B+revExtraBase;
+  }
+
+  const fmtL=(v)=>v>0?v.toFixed(2)+" L":"—";
+  const fmtPct=(v)=>v>0?v.toFixed(3)+"%":"—";
+
+  return <div>
+    <SectionHead title="🎨 Stainer Pigment Calculator"/>
+    <InfoBox color="#3b82f6">Calculate how much base paint to add when extra stainer is added, to maintain the correct pigment percentage.</InfoBox>
+
+    {/* Mode toggle */}
+    <div style={{display:"flex",gap:"8px",marginBottom:"16px"}}>
+      {[["forward","📥 Stainer Added → Calc Base to Add"],["reverse","🔬 Actual Pigment% Measured → Calc Base to Add"]].map(([m,l])=>
+        <button key={m} onClick={()=>setMode(m)} style={{flex:1,padding:"9px 14px",background:mode===m?"#0f1d35":"#080d18",border:`1px solid ${mode===m?"#3b82f6":"#1e293b"}`,borderRadius:"8px",color:mode===m?"#93c5fd":"#475569",cursor:"pointer",fontSize:"12px",fontWeight:mode===m?"700":"400",textAlign:"left"}}>
+          {l}
+        </button>
+      )}
+    </div>
+
+    <Grid2>
+      <Field label="Original Batch Size (L)"><input style={inp} type="number" min="0" step="0.01" value={batchSize} onChange={e=>setBatchSize(e.target.value)} placeholder="e.g. 1000"/></Field>
+      <Field label={mode==="forward"?"Original Pigment % (from BOM)":"Measured Actual Pigment %"}>
+        {mode==="forward"
+          ?<input style={inp} type="number" min="0" max="100" step="0.001" value={origPigment} onChange={e=>setOrigPigment(e.target.value)} placeholder="e.g. 14.5"/>
+          :<input style={{...inp,borderColor:"#22c55e40"}} type="number" min="0" max="100" step="0.001" value={actualPigment} onChange={e=>setActualPigment(e.target.value)} placeholder="e.g. 16.2 (measured by lab)"/>}
+      </Field>
+    </Grid2>
+
+    {mode==="forward"&&<Grid2>
+      <Field label="Stainer Added (L)"><input style={inp} type="number" min="0" step="0.01" value={stainerAmt} onChange={e=>setStainerAmt(e.target.value)} placeholder="e.g. 12"/></Field>
+      <Field label="Stainer Pigment % (colorant concentration)"><input style={inp} type="number" min="0" max="100" step="0.1" value={stainerPigment} onChange={e=>setStainerPigment(e.target.value)} placeholder="e.g. 65"/></Field>
+    </Grid2>}
+
+    <Grid2>
+      <Field label="Target Pigment % (desired final %)"><input style={{...inp,borderColor:"#f59e0b40"}} type="number" min="0" max="100" step="0.001" value={targetPigment} onChange={e=>setTargetPigment(e.target.value)} placeholder="e.g. 14.5"/></Field>
+      <Field label="Base Paint Pigment % (if adding tinted base, else 0)"><input style={inp} type="number" min="0" max="100" step="0.01" value={basePigment} onChange={e=>setBasePigment(e.target.value)} placeholder="0"/></Field>
+    </Grid2>
+
+    {/* Results */}
+    {mode==="forward"&&B>0&&S>0&&Ps>0&&<div style={{background:"#080d18",border:"1px solid #1e3a5f",borderRadius:"12px",padding:"18px",marginTop:"4px"}}>
+      <div style={{fontSize:"13px",fontWeight:"700",color:"#93c5fd",marginBottom:"12px"}}>📊 Results</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"12px",marginBottom:"12px"}}>
+        {[
+          ["After adding stainer","New Pigment %",fmtPct(newPigmentPct),newPigmentPct>P0?"#f59e0b":"#22c55e"],
+          ["Batch size after stainer","New Total",fmtL(newTotal),"#3b82f6"],
+          ["Extra base to add","To hit "+fmtPct(Pt),Pt>0?fmtL(extraBase):"set target →","#22c55e"],
+        ].map(([lbl,sub,val,col])=><div key={lbl} style={{background:"#0f172a",border:`1px solid ${col}30`,borderRadius:"8px",padding:"12px 14px"}}>
+          <div style={{fontSize:"10px",color:"#475569",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"2px"}}>{lbl}</div>
+          <div style={{fontSize:"11px",color:"#64748b",marginBottom:"4px"}}>{sub}</div>
+          <div style={{fontSize:"18px",fontWeight:"700",color:col}}>{val}</div>
+        </div>)}
+      </div>
+      {Pt>0&&extraBase>0&&<div style={{background:"#052e16",border:"1px solid #166534",borderRadius:"8px",padding:"12px 16px"}}>
+        <div style={{fontSize:"13px",fontWeight:"700",color:"#22c55e",marginBottom:"6px"}}>✅ Action Required</div>
+        <div style={{fontSize:"13px",color:"#86efac"}}>
+          Add <strong>{extraBase.toFixed(2)} L</strong> of base paint to the batch.
+          Final batch size: <strong>{fmtL(finalSize)}</strong> · Final pigment%: <strong>{fmtPct(finalPct)}</strong>
+        </div>
+      </div>}
+      {Pt>0&&extraBase===0&&S>0&&newPigmentPct<=Pt&&<div style={{background:"#0a1520",border:"1px solid #1e3a5f",borderRadius:"8px",padding:"10px 14px"}}>
+        <div style={{fontSize:"12px",color:"#64748b"}}>✓ No base needed — pigment% is already at or below target after stainer addition.</div>
+      </div>}
+    </div>}
+
+    {mode==="reverse"&&B>0&&Pact>0&&Pt>0&&<div style={{background:"#080d18",border:"1px solid #1e3a5f",borderRadius:"12px",padding:"18px",marginTop:"4px"}}>
+      <div style={{fontSize:"13px",fontWeight:"700",color:"#93c5fd",marginBottom:"12px"}}>📊 Results — Reverse Calculation</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px",marginBottom:"12px"}}>
+        {[
+          ["Measured pigment%","(lab result)",fmtPct(Pact),Pact>Pt?"#f59e0b":"#22c55e"],
+          ["Extra base to add","To reach "+fmtPct(Pt),revExtraBase>0?fmtL(revExtraBase):"✓ None needed","#22c55e"],
+        ].map(([lbl,sub,val,col])=><div key={lbl} style={{background:"#0f172a",border:`1px solid ${col}30`,borderRadius:"8px",padding:"12px 14px"}}>
+          <div style={{fontSize:"10px",color:"#475569",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"2px"}}>{lbl}</div>
+          <div style={{fontSize:"11px",color:"#64748b",marginBottom:"4px"}}>{sub}</div>
+          <div style={{fontSize:"18px",fontWeight:"700",color:col}}>{val}</div>
+        </div>)}
+      </div>
+      {revExtraBase>0&&<div style={{background:"#052e16",border:"1px solid #166534",borderRadius:"8px",padding:"12px 16px"}}>
+        <div style={{fontSize:"13px",fontWeight:"700",color:"#22c55e",marginBottom:"6px"}}>✅ Action Required</div>
+        <div style={{fontSize:"13px",color:"#86efac"}}>
+          Add <strong>{revExtraBase.toFixed(2)} L</strong> of base paint to dilute pigment% from {fmtPct(Pact)} to {fmtPct(Pt)}.
+          Final batch size: <strong>{fmtL(revFinalSize)}</strong>
+        </div>
+      </div>}
+      {revExtraBase===0&&Pact<=Pt&&<div style={{background:"#0a1520",border:"1px solid #1e3a5f",borderRadius:"8px",padding:"10px 14px"}}>
+        <div style={{fontSize:"12px",color:"#64748b"}}>✓ Measured pigment% is at or below target — no base addition needed.</div>
+      </div>}
+    </div>}
+
+    {/* Formula reference */}
+    <div style={{marginTop:"16px",background:"#060d1a",border:"1px solid #1e293b",borderRadius:"8px",padding:"12px 16px"}}>
+      <div style={{fontSize:"11px",fontWeight:"700",color:"#334155",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"6px"}}>Formula</div>
+      <div style={{fontSize:"11px",color:"#475569",lineHeight:1.7}}>
+        <div>New Pigment% = (Batch×Orig% + Stainer×Stainer%) ÷ (Batch + Stainer)</div>
+        <div>Extra Base = (Pigment Mass − Target%×NewTotal) ÷ (Target% − Base%)</div>
+        <div style={{color:"#334155",marginTop:"4px"}}>All quantities in Litres. Percentages as % (e.g. 14.5 not 0.145)</div>
+      </div>
+    </div>
   </div>;
 }
 
@@ -5797,7 +5952,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
       {/* R&D */}
       {tab==="rd"&&<>
         <div style={{display:"flex",gap:"4px",marginBottom:"20px",borderBottom:"1px solid #1e293b",paddingBottom:"0"}}>
-          {[["projects","⚗️ R&D Projects"],["rmtests","🧫 RM Tests"],["sampletests","🔭 Sample Testing"]].map(([key,label])=><button key={key} onClick={()=>setRdSubTab(key)} style={{background:rdSubTab===key?"#1e293b":"transparent",border:"none",borderBottom:rdSubTab===key?"2px solid #22c55e":"2px solid transparent",color:rdSubTab===key?"#f1f5f9":"#64748b",padding:"8px 16px",cursor:"pointer",fontSize:"13px",fontWeight:"600",borderRadius:"8px 8px 0 0",transition:"all 0.15s"}}>{label}</button>)}
+          {[["projects","⚗️ R&D Projects"],["rmtests","🧫 RM Tests"],["sampletests","🔭 Sample Testing"],["stainer","🎨 Stainer Calc"]].map(([key,label])=><button key={key} onClick={()=>setRdSubTab(key)} style={{background:rdSubTab===key?"#1e293b":"transparent",border:"none",borderBottom:rdSubTab===key?"2px solid #22c55e":"2px solid transparent",color:rdSubTab===key?"#f1f5f9":"#64748b",padding:"8px 16px",cursor:"pointer",fontSize:"13px",fontWeight:"600",borderRadius:"8px 8px 0 0",transition:"all 0.15s"}}>{label}</button>)}
         </div>
         {rdSubTab==="projects"&&<>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"14px",flexWrap:"wrap",gap:"10px"}}>
@@ -5822,6 +5977,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
         {rdSubTab==="sampletests"&&<SampleTestsTab role={role} user={user} showToast={showToast} sysQcParams={sysQcParams}
           onCreateProject={(prefill)=>{setProjForm({...EP,...prefill});setShowAddProject(true);setRdSubTab("projects");}}
         />}
+        {rdSubTab==="stainer"&&<StainerCalc/>}
       </>}
       {tab==="bom"&&<BOMTab role={role} roles={roles} user={user} showToast={showToast} sysProducts={sysProducts} sysPackSizes={sysPackSizes} sysQcParams={sysQcParams}/>}
       {tab==="tasks"&&<TasksTab user={user} roles={roles} showToast={showToast} allRoles={allRoles} allProfiles={allProfiles}/>}
