@@ -5493,17 +5493,16 @@ function StainerCalc(){
     {/* Forward results */}
     {mode==="forward"&&B>0&&Pt>0&&hasStainers&&<div style={{background:"#080d18",border:"1px solid #1e3a5f",borderRadius:"12px",padding:"16px",marginTop:"4px"}}>
       <div style={{fontSize:"13px",fontWeight:"700",color:"#93c5fd",marginBottom:"12px"}}>📊 Results</div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"10px",marginBottom:"12px"}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"10px",marginBottom:"12px"}}>
         {[
           ["Pigment% After Stainer","(before correction)",fP(currentPigPct),currentPigPct>Pt?"#f59e0b":"#22c55e"],
-          ["Batch After Stainer","(before correction)",fL(B+totalStainerVol),"#3b82f6"],
           ["Extra Base to Add","add to batch",fL(extraBase),"#22c55e"],
           ["Final Batch Size","↓ rounded to 10L",finalBatch>0?finalBatch+" L":"—","#f1f5f9"],
         ].map(([lbl,sub,val,col],i)=><div key={lbl} style={{background:"#0f172a",border:`1px solid ${col}30`,borderRadius:"8px",padding:"12px"}}>
           <div style={{fontSize:"9px",color:"#475569",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"2px"}}>{lbl}</div>
           <div style={{fontSize:"10px",color:"#64748b",marginBottom:"5px"}}>{sub}</div>
           <div style={{fontSize:"17px",fontWeight:"700",color:col}}>{val}</div>
-          {i===3&&finalBatchRaw>0&&finalBatch!==finalBatchRaw&&<div style={{fontSize:"9px",color:"#334155",marginTop:"3px"}}>exact: {finalBatchRaw.toFixed(2)} L</div>}
+          {i===2&&finalBatchRaw>0&&finalBatch!==finalBatchRaw&&<div style={{fontSize:"9px",color:"#334155",marginTop:"3px"}}>exact: {finalBatchRaw.toFixed(2)} L</div>}
         </div>)}
       </div>
       <div style={{background:"#052e16",border:"1px solid #166534",borderRadius:"8px",padding:"14px 16px"}}>
