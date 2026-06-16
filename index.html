@@ -5370,7 +5370,9 @@ function TasksTab({user,roles,showToast,allRoles,allProfiles}){
 // ══════════════════════════════════════════════════════════
 function StainerCalc(){
   const [batchSize,setBatchSize]=useState("");
+  const [origPigment,setOrigPigment]=useState("");
   const [targetPigment,setTargetPigment]=useState("");
+  const [targetOverride,setTargetOverride]=useState(false); // true = user manually set different target
   const [stainers,setStainers]=useState([{id:"s1",name:"",amt:"",pigment:""}]);
   const [actualPigment,setActualPigment]=useState("");
   const [mode,setMode]=useState("forward");
@@ -5379,31 +5381,33 @@ function StainerCalc(){
   const removeStainer=(id)=>setStainers(s=>s.filter(x=>x.id!==id));
   const updateStainer=(id,field,val)=>setStainers(s=>s.map(x=>x.id===id?{...x,[field]:val}:x));
 
+  // Target defaults to = original pigment unless manually overridden
+  const effectiveTarget=targetOverride?targetPigment:origPigment;
+
   const B=parseFloat(batchSize)||0;
-  const Pt=parseFloat(targetPigment)||0;
+  const P0=parseFloat(origPigment)||0;
+  const Pt=parseFloat(effectiveTarget)||0;
   const Pact=parseFloat(actualPigment)||0;
 
   // Stainer totals
   const totalStainerVol=stainers.reduce((s,x)=>s+(parseFloat(x.amt)||0),0);
   const totalStainerPigMass=stainers.reduce((s,x)=>s+(parseFloat(x.amt)||0)*(parseFloat(x.pigment)||0)/100,0);
 
-  // KEY: original batch was already at target pigment%
-  // Adding stainer disturbs it — we find how much base restores it
-  // Original pigment mass = B × Pt/100
-  // Total pigment = B×Pt/100 + Σ stainer pigment
-  // Final batch (at Pt%) = Total pigment / (Pt/100)
+  // Original pigment mass = B × P0/100
+  // Total pigment = B×P0/100 + Σ stainer pigment
+  // Final batch (at Pt%) = Total pigment / (Pt/100) → floor to nearest 10L
   // Extra base = Final batch - B - Σ stainer vol
-  const origPigMass=B*Pt/100;
+  const origPigMass=B*P0/100;
   const totalPigMass=origPigMass+totalStainerPigMass;
-  const finalBatch=Pt>0?totalPigMass/(Pt/100):0;
+  const finalBatchRaw=Pt>0?totalPigMass/(Pt/100):0;
+  const finalBatch=finalBatchRaw>0?Math.floor(finalBatchRaw/10)*10:0; // floor to nearest 10L
   const extraBase=Math.max(0,finalBatch-B-totalStainerVol);
   const currentPigPct=(B+totalStainerVol)>0?totalPigMass/(B+totalStainerVol)*100:0;
+  const finalPct=finalBatch>0?(totalPigMass+extraBase*0)/finalBatch*100:0;
 
-  // Reverse: actual pigment% measured → how much base to add
-  // Total pigment mass = B × Pact/100 (measured)
-  // Final batch (at Pt%) = (B×Pact/100) / (Pt/100)
-  // Extra base = Final batch - B
-  const revFinalBatch=Pt>0&&Pact>0?B*Pact/100/(Pt/100):0;
+  // Reverse: floor to nearest 10L as well
+  const revFinalBatchRaw=Pt>0&&Pact>0?B*Pact/100/(Pt/100):0;
+  const revFinalBatch=revFinalBatchRaw>0?Math.floor(revFinalBatchRaw/10)*10:0;
   const revExtra=Math.max(0,revFinalBatch-B);
 
   const fL=(v)=>v>0?v.toFixed(2)+" L":"—";
@@ -5413,7 +5417,7 @@ function StainerCalc(){
 
   return <div>
     <SectionHead title="🎨 Stainer Pigment Calculator"/>
-    <InfoBox color="#3b82f6">Original batch is assumed to be at target pigment%. Stainer addition raises pigment% — calculator tells you how much base paint to add to bring it back to target.</InfoBox>
+    <InfoBox color="#3b82f6">Enter original batch pigment% — target defaults to same. Stainer raises pigment%; calculator shows how much base to add. Final batch size rounded down to nearest 10L.</InfoBox>
 
     <div style={{display:"flex",gap:"8px",marginBottom:"16px"}}>
       {[["forward","📥 Stainer Added → Calc Extra Base"],["reverse","🔬 Actual Pigment% Measured → Calc Base"]].map(([m,l])=>
@@ -5427,10 +5431,28 @@ function StainerCalc(){
       <Field label="Original Batch Size (L)">
         <input style={inp} type="number" min="0" step="0.01" value={batchSize} onChange={e=>setBatchSize(e.target.value)} placeholder="e.g. 1000"/>
       </Field>
-      <Field label={mode==="forward"?"Target Pigment % (original BOM pigment%)":"Target Pigment % (desired final %)"}>
-        <input style={{...inp,borderColor:"#f59e0b40"}} type="number" min="0" max="100" step="0.001" value={targetPigment} onChange={e=>setTargetPigment(e.target.value)} placeholder="e.g. 15"/>
+      <Field label="Original Pigment % (from BOM)">
+        <input style={inp} type="number" min="0" max="100" step="0.001" value={origPigment}
+          onChange={e=>{setOrigPigment(e.target.value);if(!targetOverride)setTargetPigment(e.target.value);}}
+          placeholder="e.g. 15"/>
       </Field>
     </Grid2>
+    {/* Target pigment — linked to orig by default, can be overridden */}
+    <div style={{background:"#080d18",border:`1px solid ${targetOverride?"#f59e0b40":"#1e293b"}`,borderRadius:"8px",padding:"10px 12px",marginBottom:"12px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"6px"}}>
+        <div style={{fontSize:"11px",fontWeight:"700",color:targetOverride?"#f59e0b":"#64748b",textTransform:"uppercase",letterSpacing:"0.06em"}}>
+          Target Pigment % {!targetOverride&&<span style={{fontWeight:"400",color:"#334155"}}>(= Original — linked)</span>}
+        </div>
+        <button onClick={()=>{setTargetOverride(v=>!v);if(targetOverride)setTargetPigment(origPigment);}}
+          style={{background:targetOverride?"#78350f30":"#0b1220",border:`1px solid ${targetOverride?"#f59e0b":"#334155"}`,borderRadius:"6px",padding:"3px 10px",color:targetOverride?"#f59e0b":"#475569",cursor:"pointer",fontSize:"11px",fontWeight:"600"}}>
+          {targetOverride?"✓ Custom (click to link back)":"✏️ Set different target"}
+        </button>
+      </div>
+      {targetOverride
+        ?<input style={{...inp,borderColor:"#f59e0b60"}} type="number" min="0" max="100" step="0.001" value={targetPigment} onChange={e=>setTargetPigment(e.target.value)} placeholder="Enter custom target %"/>
+        :<div style={{fontSize:"18px",fontWeight:"700",color:"#94a3b8",padding:"4px 0"}}>{origPigment||"—"} <span style={{fontSize:"12px",color:"#334155"}}>%</span></div>
+      }
+    </div>
 
     {mode==="reverse"&&<Field label="Actual Measured Pigment % (lab / instrument result)">
       <input style={{...inp,borderColor:"#22c55e40"}} type="number" min="0" max="100" step="0.001" value={actualPigment} onChange={e=>setActualPigment(e.target.value)} placeholder="e.g. 18.5"/>
@@ -5476,11 +5498,12 @@ function StainerCalc(){
           ["Pigment% After Stainer","(before correction)",fP(currentPigPct),currentPigPct>Pt?"#f59e0b":"#22c55e"],
           ["Batch After Stainer","(before correction)",fL(B+totalStainerVol),"#3b82f6"],
           ["Extra Base to Add","add to batch",fL(extraBase),"#22c55e"],
-          ["Final Batch Size","after adding base",fL(finalBatch),"#f1f5f9"],
-        ].map(([lbl,sub,val,col])=><div key={lbl} style={{background:"#0f172a",border:`1px solid ${col}30`,borderRadius:"8px",padding:"12px"}}>
+          ["Final Batch Size","↓ rounded to 10L",finalBatch>0?finalBatch+" L":"—","#f1f5f9"],
+        ].map(([lbl,sub,val,col],i)=><div key={lbl} style={{background:"#0f172a",border:`1px solid ${col}30`,borderRadius:"8px",padding:"12px"}}>
           <div style={{fontSize:"9px",color:"#475569",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"2px"}}>{lbl}</div>
           <div style={{fontSize:"10px",color:"#64748b",marginBottom:"5px"}}>{sub}</div>
           <div style={{fontSize:"17px",fontWeight:"700",color:col}}>{val}</div>
+          {i===3&&finalBatchRaw>0&&finalBatch!==finalBatchRaw&&<div style={{fontSize:"9px",color:"#334155",marginTop:"3px"}}>exact: {finalBatchRaw.toFixed(2)} L</div>}
         </div>)}
       </div>
       <div style={{background:"#052e16",border:"1px solid #166534",borderRadius:"8px",padding:"14px 16px"}}>
@@ -5509,11 +5532,12 @@ function StainerCalc(){
         {[
           ["Measured Pigment%","(lab result)",fP(Pact),Pact>Pt?"#f59e0b":"#22c55e"],
           ["Extra Base to Add","to reach target",revExtra>0?fL(revExtra):"✓ None","#22c55e"],
-          ["Final Batch Size","after adding base",fL(revFinalBatch),"#f1f5f9"],
-        ].map(([lbl,sub,val,col])=><div key={lbl} style={{background:"#0f172a",border:`1px solid ${col}30`,borderRadius:"8px",padding:"12px"}}>
+          ["Final Batch Size","↓ rounded to 10L",revFinalBatch>0?revFinalBatch+" L":"—","#f1f5f9"],
+        ].map(([lbl,sub,val,col],i)=><div key={lbl} style={{background:"#0f172a",border:`1px solid ${col}30`,borderRadius:"8px",padding:"12px"}}>
           <div style={{fontSize:"9px",color:"#475569",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"2px"}}>{lbl}</div>
           <div style={{fontSize:"10px",color:"#64748b",marginBottom:"5px"}}>{sub}</div>
           <div style={{fontSize:"17px",fontWeight:"700",color:col}}>{val}</div>
+          {i===2&&revFinalBatchRaw>0&&revFinalBatch!==revFinalBatchRaw&&<div style={{fontSize:"9px",color:"#334155",marginTop:"3px"}}>exact: {revFinalBatchRaw.toFixed(2)} L</div>}
         </div>)}
       </div>
       {revExtra>0&&<div style={{background:"#052e16",border:"1px solid #166534",borderRadius:"8px",padding:"14px 16px"}}>
