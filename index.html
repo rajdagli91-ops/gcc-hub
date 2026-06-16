@@ -5496,7 +5496,7 @@ function StainerCalc(){
       <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"10px",marginBottom:"12px"}}>
         {[
           ["Pigment% After Stainer","(before correction)",fP(currentPigPct),currentPigPct>Pt?"#f59e0b":"#22c55e"],
-          ["Extra Base to Add","add to batch",fL(extraBase),"#22c55e"],
+          ["Batch Size Increase","above original batch",finalBatch>0?fL(finalBatch-B):"set target →","#3b82f6"],
           ["Final Batch Size","↓ rounded to 10L",finalBatch>0?finalBatch+" L":"—","#f1f5f9"],
         ].map(([lbl,sub,val,col],i)=><div key={lbl} style={{background:"#0f172a",border:`1px solid ${col}30`,borderRadius:"8px",padding:"12px"}}>
           <div style={{fontSize:"9px",color:"#475569",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"2px"}}>{lbl}</div>
@@ -5508,8 +5508,8 @@ function StainerCalc(){
       <div style={{background:"#052e16",border:"1px solid #166534",borderRadius:"8px",padding:"14px 16px"}}>
         <div style={{fontSize:"13px",fontWeight:"700",color:"#22c55e",marginBottom:"6px"}}>✅ Action Required</div>
         <div style={{fontSize:"13px",color:"#86efac",lineHeight:1.7}}>
-          Add <strong style={{fontSize:"16px",color:"#4ade80"}}>{extraBase.toFixed(2)} L</strong> of base paint.<br/>
-          Batch goes from <strong>{fL(B+totalStainerVol)}</strong> → <strong style={{fontSize:"15px",color:"#4ade80"}}>{fL(finalBatch)}</strong> at <strong>{fP(Pt)}</strong> pigment.
+          Increase batch from <strong>{B} L</strong> → <strong style={{fontSize:"16px",color:"#4ade80"}}>{finalBatch} L</strong> &nbsp;<span style={{color:"#4ade80",fontSize:"12px"}}>(+{(finalBatch-B).toFixed(2)} L total)</span><br/>
+          Stainer already added: <strong>{totalStainerVol.toFixed(2)} L</strong> · Still add: <strong style={{fontSize:"15px",color:"#4ade80"}}>{extraBase.toFixed(2)} L</strong> more base paint.
         </div>
       </div>
       {stainers.length>1&&<div style={{marginTop:"10px",background:"#060d1a",border:"1px solid #1e293b",borderRadius:"8px",padding:"10px 14px"}}>
