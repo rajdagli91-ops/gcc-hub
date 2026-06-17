@@ -1069,6 +1069,7 @@ const fileToBase64=async(file,userEmail)=>{
 function FileAttachment({folder,existingFiles=[],onFilesChange,readOnly=false,maxFiles=5}){
   const [uploading,setUploading]=useState(false);
   const [error,setError]=useState("");
+  const [zoomFile,setZoomFile]=useState(null);
   const user=auth.currentUser;
   const fileRef=useRef(null);
 
@@ -1102,16 +1103,31 @@ function FileAttachment({folder,existingFiles=[],onFilesChange,readOnly=false,ma
         const isImg=f.type?.startsWith("image/");
         const isPDF=f.type==="application/pdf";
         const isVideoStub=f.isVideoStub;
-        return <div key={i} style={{position:"relative",background:"#0b1220",border:"1px solid #1e293b",borderRadius:"8px",overflow:"hidden",maxWidth:"160px"}}>
-          {isImg&&f.url&&<img src={f.url} alt={f.name} style={{width:"140px",height:"100px",objectFit:"cover",display:"block"}}/>}
+        return <div key={i} style={{position:"relative",background:"#0b1220",border:"1px solid #1e293b",borderRadius:"8px",overflow:"hidden",maxWidth:"180px"}}>
+          {isImg&&f.url&&<div style={{position:"relative",cursor:"zoom-in"}} onClick={()=>setZoomFile(f)}>
+            <img src={f.url} alt={f.name} style={{width:"160px",height:"120px",objectFit:"cover",display:"block"}}/>
+            <div style={{position:"absolute",bottom:"6px",right:"6px",background:"rgba(0,0,0,0.6)",borderRadius:"6px",width:"26px",height:"26px",display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none"}}>
+              <span style={{fontSize:"14px"}}>🔍</span>
+            </div>
+          </div>}
           {isPDF&&f.url&&<a href={f.url} target="_blank" rel="noreferrer" style={{display:"flex",alignItems:"center",gap:"6px",padding:"10px 12px",color:"#93c5fd",fontSize:"12px",textDecoration:"none"}}>📄 {f.name.length>18?f.name.slice(0,18)+"…":f.name}</a>}
           {isVideoStub&&<div style={{padding:"10px 12px",fontSize:"11px",color:"#f59e0b"}}>🎥 {f.name.length>16?f.name.slice(0,16)+"…":f.name}<br/><span style={{fontSize:"10px",color:"#475569"}}>Share separately</span></div>}
           <div style={{padding:"3px 8px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <span style={{fontSize:"9px",color:"#334155"}}>{f.sizeKB?`${f.sizeKB}KB`:""}</span>
+            <span style={{fontSize:"9px",color:isImg?"#3b82f6":"#334155"}}>{isImg?"🔍 Tap to enlarge":(f.sizeKB?`${f.sizeKB}KB`:"")}</span>
             {!readOnly&&<button onClick={()=>removeFile(i)} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"14px",padding:"0 2px",flexShrink:0}}>×</button>}
           </div>
         </div>;
       })}
+    </div>}
+    {/* Lightbox — click image to zoom, supports pinch-zoom on mobile */}
+    {zoomFile&&<div onClick={()=>setZoomFile(null)} style={{position:"fixed",inset:0,background:"rgba(2,6,16,0.95)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",cursor:"zoom-out",padding:"16px",overflow:"auto"}}>
+      <button onClick={()=>setZoomFile(null)} style={{position:"fixed",top:"16px",right:"16px",background:"rgba(255,255,255,0.12)",border:"1px solid rgba(255,255,255,0.25)",borderRadius:"50%",color:"#fff",fontSize:"20px",width:"44px",height:"44px",cursor:"pointer",lineHeight:1,zIndex:10000}}>×</button>
+      <img src={zoomFile.url} alt={zoomFile.name} onClick={e=>e.stopPropagation()}
+        style={{maxWidth:"95vw",maxHeight:"85vh",width:"auto",height:"auto",objectFit:"contain",borderRadius:"8px",boxShadow:"0 10px 60px rgba(0,0,0,0.6)",cursor:"default",touchAction:"pinch-zoom"}}/>
+      <div style={{position:"fixed",bottom:"16px",left:"50%",transform:"translateX(-50%)",display:"flex",gap:"10px",alignItems:"center",flexWrap:"wrap",justifyContent:"center",maxWidth:"92vw"}}>
+        <span style={{fontSize:"12px",color:"rgba(255,255,255,0.6)",background:"rgba(255,255,255,0.08)",padding:"6px 14px",borderRadius:"99px"}}>{zoomFile.name}{zoomFile.sizeKB?` · ${zoomFile.sizeKB}KB`:""}</span>
+        <a href={zoomFile.url} download={zoomFile.name} onClick={e=>e.stopPropagation()} style={{fontSize:"12px",color:"#93c5fd",background:"rgba(59,130,246,0.15)",border:"1px solid rgba(59,130,246,0.3)",padding:"6px 14px",borderRadius:"99px",textDecoration:"none"}}>⬇ Download</a>
+      </div>
     </div>}
   </div>;
 }
