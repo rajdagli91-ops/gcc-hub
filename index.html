@@ -5104,20 +5104,13 @@ function TasksTab({user,roles,showToast,allRoles,allProfiles}){
   };
 
   useEffect(()=>{
-    // Admin sees all tasks. Others see tasks assigned TO them OR tasks they assigned.
+    // Admin sees ALL tasks. Non-admins see ONLY tasks assigned TO them — nothing else,
+    // since only Admin can assign tasks (no legacy "tasks I assigned" merge needed).
     const q=isAdmin
       ?C("tasks")
       :C("tasks").where("assignedTo","==",user.email);
     const u=q.onSnapshot(s=>{
       let all=s.docs.map(d=>({id:d.id,...d.data()}));
-      // For non-admin: also show tasks the user assigned to others (merged client-side)
-      if(!isAdmin){
-        C("tasks").where("assignedBy","==",user.email).get().then(snap=>{
-          const assigned=snap.docs.map(d=>({id:d.id,...d.data()}));
-          const merged=[...all,...assigned.filter(t=>!all.find(x=>x.id===t.id))];
-          setTasks(merged.sort((a,b)=>(b._createdAt?.seconds||0)-(a._createdAt?.seconds||0)));
-        }).catch(()=>{});
-      }
       all.sort((a,b)=>(b._createdAt?.seconds||0)-(a._createdAt?.seconds||0));
       setTasks(all);setLoading(false);
     },()=>setLoading(false));
@@ -5576,10 +5569,241 @@ function StainerCalc(){
   </div>;
 }
 
+// ══════════════════════════════════════════════════════════
+// RESIN & SOLVENT CALCULATOR — per pigment, per mill type, at 50/60/70% resin solids
+// Data is an EXACT lookup table from verified reference sheets (not formula-derived,
+// since solvent does not follow a clean constant-total-liquid formula for every pigment —
+// some entries floor at 0 solvent at high dilution). Custom % uses linear interpolation
+// between the two nearest known points (50↔60 or 60↔70), extrapolated beyond range.
+// ══════════════════════════════════════════════════════════
+const MILL_PIGMENT_DATA={
+  attritor:[
+    {name:"3020/822, 3020/2190, 3020/706, 3020/101",r50:40.0,s50:15.0,r60:33.3,s60:21.7,r70:28.6,s70:26.4},
+    {name:"3013/I, 3012/E",r50:35.0,s50:12.0,r60:29.2,s60:17.8,r70:25.0,s70:22.0},
+    {name:"3019/C",r50:30.8,s50:10.2,r60:25.7,s60:15.3,r70:22.0,s70:19.0},
+    {name:"3026/I",r50:61.6,s50:26.4,r60:51.3,s60:36.7,r70:44.0,s70:44.0},
+    {name:"3018/EO",r50:54.6,s50:25.4,r60:45.5,s60:34.5,r70:39.0,s70:41.0},
+    {name:"3025/EO",r50:77.0,s50:53.0,r60:64.2,s60:65.8,r70:55.0,s70:75.0},
+    {name:"2002/A, 2020/A, 2003/C, 2003/PPT, 2019/I, 2004/O, 2018/E, 2023/H",r50:43.4,s50:27.6,r60:36.2,s60:34.8,r70:31.0,s70:40.0},
+    {name:"Phthalocyanine Blue / Green",r50:201.6,s50:153.4,r60:168.0,s60:187.0,r70:144.0,s70:211.0},
+    {name:"Azo Reds / Org. Yellows",r50:173.6,s50:131.4,r60:144.7,s60:160.3,r70:124.0,s70:181.0},
+    {name:"3200, 3220, 3330",r50:229.6,s50:245.4,r60:191.3,s60:283.7,r70:164.0,s70:311.0},
+    {name:"3022/I",r50:196.0,s50:144.0,r60:163.3,s60:176.7,r70:140.0,s70:200.0},
+  ],
+  sandmill:[
+    {name:"3020/822, 3020/2190, 3020/706, 3020/101",r50:42.0,s50:8.0,r60:35.0,s60:15.0,r70:30.0,s70:20.0},
+    {name:"3013/I, 3012/E",r50:36.4,s50:7.6,r60:30.3,s60:13.7,r70:26.0,s70:18.0},
+    {name:"3019/C",r50:33.6,s50:5.2,r60:28.0,s60:10.8,r70:24.0,s70:14.8},
+    {name:"3026/I",r50:64.4,s50:15.1,r60:53.7,s60:25.8,r70:46.0,s70:33.5},
+    {name:"3018/EO",r50:58.8,s50:16.7,r60:49.0,s60:26.5,r70:42.0,s70:33.5},
+    {name:"3025/EO",r50:81.2,s50:36.8,r60:67.7,s60:50.3,r70:58.0,s70:60.0},
+    {name:"2002/A, 2020/A, 2003/C, 2003/PPT, 2019/I, 2004/O, 2018/E, 2023/H",r50:42.0,s50:22.0,r60:35.0,s60:29.0,r70:30.0,s70:34.0},
+    {name:"3002/E, 3001/L, 3016/U, 3016/H",r50:210.0,s50:115.0,r60:175.0,s60:150.0,r70:150.0,s70:175.0},
+    {name:"3018/U, 3018/2967, 3018/402, 3025/EG",r50:179.2,s50:99.8,r60:149.3,s60:129.7,r70:128.0,s70:151.0},
+    {name:"3200, 3220, 3330",r50:235.2,s50:194.8,r60:196.0,s60:234.0,r70:168.0,s70:262.0},
+    {name:"3022/I",r50:212.8,s50:147.2,r60:177.3,s60:182.7,r70:152.0,s70:208.0},
+  ],
+  ballmill:[
+    {name:"3020/822, 3020/2190, 3020/706, 3020/101",r50:49.0,s50:0.0,r60:40.8,s60:8.2,r70:35.0,s70:14.0},
+    {name:"3013/I, 3012/E",r50:44.8,s50:0.0,r60:37.3,s60:7.5,r70:32.0,s70:11.0},
+    {name:"3019/C",r50:39.2,s50:0.0,r60:32.7,s60:7.3,r70:28.0,s70:10.0},
+    {name:"3026/I",r50:72.8,s50:5.2,r60:60.7,s60:17.3,r70:52.0,s70:26.0},
+    {name:"3018/EO",r50:67.2,s50:5.8,r60:56.0,s60:17.0,r70:48.0,s70:25.0},
+    {name:"3025/EO",r50:95.2,s50:17.8,r60:79.3,s60:33.7,r70:68.0,s70:45.0},
+    {name:"2002/A, 2020/A, 2003/C, 2003/PPT, 2019/I, 2004/O, 2018/E, 2023/H",r50:50.4,s50:12.6,r60:42.0,s60:21.0,r70:36.0,s70:27.0},
+    {name:"3002/E, 3001/L, 3016/U, 3016/H",r50:231.0,s50:49.0,r60:192.5,s60:87.5,r70:165.0,s70:115.0},
+    {name:"3018/U, 3018/2967, 3018/402, 3025/EG",r50:198.8,s50:45.2,r60:165.7,s60:78.3,r70:142.0,s70:102.0},
+    {name:"3200, 3220, 3330",r50:259.0,s50:121.0,r60:215.8,s60:164.2,r70:185.0,s70:195.0},
+    {name:"3022/I",r50:231.0,s50:69.0,r60:192.5,s60:107.5,r70:165.0,s70:135.0},
+  ],
+  beadmill:[
+    {name:"3020/822, 3020/2190, 3020/706, 3020/101",r50:36.4,s50:23.6,r60:30.3,s60:29.7,r70:26.0,s70:34.0},
+    {name:"3013/I, 3012/E",r50:32.2,s50:15.8,r60:26.8,s60:21.2,r70:23.0,s70:25.0},
+    {name:"3019/C",r50:28.0,s50:13.0,r60:23.3,s60:17.7,r70:20.0,s70:21.0},
+    {name:"3026/I",r50:58.8,s50:39.2,r60:49.0,s60:49.0,r70:42.0,s70:56.0},
+    {name:"3018/EO",r50:50.4,s50:45.6,r60:42.0,s60:54.0,r70:36.0,s70:60.0},
+    {name:"3025/EO",r50:71.4,s50:76.6,r60:59.5,s60:88.5,r70:51.0,s70:97.0},
+    {name:"2002/A, 2020/A, 2003/C, 2003/PPT, 2019/I, 2004/O, 2018/E, 2023/H",r50:35.7,s50:42.8,r60:29.8,s60:48.2,r70:25.5,s70:53.0},
+    {name:"3002/E, 3001/L, 3016/U, 3016/H",r50:190.4,s50:172.6,r60:158.7,s60:204.3,r70:136.0,s70:227.0},
+    {name:"3018/U, 3018/2967, 3018/402, 3025/EG",r50:159.6,s50:154.4,r60:133.0,s60:181.0,r70:114.0,s70:200.0},
+    {name:"3200, 3220, 3330",r50:214.2,s50:288.8,r60:178.5,s60:324.5,r70:153.0,s70:350.0},
+    {name:"3022/I",r50:190.4,s50:159.6,r60:158.7,s60:191.3,r70:136.0,s70:214.0},
+  ],
+};
+const MILL_LABELS={sandmill:"Sand Mill",ballmill:"Ball Mill",beadmill:"Continuous Bead Mill",attritor:"Attritor"};
+
+// Exact lookup at 50/60/70%; linear interpolation/extrapolation for any other %
+function lookupResinSolvent(entry,pct){
+  if(pct===50)return{resin:entry.r50,solvent:entry.s50};
+  if(pct===60)return{resin:entry.r60,solvent:entry.s60};
+  if(pct===70)return{resin:entry.r70,solvent:entry.s70};
+  let p0,r0,s0,p1,r1,s1;
+  if(pct<=60){p0=50;r0=entry.r50;s0=entry.s50;p1=60;r1=entry.r60;s1=entry.s60;}
+  else{p0=60;r0=entry.r60;s0=entry.s60;p1=70;r1=entry.r70;s1=entry.s70;}
+  const t=(pct-p0)/(p1-p0);
+  const resin=r0+(r1-r0)*t;
+  const solvent=Math.max(0,s0+(s1-s0)*t);
+  return{resin,solvent};
+}
+
+function ResinSolventCalc(){
+  const [mill,setMill]=useState("sandmill");
+  const [solidsPct,setSolidsPct]=useState(70);
+  const [customPct,setCustomPct]=useState("");
+  const [useCustomPct,setUseCustomPct]=useState(false);
+  const mkRow=()=>({id:"r"+Date.now()+Math.random(),pigmentIdx:0,custom:false,customName:"",customR0:"",customS0:"",weight:"100"});
+  const [rows,setRows]=useState([mkRow()]);
+
+  const changeMill=(m)=>{
+    setMill(m);
+    setRows([{id:"r"+Date.now(),pigmentIdx:0,custom:false,customName:"",customR0:"",customS0:"",weight:"100"}]);
+  };
+  const addRow=()=>setRows(r=>[...r,{id:"r"+Date.now()+Math.random(),pigmentIdx:0,custom:false,customName:"",customR0:"",customS0:"",weight:"100"}]);
+  const removeRow=(id)=>setRows(r=>r.filter(x=>x.id!==id));
+  const updateRow=(id,field,val)=>setRows(r=>r.map(x=>x.id===id?{...x,[field]:val}:x));
+
+  const pct=useCustomPct?(parseFloat(customPct)||0):solidsPct;
+
+  const calcRow=(row)=>{
+    let resinBase,solventBase,label;
+    const weight=parseFloat(row.weight)||0;
+    const scale=weight/100; // base data is per 100kg pigment
+    if(row.custom){
+      // Custom: user enters base resin/solvent directly at THIS % (no interpolation possible)
+      resinBase=parseFloat(row.customR0)||0;
+      solventBase=parseFloat(row.customS0)||0;
+      label=row.customName||"Custom Pigment";
+    }else{
+      const pd=MILL_PIGMENT_DATA[mill][row.pigmentIdx];
+      label=pd?.name||"";
+      if(pd&&pct>0){
+        const r=lookupResinSolvent(pd,pct);
+        resinBase=r.resin;solventBase=r.solvent;
+      }else{resinBase=0;solventBase=0;}
+    }
+    const resinReq=resinBase*scale;
+    const solventReq=solventBase*scale;
+    const totalYield=weight+resinReq+solventReq;
+    return{label,weight,resinReq,solventReq,totalYield};
+  };
+
+  const results=rows.map(calcRow);
+  const totals=results.reduce((acc,r)=>({weight:acc.weight+r.weight,resinReq:acc.resinReq+r.resinReq,solventReq:acc.solventReq+r.solventReq,totalYield:acc.totalYield+r.totalYield}),{weight:0,resinReq:0,solventReq:0,totalYield:0});
+
+  const fmt=(v)=>v>0?v.toFixed(2):"—";
+  const rowGridCols="1.7fr 90px 100px 100px 110px 28px";
+
+  return <div>
+    <SectionHead title="🧴 Resin & Solvent Calculator"/>
+    <InfoBox color="#3b82f6">Select pigments used in the millbase, choose resin solids %, and get exact resin + solvent quantities. Add multiple pigments to build a full batch recipe with running totals.</InfoBox>
+
+    {/* Mill type selector */}
+    <div style={{display:"flex",gap:"8px",marginBottom:"16px",flexWrap:"wrap"}}>
+      {Object.keys(MILL_LABELS).map(m=>
+        <button key={m} onClick={()=>changeMill(m)} style={{flex:"1 1 140px",padding:"10px 14px",background:mill===m?"#0f1d35":"#080d18",border:`1px solid ${mill===m?"#3b82f6":"#1e293b"}`,borderRadius:"8px",color:mill===m?"#93c5fd":"#475569",cursor:"pointer",fontSize:"13px",fontWeight:mill===m?"700":"400",textAlign:"center"}}>
+          {MILL_LABELS[m]}
+        </button>
+      )}
+    </div>
+
+    {/* Resin Solids % selector */}
+    <div style={{marginBottom:"16px"}}>
+      <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"8px"}}>Resin Solids %</div>
+      <div style={{display:"flex",gap:"8px",flexWrap:"wrap",alignItems:"center"}}>
+        {[50,60,70].map(p=>
+          <button key={p} onClick={()=>{setSolidsPct(p);setUseCustomPct(false);}} style={{padding:"8px 18px",background:(!useCustomPct&&solidsPct===p)?"#052e16":"#080d18",border:`1px solid ${(!useCustomPct&&solidsPct===p)?"#22c55e":"#1e293b"}`,borderRadius:"8px",color:(!useCustomPct&&solidsPct===p)?"#4ade80":"#64748b",cursor:"pointer",fontSize:"13px",fontWeight:(!useCustomPct&&solidsPct===p)?"700":"400"}}>
+            {p}%
+          </button>
+        )}
+        <div style={{display:"flex",alignItems:"center",gap:"6px",marginLeft:"6px"}}>
+          <span style={{fontSize:"12px",color:"#475569"}}>Custom:</span>
+          <input type="number" min="1" max="100" step="0.1" value={customPct} onFocus={()=>setUseCustomPct(true)} onChange={e=>{setCustomPct(e.target.value);setUseCustomPct(true);}} placeholder="%" style={{...sml,width:"70px",borderColor:useCustomPct?"#22c55e60":"#1e293b"}}/>
+        </div>
+      </div>
+      {useCustomPct&&parseFloat(customPct)>0&&(parseFloat(customPct)<50||parseFloat(customPct)>70)&&
+        <div style={{fontSize:"11px",color:"#f59e0b",marginTop:"6px"}}>⚠ Extrapolated beyond the 50–70% reference range — verify against actual usage.</div>}
+    </div>
+
+    {/* Pigment rows */}
+    <div style={{marginBottom:"14px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"8px"}}>
+        <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em"}}>Pigments in Batch</div>
+        <button onClick={addRow} style={{background:"none",border:"1px dashed #1e3a5f",borderRadius:"6px",padding:"4px 14px",color:"#93c5fd",cursor:"pointer",fontSize:"12px",fontWeight:"600"}}>+ Add Pigment</button>
+      </div>
+      <div style={{border:"1px solid #1e293b",borderRadius:"8px",overflow:"hidden"}}>
+        <div style={{display:"grid",gridTemplateColumns:rowGridCols,gap:"6px",background:"#0b1220",padding:"6px 10px"}}>
+          <div style={{fontSize:"9px",fontWeight:"700",color:"#334155",textTransform:"uppercase"}}>Pigment</div>
+          <div style={{fontSize:"9px",fontWeight:"700",color:"#334155",textTransform:"uppercase"}}>Wt (kg)</div>
+          <div style={{fontSize:"9px",fontWeight:"700",color:"#334155",textTransform:"uppercase"}}>Resin (kg)</div>
+          <div style={{fontSize:"9px",fontWeight:"700",color:"#334155",textTransform:"uppercase"}}>Solvent (kg)</div>
+          <div style={{fontSize:"9px",fontWeight:"700",color:"#334155",textTransform:"uppercase"}}>Yield (kg)</div>
+          <div/>
+        </div>
+        {rows.map((row,i)=>{
+          const res=calcRow(row);
+          const opts=MILL_PIGMENT_DATA[mill];
+          return <div key={row.id} style={{display:"grid",gridTemplateColumns:rowGridCols,gap:"6px",padding:"8px 10px",borderTop:"1px solid #1e293b",alignItems:"center",background:res.resinReq>0?"#06100d":"#080d18"}}>
+            <div>
+              {!row.custom&&<select style={{...sml,width:"100%"}} value={row.pigmentIdx} onChange={e=>{
+                const v=e.target.value;
+                if(v==="custom")updateRow(row.id,"custom",true);
+                else updateRow(row.id,"pigmentIdx",parseInt(v));
+              }}>
+                {opts.map((p,idx)=><option key={idx} value={idx}>{p.name}</option>)}
+                <option value="custom">✏️ Custom pigment…</option>
+              </select>}
+              {row.custom&&<div>
+                <div style={{display:"flex",gap:"4px"}}>
+                  <input style={{...sml,flex:1}} value={row.customName} onChange={e=>updateRow(row.id,"customName",e.target.value)} placeholder="Pigment name"/>
+                  <button onClick={()=>updateRow(row.id,"custom",false)} title="Use preset list" style={{background:"none",border:"1px solid #1e293b",borderRadius:"5px",color:"#475569",cursor:"pointer",fontSize:"11px",padding:"0 8px"}}>↩</button>
+                </div>
+                <div style={{display:"flex",gap:"4px",marginTop:"4px"}}>
+                  <input style={{...sml,width:"80px"}} type="number" step="0.01" value={row.customR0} onChange={e=>updateRow(row.id,"customR0",e.target.value)} placeholder="Resin/100kg"/>
+                  <input style={{...sml,width:"80px"}} type="number" step="0.01" value={row.customS0} onChange={e=>updateRow(row.id,"customS0",e.target.value)} placeholder="Solvent/100kg"/>
+                </div>
+              </div>}
+            </div>
+            <input style={{...sml,textAlign:"center"}} type="number" min="0" step="0.01" value={row.weight} onChange={e=>updateRow(row.id,"weight",e.target.value)} placeholder="100"/>
+            <div style={{fontSize:"12px",color:"#93c5fd",fontWeight:"700",textAlign:"center"}}>{fmt(res.resinReq)}</div>
+            <div style={{fontSize:"12px",color:"#fbbf24",fontWeight:"700",textAlign:"center"}}>{fmt(res.solventReq)}</div>
+            <div style={{fontSize:"12px",color:"#f1f5f9",fontWeight:"700",textAlign:"center"}}>{fmt(res.totalYield)}</div>
+            <button onClick={()=>removeRow(row.id)} disabled={rows.length===1} style={{background:"none",border:"none",color:rows.length>1?"#ef4444":"#1e293b",cursor:rows.length>1?"pointer":"default",fontSize:"16px",lineHeight:1,padding:0}}>×</button>
+          </div>;
+        })}
+        {rows.length>1&&<div style={{display:"grid",gridTemplateColumns:rowGridCols,gap:"6px",padding:"8px 10px",borderTop:"1px solid #1e3a5f",background:"#0a1520",alignItems:"center"}}>
+          <div style={{fontSize:"10px",fontWeight:"700",color:"#475569"}}>TOTAL</div>
+          <div style={{fontSize:"11px",fontWeight:"700",color:"#f1f5f9",textAlign:"center"}}>{fmt(totals.weight)}</div>
+          <div style={{fontSize:"11px",fontWeight:"700",color:"#93c5fd",textAlign:"center"}}>{fmt(totals.resinReq)}</div>
+          <div style={{fontSize:"11px",fontWeight:"700",color:"#fbbf24",textAlign:"center"}}>{fmt(totals.solventReq)}</div>
+          <div style={{fontSize:"11px",fontWeight:"700",color:"#f1f5f9",textAlign:"center"}}>{fmt(totals.totalYield)}</div>
+          <div/>
+        </div>}
+      </div>
+    </div>
+
+    {/* Summary action box */}
+    {totals.resinReq>0&&<div style={{background:"#052e16",border:"1px solid #166534",borderRadius:"8px",padding:"14px 16px",marginBottom:"14px"}}>
+      <div style={{fontSize:"13px",fontWeight:"700",color:"#22c55e",marginBottom:"6px"}}>✅ Mix Summary — {MILL_LABELS[mill]} @ {pct}% Resin Solids</div>
+      <div style={{fontSize:"13px",color:"#86efac",lineHeight:1.7}}>
+        Pigment: <strong>{totals.weight.toFixed(2)} kg</strong> · Resin: <strong style={{color:"#93c5fd"}}>{totals.resinReq.toFixed(2)} kg</strong> · Solvent: <strong style={{color:"#fbbf24"}}>{totals.solventReq.toFixed(2)} kg</strong>
+        <br/>Total Millbase Yield: <strong style={{fontSize:"16px",color:"#4ade80"}}>{totals.totalYield.toFixed(2)} kg</strong>
+      </div>
+    </div>}
+
+    <div style={{background:"#060d1a",border:"1px solid #1e293b",borderRadius:"8px",padding:"11px 14px"}}>
+      <div style={{fontSize:"10px",fontWeight:"700",color:"#334155",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"5px"}}>How it works</div>
+      <div style={{fontSize:"11px",color:"#475569",lineHeight:1.8}}>
+        <div>Resin &amp; Solvent values are looked up directly from verified reference data at 50%, 60%, and 70% resin solids — exact, no approximation.</div>
+        <div>Other % values are linearly interpolated between the nearest known points.</div>
+        <div>Total Yield = Pigment Wt + Resin Req + Solvent Req (scaled from the 100kg pigment basis to your actual weight)</div>
+      </div>
+    </div>
+  </div>;
+}
+
 function MainApp({user,role,roles=[],permissions=[]}){
   const isAdmin=roles.includes("admin");
   const hp=(perm)=>userHasPerm(roles,permissions,perm); // check permission helper
-
   // Global: pressing Escape clears any focused search/text input
   useEffect(()=>{
     const handler=(e)=>{
@@ -6054,7 +6278,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
       {/* R&D */}
       {tab==="rd"&&<>
         <div style={{display:"flex",gap:"4px",marginBottom:"20px",borderBottom:"1px solid #1e293b",paddingBottom:"0"}}>
-          {[["projects","⚗️ R&D Projects"],["rmtests","🧫 RM Tests"],["sampletests","🔭 Sample Testing"],["stainer","🎨 Stainer Calc"]].map(([key,label])=><button key={key} onClick={()=>setRdSubTab(key)} style={{background:rdSubTab===key?"#1e293b":"transparent",border:"none",borderBottom:rdSubTab===key?"2px solid #22c55e":"2px solid transparent",color:rdSubTab===key?"#f1f5f9":"#64748b",padding:"8px 16px",cursor:"pointer",fontSize:"13px",fontWeight:"600",borderRadius:"8px 8px 0 0",transition:"all 0.15s"}}>{label}</button>)}
+          {[["projects","⚗️ R&D Projects"],["rmtests","🧫 RM Tests"],["sampletests","🔭 Sample Testing"],["stainer","🎨 Stainer Calc"],["resin","🧴 Resin & Solvent"]].map(([key,label])=><button key={key} onClick={()=>setRdSubTab(key)} style={{background:rdSubTab===key?"#1e293b":"transparent",border:"none",borderBottom:rdSubTab===key?"2px solid #22c55e":"2px solid transparent",color:rdSubTab===key?"#f1f5f9":"#64748b",padding:"8px 16px",cursor:"pointer",fontSize:"13px",fontWeight:"600",borderRadius:"8px 8px 0 0",transition:"all 0.15s"}}>{label}</button>)}
         </div>
         {rdSubTab==="projects"&&<>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"14px",flexWrap:"wrap",gap:"10px"}}>
@@ -6080,6 +6304,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
           onCreateProject={(prefill)=>{setProjForm({...EP,...prefill});setShowAddProject(true);setRdSubTab("projects");}}
         />}
         {rdSubTab==="stainer"&&<StainerCalc/>}
+        {rdSubTab==="resin"&&<ResinSolventCalc/>}
       </>}
       {tab==="bom"&&<BOMTab role={role} roles={roles} user={user} showToast={showToast} sysProducts={sysProducts} sysPackSizes={sysPackSizes} sysQcParams={sysQcParams}/>}
       {tab==="tasks"&&<TasksTab user={user} roles={roles} showToast={showToast} allRoles={allRoles} allProfiles={allProfiles}/>}
