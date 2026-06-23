@@ -106,11 +106,11 @@ function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, char
       const currQty=(stdQty*factor).toFixed(3).replace(/\.?0+$/,"");
       const nameDisplay=ing.name+(ing.desc?` (${ing.desc})`:"");
       ingRows+=`<tr>
-        <td style="border:1px solid #999;padding:7pt 5pt;text-align:center;font-size:11pt">${rowNo}</td>
-        <td style="border:1px solid #999;padding:7pt 5pt;font-size:11pt">${nameDisplay}</td>
-        <td style="border:1px solid #999;padding:7pt 5pt;text-align:center;font-size:11pt">${stdQty||""}</td>
-        <td style="border:1px solid #999;padding:7pt 5pt;text-align:center;font-size:11pt">${currQty||""}</td>
-        <td style="border:1px solid #999;padding:7pt 5pt;text-align:center;font-size:11pt"></td>
+        <td style="border:1px solid #999;padding:6pt 5pt;text-align:center;font-size:11pt">${rowNo}</td>
+        <td style="border:1px solid #999;padding:6pt 5pt;font-size:11pt">${nameDisplay}</td>
+        <td style="border:1px solid #999;padding:6pt 5pt;text-align:center;font-size:11pt">${stdQty||""}</td>
+        <td style="border:1px solid #999;padding:6pt 5pt;text-align:center;font-size:11pt">${currQty||""}</td>
+        <td style="border:1px solid #999;padding:6pt 5pt;text-align:center;font-size:11pt"></td>
       </tr>`;
     }
   });
@@ -143,7 +143,7 @@ function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, char
   const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Production Sheet — ${bom.productName}</title>
 <style>
   *{box-sizing:border-box;}
-  body{font-family:Arial,sans-serif;margin:0;padding:8pt 10pt 8pt 25mm;font-size:11pt;}
+  body{font-family:Arial,sans-serif;margin:0;padding:6pt 10pt 6pt 25mm;font-size:11pt;}
   .header-table{width:100%;border-collapse:collapse;margin-bottom:8pt;}
   .header-table td{padding:3pt 5pt;font-size:10pt;}
   .co-name{font-size:18pt;font-weight:800;letter-spacing:1px;}
@@ -156,9 +156,9 @@ function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, char
   .right-table td{border:1px solid #999;padding:5pt 6pt;}
   .section-head{font-weight:700;background:#e0e0e0;padding:3pt 5pt;font-size:10pt;text-transform:uppercase;}
   .footer-row{display:flex;justify-content:space-between;margin-top:12pt;font-size:11pt;}
-  @page{size:210mm 297mm portrait;margin:8mm 8mm 8mm 8mm;}
+  @page{size:210mm 297mm portrait;margin:6mm 8mm 6mm 8mm;}
   @media print{
-    body{padding:6pt 8pt 6pt 25mm!important;}
+    body{padding:5pt 8pt 5pt 25mm!important;}
     tr{page-break-inside:avoid;}
   }
 </style>
@@ -195,11 +195,11 @@ function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, char
       <table class="main-table" style="width:100%">
         <thead>
           <tr>
-            <th style="width:6%">NO</th>
-            <th style="width:32%">INGREDIENTS</th>
-            <th style="width:16%">STANDARD QTY</th>
-            <th style="width:16%">CURRENT QTY</th>
-            <th style="width:20%">ACTUAL QTY</th>
+            <th style="width:5%">NO</th>
+            <th style="width:27%">INGREDIENTS</th>
+            <th style="width:14%">STANDARD QTY</th>
+            <th style="width:14%">CURRENT QTY</th>
+            <th style="width:28%">ACTUAL QTY</th>
           </tr>
         </thead>
         <tbody>
@@ -210,28 +210,23 @@ function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, char
             <td style="border:1px solid #999;padding:7pt 5pt;text-align:center;font-size:11pt">${totalCurr}</td>
             <td style="border:1px solid #999;padding:7pt 5pt"></td>
           </tr>
-          <tr><td colspan="5" style="border:1px solid #999;padding:4pt 6pt;font-size:10pt;font-style:italic;font-weight:600;background:#fff3cd">Additional Materials (if any)</td></tr>
-          <tr><td style="border:1px solid #999;padding:10pt 5pt"></td><td style="border:1px solid #999;padding:10pt 5pt"></td><td style="border:1px solid #999;padding:10pt 5pt"></td><td style="border:1px solid #999;padding:10pt 5pt"></td><td style="border:1px solid #999;padding:10pt 5pt"></td></tr>
-          <tr><td style="border:1px solid #999;padding:10pt 5pt"></td><td style="border:1px solid #999;padding:10pt 5pt"></td><td style="border:1px solid #999;padding:10pt 5pt"></td><td style="border:1px solid #999;padding:10pt 5pt"></td><td style="border:1px solid #999;padding:10pt 5pt"></td></tr>
-          <tr><td style="border:1px solid #999;padding:10pt 5pt"></td><td style="border:1px solid #999;padding:10pt 5pt"></td><td style="border:1px solid #999;padding:10pt 5pt"></td><td style="border:1px solid #999;padding:10pt 5pt"></td><td style="border:1px solid #999;padding:10pt 5pt"></td></tr>
-          <tr><td style="border:1px solid #999;padding:10pt 5pt"></td><td style="border:1px solid #999;padding:10pt 5pt"></td><td style="border:1px solid #999;padding:10pt 5pt"></td><td style="border:1px solid #999;padding:10pt 5pt"></td><td style="border:1px solid #999;padding:10pt 5pt"></td></tr>
-          <tr><td style="border:1px solid #999;padding:10px 5px"></td><td style="border:1px solid #999;padding:10px 5px"></td><td style="border:1px solid #999;padding:10px 5px"></td><td style="border:1px solid #999;padding:10px 5px"></td><td style="border:1px solid #999;padding:10px 5px"></td><td style="border:1px solid #999;padding:10px 5px"></td></tr>
-          <tr><td style="border:1px solid #999;padding:10px 5px"></td><td style="border:1px solid #999;padding:10px 5px"></td><td style="border:1px solid #999;padding:10px 5px"></td><td style="border:1px solid #999;padding:10px 5px"></td><td style="border:1px solid #999;padding:10px 5px"></td><td style="border:1px solid #999;padding:10px 5px"></td></tr>
-          <tr><td style="border:1px solid #999;padding:10px 5px"></td><td style="border:1px solid #999;padding:10px 5px"></td><td style="border:1px solid #999;padding:10px 5px"></td><td style="border:1px solid #999;padding:10px 5px"></td><td style="border:1px solid #999;padding:10px 5px"></td><td style="border:1px solid #999;padding:10px 5px"></td></tr>
+          <tr><td colspan="5" style="border:1px solid #999;padding:3pt 6pt;font-size:9pt;font-style:italic;font-weight:600;background:#fff3cd">Additional Materials (if any)</td></tr>
+          <tr><td style="border:1px solid #999;padding:7pt 5pt"></td><td style="border:1px solid #999;padding:7pt 5pt"></td><td style="border:1px solid #999;padding:7pt 5pt"></td><td style="border:1px solid #999;padding:7pt 5pt"></td><td style="border:1px solid #999;padding:7pt 5pt"></td></tr>
+          <tr><td style="border:1px solid #999;padding:7pt 5pt"></td><td style="border:1px solid #999;padding:7pt 5pt"></td><td style="border:1px solid #999;padding:7pt 5pt"></td><td style="border:1px solid #999;padding:7pt 5pt"></td><td style="border:1px solid #999;padding:7pt 5pt"></td></tr>
           <tr><td colspan="6" style="border:1px solid #999;padding:3px 5px;font-size:10px;font-style:italic;font-weight:600;background:#f5f5f5">EXTRA ADDITIONS</td></tr>
           ${(function(){
             var cfg=extraConfig||{};
             var rows='';
-            var normalStyle='border:1px solid #999;padding:12px 5px;font-size:11px;font-style:italic';
-            var highlightStyle='border:1px solid #999;padding:8px 5px;font-size:11px;font-style:italic;font-weight:700;background:#f0f0f0';
-            var blankCells='<td style="border:1px solid #999;padding:12px 5px"></td><td style="border:1px solid #999;padding:12px 5px"></td>';
+            var normalStyle='border:1px solid #999;padding:8px 5px;font-size:11px;font-style:italic';
+            var highlightStyle='border:1px solid #999;padding:6px 5px;font-size:11px;font-style:italic;font-weight:700;background:#f0f0f0';
+            var blankCells='<td style="border:1px solid #999;padding:8px 5px"></td><td style="border:1px solid #999;padding:8px 5px"></td>';
             var items=cfg.items||['Dhoyela','Extra Output','Dhoyela'];
             items.forEach(function(label){
               var isHighlight=label==='Extra Output'||label.toLowerCase().includes('extra output');
               var style=isHighlight?highlightStyle:normalStyle;
               rows+='<tr><td colspan="4" style="'+style+'">'+label+'</td>'+blankCells+'</tr>';
             });
-            var blanks=cfg.blankRows!==undefined?cfg.blankRows:2;
+            var blanks=cfg.blankRows!==undefined?cfg.blankRows:1;
             for(var i=0;i<blanks;i++) rows+='<tr><td colspan="4" style="'+normalStyle+'">&nbsp;</td>'+blankCells+'</tr>';
             return rows;
           })()}
@@ -266,11 +261,11 @@ function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, char
         </tr>
         ${qcParams.length
           ?qcParams.map(p=>`<tr>
-            <td style="border:1px solid #999;padding:10px 5px;font-size:11px">${p.name||""}</td>
-            <td style="border:1px solid #999;padding:10px 5px;font-size:11px;text-align:center">${p.standard||""}</td>
-            <td style="border:1px solid #999;padding:10px 5px;min-width:70px">&nbsp;</td>
+            <td style="border:1px solid #999;padding:7px 5px;font-size:11px">${p.name||""}</td>
+            <td style="border:1px solid #999;padding:7px 5px;font-size:11px;text-align:center">${p.standard||""}</td>
+            <td style="border:1px solid #999;padding:7px 5px;min-width:70px">&nbsp;</td>
           </tr>`).join("")
-          :"<tr><td colspan='3' style='color:#999;font-style:italic;border:1px solid #999;padding:10px 5px'>No QC parameters defined</td></tr>"
+          :"<tr><td colspan='3' style='color:#999;font-style:italic;border:1px solid #999;padding:7px 5px'>No QC parameters defined</td></tr>"
         }
         <tr><td colspan="2" class="section-head" style="padding-top:6px">Packing</td></tr>
         <tr><th style="border:1px solid #999;padding:5px 5px;background:#d0d0d0;font-size:10px">Size</th><th style="border:1px solid #999;padding:5px 5px;background:#d0d0d0;font-size:10px">No. of Packs</th></tr>
@@ -6004,7 +5999,15 @@ function MainApp({user,role,roles=[],permissions=[]}){
         if(!bomSnap.empty){
           const bom=bomSnap.docs[0].data();
           if(window.confirm(`Batch ${bNo} issued ✓\n\nPrint production sheet for ${batchForm.productName} (${batchForm.batchSize} ${batchForm.unit})?`)){
-            printProductionSheet(bom,batchForm.batchSize,bNo,"","","",sysPackSizes,batchForm.dateIssued,bom.extraAdditions||{},sysQcParams);
+            // Fetch available old/rejected stock matching this product before printing
+            let oldStocksForPrint=[];
+            try{
+              const osSnap=await C("old_stock").where("status","==","Available").get();
+              const allOs=osSnap.docs.map(d=>({id:d.id,...d.data()}));
+              oldStocksForPrint=allOs.filter(s=>s.productName&&bom.productName&&
+                s.productName.toLowerCase().includes(bom.productName.toLowerCase().slice(0,6)));
+            }catch(_){}
+            printProductionSheet(bom,batchForm.batchSize,bNo,"","","",sysPackSizes,batchForm.dateIssued,bom.extraAdditions||{},sysQcParams,oldStocksForPrint);
           }
         }else{
           showToast(`Batch ${bNo} issued ✓ (No BOM found for this product)`);
@@ -6251,7 +6254,15 @@ function MainApp({user,role,roles=[],permissions=[]}){
                 try{
                   const bomSnap=await C("bom_products").where("productName","==",batch.productName).limit(1).get();
                   if(!bomSnap.empty){
-                    printProductionSheet(bomSnap.docs[0].data(),batch.batchSize,batch.batchNo,"","","",sysPackSizes,batch.dateIssued,bomSnap.docs[0].data().extraAdditions||{},sysQcParams);
+                    const bomData=bomSnap.docs[0].data();
+                    let oldStocksForPrint=[];
+                    try{
+                      const osSnap=await C("old_stock").where("status","==","Available").get();
+                      const allOs=osSnap.docs.map(d=>({id:d.id,...d.data()}));
+                      oldStocksForPrint=allOs.filter(s=>s.productName&&bomData.productName&&
+                        s.productName.toLowerCase().includes(bomData.productName.toLowerCase().slice(0,6)));
+                    }catch(_){}
+                    printProductionSheet(bomData,batch.batchSize,batch.batchNo,"","","",sysPackSizes,batch.dateIssued,bomData.extraAdditions||{},sysQcParams,oldStocksForPrint);
                   }else{
                     showToast("No BOM found for "+batch.productName+". Create a BOM in the 📋 BOM tab first.","error");
                   }
