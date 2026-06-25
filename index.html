@@ -6005,6 +6005,7 @@ function ShadeCorrectionCalc({showToast}){
   const [bomId,setBomId]=useState("");
   const [prodBatchSize,setProdBatchSize]=useState("");
   const [stainers,setStainers]=useState([{id:"s1",name:"",amt:"",pigment:""}]);
+  const [reduceFromId,setReduceFromId]=useState("");
 
   useEffect(()=>{
     const u=C("bom_products").orderBy("productName").onSnapshot(s=>setBoms(s.docs.map(d=>({id:d.id,...d.data()}))));
@@ -6012,7 +6013,16 @@ function ShadeCorrectionCalc({showToast}){
   },[]);
 
   const bom=boms.find(b=>b.id===bomId);
-  useEffect(()=>{ if(bom) setProdBatchSize(bom.baseBatchSize||""); },[bomId]);
+  const pigmentIngredients=(bom?.ingredients||[]).filter(i=>!i.isProcess&&i.name);
+
+  useEffect(()=>{
+    if(bom){
+      setProdBatchSize(bom.baseBatchSize||"");
+      // Default "reduce from" = the largest-quantity pigment ingredient (heuristic for "main pigment")
+      const sorted=[...pigmentIngredients].sort((a,b)=>(parseFloat(b.standardQty)||0)-(parseFloat(a.standardQty)||0));
+      setReduceFromId(sorted[0]?.id||"");
+    }
+  },[bomId]);
 
   const addStainer=()=>setStainers(s=>[...s,{id:"s"+Date.now()+Math.random(),name:"",amt:"",pigment:""}]);
   const removeStainer=(id)=>setStainers(s=>s.filter(x=>x.id!==id));
@@ -6038,12 +6048,19 @@ function ShadeCorrectionCalc({showToast}){
     return {...s,amt,pig,pigmentMassInProduction,equivPerBomBase,matchedIng};
   });
 
-  const hasValidInputs=bom&&baseBatch>0&&prodBatch>0&&stainerCalcs.some(s=>s.amt>0&&s.pig>0&&s.name.trim());
-  const fmt=(v)=>v>0?v.toFixed(3):"—";
+  const validStainers=stainerCalcs.filter(s=>s.amt>0&&s.pig>0&&s.name.trim());
+  const totalEquivAddition=validStainers.reduce((sum,s)=>sum+s.equivPerBomBase,0);
+  const reduceFromIng=pigmentIngredients.find(i=>i.id===reduceFromId);
+  const reduceFromOldQty=reduceFromIng?parseFloat(reduceFromIng.standardQty)||0:0;
+  const reduceFromNewQty=reduceFromOldQty-totalEquivAddition;
+  const insufficientRoom=reduceFromNewQty<0;
+
+  const hasValidInputs=bom&&baseBatch>0&&prodBatch>0&&validStainers.length>0&&reduceFromId;
+  const fmt=(v)=>v!==0?v.toFixed(3):"—";
 
   return <div>
     <SectionHead title="🎯 Shade Correction → BOM Pigment Tuner"/>
-    <InfoBox color="#3b82f6">If a stainer was added during production to correct the shade, use this to calculate how much to permanently increase that pigment in the BOM — so the correct shade is achieved directly next time, with no stainer needed.</InfoBox>
+    <InfoBox color="#3b82f6">Keeps total pigment level constant. When stainer adds pigment to correct shade, an equal amount is subtracted from the main pigment — so total pigment loading stays the same, achieved directly with no stainer needed.</InfoBox>
 
     <Grid2>
       <Field label="Select BOM / Product">
@@ -6061,10 +6078,18 @@ function ShadeCorrectionCalc({showToast}){
       <div style={{background:"#080d18",border:"1px solid #1e293b",borderRadius:"8px",padding:"12px 14px",marginBottom:"14px"}}>
         <div style={{fontSize:"11px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:"8px"}}>Current BOM — {bom.productName} (Base: {bom.baseBatchSize} {bom.baseUnit})</div>
         <div style={{display:"flex",flexWrap:"wrap",gap:"6px"}}>
-          {(bom.ingredients||[]).filter(i=>!i.isProcess&&i.name).map(i=><span key={i.id} style={{fontSize:"11px",background:"#0b1220",border:"1px solid #1e293b",borderRadius:"6px",padding:"3px 9px",color:"#94a3b8"}}>{i.name}: <strong style={{color:"#cbd5e1"}}>{i.standardQty}</strong></span>)}
+          {pigmentIngredients.map(i=><span key={i.id} style={{fontSize:"11px",background:"#0b1220",border:"1px solid #1e293b",borderRadius:"6px",padding:"3px 9px",color:"#94a3b8"}}>{i.name}: <strong style={{color:"#cbd5e1"}}>{i.standardQty}</strong></span>)}
         </div>
         {multiplier>0&&multiplier!==1&&<div style={{fontSize:"11px",color:"#f59e0b",marginTop:"8px"}}>⚙ Production batch is {multiplier.toFixed(2)}× the BOM base size — calculations scale down accordingly.</div>}
       </div>
+
+      {/* Reduce From selector */}
+      <Field label="Reduce Pigment From (the main pigment that gives up quantity to maintain total level)">
+        <select style={sl} value={reduceFromId} onChange={e=>setReduceFromId(e.target.value)}>
+          <option value="">— Select ingredient to reduce —</option>
+          {pigmentIngredients.map(i=><option key={i.id} value={i.id}>{i.name} (current: {i.standardQty})</option>)}
+        </select>
+      </Field>
 
       {/* Stainer rows */}
       <div style={{marginBottom:"14px"}}>
@@ -6087,12 +6112,23 @@ function ShadeCorrectionCalc({showToast}){
 
       {/* Results: suggested BOM update */}
       {hasValidInputs&&<div style={{background:"#080d18",border:"1px solid #1e3a5f",borderRadius:"12px",padding:"16px",marginBottom:"14px"}}>
-        <div style={{fontSize:"13px",fontWeight:"700",color:"#93c5fd",marginBottom:"12px"}}>📊 Suggested BOM Pigment Update (per {bom.baseBatchSize} {bom.baseUnit} base batch)</div>
+        <div style={{fontSize:"13px",fontWeight:"700",color:"#93c5fd",marginBottom:"12px"}}>📊 Suggested BOM Pigment Update (per {bom.baseBatchSize} {bom.baseUnit} base batch) — total pigment level held constant</div>
         <div style={{border:"1px solid #1e293b",borderRadius:"8px",overflow:"hidden",marginBottom:"10px"}}>
           <div style={{display:"grid",gridTemplateColumns:"1.6fr 100px 100px 100px",gap:"6px",background:"#0b1220",padding:"6px 10px"}}>
-            {["Ingredient","Current Qty","Add (equiv.)","Suggested New Qty"].map(h=><div key={h} style={{fontSize:"9px",fontWeight:"700",color:"#334155",textTransform:"uppercase"}}>{h}</div>)}
+            {["Ingredient","Current Qty","Change","Suggested New Qty"].map(h=><div key={h} style={{fontSize:"9px",fontWeight:"700",color:"#334155",textTransform:"uppercase"}}>{h}</div>)}
           </div>
-          {stainerCalcs.filter(s=>s.amt>0&&s.pig>0&&s.name.trim()).map(s=>{
+          {/* Reduce-from row */}
+          <div style={{display:"grid",gridTemplateColumns:"1.6fr 100px 100px 100px",gap:"6px",padding:"8px 10px",borderTop:"1px solid #1e293b",alignItems:"center",background:insufficientRoom?"#1a0a00":"#100606"}}>
+            <div>
+              <div style={{fontSize:"12px",color:"#e2e8f0",fontWeight:"600"}}>{reduceFromIng?.name} <span style={{fontSize:"10px",color:"#475569"}}>(reduced)</span></div>
+              {insufficientRoom&&<div style={{fontSize:"10px",color:"#ef4444"}}>⚠ Not enough quantity to reduce — would go negative</div>}
+            </div>
+            <div style={{fontSize:"12px",color:"#64748b",textAlign:"center"}}>{reduceFromOldQty.toFixed(3)}</div>
+            <div style={{fontSize:"12px",color:"#f87171",fontWeight:"700",textAlign:"center"}}>−{fmt(totalEquivAddition)}</div>
+            <div style={{fontSize:"13px",color:insufficientRoom?"#ef4444":"#4ade80",fontWeight:"700",textAlign:"center"}}>{Math.max(0,reduceFromNewQty).toFixed(3)}</div>
+          </div>
+          {/* Stainer pigment rows (added/increased) */}
+          {validStainers.map(s=>{
             const oldQty=s.matchedIng?parseFloat(s.matchedIng.standardQty)||0:0;
             const newQty=oldQty+s.equivPerBomBase;
             return <div key={s.id} style={{display:"grid",gridTemplateColumns:"1.6fr 100px 100px 100px",gap:"6px",padding:"8px 10px",borderTop:"1px solid #1e293b",alignItems:"center",background:"#06100d"}}>
@@ -6106,10 +6142,14 @@ function ShadeCorrectionCalc({showToast}){
             </div>;
           })}
         </div>
-        <div style={{background:"#052e16",border:"1px solid #166534",borderRadius:"8px",padding:"12px 16px"}}>
-          <div style={{fontSize:"12.5px",color:"#86efac",lineHeight:1.7}}>
-            ✅ Apply these <strong>Suggested New Qty</strong> values in <strong>BOM → Edit → {bom.productName}</strong> and save (creates a new version automatically). Next production run at {bom.baseBatchSize}{bom.baseUnit} should achieve this shade directly — no stainer addition needed.
-          </div>
+        <div style={{background:insufficientRoom?"#2e0a0a":"#052e16",border:`1px solid ${insufficientRoom?"#b91c1c":"#166534"}`,borderRadius:"8px",padding:"12px 16px"}}>
+          {insufficientRoom
+            ?<div style={{fontSize:"12.5px",color:"#fca5a5",lineHeight:1.7}}>
+              ⚠ <strong>{reduceFromIng?.name}</strong> only has {reduceFromOldQty.toFixed(3)} available, but {totalEquivAddition.toFixed(3)} reduction is needed. Pick a different "Reduce From" ingredient with more headroom, or accept a net pigment increase for the shortfall ({(totalEquivAddition-reduceFromOldQty).toFixed(3)}).
+            </div>
+            :<div style={{fontSize:"12.5px",color:"#86efac",lineHeight:1.7}}>
+              ✅ Total pigment mass stays at <strong>{(reduceFromOldQty + pigmentIngredients.filter(i=>i.id!==reduceFromId).reduce((s,i)=>s+(parseFloat(i.standardQty)||0),0)).toFixed(3)} {bom.baseUnit}</strong> per {bom.baseBatchSize}{bom.baseUnit} — same as before. Apply these <strong>Suggested New Qty</strong> values in <strong>BOM → Edit → {bom.productName}</strong> and save. Next production run should achieve this shade directly — no stainer needed.
+            </div>}
         </div>
       </div>}
     </>}
@@ -6117,10 +6157,10 @@ function ShadeCorrectionCalc({showToast}){
     <div style={{background:"#060d1a",border:"1px solid #1e293b",borderRadius:"8px",padding:"11px 14px"}}>
       <div style={{fontSize:"10px",fontWeight:"700",color:"#334155",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"5px"}}>How it works</div>
       <div style={{fontSize:"11px",color:"#475569",lineHeight:1.8}}>
-        <div>Pigment Mass Added in Production = Stainer Amount × Stainer Pigment% ÷ 100</div>
-        <div>Batch Multiplier = Production Batch Size ÷ BOM Base Batch Size</div>
-        <div>Equivalent Addition per BOM Base = Pigment Mass Added ÷ Batch Multiplier</div>
-        <div style={{color:"#334155",marginTop:"4px"}}>Note: this calculates pigment ratio only. Verify total viscosity/solids after adjustment — minor vehicle rebalancing may be needed.</div>
+        <div>Pigment Mass Added (per stainer) = Stainer Amount × Stainer Pigment% ÷ 100, scaled down to BOM base by Batch Multiplier</div>
+        <div>Reduce-From Ingredient: New Qty = Old Qty − Total Equivalent Addition (all stainers combined)</div>
+        <div>Stainer Pigment Ingredient: New Qty = Old Qty (if matched) + its own Equivalent Addition</div>
+        <div style={{color:"#334155",marginTop:"4px"}}>Net effect: total pigment mass unchanged — composition shifts from the reduced pigment to the stainer's pigment.</div>
       </div>
     </div>
   </div>;
