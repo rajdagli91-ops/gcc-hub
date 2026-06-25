@@ -687,6 +687,8 @@ function BatchCard({b,onClick,onDelete,onReprint,role,getBatchFY}){
     <div style={{fontSize:"11px",color:"#64748b"}}>{b.batchSize} {b.unit} · {b.dateIssued}</div>
     {fyLabel&&<span style={{fontSize:"10px",fontWeight:"700",color:"#64748b",background:"#1e293b",borderRadius:"5px",padding:"2px 6px",whiteSpace:"nowrap"}}>FY {fyLabel}</span>}
     <Bdg label={b.status} color={sc}/>
+    {b.shadeCorrectionStatus==="Pending"&&<span title="Shade correction awaiting review" style={{fontSize:"10px",fontWeight:"700",color:"#22d3ee",background:"#06b6d418",border:"1px solid #06b6d440",borderRadius:"99px",padding:"2px 7px",whiteSpace:"nowrap"}}>🎯 Pending</span>}
+    {b.shadeCorrectionStatus==="Approved"&&<span title="Shade correction applied to BOM" style={{fontSize:"10px",fontWeight:"700",color:"#4ade80",background:"#22c55e18",border:"1px solid #22c55e40",borderRadius:"99px",padding:"2px 7px",whiteSpace:"nowrap"}}>🎯 Applied</span>}
     {onReprint&&<button onClick={e=>{e.stopPropagation();onReprint(b);}} title="Reprint production sheet" style={{background:"none",border:"1px solid #334155",borderRadius:"5px",color:"#64748b",fontSize:"12px",padding:"2px 6px",cursor:"pointer"}}>🖨</button>}
     {(role==="admin")&&<button onClick={e=>{e.stopPropagation();onDelete(b.id)}} style={{background:"none",border:"none",color:"#334155",fontSize:"14px",padding:"2px 4px"}}>🗑</button>}
   </div>;
@@ -6000,30 +6002,64 @@ function ResinSolventCalc(){
 // made during production into a permanent BOM pigment ratio update,
 // so the same shade is achieved directly next time, without stainer.
 // ══════════════════════════════════════════════════════════
-function ShadeCorrectionCalc({showToast}){
+function ShadeCorrectionCalc({showToast,user,isAdmin,canApprove}){
   const [boms,setBoms]=useState([]);
+  const [allBatches,setAllBatches]=useState([]);
+  const [pendingCorrections,setPendingCorrections]=useState([]);
+  const [productName,setProductName]=useState("");
+  const [batchId,setBatchId]=useState("");
   const [bomId,setBomId]=useState("");
+  const [bomBaseSize,setBomBaseSize]=useState(0);
   const [batchSize,setBatchSize]=useState("100");
+  const [lastScaledSize,setLastScaledSize]=useState(0); // tracks size pigments were last scaled to
   const [pigments,setPigments]=useState([{id:"p1",name:"",qty:""},{id:"p2",name:"",qty:""}]);
   const [targetTotal,setTargetTotal]=useState("");
   const [targetOverride,setTargetOverride]=useState(false);
   const [stainers,setStainers]=useState([{id:"s1",name:"",amt:"",pigment:""}]);
+  const [submitting,setSubmitting]=useState(false);
+  const [reviewingId,setReviewingId]=useState(null);
 
   useEffect(()=>{
-    const u=C("bom_products").orderBy("productName").onSnapshot(s=>setBoms(s.docs.map(d=>({id:d.id,...d.data()}))));
-    return u;
+    const u1=C("bom_products").orderBy("productName").onSnapshot(s=>setBoms(s.docs.map(d=>({id:d.id,...d.data()}))));
+    const u2=C("batches").orderBy("_createdAt","desc").limit(300).onSnapshot(s=>setAllBatches(s.docs.map(d=>({id:d.id,...d.data()}))),()=>{});
+    const u3=C("shade_corrections").where("status","==","Pending").onSnapshot(s=>setPendingCorrections(s.docs.map(d=>({id:d.id,...d.data()}))),()=>{});
+    return ()=>{u1();u2();u3();};
   },[]);
 
   const isPigmentCode=(name)=>/^\s*3\d/.test(name||""); // pigment codes start with digit 3, e.g. 3220, 3020/822
-  const loadFromBom=(id)=>{
-    setBomId(id);
-    const b=boms.find(x=>x.id===id);
+  const productNames=[...new Set(allBatches.map(b=>b.productName).filter(Boolean))].sort();
+  const batchesForProduct=allBatches.filter(b=>b.productName===productName).sort((a,b)=>(b._createdAt?.seconds||0)-(a._createdAt?.seconds||0));
+
+  const loadFromBatch=(bId)=>{
+    setBatchId(bId);
+    const b=allBatches.find(x=>x.id===bId);
     if(!b)return;
-    setBatchSize(b.baseBatchSize||"100");
-    const rows=(b.ingredients||[]).filter(i=>!i.isProcess&&i.name&&parseFloat(i.standardQty)>0&&isPigmentCode(i.name))
-      .map(i=>({id:newId(),name:i.name,qty:i.standardQty}));
-    setPigments(rows.length?rows:[{id:"p1",name:"",qty:""},{id:"p2",name:"",qty:""}]);
+    const actualSize=parseFloat(b.batchSize)||100;
+    setBatchSize(String(actualSize));
+    setLastScaledSize(actualSize);
+    const matchedBom=boms.find(x=>x.productName===b.productName);
+    if(matchedBom){
+      setBomId(matchedBom.id);
+      const base=parseFloat(matchedBom.baseBatchSize)||100;
+      setBomBaseSize(base);
+      const mult=actualSize/base;
+      const rows=(matchedBom.ingredients||[]).filter(i=>!i.isProcess&&i.name&&parseFloat(i.standardQty)>0&&isPigmentCode(i.name))
+        .map(i=>({id:i.id||newId(),name:i.name,qty:((parseFloat(i.standardQty)||0)*mult).toFixed(3)}));
+      setPigments(rows.length?rows:[{id:"p1",name:"",qty:""},{id:"p2",name:"",qty:""}]);
+    }else{
+      setBomId("");setBomBaseSize(0);
+      showToast("No BOM found for "+b.productName+" — enter pigments manually","error");
+    }
     setTargetOverride(false);
+  };
+
+  const rescaleToBatchSize=()=>{
+    const newSize=parseFloat(batchSize)||0;
+    if(!lastScaledSize||!newSize)return;
+    const ratio=newSize/lastScaledSize;
+    setPigments(p=>p.map(x=>({...x,qty:x.qty?((parseFloat(x.qty)||0)*ratio).toFixed(3):x.qty})));
+    setLastScaledSize(newSize);
+    showToast("Pigment quantities rescaled to "+newSize+" ✓");
   };
 
   const addPigment=()=>setPigments(p=>[...p,{id:"p"+Date.now()+Math.random(),name:"",qty:""}]);
@@ -6034,14 +6070,12 @@ function ShadeCorrectionCalc({showToast}){
   const removeStainer=(id)=>setStainers(s=>s.filter(x=>x.id!==id));
   const updateStainer=(id,field,val)=>setStainers(s=>s.map(x=>x.id===id?{...x,[field]:val}:x));
 
-  // Current total pigment (before any stainer correction)
   const currentTotal=pigments.reduce((sum,p)=>sum+(parseFloat(p.qty)||0),0);
   const effectiveTarget=targetOverride?(parseFloat(targetTotal)||0):currentTotal;
 
-  // Distribute stainer pigment mass across matching/new pigment rows
   const validStainers=stainers.filter(s=>s.name.trim()&&parseFloat(s.amt)>0&&parseFloat(s.pigment)>0);
-  const stainerContrib={}; // pigmentRowId or "_new_<name>" -> mass added
-  const newPigmentsFromStainer=[]; // stainers that don't match any existing row
+  const stainerContrib={};
+  const newPigmentsFromStainer=[];
   validStainers.forEach(s=>{
     const amt=parseFloat(s.amt)||0;
     const pct=parseFloat(s.pigment)||0;
@@ -6059,7 +6093,6 @@ function ShadeCorrectionCalc({showToast}){
     }
   });
 
-  // Build combined rows: existing pigments (+ their stainer contribution) + brand-new pigments from unmatched stainers
   const combinedRows=[
     ...pigments.filter(p=>p.name.trim()).map(p=>({
       id:p.id,name:p.name,oldQty:parseFloat(p.qty)||0,
@@ -6078,20 +6111,128 @@ function ShadeCorrectionCalc({showToast}){
   const hasValidInputs=currentTotal>0&&validStainers.length>0&&effectiveTarget>0;
   const fmt=(v)=>v!==0?v.toFixed(3):"—";
   const pctChange=effectiveTarget>0&&currentTotal>0?((effectiveTarget-currentTotal)/currentTotal*100):0;
+  const prodBatchSizeNum=parseFloat(batchSize)||0;
+  const multiplierToBase=bomBaseSize>0&&prodBatchSizeNum>0?prodBatchSizeNum/bomBaseSize:0;
+
+  const submitForApproval=async()=>{
+    if(!hasValidInputs)return;
+    setSubmitting(true);
+    try{
+      const suggestedAtBase=finalRows.map(r=>({
+        name:r.name,oldQty:r.oldQty,newQty:r.newQty,
+        newQtyAtBase:multiplierToBase>0?r.newQty/multiplierToBase:r.newQty,
+        isNew:r.isNew,matchedIngId:r.isNew?null:r.id
+      }));
+      await C("shade_corrections").add({
+        productName:productName||(boms.find(b=>b.id===bomId)?.productName)||"",
+        batchId:batchId||null,
+        batchNo:allBatches.find(b=>b.id===batchId)?.batchNo||null,
+        bomId:bomId||null,
+        bomBaseBatchSize:bomBaseSize||null,
+        productionBatchSize:prodBatchSizeNum,
+        pigments:pigments.filter(p=>p.name.trim()).map(p=>({name:p.name,qty:parseFloat(p.qty)||0})),
+        stainers:validStainers.map(s=>({name:s.name,amt:parseFloat(s.amt),pigment:parseFloat(s.pigment)})),
+        targetTotal:effectiveTarget,
+        suggestedRows:suggestedAtBase,
+        status:"Pending",
+        createdBy:user?.email||"",
+        _createdAt:ts()
+      });
+      if(batchId){
+        await C("batches").doc(batchId).update({shadeCorrectionStatus:"Pending"});
+      }
+      showToast("Submitted for approval ✓ — Admin/Issuer will review");
+    }catch(e){showToast("Error: "+e.message,"error");}
+    setSubmitting(false);
+  };
+
+  const approveCorrection=async(corr)=>{
+    if(!corr.bomId)return showToast("No BOM linked — cannot apply","error");
+    setReviewingId(corr.id);
+    try{
+      const bomSnap=await C("bom_products").doc(corr.bomId).get();
+      if(!bomSnap.exists)throw new Error("BOM no longer exists");
+      const bomData=bomSnap.data();
+      let ingredients=[...(bomData.ingredients||[])];
+      corr.suggestedRows.forEach(row=>{
+        if(row.matchedIngId){
+          const idx=ingredients.findIndex(i=>i.id===row.matchedIngId);
+          if(idx>=0)ingredients[idx]={...ingredients[idx],standardQty:row.newQtyAtBase.toFixed(3)};
+        }else{
+          ingredients.push({id:newId(),name:row.name,standardQty:row.newQtyAtBase.toFixed(3),isProcess:false});
+        }
+      });
+      // Archive current version, then update
+      await C("bom_versions").add({...bomData,productId:corr.bomId,archivedAt:ts(),archivedBy:user.email});
+      await C("bom_products").doc(corr.bomId).update({ingredients,currentVersion:(bomData.currentVersion||1)+1,updatedBy:user.email,updatedAt:ts()});
+      await C("shade_corrections").doc(corr.id).update({status:"Approved",reviewedBy:user.email,reviewedAt:ts()});
+      if(corr.batchId)await C("batches").doc(corr.batchId).update({shadeCorrectionStatus:"Approved"});
+      showToast("Approved & applied to BOM — new version saved ✓");
+    }catch(e){showToast("Error: "+e.message,"error");}
+    setReviewingId(null);
+  };
+
+  const rejectCorrection=async(corr)=>{
+    setReviewingId(corr.id);
+    try{
+      await C("shade_corrections").doc(corr.id).update({status:"Rejected",reviewedBy:user.email,reviewedAt:ts()});
+      if(corr.batchId)await C("batches").doc(corr.batchId).update({shadeCorrectionStatus:"Rejected"});
+      showToast("Rejected — treated as one-time correction, BOM unchanged");
+    }catch(e){showToast("Error: "+e.message,"error");}
+    setReviewingId(null);
+  };
 
   return <div>
     <SectionHead title="🎯 Shade Correction → Pigment Ratio Tuner"/>
-    <InfoBox color="#3b82f6">Enter the pigments in your batch and the stainer added to correct shade. The tool redistributes pigment proportionally so the shade is achieved directly — at your chosen total pigment level (maintain it, or increase/decrease it).</InfoBox>
+    <InfoBox color="#3b82f6">Select the product and batch where a stainer was added to correct shade. The tool redistributes pigment proportionally — maintain total pigment level, or increase/decrease it — then submit for Admin/Issuer approval before it's applied to the BOM.</InfoBox>
+
+    {/* Pending Corrections — visible to all, actionable by admin/issuer */}
+    {pendingCorrections.length>0&&<div style={{background:"#0c1a2e",border:"1px solid #06b6d440",borderRadius:"10px",padding:"14px",marginBottom:"18px"}}>
+      <div style={{fontSize:"12px",fontWeight:"700",color:"#22d3ee",marginBottom:"10px"}}>⏳ Pending Shade Corrections ({pendingCorrections.length})</div>
+      {pendingCorrections.map(corr=><div key={corr.id} style={{background:"#080d18",border:"1px solid #1e293b",borderRadius:"8px",padding:"10px 12px",marginBottom:"8px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:"8px"}}>
+          <div>
+            <div style={{fontSize:"13px",fontWeight:"700",color:"#e2e8f0"}}>{corr.productName} {corr.batchNo&&<span style={{color:"#64748b",fontWeight:"400"}}>· Batch {corr.batchNo}</span>}</div>
+            <div style={{fontSize:"11px",color:"#64748b",marginTop:"3px"}}>
+              Stainer: {corr.stainers.map(s=>s.name).join(", ")} · Target pigment: {corr.targetTotal.toFixed(2)} · Submitted by {corr.createdBy}
+            </div>
+          </div>
+          {canApprove&&<div style={{display:"flex",gap:"6px",flexShrink:0}}>
+            <button disabled={reviewingId===corr.id} onClick={()=>approveCorrection(corr)} style={{background:"#052e16",border:"1px solid #166534",borderRadius:"6px",color:"#4ade80",cursor:"pointer",fontSize:"12px",fontWeight:"600",padding:"5px 12px"}}>✅ Approve & Apply</button>
+            <button disabled={reviewingId===corr.id} onClick={()=>rejectCorrection(corr)} style={{background:"#2e0a0a",border:"1px solid #7f1d1d",borderRadius:"6px",color:"#f87171",cursor:"pointer",fontSize:"12px",fontWeight:"600",padding:"5px 12px"}}>❌ Reject</button>
+          </div>}
+          {!canApprove&&<span style={{fontSize:"11px",color:"#475569",fontStyle:"italic"}}>Awaiting Admin/Issuer review</span>}
+        </div>
+        <div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginTop:"8px"}}>
+          {corr.suggestedRows.map((r,i)=><span key={i} style={{fontSize:"10.5px",background:"#0b1220",border:"1px solid #1e293b",borderRadius:"6px",padding:"2px 8px",color:"#94a3b8"}}>{r.name}: {r.oldQty.toFixed(2)}→<strong style={{color:"#4ade80"}}>{r.newQty.toFixed(2)}</strong></span>)}
+        </div>
+      </div>)}
+    </div>}
+
+    {/* Product + Batch selection */}
+    <Grid2>
+      <Field label="Select Product">
+        <select style={sl} value={productName} onChange={e=>{setProductName(e.target.value);setBatchId("");}}>
+          <option value="">— Select a product —</option>
+          {productNames.map(n=><option key={n} value={n}>{n}</option>)}
+        </select>
+      </Field>
+      <Field label="Select Batch Number">
+        <select style={sl} value={batchId} onChange={e=>loadFromBatch(e.target.value)} disabled={!productName}>
+          <option value="">— Select a batch —</option>
+          {batchesForProduct.map(b=><option key={b.id} value={b.id}>{b.batchNo} · {b.batchSize}{b.unit} · {b.dateIssued}</option>)}
+        </select>
+      </Field>
+    </Grid2>
 
     <Grid2>
-      <Field label="Load from existing BOM (optional)">
-        <select style={sl} value={bomId} onChange={e=>loadFromBom(e.target.value)}>
-          <option value="">— Manual entry —</option>
-          {boms.map(b=><option key={b.id} value={b.id}>{b.productName} (v{b.currentVersion||1})</option>)}
-        </select>
-        <div style={{fontSize:"10px",color:"#475569",marginTop:"5px"}}>Only pulls ingredients with pigment codes (starting with 3 — e.g. 3220, 3200, 3020/822). Other raw materials are excluded.</div>
+      <Field label="Batch Size (actual, can edit if different)">
+        <div style={{display:"flex",gap:"6px"}}>
+          <input style={inp} value={batchSize} onChange={e=>setBatchSize(e.target.value)} placeholder="100"/>
+          {lastScaledSize>0&&<button onClick={rescaleToBatchSize} title="Rescale pigment quantities to this batch size" style={{background:"#0f1d35",border:"1px solid #3b82f660",borderRadius:"8px",padding:"0 14px",color:"#93c5fd",cursor:"pointer",fontSize:"12px",fontWeight:"600",whiteSpace:"nowrap"}}>↻ Rescale</button>}
+        </div>
       </Field>
-      <Field label="Batch Size (reference only)"><input style={inp} value={batchSize} onChange={e=>setBatchSize(e.target.value)} placeholder="100"/></Field>
+      <Field label="Linked BOM"><div style={{...inp,display:"flex",alignItems:"center",color:bomId?"#94a3b8":"#475569"}}>{bomId?boms.find(b=>b.id===bomId)?.productName+" (base "+bomBaseSize+")":"— none linked, manual entry —"}</div></Field>
     </Grid2>
 
     {/* Pigments in batch */}
@@ -6117,7 +6258,7 @@ function ShadeCorrectionCalc({showToast}){
       </div>
     </div>
 
-    {/* Target total pigment — editable to increase/decrease */}
+    {/* Target total pigment */}
     <div style={{background:"#080d18",border:`1px solid ${targetOverride?"#f59e0b40":"#1e293b"}`,borderRadius:"8px",padding:"10px 12px",marginBottom:"14px"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"6px"}}>
         <div style={{fontSize:"11px",fontWeight:"700",color:targetOverride?"#f59e0b":"#64748b",textTransform:"uppercase",letterSpacing:"0.06em"}}>
@@ -6158,33 +6299,38 @@ function ShadeCorrectionCalc({showToast}){
     {/* Results */}
     {hasValidInputs&&<div style={{background:"#080d18",border:"1px solid #1e3a5f",borderRadius:"12px",padding:"16px",marginBottom:"14px"}}>
       <div style={{fontSize:"13px",fontWeight:"700",color:"#93c5fd",marginBottom:"4px"}}>📊 Suggested Pigment Ratio (per {batchSize} batch)</div>
-      <div style={{fontSize:"11px",color:"#64748b",marginBottom:"12px"}}>Total pigment: {effectiveTarget.toFixed(3)} {targetOverride?(pctChange>=0?"(↑ increased)":"(↓ decreased)"):"(maintained — same as before)"}</div>
+      <div style={{fontSize:"13px",color:"#94a3b8",marginBottom:"12px"}}>Total Pigment: <strong style={{color:"#4ade80",fontSize:"15px"}}>{effectiveTarget.toFixed(3)}</strong> <span style={{fontSize:"11px",color:"#64748b"}}>{targetOverride?(pctChange>=0?"(↑ increased)":"(↓ decreased)"):"(maintained — same as before)"}</span></div>
       <div style={{border:"1px solid #1e293b",borderRadius:"8px",overflow:"hidden"}}>
-        <div style={{display:"grid",gridTemplateColumns:"1.6fr 90px 90px 90px 100px",gap:"6px",background:"#0b1220",padding:"6px 10px"}}>
-          {["Pigment","Current","+ Stainer","Subtotal","Suggested New"].map(h=><div key={h} style={{fontSize:"9px",fontWeight:"700",color:"#334155",textTransform:"uppercase"}}>{h}</div>)}
+        <div style={{display:"grid",gridTemplateColumns:"1.8fr 110px 130px",gap:"6px",background:"#0b1220",padding:"6px 10px"}}>
+          {["Pigment","Current","Suggested New"].map(h=><div key={h} style={{fontSize:"9px",fontWeight:"700",color:"#334155",textTransform:"uppercase"}}>{h}</div>)}
         </div>
-        {finalRows.map(r=><div key={r.id} style={{display:"grid",gridTemplateColumns:"1.6fr 90px 90px 90px 100px",gap:"6px",padding:"8px 10px",borderTop:"1px solid #1e293b",alignItems:"center",background:r.added>0?"#06100d":"#080d18"}}>
+        {finalRows.map(r=><div key={r.id} style={{display:"grid",gridTemplateColumns:"1.8fr 110px 130px",gap:"6px",padding:"8px 10px",borderTop:"1px solid #1e293b",alignItems:"center",background:r.added>0?"#06100d":"#080d18"}}>
           <div>
             <div style={{fontSize:"12px",color:"#e2e8f0",fontWeight:"600"}}>{r.name}</div>
             {r.isNew&&<div style={{fontSize:"10px",color:"#f59e0b"}}>⚠ New — add to BOM</div>}
           </div>
           <div style={{fontSize:"12px",color:"#64748b",textAlign:"center"}}>{r.oldQty>0?r.oldQty.toFixed(3):"—"}</div>
-          <div style={{fontSize:"12px",color:r.added>0?"#fbbf24":"#334155",fontWeight:r.added>0?"700":"400",textAlign:"center"}}>{r.added>0?"+"+r.added.toFixed(3):"—"}</div>
-          <div style={{fontSize:"12px",color:"#94a3b8",textAlign:"center"}}>{r.afterAddition.toFixed(3)}</div>
           <div style={{fontSize:"13px",color:"#4ade80",fontWeight:"700",textAlign:"center"}}>{r.newQty.toFixed(3)}</div>
         </div>)}
-        <div style={{display:"grid",gridTemplateColumns:"1.6fr 90px 90px 90px 100px",gap:"6px",padding:"7px 10px",borderTop:"1px solid #1e3a5f",background:"#0a1520"}}>
-          <div style={{fontSize:"10px",fontWeight:"700",color:"#475569"}}>TOTAL</div>
+        <div style={{display:"grid",gridTemplateColumns:"1.8fr 110px 130px",gap:"6px",padding:"7px 10px",borderTop:"1px solid #1e3a5f",background:"#0a1520"}}>
+          <div style={{fontSize:"10px",fontWeight:"700",color:"#475569"}}>TOTAL PIGMENT</div>
           <div style={{fontSize:"11px",fontWeight:"700",color:"#f1f5f9",textAlign:"center"}}>{currentTotal.toFixed(3)}</div>
-          <div/><div/>
-          <div style={{fontSize:"11px",fontWeight:"700",color:"#4ade80",textAlign:"center"}}>{finalRows.reduce((s,r)=>s+r.newQty,0).toFixed(3)}</div>
+          <div style={{fontSize:"13px",fontWeight:"700",color:"#4ade80",textAlign:"center"}}>{finalRows.reduce((s,r)=>s+r.newQty,0).toFixed(3)}</div>
         </div>
       </div>
-      <div style={{background:"#052e16",border:"1px solid #166534",borderRadius:"8px",padding:"12px 16px",marginTop:"10px"}}>
-        <div style={{fontSize:"12.5px",color:"#86efac",lineHeight:1.7}}>
-          ✅ Use the <strong>Suggested New</strong> column as your updated pigment ratio. Apply in <strong>BOM → Edit</strong> and save. Next batch should achieve this shade directly — no stainer needed.
+
+      {bomId
+        ?<div style={{background:"#052e16",border:"1px solid #166534",borderRadius:"8px",padding:"12px 16px",marginTop:"10px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"10px"}}>
+          <div style={{fontSize:"12.5px",color:"#86efac",lineHeight:1.7}}>
+            ✅ Linked to a real batch &amp; BOM. Submit for review — Admin/Issuer can approve to permanently update the BOM, or reject if this was a one-time correction.
+          </div>
+          <button disabled={submitting} onClick={submitForApproval} style={{background:"#22c55e",border:"none",borderRadius:"8px",padding:"9px 18px",color:"#06200f",cursor:"pointer",fontSize:"13px",fontWeight:"700",whiteSpace:"nowrap"}}>{submitting?"Submitting…":"📤 Submit for Approval"}</button>
         </div>
-      </div>
+        :<div style={{background:"#1a1500",border:"1px solid #92400e40",borderRadius:"8px",padding:"12px 16px",marginTop:"10px"}}>
+          <div style={{fontSize:"12.5px",color:"#fcd34d",lineHeight:1.7}}>
+            ⚠ No batch/BOM linked — this is a manual what-if calculation only. Select a Product + Batch Number above to enable submitting this for approval.
+          </div>
+        </div>}
     </div>}
 
     <div style={{background:"#060d1a",border:"1px solid #1e293b",borderRadius:"8px",padding:"11px 14px"}}>
@@ -6725,7 +6871,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
         />}
         {rdSubTab==="stainer"&&<StainerCalc/>}
         {rdSubTab==="resin"&&<ResinSolventCalc/>}
-        {rdSubTab==="shade"&&<ShadeCorrectionCalc showToast={showToast}/>}
+        {rdSubTab==="shade"&&<ShadeCorrectionCalc showToast={showToast} user={user} isAdmin={isAdmin} canApprove={isAdmin||roles.includes("issuer")}/>}
       </>}
       {tab==="bom"&&<BOMTab role={role} roles={roles} user={user} showToast={showToast} sysProducts={sysProducts} sysPackSizes={sysPackSizes} sysQcParams={sysQcParams}/>}
       {tab==="tasks"&&<TasksTab user={user} roles={roles} showToast={showToast} allRoles={allRoles} allProfiles={allProfiles}/>}
