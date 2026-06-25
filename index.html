@@ -6007,6 +6007,8 @@ function ShadeCorrectionCalc({showToast,user,isAdmin,canApprove}){
   const [allBatches,setAllBatches]=useState([]);
   const [pendingCorrections,setPendingCorrections]=useState([]);
   const [productName,setProductName]=useState("");
+  const [productSearch,setProductSearch]=useState("");
+  const [showProductList,setShowProductList]=useState(false);
   const [batchId,setBatchId]=useState("");
   const [bomId,setBomId]=useState("");
   const [bomBaseSize,setBomBaseSize]=useState(0);
@@ -6028,7 +6030,10 @@ function ShadeCorrectionCalc({showToast,user,isAdmin,canApprove}){
 
   const isPigmentCode=(name)=>/^\s*3\d/.test(name||""); // pigment codes start with digit 3, e.g. 3220, 3020/822
   const productNames=[...new Set(allBatches.map(b=>b.productName).filter(Boolean))].sort();
-  const batchesForProduct=allBatches.filter(b=>b.productName===productName).sort((a,b)=>(b._createdAt?.seconds||0)-(a._createdAt?.seconds||0));
+  const filteredProductNames=productSearch.trim()
+    ?productNames.filter(n=>normalize(n).includes(normalize(productSearch)))
+    :productNames;
+  const batchesForProduct=allBatches.filter(b=>b.productName===productName&&b.status!=="Packed"&&b.status!=="QC Pass").sort((a,b)=>(b._createdAt?.seconds||0)-(a._createdAt?.seconds||0));
 
   const loadFromBatch=(bId)=>{
     setBatchId(bId);
@@ -6212,16 +6217,32 @@ function ShadeCorrectionCalc({showToast,user,isAdmin,canApprove}){
     {/* Product + Batch selection */}
     <Grid2>
       <Field label="Select Product">
-        <select style={sl} value={productName} onChange={e=>{setProductName(e.target.value);setBatchId("");}}>
-          <option value="">— Select a product —</option>
-          {productNames.map(n=><option key={n} value={n}>{n}</option>)}
-        </select>
+        <div style={{position:"relative"}}>
+          <input
+            style={inp}
+            value={productName||productSearch}
+            onChange={e=>{setProductSearch(e.target.value);setProductName("");setBatchId("");setShowProductList(true);}}
+            onFocus={()=>{setShowProductList(true);if(productName){setProductSearch("");}}}
+            onBlur={()=>setTimeout(()=>setShowProductList(false),150)}
+            placeholder="🔍 Type to search… ignores spaces & special characters"
+          />
+          {showProductList&&<div style={{position:"absolute",top:"calc(100% + 4px)",left:0,right:0,zIndex:50,background:"#0b1220",border:"1px solid #1e3a5f",borderRadius:"8px",maxHeight:"220px",overflowY:"auto",boxShadow:"0 8px 24px rgba(0,0,0,0.4)"}}>
+            {filteredProductNames.length===0&&<div style={{padding:"10px 12px",fontSize:"12px",color:"#475569"}}>No matching products</div>}
+            {filteredProductNames.map(n=><div key={n}
+              onMouseDown={e=>{e.preventDefault();setProductName(n);setProductSearch("");setBatchId("");setShowProductList(false);}}
+              style={{padding:"8px 12px",fontSize:"13px",color:"#e2e8f0",cursor:"pointer",borderBottom:"1px solid #1e293b"}}
+              onMouseEnter={e=>e.currentTarget.style.background="#1e293b"}
+              onMouseLeave={e=>e.currentTarget.style.background="transparent"}>{n}</div>)}
+          </div>}
+        </div>
       </Field>
       <Field label="Select Batch Number">
         <select style={sl} value={batchId} onChange={e=>loadFromBatch(e.target.value)} disabled={!productName}>
           <option value="">— Select a batch —</option>
           {batchesForProduct.map(b=><option key={b.id} value={b.id}>{b.batchNo} · {b.batchSize}{b.unit} · {b.dateIssued}</option>)}
         </select>
+        {productName&&batchesForProduct.length===0&&<div style={{fontSize:"10px",color:"#475569",marginTop:"5px"}}>No correctable batches — all batches for this product are already Packed or QC Pass.</div>}
+        {productName&&batchesForProduct.length>0&&<div style={{fontSize:"10px",color:"#475569",marginTop:"5px"}}>Packed &amp; QC Pass batches are hidden — no correction needed for those.</div>}
       </Field>
     </Grid2>
 
