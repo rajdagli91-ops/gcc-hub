@@ -1523,6 +1523,10 @@ function TestReportCard({report,num,onDelete}){
         <button onClick={()=>onDelete(report.id)} style={{background:"none",border:"none",color:"#334155",cursor:"pointer",fontSize:"13px"}}>🗑</button>
       </div>
     </div>
+    {report.recommendation==="Sample Submitted to Customer"&&(report.customerName||report.salesman)&&<div style={{background:"#0c1a2e",border:"1px solid #06b6d440",borderRadius:"7px",padding:"8px 12px",marginBottom:"8px",display:"flex",gap:"16px",flexWrap:"wrap"}}>
+      <span style={{fontSize:"12px",color:"#22d3ee"}}>📤 <strong>Customer:</strong> {report.customerName||"—"}</span>
+      <span style={{fontSize:"12px",color:"#22d3ee"}}>👤 <strong>Submitted By:</strong> {report.salesman||"—"}</span>
+    </div>}
     {[["Tests Performed",report.testsPerformed],["Results / Values",report.results],["Remarks",report.remarks]].map(([label,val])=>val&&<div key={label} style={{marginBottom:"6px"}}>
       <div style={{fontSize:"10px",fontWeight:"700",color:"#334155",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:"3px"}}>{label}</div>
       <div style={{fontSize:"12.5px",color:"#94a3b8",lineHeight:1.6,whiteSpace:"pre-wrap"}}>{val}</div>
@@ -1530,7 +1534,7 @@ function TestReportCard({report,num,onDelete}){
   </div>;
 }
 
-function TrialCard({trial,index,onDelete,onUpdate,isAdmin,sysUnits,onAddUnit,project,allProfiles={}}){
+function TrialCard({trial,index,onDelete,onUpdate,isAdmin,sysUnits,onAddUnit,project,allProfiles={},showToast}){
   const ING_UNITS_EFF=sysUnits&&sysUnits.length?sysUnits:[...ING_UNITS,...BATCH_UNITS.filter(u=>!ING_UNITS.includes(u))];
   const [open,setOpen]=useState(false);
   const [editing,setEditing]=useState(false);
@@ -1538,7 +1542,7 @@ function TrialCard({trial,index,onDelete,onUpdate,isAdmin,sysUnits,onAddUnit,pro
   const [showOU,setShowOU]=useState(false);
   const [newOutcome,setNewOutcome]=useState(trial.outcome);
   const [saving,setSaving]=useState(false);
-  const blankR={date:today(),testedBy:"",testsPerformed:"",results:"",recommendation:"Pass",remarks:""};
+  const blankR={date:today(),testedBy:"",testsPerformed:"",results:"",recommendation:"Pass",remarks:"",customerName:"",salesman:""};
   const [rForm,setRForm]=useState(blankR);
 
   // Edit form state — pre-filled from trial
@@ -1570,6 +1574,9 @@ function TrialCard({trial,index,onDelete,onUpdate,isAdmin,sysUnits,onAddUnit,pro
 
   const addReport=async()=>{
     if(!rForm.results.trim()&&!rForm.testsPerformed.trim())return;
+    if(rForm.recommendation==="Sample Submitted to Customer"&&(!rForm.customerName.trim()||!rForm.salesman.trim())){
+      return showToast("Customer name and salesman are required","error");
+    }
     setSaving(true);
     const nr={...rForm,id:newId()};
     await onUpdate({...trial,testReports:[...reports,nr]});
@@ -1718,6 +1725,13 @@ function TrialCard({trial,index,onDelete,onUpdate,isAdmin,sysUnits,onAddUnit,pro
             <Field label="Recommendation"><select style={{...sl,borderColor:(REC_COLORS[rForm.recommendation]||"#1e293b")+"60"}} value={rForm.recommendation} onChange={e=>setRForm({...rForm,recommendation:e.target.value})}>
               {Object.keys(REC_COLORS).map(r=><option key={r}>{r}</option>)}</select></Field>
           </Grid3>
+          {rForm.recommendation==="Sample Submitted to Customer"&&<div style={{background:"#0c1a2e",border:"1px solid #06b6d440",borderRadius:"8px",padding:"12px",marginBottom:"12px"}}>
+            <div style={{fontSize:"11px",fontWeight:"700",color:"#22d3ee",marginBottom:"10px"}}>📤 Sample Submission Details — for follow-up</div>
+            <Grid2>
+              <Field label="Customer Name *"><input style={inp} value={rForm.customerName} onChange={e=>setRForm({...rForm,customerName:e.target.value})} placeholder="e.g. ABC Industries"/></Field>
+              <Field label="Submitted By (Salesman) *"><input style={inp} value={rForm.salesman} onChange={e=>setRForm({...rForm,salesman:e.target.value})} placeholder="e.g. Rajesh Mehta"/></Field>
+            </Grid2>
+          </div>}
           <Grid2>
             <Field label="Tests Performed"><textarea style={{...ta,minHeight:"70px"}} value={rForm.testsPerformed} onChange={e=>setRForm({...rForm,testsPerformed:e.target.value})} placeholder="Viscosity, pH, Gloss..."/></Field>
             <Field label="Results / Values *"><textarea style={{...ta,minHeight:"70px"}} value={rForm.results} onChange={e=>setRForm({...rForm,results:e.target.value})} placeholder="Measured values, pass/fail vs spec..."/></Field>
@@ -1888,7 +1902,7 @@ function ProjectWorkspace({project,isAdmin,showToast,sysUnits,sysRmCats,onAddRmC
     {trials.length===0&&!showForm?<div style={{textAlign:"center",padding:"24px",border:"1px dashed #1e293b",borderRadius:"10px",marginBottom:"14px"}}>
       <div style={{fontSize:"26px",marginBottom:"6px"}}>⚗️</div>
       <div style={{fontSize:"13px",color:"#475569"}}>No trials yet.</div>
-    </div>:trials.map((t,i)=><TrialCard key={t.id} trial={t} index={i} isAdmin={isAdmin} onDelete={isAdmin?deleteTrial:null} onUpdate={updateTrial} sysUnits={sysUnits} onAddUnit={onAddUnit} project={live} allProfiles={allProfiles}/>)}
+    </div>:trials.map((t,i)=><TrialCard key={t.id} trial={t} index={i} isAdmin={isAdmin} onDelete={isAdmin?deleteTrial:null} onUpdate={updateTrial} sysUnits={sysUnits} onAddUnit={onAddUnit} project={live} allProfiles={allProfiles} showToast={showToast}/>)}
     {/* Notes section */}
     <div style={{marginTop:"20px"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"10px",paddingBottom:"10px",borderBottom:"1px solid #1e293b"}}>
