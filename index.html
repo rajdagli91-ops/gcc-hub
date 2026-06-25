@@ -368,15 +368,15 @@ ${stepRows?`<table style="margin-bottom:8pt">
 </table>
 
 <table style="margin-bottom:8pt">
-  <tr><td colspan="2" class="section-head">Properties to Test</td></tr>
+  <tr><td colspan="2" class="section-head">Test to be Performed</td></tr>
   <tr>
-    <td style="border:1px solid #999;padding:8pt;font-size:10.5pt;width:50%">${(trial.propertiesTested||"").replace(/\n/g,"<br>")||"<span style='color:#999'>—</span>"}</td>
-    <td style="border:1px solid #999;padding:8pt;font-size:9pt;color:#666;width:50%">Record actual measured values below ↓</td>
+    <td style="border:1px solid #999;padding:8pt;font-size:10.5pt;width:50%">${(trial.observations||"").replace(/\n/g,"<br>")||"<span style='color:#999'>—</span>"}</td>
+    <td style="border:1px solid #999;padding:8pt;font-size:9pt;color:#666;width:50%">Properties: ${(trial.propertiesTested||"—")}</td>
   </tr>
 </table>
 
 <table style="margin-bottom:8pt">
-  <tr><td class="section-head">QC — Actual Results / Observations</td></tr>
+  <tr><td class="section-head">QC — Actual Results / Observations <span style="font-weight:400;text-transform:none;font-size:8.5pt">(to be filled after trial)</span></td></tr>
   <tr><td style="border:1px solid #999;padding:10pt;height:90pt"></td></tr>
 </table>
 
@@ -552,7 +552,7 @@ const PAINT_TYPES=["Emulsion","Enamel","Primer","Distemper","Texture","Road Mark
 const PROJECT_STATUS=["Ongoing","Completed","On Hold","Cancelled","Pending Approval"];
 const TEST_RESULTS=["Pass","Fail","Conditional Pass","Pending","Retest Required"];
 const RM_CATEGORIES=["Resin / Binder","Pigment","Extender / Filler","Solvent / Thinner","Additive","Drier","Emulsifier","Other"];
-const TRIAL_OUTCOMES=["Promising","Needs Revision","Failed","Approved as Final","Under Evaluation"];
+const TRIAL_OUTCOMES=["Promising","Needs Revision","Failed","Approved as Final","Under Evaluation","Sample Sent to Customer"];
 const ING_UNITS=["g","kg","mL","L","%","phr","pbw","parts"];
 const BATCH_UNITS=["kg","L","MT","Bags"];
 // Default unit fallback when no category-specific unit is configured
@@ -565,10 +565,10 @@ const CS_COL={Open:"#ef4444","Under Review":"#f59e0b","QC Responded":"#3b82f6",R
 
 const STATUS_COLORS={"Ongoing":"#3b82f6","Completed":"#22c55e","On Hold":"#f59e0b","Cancelled":"#ef4444","Pending Approval":"#a855f7"};
 const RESULT_COLORS={"Pass":"#22c55e","Fail":"#ef4444","Conditional Pass":"#f59e0b","Pending":"#94a3b8","Retest Required":"#f97316"};
-const OUTCOME_COLORS={"Promising":"#38bdf8","Needs Revision":"#f59e0b","Failed":"#ef4444","Approved as Final":"#22c55e","Under Evaluation":"#a855f7"};
+const OUTCOME_COLORS={"Promising":"#38bdf8","Needs Revision":"#f59e0b","Failed":"#ef4444","Approved as Final":"#22c55e","Under Evaluation":"#a855f7","Sample Sent to Customer":"#06b6d4"};
 const PAINT_ACCENT={"Emulsion":"#e879f9","Enamel":"#38bdf8","Primer":"#fb923c","Distemper":"#a3e635","Texture":"#f472b6","Road Marking":"#facc15","Epoxy":"#34d399","PU":"#818cf8","Wood Finish":"#d97706","Anti-corrosive":"#64748b","Other":"#cbd5e1"};
-const REC_COLORS={"Pass":"#22c55e","Fail":"#ef4444","Conditional Pass":"#f59e0b","Needs Further Testing":"#a855f7"};
-const REC_TO_OUTCOME={"Pass":"Approved as Final","Fail":"Failed","Conditional Pass":"Promising","Needs Further Testing":"Under Evaluation"};
+const REC_COLORS={"Pass":"#22c55e","Fail":"#ef4444","Conditional Pass":"#f59e0b","Needs Further Testing":"#a855f7","Sample Submitted to Customer":"#06b6d4"};
+const REC_TO_OUTCOME={"Pass":"Approved as Final","Fail":"Failed","Conditional Pass":"Promising","Needs Further Testing":"Under Evaluation","Sample Submitted to Customer":"Sample Sent to Customer"};
 
 // ══ STYLES
 const DEFAULT_PACK_SIZES = DEFAULT_PACK_SIZES_BY_CAT._default;
@@ -1661,7 +1661,7 @@ function TrialCard({trial,index,onDelete,onUpdate,isAdmin,sysUnits,onAddUnit,pro
         <Field label="Properties Tested"><textarea style={{...ta,minHeight:"72px"}} value={editForm.propertiesTested} onChange={e=>setEditForm({...editForm,propertiesTested:e.target.value})}/></Field>
       </Grid2>
       <Grid2>
-        <Field label="Observations / Results"><textarea style={{...ta,minHeight:"72px"}} value={editForm.observations} onChange={e=>setEditForm({...editForm,observations:e.target.value})}/></Field>
+        <Field label="Test to be Performed"><textarea style={{...ta,minHeight:"72px"}} value={editForm.observations} onChange={e=>setEditForm({...editForm,observations:e.target.value})} placeholder="What tests/properties should QC check? e.g. Adhesion, drying time, gloss..."/></Field>
         <Field label="Next Steps"><textarea style={{...ta,minHeight:"72px"}} value={editForm.nextSteps} onChange={e=>setEditForm({...editForm,nextSteps:e.target.value})}/></Field>
       </Grid2>
       <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",marginTop:"4px"}}>
@@ -1695,7 +1695,7 @@ function TrialCard({trial,index,onDelete,onUpdate,isAdmin,sysUnits,onAddUnit,pro
           </div>)}
         </div>
       </div>}
-      {[["Process / Mixing Method",trial.process],["Properties Tested",trial.propertiesTested],["Observations / Results",trial.observations],["Next Steps",trial.nextSteps]].map(([label,val])=>val&&<div key={label} style={{marginBottom:"12px"}}>
+      {[["Process / Mixing Method",trial.process],["Properties Tested",trial.propertiesTested],["Test to be Performed",trial.observations],["Next Steps",trial.nextSteps]].map(([label,val])=>val&&<div key={label} style={{marginBottom:"12px"}}>
         <div style={{fontSize:"10px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.09em",marginBottom:"5px"}}>{label}</div>
         <div style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"7px",padding:"10px 13px",fontSize:"13px",color:"#94a3b8",lineHeight:1.65,whiteSpace:"pre-wrap"}}>{val}</div>
       </div>)}
@@ -1878,7 +1878,7 @@ function ProjectWorkspace({project,isAdmin,showToast,sysUnits,sysRmCats,onAddRmC
         <Field label="Process / Mixing Method"><textarea style={{...ta,minHeight:"70px"}} value={form.process} onChange={e=>setForm({...form,process:e.target.value})} placeholder="Mixing sequence, temperature, RPM..."/></Field>
         <Field label="Properties Tested"><textarea style={{...ta,minHeight:"70px"}} value={form.propertiesTested} onChange={e=>setForm({...form,propertiesTested:e.target.value})} placeholder="Viscosity, pH, Gloss..."/></Field>
       </Grid2>
-      <Field label="Observations *"><textarea style={{...ta,minHeight:"70px"}} value={form.observations} onChange={e=>setForm({...form,observations:e.target.value})} placeholder="What happened? Values, appearance, issues..."/></Field>
+      <Field label="Test to be Performed *"><textarea style={{...ta,minHeight:"70px"}} value={form.observations} onChange={e=>setForm({...form,observations:e.target.value})} placeholder="What tests/properties should QC check before reporting results? e.g. Check adhesion, viscosity, gloss, drying time..."/></Field>
       <Field label="Next Steps"><textarea style={{...ta,minHeight:"50px"}} value={form.nextSteps} onChange={e=>setForm({...form,nextSteps:e.target.value})}/></Field>
       <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
         <Btn label="Cancel" onClick={()=>setShowForm(false)} outline color="#475569" small/>
@@ -6039,6 +6039,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
   };
   const [oldStocks,setOldStocks]=useState([]);
   const [allRoles,setAllRoles]=useState({});       // email -> roles array (for task assignment)
+  const [allPermissions,setAllPermissions]=useState({}); // email -> explicit permission overrides array
   const [allProfiles,setAllProfiles]=useState({}); // email -> profile
   const [notifications,setNotifications]=useState([]);  // unread notifications for current user
   const [showNotifs,setShowNotifs]=useState(false);
@@ -6088,6 +6089,10 @@ function MainApp({user,role,roles=[],permissions=[]}){
   const [batchForm,setBatchForm]=useState(EB);
   const [complaintForm,setComplaintForm]=useState(EC);
   const [projForm,setProjForm]=useState(EP);
+  // Users with R&D access (role default OR explicit permission override) — for Assigned To dropdown
+  const rdUsers=Object.keys(allProfiles).filter(email=>
+    userHasPerm(allRoles[email]||[],allPermissions[email]||[],"rd_view")
+  );
   const [rmForm,setRmForm]=useState(ER);
   const [saving,setSaving]=useState(false);
 
@@ -6110,7 +6115,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
   useEffect(()=>{
     const subs=[];
     // All roles & profiles (for task assignment dropdown)
-    subs.push(C("roles").onSnapshot(s=>{const r={};s.docs.forEach(d=>{const dat=d.data();r[d.id]=dat.roles||(dat.role?[dat.role]:[]);});setAllRoles(r);}));
+    subs.push(C("roles").onSnapshot(s=>{const r={};const pm={};s.docs.forEach(d=>{const dat=d.data();r[d.id]=dat.roles||(dat.role?[dat.role]:[]);pm[d.id]=dat.permissions||[];});setAllRoles(r);setAllPermissions(pm);}));
     subs.push(C("userProfiles").onSnapshot(s=>{const p={};s.docs.forEach(d=>{const dat=d.data();if(dat.email)p[dat.email]={...dat,uid:d.id};});setAllProfiles(p);}));
     // Notifications for current user — simple query, sort client-side
     subs.push(C("notifications").where("assignedTo","==",user.email).where("read","==",false)
@@ -6664,7 +6669,13 @@ function MainApp({user,role,roles=[],permissions=[]}){
         <Field label="Status"><select style={sl} value={projForm.status} onChange={e=>setProjForm({...projForm,status:e.target.value})}>{PROJECT_STATUS.map(s=><option key={s}>{s}</option>)}</select></Field>
         <Field label="Target Date"><input type="date" style={inp} value={projForm.targetDate} onChange={e=>setProjForm({...projForm,targetDate:e.target.value})}/></Field>
       </Grid2>
-      <Field label="Assigned To"><input style={inp} value={projForm.assignedTo} onChange={e=>setProjForm({...projForm,assignedTo:e.target.value})} placeholder="Chemist / Team member"/></Field>
+      <Field label="Assigned To">
+        <select style={sl} value={projForm.assignedTo} onChange={e=>setProjForm({...projForm,assignedTo:e.target.value})}>
+          <option value="">— Select team member —</option>
+          {rdUsers.map(email=><option key={email} value={email}>{allProfiles[email]?.displayName||email}</option>)}
+        </select>
+        {rdUsers.length===0&&<div style={{fontSize:"11px",color:"#f59e0b",marginTop:"6px"}}>⚠ No users currently have R&D access. Grant via Users → 🔒 Permissions.</div>}
+      </Field>
       <Field label="Objective"><textarea style={ta} value={projForm.objective} onChange={e=>setProjForm({...projForm,objective:e.target.value})} placeholder="What is this project trying to achieve?"/></Field>
       <Field label="Formulation Base"><textarea style={ta} value={projForm.formulationBase} onChange={e=>setProjForm({...projForm,formulationBase:e.target.value})} placeholder="Base resin, key pigments, binders..."/></Field>
       <Field label="Notes"><textarea style={{...ta,minHeight:"56px"}} value={projForm.notes} onChange={e=>setProjForm({...projForm,notes:e.target.value})}/></Field>
@@ -6687,7 +6698,12 @@ function MainApp({user,role,roles=[],permissions=[]}){
           <Field label="Status"><select style={sl} value={editProject.status} onChange={e=>setEditProject({...editProject,status:e.target.value})}>{PROJECT_STATUS.map(s=><option key={s}>{s}</option>)}</select></Field>
           <Field label="Target Date"><input type="date" style={inp} value={editProject.targetDate||""} onChange={e=>setEditProject({...editProject,targetDate:e.target.value})}/></Field>
         </Grid2>
-        <Field label="Assigned To"><input style={inp} value={editProject.assignedTo||""} onChange={e=>setEditProject({...editProject,assignedTo:e.target.value})}/></Field>
+        <Field label="Assigned To">
+          <select style={sl} value={editProject.assignedTo||""} onChange={e=>setEditProject({...editProject,assignedTo:e.target.value})}>
+            <option value="">— Select team member —</option>
+            {rdUsers.map(email=><option key={email} value={email}>{allProfiles[email]?.displayName||email}</option>)}
+          </select>
+        </Field>
         <Field label="Objective"><textarea style={ta} value={editProject.objective||""} onChange={e=>setEditProject({...editProject,objective:e.target.value})}/></Field>
         <Field label="Formulation Base"><textarea style={ta} value={editProject.formulationBase||""} onChange={e=>setEditProject({...editProject,formulationBase:e.target.value})}/></Field>
         <Field label="Notes"><textarea style={{...ta,minHeight:"56px"}} value={editProject.notes||""} onChange={e=>setEditProject({...editProject,notes:e.target.value})}/></Field>
