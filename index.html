@@ -6014,12 +6014,13 @@ function ShadeCorrectionCalc({showToast}){
     return u;
   },[]);
 
+  const isPigmentCode=(name)=>/^\s*3\d/.test(name||""); // pigment codes start with digit 3, e.g. 3220, 3020/822
   const loadFromBom=(id)=>{
     setBomId(id);
     const b=boms.find(x=>x.id===id);
     if(!b)return;
     setBatchSize(b.baseBatchSize||"100");
-    const rows=(b.ingredients||[]).filter(i=>!i.isProcess&&i.name&&parseFloat(i.standardQty)>0)
+    const rows=(b.ingredients||[]).filter(i=>!i.isProcess&&i.name&&parseFloat(i.standardQty)>0&&isPigmentCode(i.name))
       .map(i=>({id:newId(),name:i.name,qty:i.standardQty}));
     setPigments(rows.length?rows:[{id:"p1",name:"",qty:""},{id:"p2",name:"",qty:""}]);
     setTargetOverride(false);
@@ -6088,6 +6089,7 @@ function ShadeCorrectionCalc({showToast}){
           <option value="">— Manual entry —</option>
           {boms.map(b=><option key={b.id} value={b.id}>{b.productName} (v{b.currentVersion||1})</option>)}
         </select>
+        <div style={{fontSize:"10px",color:"#475569",marginTop:"5px"}}>Only pulls ingredients with pigment codes (starting with 3 — e.g. 3220, 3200, 3020/822). Other raw materials are excluded.</div>
       </Field>
       <Field label="Batch Size (reference only)"><input style={inp} value={batchSize} onChange={e=>setBatchSize(e.target.value)} placeholder="100"/></Field>
     </Grid2>
