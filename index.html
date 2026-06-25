@@ -6003,164 +6003,196 @@ function ResinSolventCalc(){
 function ShadeCorrectionCalc({showToast}){
   const [boms,setBoms]=useState([]);
   const [bomId,setBomId]=useState("");
-  const [prodBatchSize,setProdBatchSize]=useState("");
+  const [batchSize,setBatchSize]=useState("100");
+  const [pigments,setPigments]=useState([{id:"p1",name:"",qty:""},{id:"p2",name:"",qty:""}]);
+  const [targetTotal,setTargetTotal]=useState("");
+  const [targetOverride,setTargetOverride]=useState(false);
   const [stainers,setStainers]=useState([{id:"s1",name:"",amt:"",pigment:""}]);
-  const [reduceFromId,setReduceFromId]=useState("");
 
   useEffect(()=>{
     const u=C("bom_products").orderBy("productName").onSnapshot(s=>setBoms(s.docs.map(d=>({id:d.id,...d.data()}))));
     return u;
   },[]);
 
-  const bom=boms.find(b=>b.id===bomId);
-  const pigmentIngredients=(bom?.ingredients||[]).filter(i=>!i.isProcess&&i.name);
+  const loadFromBom=(id)=>{
+    setBomId(id);
+    const b=boms.find(x=>x.id===id);
+    if(!b)return;
+    setBatchSize(b.baseBatchSize||"100");
+    const rows=(b.ingredients||[]).filter(i=>!i.isProcess&&i.name&&parseFloat(i.standardQty)>0)
+      .map(i=>({id:newId(),name:i.name,qty:i.standardQty}));
+    setPigments(rows.length?rows:[{id:"p1",name:"",qty:""},{id:"p2",name:"",qty:""}]);
+    setTargetOverride(false);
+  };
 
-  useEffect(()=>{
-    if(bom){
-      setProdBatchSize(bom.baseBatchSize||"");
-      // Default "reduce from" = the largest-quantity pigment ingredient (heuristic for "main pigment")
-      const sorted=[...pigmentIngredients].sort((a,b)=>(parseFloat(b.standardQty)||0)-(parseFloat(a.standardQty)||0));
-      setReduceFromId(sorted[0]?.id||"");
-    }
-  },[bomId]);
+  const addPigment=()=>setPigments(p=>[...p,{id:"p"+Date.now()+Math.random(),name:"",qty:""}]);
+  const removePigment=(id)=>setPigments(p=>p.filter(x=>x.id!==id));
+  const updatePigment=(id,field,val)=>setPigments(p=>p.map(x=>x.id===id?{...x,[field]:val}:x));
 
   const addStainer=()=>setStainers(s=>[...s,{id:"s"+Date.now()+Math.random(),name:"",amt:"",pigment:""}]);
   const removeStainer=(id)=>setStainers(s=>s.filter(x=>x.id!==id));
   const updateStainer=(id,field,val)=>setStainers(s=>s.map(x=>x.id===id?{...x,[field]:val}:x));
 
-  const baseBatch=parseFloat(bom?.baseBatchSize)||0;
-  const prodBatch=parseFloat(prodBatchSize)||0;
-  const multiplier=baseBatch>0&&prodBatch>0?prodBatch/baseBatch:0;
+  // Current total pigment (before any stainer correction)
+  const currentTotal=pigments.reduce((sum,p)=>sum+(parseFloat(p.qty)||0),0);
+  const effectiveTarget=targetOverride?(parseFloat(targetTotal)||0):currentTotal;
 
-  // For each stainer: equivalent pigment mass to add PER BOM BASE BATCH (not production batch)
-  const stainerCalcs=stainers.map(s=>{
+  // Distribute stainer pigment mass across matching/new pigment rows
+  const validStainers=stainers.filter(s=>s.name.trim()&&parseFloat(s.amt)>0&&parseFloat(s.pigment)>0);
+  const stainerContrib={}; // pigmentRowId or "_new_<name>" -> mass added
+  const newPigmentsFromStainer=[]; // stainers that don't match any existing row
+  validStainers.forEach(s=>{
     const amt=parseFloat(s.amt)||0;
-    const pig=parseFloat(s.pigment)||0;
-    const pigmentMassInProduction=amt*pig/100;
-    const equivPerBomBase=multiplier>0?pigmentMassInProduction/multiplier:0;
-    // Try to match against an existing BOM ingredient by name (case-insensitive substring)
-    let matchedIng=null;
-    if(bom&&s.name.trim()){
-      const sLower=s.name.trim().toLowerCase();
-      matchedIng=(bom.ingredients||[]).find(ing=>ing.name&&!ing.isProcess&&
-        (ing.name.toLowerCase().includes(sLower)||sLower.includes(ing.name.toLowerCase())));
+    const pct=parseFloat(s.pigment)||0;
+    const pureMass=amt*pct/100;
+    const sLower=s.name.trim().toLowerCase();
+    const match=pigments.find(p=>p.name&&p.name.trim()&&
+      (p.name.toLowerCase().includes(sLower)||sLower.includes(p.name.toLowerCase())));
+    if(match){
+      stainerContrib[match.id]=(stainerContrib[match.id]||0)+pureMass;
+    }else{
+      const key="_new_"+s.name.trim();
+      const existing=newPigmentsFromStainer.find(n=>n.key===key);
+      if(existing)existing.mass+=pureMass;
+      else newPigmentsFromStainer.push({key,name:s.name.trim(),mass:pureMass});
     }
-    return {...s,amt,pig,pigmentMassInProduction,equivPerBomBase,matchedIng};
   });
 
-  const validStainers=stainerCalcs.filter(s=>s.amt>0&&s.pig>0&&s.name.trim());
-  const totalEquivAddition=validStainers.reduce((sum,s)=>sum+s.equivPerBomBase,0);
-  const reduceFromIng=pigmentIngredients.find(i=>i.id===reduceFromId);
-  const reduceFromOldQty=reduceFromIng?parseFloat(reduceFromIng.standardQty)||0:0;
-  const reduceFromNewQty=reduceFromOldQty-totalEquivAddition;
-  const insufficientRoom=reduceFromNewQty<0;
+  // Build combined rows: existing pigments (+ their stainer contribution) + brand-new pigments from unmatched stainers
+  const combinedRows=[
+    ...pigments.filter(p=>p.name.trim()).map(p=>({
+      id:p.id,name:p.name,oldQty:parseFloat(p.qty)||0,
+      added:stainerContrib[p.id]||0,
+      afterAddition:(parseFloat(p.qty)||0)+(stainerContrib[p.id]||0),
+      isNew:false
+    })),
+    ...newPigmentsFromStainer.map(n=>({
+      id:n.key,name:n.name,oldQty:0,added:n.mass,afterAddition:n.mass,isNew:true
+    }))
+  ];
+  const grandTotalAfterAddition=combinedRows.reduce((s,r)=>s+r.afterAddition,0);
+  const scale=grandTotalAfterAddition>0?effectiveTarget/grandTotalAfterAddition:0;
+  const finalRows=combinedRows.map(r=>({...r,newQty:r.afterAddition*scale}));
 
-  const hasValidInputs=bom&&baseBatch>0&&prodBatch>0&&validStainers.length>0&&reduceFromId;
+  const hasValidInputs=currentTotal>0&&validStainers.length>0&&effectiveTarget>0;
   const fmt=(v)=>v!==0?v.toFixed(3):"—";
+  const pctChange=effectiveTarget>0&&currentTotal>0?((effectiveTarget-currentTotal)/currentTotal*100):0;
 
   return <div>
-    <SectionHead title="🎯 Shade Correction → BOM Pigment Tuner"/>
-    <InfoBox color="#3b82f6">Keeps total pigment level constant. When stainer adds pigment to correct shade, an equal amount is subtracted from the main pigment — so total pigment loading stays the same, achieved directly with no stainer needed.</InfoBox>
+    <SectionHead title="🎯 Shade Correction → Pigment Ratio Tuner"/>
+    <InfoBox color="#3b82f6">Enter the pigments in your batch and the stainer added to correct shade. The tool redistributes pigment proportionally so the shade is achieved directly — at your chosen total pigment level (maintain it, or increase/decrease it).</InfoBox>
 
     <Grid2>
-      <Field label="Select BOM / Product">
-        <select style={sl} value={bomId} onChange={e=>setBomId(e.target.value)}>
-          <option value="">— Select a BOM —</option>
+      <Field label="Load from existing BOM (optional)">
+        <select style={sl} value={bomId} onChange={e=>loadFromBom(e.target.value)}>
+          <option value="">— Manual entry —</option>
           {boms.map(b=><option key={b.id} value={b.id}>{b.productName} (v{b.currentVersion||1})</option>)}
         </select>
       </Field>
-      <Field label={"Production Batch Size Used"+(bom?" ("+bom.baseUnit+")":"")}>
-        <input style={inp} type="number" min="0" step="0.01" value={prodBatchSize} onChange={e=>setProdBatchSize(e.target.value)} placeholder={bom?.baseBatchSize||"e.g. 1000"} disabled={!bom}/>
-      </Field>
+      <Field label="Batch Size (reference only)"><input style={inp} value={batchSize} onChange={e=>setBatchSize(e.target.value)} placeholder="100"/></Field>
     </Grid2>
 
-    {bom&&<>
-      <div style={{background:"#080d18",border:"1px solid #1e293b",borderRadius:"8px",padding:"12px 14px",marginBottom:"14px"}}>
-        <div style={{fontSize:"11px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:"8px"}}>Current BOM — {bom.productName} (Base: {bom.baseBatchSize} {bom.baseUnit})</div>
-        <div style={{display:"flex",flexWrap:"wrap",gap:"6px"}}>
-          {pigmentIngredients.map(i=><span key={i.id} style={{fontSize:"11px",background:"#0b1220",border:"1px solid #1e293b",borderRadius:"6px",padding:"3px 9px",color:"#94a3b8"}}>{i.name}: <strong style={{color:"#cbd5e1"}}>{i.standardQty}</strong></span>)}
-        </div>
-        {multiplier>0&&multiplier!==1&&<div style={{fontSize:"11px",color:"#f59e0b",marginTop:"8px"}}>⚙ Production batch is {multiplier.toFixed(2)}× the BOM base size — calculations scale down accordingly.</div>}
+    {/* Pigments in batch */}
+    <div style={{marginBottom:"14px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"8px"}}>
+        <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em"}}>Pigments Currently in Batch</div>
+        <button onClick={addPigment} style={{background:"none",border:"1px dashed #1e3a5f",borderRadius:"6px",padding:"4px 14px",color:"#93c5fd",cursor:"pointer",fontSize:"12px",fontWeight:"600"}}>+ Add Pigment</button>
       </div>
-
-      {/* Reduce From selector */}
-      <Field label="Reduce Pigment From (the main pigment that gives up quantity to maintain total level)">
-        <select style={sl} value={reduceFromId} onChange={e=>setReduceFromId(e.target.value)}>
-          <option value="">— Select ingredient to reduce —</option>
-          {pigmentIngredients.map(i=><option key={i.id} value={i.id}>{i.name} (current: {i.standardQty})</option>)}
-        </select>
-      </Field>
-
-      {/* Stainer rows */}
-      <div style={{marginBottom:"14px"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"8px"}}>
-          <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em"}}>Stainer(s) Added During Production</div>
-          <button onClick={addStainer} style={{background:"none",border:"1px dashed #1e3a5f",borderRadius:"6px",padding:"4px 14px",color:"#93c5fd",cursor:"pointer",fontSize:"12px",fontWeight:"600"}}>+ Add Stainer</button>
+      <div style={{border:"1px solid #1e293b",borderRadius:"8px",overflow:"hidden"}}>
+        <div style={{display:"grid",gridTemplateColumns:"1.8fr 110px 28px",gap:"6px",background:"#0b1220",padding:"6px 10px"}}>
+          {["Pigment Name","Current Qty",""].map(h=><div key={h} style={{fontSize:"9px",fontWeight:"700",color:"#334155",textTransform:"uppercase"}}>{h}</div>)}
         </div>
-        <div style={{border:"1px solid #1e293b",borderRadius:"8px",overflow:"hidden"}}>
-          <div style={{display:"grid",gridTemplateColumns:"1.6fr 90px 90px 28px",gap:"6px",background:"#0b1220",padding:"6px 10px"}}>
-            {["Stainer / Pigment Name","Amt","Pigment %",""].map(h=><div key={h} style={{fontSize:"9px",fontWeight:"700",color:"#334155",textTransform:"uppercase"}}>{h}</div>)}
-          </div>
-          {stainers.map((s,i)=><div key={s.id} style={{display:"grid",gridTemplateColumns:"1.6fr 90px 90px 28px",gap:"6px",padding:"7px 10px",borderTop:"1px solid #1e293b",alignItems:"center"}}>
-            <input style={sml} value={s.name} onChange={e=>updateStainer(s.id,"name",e.target.value)} placeholder={"Stainer "+(i+1)+" (e.g. Phthalo Blue)"}/>
-            <input style={{...sml,textAlign:"center"}} type="number" min="0" step="0.01" value={s.amt} onChange={e=>updateStainer(s.id,"amt",e.target.value)} placeholder="0"/>
-            <input style={{...sml,textAlign:"center"}} type="number" min="0" max="100" step="0.1" value={s.pigment} onChange={e=>updateStainer(s.id,"pigment",e.target.value)} placeholder="%"/>
-            <button onClick={()=>removeStainer(s.id)} disabled={stainers.length===1} style={{background:"none",border:"none",color:stainers.length>1?"#ef4444":"#1e293b",cursor:stainers.length>1?"pointer":"default",fontSize:"16px",lineHeight:1,padding:0}}>×</button>
-          </div>)}
-        </div>
+        {pigments.map((p,i)=><div key={p.id} style={{display:"grid",gridTemplateColumns:"1.8fr 110px 28px",gap:"6px",padding:"7px 10px",borderTop:"1px solid #1e293b",alignItems:"center"}}>
+          <input style={sml} value={p.name} onChange={e=>updatePigment(p.id,"name",e.target.value)} placeholder={"Pigment "+(i+1)+" (e.g. Titanium Dioxide)"}/>
+          <input style={{...sml,textAlign:"center"}} type="number" min="0" step="0.001" value={p.qty} onChange={e=>updatePigment(p.id,"qty",e.target.value)} placeholder="kg"/>
+          <button onClick={()=>removePigment(p.id)} disabled={pigments.length===1} style={{background:"none",border:"none",color:pigments.length>1?"#ef4444":"#1e293b",cursor:pigments.length>1?"pointer":"default",fontSize:"16px",lineHeight:1,padding:0}}>×</button>
+        </div>)}
+        {pigments.length>1&&<div style={{display:"grid",gridTemplateColumns:"1.8fr 110px 28px",gap:"6px",padding:"6px 10px",borderTop:"1px solid #1e3a5f",background:"#0a1520"}}>
+          <div style={{fontSize:"10px",fontWeight:"700",color:"#475569"}}>CURRENT TOTAL</div>
+          <div style={{fontSize:"11px",fontWeight:"700",color:"#f1f5f9",textAlign:"center"}}>{currentTotal.toFixed(3)}</div>
+          <div/>
+        </div>}
       </div>
+    </div>
 
-      {/* Results: suggested BOM update */}
-      {hasValidInputs&&<div style={{background:"#080d18",border:"1px solid #1e3a5f",borderRadius:"12px",padding:"16px",marginBottom:"14px"}}>
-        <div style={{fontSize:"13px",fontWeight:"700",color:"#93c5fd",marginBottom:"12px"}}>📊 Suggested BOM Pigment Update (per {bom.baseBatchSize} {bom.baseUnit} base batch) — total pigment level held constant</div>
-        <div style={{border:"1px solid #1e293b",borderRadius:"8px",overflow:"hidden",marginBottom:"10px"}}>
-          <div style={{display:"grid",gridTemplateColumns:"1.6fr 100px 100px 100px",gap:"6px",background:"#0b1220",padding:"6px 10px"}}>
-            {["Ingredient","Current Qty","Change","Suggested New Qty"].map(h=><div key={h} style={{fontSize:"9px",fontWeight:"700",color:"#334155",textTransform:"uppercase"}}>{h}</div>)}
-          </div>
-          {/* Reduce-from row */}
-          <div style={{display:"grid",gridTemplateColumns:"1.6fr 100px 100px 100px",gap:"6px",padding:"8px 10px",borderTop:"1px solid #1e293b",alignItems:"center",background:insufficientRoom?"#1a0a00":"#100606"}}>
-            <div>
-              <div style={{fontSize:"12px",color:"#e2e8f0",fontWeight:"600"}}>{reduceFromIng?.name} <span style={{fontSize:"10px",color:"#475569"}}>(reduced)</span></div>
-              {insufficientRoom&&<div style={{fontSize:"10px",color:"#ef4444"}}>⚠ Not enough quantity to reduce — would go negative</div>}
-            </div>
-            <div style={{fontSize:"12px",color:"#64748b",textAlign:"center"}}>{reduceFromOldQty.toFixed(3)}</div>
-            <div style={{fontSize:"12px",color:"#f87171",fontWeight:"700",textAlign:"center"}}>−{fmt(totalEquivAddition)}</div>
-            <div style={{fontSize:"13px",color:insufficientRoom?"#ef4444":"#4ade80",fontWeight:"700",textAlign:"center"}}>{Math.max(0,reduceFromNewQty).toFixed(3)}</div>
-          </div>
-          {/* Stainer pigment rows (added/increased) */}
-          {validStainers.map(s=>{
-            const oldQty=s.matchedIng?parseFloat(s.matchedIng.standardQty)||0:0;
-            const newQty=oldQty+s.equivPerBomBase;
-            return <div key={s.id} style={{display:"grid",gridTemplateColumns:"1.6fr 100px 100px 100px",gap:"6px",padding:"8px 10px",borderTop:"1px solid #1e293b",alignItems:"center",background:"#06100d"}}>
-              <div>
-                <div style={{fontSize:"12px",color:"#e2e8f0",fontWeight:"600"}}>{s.matchedIng?s.matchedIng.name:s.name}</div>
-                {!s.matchedIng&&<div style={{fontSize:"10px",color:"#f59e0b"}}>⚠ Not found in BOM — add as new ingredient</div>}
-              </div>
-              <div style={{fontSize:"12px",color:"#64748b",textAlign:"center"}}>{s.matchedIng?oldQty.toFixed(3):"—"}</div>
-              <div style={{fontSize:"12px",color:"#fbbf24",fontWeight:"700",textAlign:"center"}}>+{fmt(s.equivPerBomBase)}</div>
-              <div style={{fontSize:"13px",color:"#4ade80",fontWeight:"700",textAlign:"center"}}>{fmt(newQty)}</div>
-            </div>;
-          })}
+    {/* Target total pigment — editable to increase/decrease */}
+    <div style={{background:"#080d18",border:`1px solid ${targetOverride?"#f59e0b40":"#1e293b"}`,borderRadius:"8px",padding:"10px 12px",marginBottom:"14px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"6px"}}>
+        <div style={{fontSize:"11px",fontWeight:"700",color:targetOverride?"#f59e0b":"#64748b",textTransform:"uppercase",letterSpacing:"0.06em"}}>
+          Target Total Pigment {!targetOverride&&<span style={{fontWeight:"400",color:"#334155"}}>(= current total — maintained)</span>}
         </div>
-        <div style={{background:insufficientRoom?"#2e0a0a":"#052e16",border:`1px solid ${insufficientRoom?"#b91c1c":"#166534"}`,borderRadius:"8px",padding:"12px 16px"}}>
-          {insufficientRoom
-            ?<div style={{fontSize:"12.5px",color:"#fca5a5",lineHeight:1.7}}>
-              ⚠ <strong>{reduceFromIng?.name}</strong> only has {reduceFromOldQty.toFixed(3)} available, but {totalEquivAddition.toFixed(3)} reduction is needed. Pick a different "Reduce From" ingredient with more headroom, or accept a net pigment increase for the shortfall ({(totalEquivAddition-reduceFromOldQty).toFixed(3)}).
-            </div>
-            :<div style={{fontSize:"12.5px",color:"#86efac",lineHeight:1.7}}>
-              ✅ Total pigment mass stays at <strong>{(reduceFromOldQty + pigmentIngredients.filter(i=>i.id!==reduceFromId).reduce((s,i)=>s+(parseFloat(i.standardQty)||0),0)).toFixed(3)} {bom.baseUnit}</strong> per {bom.baseBatchSize}{bom.baseUnit} — same as before. Apply these <strong>Suggested New Qty</strong> values in <strong>BOM → Edit → {bom.productName}</strong> and save. Next production run should achieve this shade directly — no stainer needed.
-            </div>}
-        </div>
+        <button onClick={()=>{setTargetOverride(v=>!v);if(targetOverride)setTargetTotal("");}}
+          style={{background:targetOverride?"#78350f30":"#0b1220",border:`1px solid ${targetOverride?"#f59e0b":"#334155"}`,borderRadius:"6px",padding:"3px 10px",color:targetOverride?"#f59e0b":"#475569",cursor:"pointer",fontSize:"11px",fontWeight:"600"}}>
+          {targetOverride?"✓ Custom (click to reset)":"✏️ Increase / decrease target"}
+        </button>
+      </div>
+      {targetOverride
+        ?<input style={{...inp,borderColor:"#f59e0b60"}} type="number" min="0" step="0.001" value={targetTotal} onChange={e=>setTargetTotal(e.target.value)} placeholder={"e.g. "+(currentTotal*1.1).toFixed(2)+" to increase 10%"}/>
+        :<div style={{fontSize:"18px",fontWeight:"700",color:"#94a3b8",padding:"4px 0"}}>{currentTotal.toFixed(3)}</div>}
+      {targetOverride&&effectiveTarget>0&&currentTotal>0&&<div style={{fontSize:"11px",color:pctChange>=0?"#4ade80":"#f87171",marginTop:"4px"}}>
+        {pctChange>=0?"↑":"↓"} {Math.abs(pctChange).toFixed(1)}% vs current pigment level
       </div>}
-    </>}
+    </div>
+
+    {/* Stainer rows */}
+    <div style={{marginBottom:"14px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"8px"}}>
+        <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em"}}>Stainer(s) Added to Correct Shade</div>
+        <button onClick={addStainer} style={{background:"none",border:"1px dashed #1e3a5f",borderRadius:"6px",padding:"4px 14px",color:"#93c5fd",cursor:"pointer",fontSize:"12px",fontWeight:"600"}}>+ Add Stainer</button>
+      </div>
+      <div style={{border:"1px solid #1e293b",borderRadius:"8px",overflow:"hidden"}}>
+        <div style={{display:"grid",gridTemplateColumns:"1.6fr 90px 90px 28px",gap:"6px",background:"#0b1220",padding:"6px 10px"}}>
+          {["Stainer Name","Amt","Pigment %",""].map(h=><div key={h} style={{fontSize:"9px",fontWeight:"700",color:"#334155",textTransform:"uppercase"}}>{h}</div>)}
+        </div>
+        {stainers.map((s,i)=><div key={s.id} style={{display:"grid",gridTemplateColumns:"1.6fr 90px 90px 28px",gap:"6px",padding:"7px 10px",borderTop:"1px solid #1e293b",alignItems:"center"}}>
+          <input style={sml} value={s.name} onChange={e=>updateStainer(s.id,"name",e.target.value)} placeholder={"e.g. Titanium Dioxide Stainer"}/>
+          <input style={{...sml,textAlign:"center"}} type="number" min="0" step="0.01" value={s.amt} onChange={e=>updateStainer(s.id,"amt",e.target.value)} placeholder="kg"/>
+          <input style={{...sml,textAlign:"center"}} type="number" min="0" max="100" step="0.1" value={s.pigment} onChange={e=>updateStainer(s.id,"pigment",e.target.value)} placeholder="%"/>
+          <button onClick={()=>removeStainer(s.id)} disabled={stainers.length===1} style={{background:"none",border:"none",color:stainers.length>1?"#ef4444":"#1e293b",cursor:stainers.length>1?"pointer":"default",fontSize:"16px",lineHeight:1,padding:0}}>×</button>
+        </div>)}
+      </div>
+    </div>
+
+    {/* Results */}
+    {hasValidInputs&&<div style={{background:"#080d18",border:"1px solid #1e3a5f",borderRadius:"12px",padding:"16px",marginBottom:"14px"}}>
+      <div style={{fontSize:"13px",fontWeight:"700",color:"#93c5fd",marginBottom:"4px"}}>📊 Suggested Pigment Ratio (per {batchSize} batch)</div>
+      <div style={{fontSize:"11px",color:"#64748b",marginBottom:"12px"}}>Total pigment: {effectiveTarget.toFixed(3)} {targetOverride?(pctChange>=0?"(↑ increased)":"(↓ decreased)"):"(maintained — same as before)"}</div>
+      <div style={{border:"1px solid #1e293b",borderRadius:"8px",overflow:"hidden"}}>
+        <div style={{display:"grid",gridTemplateColumns:"1.6fr 90px 90px 90px 100px",gap:"6px",background:"#0b1220",padding:"6px 10px"}}>
+          {["Pigment","Current","+ Stainer","Subtotal","Suggested New"].map(h=><div key={h} style={{fontSize:"9px",fontWeight:"700",color:"#334155",textTransform:"uppercase"}}>{h}</div>)}
+        </div>
+        {finalRows.map(r=><div key={r.id} style={{display:"grid",gridTemplateColumns:"1.6fr 90px 90px 90px 100px",gap:"6px",padding:"8px 10px",borderTop:"1px solid #1e293b",alignItems:"center",background:r.added>0?"#06100d":"#080d18"}}>
+          <div>
+            <div style={{fontSize:"12px",color:"#e2e8f0",fontWeight:"600"}}>{r.name}</div>
+            {r.isNew&&<div style={{fontSize:"10px",color:"#f59e0b"}}>⚠ New — add to BOM</div>}
+          </div>
+          <div style={{fontSize:"12px",color:"#64748b",textAlign:"center"}}>{r.oldQty>0?r.oldQty.toFixed(3):"—"}</div>
+          <div style={{fontSize:"12px",color:r.added>0?"#fbbf24":"#334155",fontWeight:r.added>0?"700":"400",textAlign:"center"}}>{r.added>0?"+"+r.added.toFixed(3):"—"}</div>
+          <div style={{fontSize:"12px",color:"#94a3b8",textAlign:"center"}}>{r.afterAddition.toFixed(3)}</div>
+          <div style={{fontSize:"13px",color:"#4ade80",fontWeight:"700",textAlign:"center"}}>{r.newQty.toFixed(3)}</div>
+        </div>)}
+        <div style={{display:"grid",gridTemplateColumns:"1.6fr 90px 90px 90px 100px",gap:"6px",padding:"7px 10px",borderTop:"1px solid #1e3a5f",background:"#0a1520"}}>
+          <div style={{fontSize:"10px",fontWeight:"700",color:"#475569"}}>TOTAL</div>
+          <div style={{fontSize:"11px",fontWeight:"700",color:"#f1f5f9",textAlign:"center"}}>{currentTotal.toFixed(3)}</div>
+          <div/><div/>
+          <div style={{fontSize:"11px",fontWeight:"700",color:"#4ade80",textAlign:"center"}}>{finalRows.reduce((s,r)=>s+r.newQty,0).toFixed(3)}</div>
+        </div>
+      </div>
+      <div style={{background:"#052e16",border:"1px solid #166534",borderRadius:"8px",padding:"12px 16px",marginTop:"10px"}}>
+        <div style={{fontSize:"12.5px",color:"#86efac",lineHeight:1.7}}>
+          ✅ Use the <strong>Suggested New</strong> column as your updated pigment ratio. Apply in <strong>BOM → Edit</strong> and save. Next batch should achieve this shade directly — no stainer needed.
+        </div>
+      </div>
+    </div>}
 
     <div style={{background:"#060d1a",border:"1px solid #1e293b",borderRadius:"8px",padding:"11px 14px"}}>
-      <div style={{fontSize:"10px",fontWeight:"700",color:"#334155",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"5px"}}>How it works</div>
+      <div style={{fontSize:"10px",fontWeight:"700",color:"#334155",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"5px"}}>Formula</div>
       <div style={{fontSize:"11px",color:"#475569",lineHeight:1.8}}>
-        <div>Pigment Mass Added (per stainer) = Stainer Amount × Stainer Pigment% ÷ 100, scaled down to BOM base by Batch Multiplier</div>
-        <div>Reduce-From Ingredient: New Qty = Old Qty − Total Equivalent Addition (all stainers combined)</div>
-        <div>Stainer Pigment Ingredient: New Qty = Old Qty (if matched) + its own Equivalent Addition</div>
-        <div style={{color:"#334155",marginTop:"4px"}}>Net effect: total pigment mass unchanged — composition shifts from the reduced pigment to the stainer's pigment.</div>
+        <div>Stainer Pure Pigment = Stainer Amount × Stainer Pigment% ÷ 100</div>
+        <div>Subtotal (per pigment) = Current Qty + Stainer Pigment (if matched to that pigment)</div>
+        <div>Scale Factor = Target Total Pigment ÷ Sum of All Subtotals</div>
+        <div>Suggested New Qty = Subtotal × Scale Factor</div>
+        <div style={{color:"#334155",marginTop:"4px"}}>Default target = current total (maintains pigment level). Increase the target to raise overall pigment loading.</div>
       </div>
     </div>
   </div>;
