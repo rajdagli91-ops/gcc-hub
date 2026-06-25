@@ -95,22 +95,36 @@ function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, char
   const bs=parseFloat(batchSize)||parseFloat(bom.baseBatchSize)||100;
   const base=parseFloat(bom.baseBatchSize)||100;
   const factor=bs/base;
+
+  // ── Auto-fit density: scale font size & padding based on content length,
+  // so the sheet always fits a single A4 page regardless of ingredient count ──
+  const allIngRows=(bom.ingredients||[]);
+  const ingCount=allIngRows.filter(i=>!i.isProcess).length;
+  const stepCount=allIngRows.filter(i=>i.isProcess).length;
+  const extraItemCount=(extraConfig?.items||['Dhoyela','Extra Output','Dhoyela']).length;
+  const oldStockCount=(oldStocks||[]).length;
+  const contentWeight=ingCount+stepCount+extraItemCount+(oldStockCount>0?oldStockCount+1:0);
+  let D; // density tier
+  if(contentWeight<=10)D={rowPad:7,fontSz:11,addlMatRows:4,extraPad:8,extraBlanks:1,qcPad:7,qcFont:11,packPad:7,packFont:10,bodyPad:5};
+  else if(contentWeight<=14)D={rowPad:6,fontSz:10.5,addlMatRows:3,extraPad:7,extraBlanks:1,qcPad:6,qcFont:10.5,packPad:6,packFont:9.5,bodyPad:4};
+  else if(contentWeight<=18)D={rowPad:5,fontSz:10,addlMatRows:2,extraPad:6,extraBlanks:1,qcPad:5,qcFont:10,packPad:5,packFont:9,bodyPad:3};
+  else D={rowPad:4,fontSz:9.5,addlMatRows:1,extraPad:5,extraBlanks:0,qcPad:4,qcFont:9.5,packPad:4,packFont:8.5,bodyPad:2};
   let ingRows="";
   let rowNo=0;
   (bom.ingredients||[]).forEach(ing=>{
     if(ing.isProcess){
-      ingRows+=`<tr style="background:#f0f0f0"><td colspan="5" style="padding:7pt 6pt;font-style:italic;font-weight:600;font-size:10pt;border:1px solid #999">${ing.name||""}</td></tr>`;
+      ingRows+=`<tr style="background:#f0f0f0"><td colspan="5" style="padding:${D.rowPad}pt 6pt;font-style:italic;font-weight:600;font-size:${D.fontSz}pt;border:1px solid #999">${ing.name||""}</td></tr>`;
     }else{
       rowNo++;
       const stdQty=parseFloat(ing.standardQty)||0;
       const currQty=(stdQty*factor).toFixed(3).replace(/\.?0+$/,"");
       const nameDisplay=ing.name+(ing.desc?` (${ing.desc})`:"");
       ingRows+=`<tr>
-        <td style="border:1px solid #999;padding:6pt 5pt;text-align:center;font-size:11pt">${rowNo}</td>
-        <td style="border:1px solid #999;padding:6pt 5pt;font-size:11pt">${nameDisplay}</td>
-        <td style="border:1px solid #999;padding:6pt 5pt;text-align:center;font-size:11pt">${stdQty||""}</td>
-        <td style="border:1px solid #999;padding:6pt 5pt;text-align:center;font-size:11pt">${currQty||""}</td>
-        <td style="border:1px solid #999;padding:6pt 5pt;text-align:center;font-size:11pt"></td>
+        <td style="border:1px solid #999;padding:${D.rowPad}pt 5pt;text-align:center;font-size:${D.fontSz}pt">${rowNo}</td>
+        <td style="border:1px solid #999;padding:${D.rowPad}pt 5pt;font-size:${D.fontSz}pt">${nameDisplay}</td>
+        <td style="border:1px solid #999;padding:${D.rowPad}pt 5pt;text-align:center;font-size:${D.fontSz}pt">${stdQty||""}</td>
+        <td style="border:1px solid #999;padding:${D.rowPad}pt 5pt;text-align:center;font-size:${D.fontSz}pt">${currQty||""}</td>
+        <td style="border:1px solid #999;padding:${D.rowPad}pt 5pt;text-align:center;font-size:${D.fontSz}pt"></td>
       </tr>`;
     }
   });
@@ -138,12 +152,12 @@ function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, char
     }).filter(Boolean);
   }
   var packRows=catPackSizes.length
-    ?catPackSizes.map(function(s){return '<tr><td style="border:1px solid #999;padding:7pt 5pt;font-size:10pt">'+s+'</td><td colspan="2" style="border:1px solid #999;padding:7pt 5pt;min-width:60pt">&nbsp;</td></tr>';}).join("")
-    :'<tr><td style="border:1px solid #999;padding:8pt 5pt">&nbsp;</td><td colspan="2" style="border:1px solid #999;padding:8pt 5pt">&nbsp;</td></tr><tr><td style="border:1px solid #999;padding:8pt 5pt">&nbsp;</td><td colspan="2" style="border:1px solid #999;padding:8pt 5pt">&nbsp;</td></tr><tr><td style="border:1px solid #999;padding:8pt 5pt">&nbsp;</td><td colspan="2" style="border:1px solid #999;padding:8pt 5pt">&nbsp;</td></tr>';
+    ?catPackSizes.map(function(s){return '<tr><td style="border:1px solid #999;padding:'+D.packPad+'pt 5pt;font-size:'+D.packFont+'pt">'+s+'</td><td colspan="2" style="border:1px solid #999;padding:'+D.packPad+'pt 5pt;min-width:60pt">&nbsp;</td></tr>';}).join("")
+    :'<tr><td style="border:1px solid #999;padding:'+D.packPad+'pt 5pt">&nbsp;</td><td colspan="2" style="border:1px solid #999;padding:'+D.packPad+'pt 5pt">&nbsp;</td></tr><tr><td style="border:1px solid #999;padding:'+D.packPad+'pt 5pt">&nbsp;</td><td colspan="2" style="border:1px solid #999;padding:'+D.packPad+'pt 5pt">&nbsp;</td></tr><tr><td style="border:1px solid #999;padding:'+D.packPad+'pt 5pt">&nbsp;</td><td colspan="2" style="border:1px solid #999;padding:'+D.packPad+'pt 5pt">&nbsp;</td></tr>';
   const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Production Sheet — ${bom.productName}</title>
 <style>
   *{box-sizing:border-box;}
-  body{font-family:Arial,sans-serif;margin:0;padding:6pt 10pt 6pt 25mm;font-size:11pt;}
+  body{font-family:Arial,sans-serif;margin:0;padding:${D.bodyPad}pt 10pt ${D.bodyPad}pt 25mm;font-size:11pt;}
   .header-table{width:100%;border-collapse:collapse;margin-bottom:8pt;}
   .header-table td{padding:3pt 5pt;font-size:10pt;}
   .co-name{font-size:18pt;font-weight:800;letter-spacing:1px;}
@@ -156,9 +170,9 @@ function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, char
   .right-table td{border:1px solid #999;padding:5pt 6pt;}
   .section-head{font-weight:700;background:#e0e0e0;padding:3pt 5pt;font-size:10pt;text-transform:uppercase;}
   .footer-row{display:flex;justify-content:space-between;margin-top:12pt;font-size:11pt;}
-  @page{size:210mm 297mm portrait;margin:6mm 8mm 6mm 8mm;}
+  @page{size:210mm 297mm portrait;margin:${Math.max(4,D.bodyPad)}mm 8mm ${Math.max(4,D.bodyPad)}mm 8mm;}
   @media print{
-    body{padding:5pt 8pt 5pt 25mm!important;}
+    body{padding:${D.bodyPad}pt 8pt ${D.bodyPad}pt 25mm!important;}
     tr{page-break-inside:avoid;}
   }
 </style>
@@ -211,24 +225,21 @@ function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, char
             <td style="border:1px solid #999;padding:7pt 5pt"></td>
           </tr>
           <tr><td colspan="5" style="border:1px solid #999;padding:3pt 6pt;font-size:9pt;font-style:italic;font-weight:600;background:#fff3cd">Additional Materials (if any)</td></tr>
-          <tr><td style="border:1px solid #999;padding:7pt 5pt"></td><td style="border:1px solid #999;padding:7pt 5pt"></td><td style="border:1px solid #999;padding:7pt 5pt"></td><td style="border:1px solid #999;padding:7pt 5pt"></td><td style="border:1px solid #999;padding:7pt 5pt"></td></tr>
-          <tr><td style="border:1px solid #999;padding:7pt 5pt"></td><td style="border:1px solid #999;padding:7pt 5pt"></td><td style="border:1px solid #999;padding:7pt 5pt"></td><td style="border:1px solid #999;padding:7pt 5pt"></td><td style="border:1px solid #999;padding:7pt 5pt"></td></tr>
-          <tr><td style="border:1px solid #999;padding:7pt 5pt"></td><td style="border:1px solid #999;padding:7pt 5pt"></td><td style="border:1px solid #999;padding:7pt 5pt"></td><td style="border:1px solid #999;padding:7pt 5pt"></td><td style="border:1px solid #999;padding:7pt 5pt"></td></tr>
-          <tr><td style="border:1px solid #999;padding:7pt 5pt"></td><td style="border:1px solid #999;padding:7pt 5pt"></td><td style="border:1px solid #999;padding:7pt 5pt"></td><td style="border:1px solid #999;padding:7pt 5pt"></td><td style="border:1px solid #999;padding:7pt 5pt"></td></tr>
+          ${Array.from({length:D.addlMatRows}).map(()=>`<tr><td style="border:1px solid #999;padding:${D.rowPad}pt 5pt"></td><td style="border:1px solid #999;padding:${D.rowPad}pt 5pt"></td><td style="border:1px solid #999;padding:${D.rowPad}pt 5pt"></td><td style="border:1px solid #999;padding:${D.rowPad}pt 5pt"></td><td style="border:1px solid #999;padding:${D.rowPad}pt 5pt"></td></tr>`).join("")}
           <tr><td colspan="6" style="border:1px solid #999;padding:3px 5px;font-size:10px;font-style:italic;font-weight:600;background:#f5f5f5">EXTRA ADDITIONS</td></tr>
           ${(function(){
             var cfg=extraConfig||{};
             var rows='';
-            var normalStyle='border:1px solid #999;padding:8px 5px;font-size:11px;font-style:italic';
-            var highlightStyle='border:1px solid #999;padding:6px 5px;font-size:11px;font-style:italic;font-weight:700;background:#f0f0f0';
-            var blankCells='<td style="border:1px solid #999;padding:8px 5px"></td><td style="border:1px solid #999;padding:8px 5px"></td>';
+            var normalStyle='border:1px solid #999;padding:'+D.extraPad+'px 5px;font-size:11px;font-style:italic';
+            var highlightStyle='border:1px solid #999;padding:'+(D.extraPad-1)+'px 5px;font-size:11px;font-style:italic;font-weight:700;background:#f0f0f0';
+            var blankCells='<td style="border:1px solid #999;padding:'+D.extraPad+'px 5px"></td><td style="border:1px solid #999;padding:'+D.extraPad+'px 5px"></td>';
             var items=cfg.items||['Dhoyela','Extra Output','Dhoyela'];
             items.forEach(function(label){
               var isHighlight=label==='Extra Output'||label.toLowerCase().includes('extra output');
               var style=isHighlight?highlightStyle:normalStyle;
               rows+='<tr><td colspan="4" style="'+style+'">'+label+'</td>'+blankCells+'</tr>';
             });
-            var blanks=cfg.blankRows!==undefined?cfg.blankRows:1;
+            var blanks=cfg.blankRows!==undefined?cfg.blankRows:D.extraBlanks;
             for(var i=0;i<blanks;i++) rows+='<tr><td colspan="4" style="'+normalStyle+'">&nbsp;</td>'+blankCells+'</tr>';
             return rows;
           })()}
@@ -266,9 +277,9 @@ function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, char
         </tr>
         ${qcParams.length
           ?qcParams.map(p=>`<tr>
-            <td style="border:1px solid #999;padding:7px 5px;font-size:11px">${p.name||""}</td>
-            <td style="border:1px solid #999;padding:7px 5px;font-size:11px;text-align:center">${p.standard||""}</td>
-            <td style="border:1px solid #999;padding:7px 5px;min-width:70px">&nbsp;</td>
+            <td style="border:1px solid #999;padding:${D.qcPad}px 5px;font-size:${D.qcFont}px">${p.name||""}</td>
+            <td style="border:1px solid #999;padding:${D.qcPad}px 5px;font-size:${D.qcFont}px;text-align:center">${p.standard||""}</td>
+            <td style="border:1px solid #999;padding:${D.qcPad}px 5px;min-width:70px">&nbsp;</td>
           </tr>`).join("")
           :"<tr><td colspan='3' style='color:#999;font-style:italic;border:1px solid #999;padding:7px 5px'>No QC parameters defined</td></tr>"
         }
@@ -6014,7 +6025,7 @@ function ShadeCorrectionCalc({showToast,user,isAdmin,canApprove}){
   const [bomBaseSize,setBomBaseSize]=useState(0);
   const [batchSize,setBatchSize]=useState("100");
   const [lastScaledSize,setLastScaledSize]=useState(0); // tracks size pigments were last scaled to
-  const [pigments,setPigments]=useState([{id:"p1",name:"",qty:""},{id:"p2",name:"",qty:""}]);
+  const [pigments,setPigments]=useState([{id:"p1",name:"",qty:"",pigmentPct:""},{id:"p2",name:"",qty:"",pigmentPct:""}]);
   const [targetTotal,setTargetTotal]=useState("");
   const [targetOverride,setTargetOverride]=useState(false);
   const [stainers,setStainers]=useState([{id:"s1",name:"",amt:"",pigment:""}]);
@@ -6029,6 +6040,7 @@ function ShadeCorrectionCalc({showToast,user,isAdmin,canApprove}){
   },[]);
 
   const isPigmentCode=(name)=>/^\s*3\d/.test(name||""); // pigment codes start with digit 3, e.g. 3220, 3020/822
+  const isStrName=(name)=>/str/i.test(name||""); // ingredient/batch is a stainer if name contains "STR"
   const productNames=[...new Set(allBatches.map(b=>b.productName).filter(Boolean))].sort();
   const filteredProductNames=productSearch.trim()
     ?productNames.filter(n=>normalize(n).includes(normalize(productSearch)))
@@ -6048,9 +6060,9 @@ function ShadeCorrectionCalc({showToast,user,isAdmin,canApprove}){
       const base=parseFloat(matchedBom.baseBatchSize)||100;
       setBomBaseSize(base);
       const mult=actualSize/base;
-      const rows=(matchedBom.ingredients||[]).filter(i=>!i.isProcess&&i.name&&parseFloat(i.standardQty)>0&&isPigmentCode(i.name))
-        .map(i=>({id:i.id||newId(),name:i.name,qty:((parseFloat(i.standardQty)||0)*mult).toFixed(3)}));
-      setPigments(rows.length?rows:[{id:"p1",name:"",qty:""},{id:"p2",name:"",qty:""}]);
+      const rows=(matchedBom.ingredients||[]).filter(i=>!i.isProcess&&i.name&&parseFloat(i.standardQty)>0&&(isPigmentCode(i.name)||isStrName(i.name)))
+        .map(i=>({id:i.id||newId(),name:i.name,qty:((parseFloat(i.standardQty)||0)*mult).toFixed(3),pigmentPct:""}));
+      setPigments(rows.length?rows:[{id:"p1",name:"",qty:"",pigmentPct:""},{id:"p2",name:"",qty:"",pigmentPct:""}]);
     }else{
       setBomId("");setBomBaseSize(0);
       showToast("No BOM found for "+b.productName+" — enter pigments manually","error");
@@ -6067,7 +6079,7 @@ function ShadeCorrectionCalc({showToast,user,isAdmin,canApprove}){
     showToast("Pigment quantities rescaled to "+newSize+" ✓");
   };
 
-  const addPigment=()=>setPigments(p=>[...p,{id:"p"+Date.now()+Math.random(),name:"",qty:""}]);
+  const addPigment=()=>setPigments(p=>[...p,{id:"p"+Date.now()+Math.random(),name:"",qty:"",pigmentPct:""}]);
   const removePigment=(id)=>setPigments(p=>p.filter(x=>x.id!==id));
   const updatePigment=(id,field,val)=>setPigments(p=>p.map(x=>x.id===id?{...x,[field]:val}:x));
 
@@ -6075,8 +6087,17 @@ function ShadeCorrectionCalc({showToast,user,isAdmin,canApprove}){
   const removeStainer=(id)=>setStainers(s=>s.filter(x=>x.id!==id));
   const updateStainer=(id,field,val)=>setStainers(s=>s.map(x=>x.id===id?{...x,[field]:val}:x));
 
-  const currentTotal=pigments.reduce((sum,p)=>sum+(parseFloat(p.qty)||0),0);
+  const pigmentPureMass=(p)=>{
+    const qty=parseFloat(p.qty)||0;
+    if(isStrName(p.name)){
+      const pct=parseFloat(p.pigmentPct)||0;
+      return qty*pct/100;
+    }
+    return qty;
+  };
+  const currentTotal=pigments.reduce((sum,p)=>sum+pigmentPureMass(p),0);
   const effectiveTarget=targetOverride?(parseFloat(targetTotal)||0):currentTotal;
+  const missingStrPct=pigments.some(p=>p.name.trim()&&isStrName(p.name)&&!(parseFloat(p.pigmentPct)>0));
 
   const validStainers=stainers.filter(s=>s.name.trim()&&parseFloat(s.amt)>0&&parseFloat(s.pigment)>0);
   const stainerContrib={};
@@ -6099,19 +6120,31 @@ function ShadeCorrectionCalc({showToast,user,isAdmin,canApprove}){
   });
 
   const combinedRows=[
-    ...pigments.filter(p=>p.name.trim()).map(p=>({
-      id:p.id,name:p.name,oldQty:parseFloat(p.qty)||0,
-      added:stainerContrib[p.id]||0,
-      afterAddition:(parseFloat(p.qty)||0)+(stainerContrib[p.id]||0),
-      isNew:false
-    })),
+    ...pigments.filter(p=>p.name.trim()).map(p=>{
+      const rowIsStr=isStrName(p.name);
+      const rawQty=parseFloat(p.qty)||0;
+      const pureMass=pigmentPureMass(p);
+      return {
+        id:p.id,name:p.name,isStr:rowIsStr,pigmentPct:p.pigmentPct,
+        oldQty:pureMass,oldQtyRaw:rawQty,
+        added:stainerContrib[p.id]||0,
+        afterAddition:pureMass+(stainerContrib[p.id]||0),
+        isNew:false
+      };
+    }),
     ...newPigmentsFromStainer.map(n=>({
-      id:n.key,name:n.name,oldQty:0,added:n.mass,afterAddition:n.mass,isNew:true
+      id:n.key,name:n.name,isStr:false,pigmentPct:"",
+      oldQty:0,oldQtyRaw:0,added:n.mass,afterAddition:n.mass,isNew:true
     }))
   ];
   const grandTotalAfterAddition=combinedRows.reduce((s,r)=>s+r.afterAddition,0);
   const scale=grandTotalAfterAddition>0?effectiveTarget/grandTotalAfterAddition:0;
-  const finalRows=combinedRows.map(r=>({...r,newQty:r.afterAddition*scale}));
+  const finalRows=combinedRows.map(r=>{
+    const newQtyPure=r.afterAddition*scale;
+    const pct=parseFloat(r.pigmentPct)||0;
+    const newQtyRaw=r.isStr&&pct>0?newQtyPure/(pct/100):newQtyPure;
+    return {...r,newQty:newQtyPure,newQtyRaw};
+  });
 
   const hasValidInputs=currentTotal>0&&validStainers.length>0&&effectiveTarget>0;
   const fmt=(v)=>v!==0?v.toFixed(3):"—";
@@ -6124,9 +6157,10 @@ function ShadeCorrectionCalc({showToast,user,isAdmin,canApprove}){
     setSubmitting(true);
     try{
       const suggestedAtBase=finalRows.map(r=>({
-        name:r.name,oldQty:r.oldQty,newQty:r.newQty,
-        newQtyAtBase:multiplierToBase>0?r.newQty/multiplierToBase:r.newQty,
-        isNew:r.isNew,matchedIngId:r.isNew?null:r.id
+        name:r.name,oldQty:r.oldQtyRaw,newQty:r.newQtyRaw,
+        newQtyAtBase:multiplierToBase>0?r.newQtyRaw/multiplierToBase:r.newQtyRaw,
+        isNew:r.isNew,matchedIngId:r.isNew?null:r.id,
+        isStr:r.isStr,pigmentPct:r.pigmentPct||null
       }));
       await C("shade_corrections").add({
         productName:productName||(boms.find(b=>b.id===bomId)?.productName)||"",
@@ -6263,20 +6297,30 @@ function ShadeCorrectionCalc({showToast,user,isAdmin,canApprove}){
         <button onClick={addPigment} style={{background:"none",border:"1px dashed #1e3a5f",borderRadius:"6px",padding:"4px 14px",color:"#93c5fd",cursor:"pointer",fontSize:"12px",fontWeight:"600"}}>+ Add Pigment</button>
       </div>
       <div style={{border:"1px solid #1e293b",borderRadius:"8px",overflow:"hidden"}}>
-        <div style={{display:"grid",gridTemplateColumns:"1.8fr 110px 28px",gap:"6px",background:"#0b1220",padding:"6px 10px"}}>
-          {["Pigment Name","Current Qty",""].map(h=><div key={h} style={{fontSize:"9px",fontWeight:"700",color:"#334155",textTransform:"uppercase"}}>{h}</div>)}
+        <div style={{display:"grid",gridTemplateColumns:"1.6fr 100px 90px 28px",gap:"6px",background:"#0b1220",padding:"6px 10px"}}>
+          {["Pigment Name","Current Qty","Pigment % (if STR)",""].map(h=><div key={h} style={{fontSize:"9px",fontWeight:"700",color:"#334155",textTransform:"uppercase"}}>{h}</div>)}
         </div>
-        {pigments.map((p,i)=><div key={p.id} style={{display:"grid",gridTemplateColumns:"1.8fr 110px 28px",gap:"6px",padding:"7px 10px",borderTop:"1px solid #1e293b",alignItems:"center"}}>
-          <input style={sml} value={p.name} onChange={e=>updatePigment(p.id,"name",e.target.value)} placeholder={"Pigment "+(i+1)+" (e.g. Titanium Dioxide)"}/>
-          <input style={{...sml,textAlign:"center"}} type="number" min="0" step="0.001" value={p.qty} onChange={e=>updatePigment(p.id,"qty",e.target.value)} placeholder="kg"/>
-          <button onClick={()=>removePigment(p.id)} disabled={pigments.length===1} style={{background:"none",border:"none",color:pigments.length>1?"#ef4444":"#1e293b",cursor:pigments.length>1?"pointer":"default",fontSize:"16px",lineHeight:1,padding:0}}>×</button>
-        </div>)}
-        {pigments.length>1&&<div style={{display:"grid",gridTemplateColumns:"1.8fr 110px 28px",gap:"6px",padding:"6px 10px",borderTop:"1px solid #1e3a5f",background:"#0a1520"}}>
-          <div style={{fontSize:"10px",fontWeight:"700",color:"#475569"}}>CURRENT TOTAL</div>
+        {pigments.map((p,i)=>{
+          const rowIsStr=isStrName(p.name);
+          return <div key={p.id} style={{display:"grid",gridTemplateColumns:"1.6fr 100px 90px 28px",gap:"6px",padding:"7px 10px",borderTop:"1px solid #1e293b",alignItems:"center",background:rowIsStr?"#0c1a2e":"transparent"}}>
+            <div>
+              <input style={sml} value={p.name} onChange={e=>updatePigment(p.id,"name",e.target.value)} placeholder={"Pigment "+(i+1)+" (e.g. Titanium Dioxide)"}/>
+              {rowIsStr&&<div style={{fontSize:"10px",color:"#22d3ee",marginTop:"3px"}}>🎨 Stainer (STR) — enter its pigment%{pigmentPureMass(p)>0&&<span style={{color:"#475569"}}> · = {pigmentPureMass(p).toFixed(3)} pure pigment</span>}</div>}
+            </div>
+            <input style={{...sml,textAlign:"center"}} type="number" min="0" step="0.001" value={p.qty} onChange={e=>updatePigment(p.id,"qty",e.target.value)} placeholder="kg"/>
+            {rowIsStr
+              ?<input style={{...sml,textAlign:"center",borderColor:!parseFloat(p.pigmentPct)?"#f59e0b60":"#1e293b"}} type="number" min="0" max="100" step="0.1" value={p.pigmentPct} onChange={e=>updatePigment(p.id,"pigmentPct",e.target.value)} placeholder="%"/>
+              :<div style={{textAlign:"center",color:"#334155",fontSize:"12px"}}>—</div>}
+            <button onClick={()=>removePigment(p.id)} disabled={pigments.length===1} style={{background:"none",border:"none",color:pigments.length>1?"#ef4444":"#1e293b",cursor:pigments.length>1?"pointer":"default",fontSize:"16px",lineHeight:1,padding:0}}>×</button>
+          </div>;
+        })}
+        {pigments.length>1&&<div style={{display:"grid",gridTemplateColumns:"1.6fr 100px 90px 28px",gap:"6px",padding:"6px 10px",borderTop:"1px solid #1e3a5f",background:"#0a1520"}}>
+          <div style={{fontSize:"10px",fontWeight:"700",color:"#475569"}}>CURRENT TOTAL (pure pigment)</div>
           <div style={{fontSize:"11px",fontWeight:"700",color:"#f1f5f9",textAlign:"center"}}>{currentTotal.toFixed(3)}</div>
-          <div/>
+          <div/><div/>
         </div>}
       </div>
+      {missingStrPct&&<div style={{fontSize:"11px",color:"#f59e0b",marginTop:"6px"}}>⚠ Enter Pigment % for the stainer (STR) ingredient(s) above — without it, its pigment contribution can't be calculated.</div>}
     </div>
 
     {/* Target total pigment */}
@@ -6329,14 +6373,15 @@ function ShadeCorrectionCalc({showToast,user,isAdmin,canApprove}){
           <div>
             <div style={{fontSize:"12px",color:"#e2e8f0",fontWeight:"600"}}>{r.name}</div>
             {r.isNew&&<div style={{fontSize:"10px",color:"#f59e0b"}}>⚠ New — add to BOM</div>}
+            {r.isStr&&<div style={{fontSize:"10px",color:"#22d3ee"}}>🎨 Stainer @ {r.pigmentPct||"?"}% — qty shown is raw material</div>}
           </div>
-          <div style={{fontSize:"12px",color:"#64748b",textAlign:"center"}}>{r.oldQty>0?r.oldQty.toFixed(3):"—"}</div>
+          <div style={{fontSize:"12px",color:"#64748b",textAlign:"center"}}>{r.oldQtyRaw>0?r.oldQtyRaw.toFixed(3):"—"}</div>
           <div style={{fontSize:"12px",color:r.added>0?"#fbbf24":"#334155",fontWeight:r.added>0?"700":"400",textAlign:"center"}}>{r.added>0?"+"+r.added.toFixed(3):"—"}</div>
           <div style={{fontSize:"12px",color:"#94a3b8",textAlign:"center"}}>{r.afterAddition.toFixed(3)}</div>
-          <div style={{fontSize:"13px",color:"#4ade80",fontWeight:"700",textAlign:"center"}}>{r.newQty.toFixed(3)}</div>
+          <div style={{fontSize:"13px",color:"#4ade80",fontWeight:"700",textAlign:"center"}}>{r.newQtyRaw.toFixed(3)}</div>
         </div>)}
         <div style={{display:"grid",gridTemplateColumns:"1.6fr 90px 90px 100px 110px",gap:"6px",padding:"7px 10px",borderTop:"1px solid #1e3a5f",background:"#0a1520"}}>
-          <div style={{fontSize:"10px",fontWeight:"700",color:"#475569"}}>TOTAL</div>
+          <div style={{fontSize:"10px",fontWeight:"700",color:"#475569"}}>TOTAL (pure pigment)</div>
           <div style={{fontSize:"11px",fontWeight:"700",color:"#f1f5f9",textAlign:"center"}}>{currentTotal.toFixed(3)}</div>
           <div/><div/>
           <div style={{fontSize:"13px",fontWeight:"700",color:"#4ade80",textAlign:"center"}}>{finalRows.reduce((s,r)=>s+r.newQty,0).toFixed(3)}</div>
