@@ -289,6 +289,116 @@ function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, char
   const w=window.open("","_blank");
   w.document.write(html);w.document.close();
 }
+
+// ══════════════════════════════════════════════════════════
+// PRINT TRIAL SHEET — gives QC a clear printable formula + step-by-step
+// instructions to follow, with blank space to record actual results.
+// ══════════════════════════════════════════════════════════
+function printTrialSheet(trial,project,index){
+  const ingRows=(trial.ingredients||[]).filter(r=>r.material&&r.material.trim()).map(function(r,i){
+    return '<tr><td style="border:1px solid #999;padding:6pt 5pt;text-align:center;font-size:10pt">'+(i+1)+'</td>'
+      +'<td style="border:1px solid #999;padding:6pt 5pt;font-size:10pt">'+r.material+'</td>'
+      +'<td style="border:1px solid #999;padding:6pt 5pt;text-align:center;font-size:10pt">'+(r.quantity||"")+'</td>'
+      +'<td style="border:1px solid #999;padding:6pt 5pt;text-align:center;font-size:10pt">'+(r.unit||"")+'</td>'
+      +'<td style="border:1px solid #999;padding:6pt 5pt;font-size:9pt;font-style:italic;color:#555">'+(r.notes||"")+'</td></tr>';
+  }).join("");
+
+  const stepRows=(trial.processSteps||[]).filter(s=>s.text&&s.text.trim()).map(function(s,i){
+    return '<tr><td style="border:1px solid #999;padding:7pt 6pt;text-align:center;font-size:11pt;font-weight:700;background:#f5f5f5;width:6%">'+(i+1)+'</td>'
+      +'<td style="border:1px solid #999;padding:7pt 6pt;font-size:10.5pt;line-height:1.5">'+s.text.replace(/\n/g,"<br>")+'</td></tr>';
+  }).join("");
+
+  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Trial Sheet — ${trial.trialName||"Trial "+(index+1)}</title>
+<style>
+  *{box-sizing:border-box}
+  body{font-family:Arial,sans-serif;margin:0;padding:8pt 10pt;font-size:11pt;}
+  @page{size:210mm 297mm portrait;margin:8mm;}
+  table{border-collapse:collapse;width:100%}
+  .co-name{font-size:20pt;font-weight:800;letter-spacing:1px}
+  .sheet-title{font-size:15pt;font-weight:700}
+  .section-head{background:#0D3569;color:#fff;font-weight:700;padding:5pt 8pt;font-size:10.5pt;text-transform:uppercase;letter-spacing:0.04em}
+</style></head>
+<body>
+<table>
+  <tr>
+    <td style="width:50%"><span class="co-name">VEEBEE</span></td>
+    <td style="width:50%;text-align:right"><span class="sheet-title">R&amp;D TRIAL SHEET</span></td>
+  </tr>
+</table>
+<table style="border:2px solid #000;margin:6pt 0">
+  <tr>
+    <td style="width:60%;padding:6pt 10pt;border-right:1px solid #999">
+      <div style="font-size:9pt;color:#666">PROJECT</div>
+      <div style="font-size:13pt;font-weight:700">${project?.name||project?.productName||"—"}</div>
+    </td>
+    <td style="width:40%;padding:6pt 10pt">
+      <div style="font-size:9pt;color:#666">TRIAL</div>
+      <div style="font-size:13pt;font-weight:700">${trial.trialName||"Trial "+(index+1)}</div>
+    </td>
+  </tr>
+</table>
+<table style="margin-bottom:6pt">
+  <tr>
+    <td style="border:1px solid #999;padding:5pt 8pt;font-size:10pt"><b>Date:</b> ${trial.date||"_______"}</td>
+    <td style="border:1px solid #999;padding:5pt 8pt;font-size:10pt"><b>Assigned To:</b> ${trial.assignedTo?trial.assignedTo.split("@")[0]:"_______"}</td>
+    <td style="border:1px solid #999;padding:5pt 8pt;font-size:10pt"><b>Trial No:</b> ${index+1}</td>
+  </tr>
+</table>
+
+<table style="margin-bottom:8pt">
+  <tr><td colspan="5" class="section-head">Formulation — Follow Exact Quantities</td></tr>
+  <tr>
+    <th style="border:1px solid #999;padding:5pt;background:#d0d0d0;font-size:9.5pt;width:6%">No</th>
+    <th style="border:1px solid #999;padding:5pt;background:#d0d0d0;font-size:9.5pt">Material</th>
+    <th style="border:1px solid #999;padding:5pt;background:#d0d0d0;font-size:9.5pt;width:14%">Qty</th>
+    <th style="border:1px solid #999;padding:5pt;background:#d0d0d0;font-size:9.5pt;width:12%">Unit</th>
+    <th style="border:1px solid #999;padding:5pt;background:#d0d0d0;font-size:9.5pt;width:22%">Notes</th>
+  </tr>
+  ${ingRows||'<tr><td colspan="5" style="border:1px solid #999;padding:8pt;text-align:center;color:#999;font-style:italic">No ingredients listed</td></tr>'}
+</table>
+
+${stepRows?`<table style="margin-bottom:8pt">
+  <tr><td colspan="2" class="section-head">⚙ Process Steps — Follow In Order</td></tr>
+  ${stepRows}
+</table>`:""}
+
+<table style="margin-bottom:8pt">
+  <tr><td class="section-head">Process / Mixing Method (summary)</td></tr>
+  <tr><td style="border:1px solid #999;padding:10pt;font-size:10.5pt;min-height:40pt">${(trial.process||"").replace(/\n/g,"<br>")||"&nbsp;"}</td></tr>
+</table>
+
+<table style="margin-bottom:8pt">
+  <tr><td colspan="2" class="section-head">Properties to Test</td></tr>
+  <tr>
+    <td style="border:1px solid #999;padding:8pt;font-size:10.5pt;width:50%">${(trial.propertiesTested||"").replace(/\n/g,"<br>")||"<span style='color:#999'>—</span>"}</td>
+    <td style="border:1px solid #999;padding:8pt;font-size:9pt;color:#666;width:50%">Record actual measured values below ↓</td>
+  </tr>
+</table>
+
+<table style="margin-bottom:8pt">
+  <tr><td class="section-head">QC — Actual Results / Observations</td></tr>
+  <tr><td style="border:1px solid #999;padding:10pt;height:90pt"></td></tr>
+</table>
+
+<table style="margin-bottom:10pt">
+  <tr><td class="section-head">Recommendation</td></tr>
+  <tr><td style="border:1px solid #999;padding:8pt">
+    ${["Approved as Final","Needs Modification","Rejected","Promising — Continue Testing"].map(o=>'☐ '+o).join('&nbsp;&nbsp;&nbsp;&nbsp;')}
+  </td></tr>
+</table>
+
+<table style="margin-top:20pt">
+  <tr>
+    <td style="width:50%;border-top:1px solid #000;padding-top:4pt;font-size:10pt">Tested By &amp; Date</td>
+    <td style="width:50%;border-top:1px solid #000;padding-top:4pt;font-size:10pt">Checked / Approved By</td>
+  </tr>
+</table>
+<div style="margin-top:10pt;font-size:8.5pt;color:#888">Printed: ${today()}</div>
+<script>window.onload=()=>{setTimeout(()=>{window.focus();window.print();},400);}<\/script>
+</body></html>`;
+  const w=window.open("","_blank");
+  w.document.write(html);w.document.close();
+}
 </script>
 <script type="text/babel">
 const {useState,useEffect,useRef} = React;
@@ -1420,7 +1530,7 @@ function TestReportCard({report,num,onDelete}){
   </div>;
 }
 
-function TrialCard({trial,index,onDelete,onUpdate,isAdmin,sysUnits,onAddUnit}){
+function TrialCard({trial,index,onDelete,onUpdate,isAdmin,sysUnits,onAddUnit,project,allProfiles={}}){
   const ING_UNITS_EFF=sysUnits&&sysUnits.length?sysUnits:[...ING_UNITS,...BATCH_UNITS.filter(u=>!ING_UNITS.includes(u))];
   const [open,setOpen]=useState(false);
   const [editing,setEditing]=useState(false);
@@ -1438,7 +1548,9 @@ function TrialCard({trial,index,onDelete,onUpdate,isAdmin,sysUnits,onAddUnit}){
     outcome:trial.outcome||"Under Evaluation",
     ingredients:trial.ingredients?.length?trial.ingredients:[blankIng()],
     process:trial.process||"",propertiesTested:trial.propertiesTested||"",
-    observations:trial.observations||"",nextSteps:trial.nextSteps||""
+    observations:trial.observations||"",nextSteps:trial.nextSteps||"",
+    processSteps:trial.processSteps?.length?trial.processSteps:[{id:newId(),text:""}],
+    assignedTo:trial.assignedTo||""
   });
 
   const reports=trial.testReports||[];
@@ -1482,8 +1594,10 @@ function TrialCard({trial,index,onDelete,onUpdate,isAdmin,sysUnits,onAddUnit}){
         </div>
       </div>
       <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
+        {trial.assignedTo&&!editing&&<span style={{fontSize:"10px",fontWeight:"700",color:"#fbbf24",background:"#fbbf2418",border:"1px solid #fbbf2430",padding:"2px 8px",borderRadius:"99px",whiteSpace:"nowrap"}}>👤 {allProfiles[trial.assignedTo]?.displayName||trial.assignedTo.split("@")[0]}</span>}
         {isEval&&!editing&&<span style={{fontSize:"10px",fontWeight:"700",color:"#a855f7",background:"#a855f718",border:"1px solid #a855f730",padding:"2px 8px",borderRadius:"99px",whiteSpace:"nowrap"}}>⏳ Evaluating</span>}
         <Bdg label={displayOutcome} color={oc}/>
+        {!editing&&<button onClick={e=>{e.stopPropagation();printTrialSheet(trial,project,index);}} style={{background:"#052e16",border:"1px solid #16653440",borderRadius:"6px",color:"#4ade80",cursor:"pointer",fontSize:"11.5px",fontWeight:"600",padding:"3px 10px"}}>🖨 Print</button>}
         {onDelete&&!editing&&<button onClick={e=>{e.stopPropagation();setOpen(true);setEditing(true);}} style={{background:"#1e3a5f",border:"1px solid #2563eb40",borderRadius:"6px",color:"#93c5fd",cursor:"pointer",fontSize:"11.5px",fontWeight:"600",padding:"3px 10px"}}>✏️ Edit</button>}
         {onDelete&&!editing&&<button onClick={e=>{e.stopPropagation();onDelete(trial.id)}} style={{background:"none",border:"none",color:"#334155",fontSize:"14px",padding:"2px 4px"}}>🗑</button>}
         {!editing&&<span style={{color:"#334155",fontSize:"12px"}}>{open?"▲":"▼"}</span>}
@@ -1527,6 +1641,21 @@ function TrialCard({trial,index,onDelete,onUpdate,isAdmin,sysUnits,onAddUnit}){
         </div>
         <button onClick={addIng} style={{background:"none",border:"1px dashed #1e293b",borderRadius:"6px",padding:"5px 12px",color:"#475569",cursor:"pointer",fontSize:"12px",width:"100%"}}>+ Add Row</button>
       </div>
+      {/* Process Steps editor */}
+      <div style={{marginBottom:"12px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"8px"}}>
+          <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em"}}>Process Steps</div>
+          <button onClick={()=>setEditForm(f=>({...f,processSteps:[...(f.processSteps||[]),{id:newId(),text:""}]}))} style={{background:"none",border:"1px dashed #1e3a5f",borderRadius:"6px",padding:"4px 12px",color:"#93c5fd",cursor:"pointer",fontSize:"11.5px",fontWeight:"600"}}>+ Add Step</button>
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:"6px"}}>
+          {(editForm.processSteps||[]).map((s,i)=><div key={s.id} style={{display:"flex",gap:"8px",alignItems:"flex-start"}}>
+            <div style={{width:"22px",height:"22px",borderRadius:"50%",background:"#1e293b",color:"#93c5fd",fontSize:"10px",fontWeight:"700",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginTop:"6px"}}>{i+1}</div>
+            <textarea style={{...ta,minHeight:"34px",flex:1}} value={s.text} onChange={e=>setEditForm(f=>({...f,processSteps:f.processSteps.map(x=>x.id===s.id?{...x,text:e.target.value}:x)}))} placeholder={`Step ${i+1}…`}/>
+            <button onClick={()=>setEditForm(f=>({...f,processSteps:f.processSteps.length>1?f.processSteps.filter(x=>x.id!==s.id):f.processSteps}))} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"14px",padding:"6px 2px"}}>×</button>
+          </div>)}
+        </div>
+      </div>
+      <Field label="Assign To (QC)"><input style={inp} value={editForm.assignedTo} onChange={e=>setEditForm({...editForm,assignedTo:e.target.value})} placeholder="email or leave blank"/></Field>
       <Grid2>
         <Field label="Process / Mixing Method"><textarea style={{...ta,minHeight:"72px"}} value={editForm.process} onChange={e=>setEditForm({...editForm,process:e.target.value})}/></Field>
         <Field label="Properties Tested"><textarea style={{...ta,minHeight:"72px"}} value={editForm.propertiesTested} onChange={e=>setEditForm({...editForm,propertiesTested:e.target.value})}/></Field>
@@ -1536,7 +1665,7 @@ function TrialCard({trial,index,onDelete,onUpdate,isAdmin,sysUnits,onAddUnit}){
         <Field label="Next Steps"><textarea style={{...ta,minHeight:"72px"}} value={editForm.nextSteps} onChange={e=>setEditForm({...editForm,nextSteps:e.target.value})}/></Field>
       </Grid2>
       <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",marginTop:"4px"}}>
-        <Btn label="Cancel" onClick={()=>{setEditing(false);setEditForm({trialName:trial.trialName||"",date:trial.date||today(),triedBy:trial.triedBy||"",outcome:trial.outcome||"Under Evaluation",ingredients:trial.ingredients?.length?trial.ingredients:[blankIng()],process:trial.process||"",propertiesTested:trial.propertiesTested||"",observations:trial.observations||"",nextSteps:trial.nextSteps||""});}} outline color="#475569" small/>
+        <Btn label="Cancel" onClick={()=>{setEditing(false);setEditForm({trialName:trial.trialName||"",date:trial.date||today(),triedBy:trial.triedBy||"",outcome:trial.outcome||"Under Evaluation",ingredients:trial.ingredients?.length?trial.ingredients:[blankIng()],process:trial.process||"",propertiesTested:trial.propertiesTested||"",observations:trial.observations||"",nextSteps:trial.nextSteps||"",processSteps:trial.processSteps?.length?trial.processSteps:[{id:newId(),text:""}],assignedTo:trial.assignedTo||""});}} outline color="#475569" small/>
         <Btn label={saving?"Saving…":"💾 Save Changes"} onClick={saveEdit} disabled={saving} color="#2563eb" small/>
       </div>
     </div>}
@@ -1554,6 +1683,15 @@ function TrialCard({trial,index,onDelete,onUpdate,isAdmin,sysUnits,onAddUnit}){
             <div style={{fontSize:"13px",color:"#94a3b8"}}>{r.quantity||"—"}</div>
             <div style={{fontSize:"13px",color:"#64748b"}}>{r.unit}</div>
             <div style={{fontSize:"12px",color:"#475569",fontStyle:"italic"}}>{r.notes||""}</div>
+          </div>)}
+        </div>
+      </div>}
+      {trial.processSteps?.length>0&&<div style={{marginBottom:"14px"}}>
+        <div style={{fontSize:"10px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.09em",marginBottom:"8px"}}>Process Steps</div>
+        <div style={{display:"flex",flexDirection:"column",gap:"6px"}}>
+          {trial.processSteps.map((s,i)=><div key={s.id} style={{display:"flex",gap:"10px",alignItems:"flex-start",background:"#0b1220",border:"1px solid #1e293b",borderRadius:"7px",padding:"9px 12px"}}>
+            <div style={{width:"20px",height:"20px",borderRadius:"50%",background:"#1e3a5f",color:"#93c5fd",fontSize:"10px",fontWeight:"700",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{i+1}</div>
+            <div style={{fontSize:"13px",color:"#94a3b8",lineHeight:1.6,whiteSpace:"pre-wrap"}}>{s.text}</div>
           </div>)}
         </div>
       </div>}
@@ -1604,7 +1742,7 @@ function TrialCard({trial,index,onDelete,onUpdate,isAdmin,sysUnits,onAddUnit}){
   </div>;
 }
 
-function ProjectWorkspace({project,isAdmin,showToast,sysUnits,sysRmCats,onAddRmCat,onAddUnit}){
+function ProjectWorkspace({project,isAdmin,showToast,sysUnits,sysRmCats,onAddRmCat,onAddUnit,allProfiles={},allRoles={},user}){
   const [live,setLive]=useState(project);
   const [showForm,setShowForm]=useState(false);
   const [saving,setSaving]=useState(false);
@@ -1612,11 +1750,13 @@ function ProjectWorkspace({project,isAdmin,showToast,sysUnits,sysRmCats,onAddRmC
   const [editObj,setEditObj]=useState(false);
   const [draft,setDraft]=useState({objective:project.objective||"",formulationBase:project.formulationBase||"",notes:project.notes||""});
   const [savingN,setSavingN]=useState(false);
-  const blank={trialName:"",date:today(),triedBy:"",outcome:"Under Evaluation",ingredients:[{id:"1",material:"",quantity:"",unit:"g",notes:""}],process:"",propertiesTested:"",observations:"",nextSteps:"",testReports:[]};
+  const blank={trialName:"",date:today(),triedBy:"",outcome:"Under Evaluation",ingredients:[{id:"1",material:"",quantity:"",unit:"g",notes:""}],process:"",processSteps:[{id:newId(),text:""}],propertiesTested:"",observations:"",nextSteps:"",testReports:[],assignedTo:""};
   const [form,setForm]=useState(blank);
   const accent=PAINT_ACCENT[live.paintType]||"#cbd5e1";
   const sc=STATUS_COLORS[live.status]||"#94a3b8";
   const trials=live.trials||[];
+  // QC users for assignment dropdown
+  const qcUsers=Object.keys(allRoles).filter(email=>(allRoles[email]||[]).includes("qc"));
 
   useEffect(()=>{
     const unsub=C("rd_projects").doc(project.id).onSnapshot(snap=>{
@@ -1634,7 +1774,26 @@ function ProjectWorkspace({project,isAdmin,showToast,sysUnits,sysRmCats,onAddRmC
   const saveTrial=async()=>{
     if(!form.observations.trim()&&!form.ingredients.some(r=>r.material.trim()))return showToast("Add ingredients or observations","error");
     if(saving)return;setSaving(true);
-    try{await C("rd_projects").doc(project.id).update({trials:[...trials,{...form,id:newId()}]});setForm(blank);setShowForm(false);showToast("Trial saved ✓");}catch(e){showToast("Error","error");}
+    try{
+      const newTrial={...form,processSteps:form.processSteps.filter(s=>s.text.trim()),id:newId()};
+      await C("rd_projects").doc(project.id).update({trials:[...trials,newTrial]});
+      // Notify assigned QC user(s)
+      if(form.assignedTo){
+        const recipients=form.assignedTo==="__all_qc__"?qcUsers:[form.assignedTo];
+        await Promise.all(recipients.filter(r=>r&&r!==user?.email).map(email=>
+          C("notifications").add({
+            assignedTo:email,
+            title:"🧪 New trial to follow: "+(form.trialName||"Untitled Trial"),
+            message:"Project: "+(live.name||live.productName||"")+" · Assigned by "+(allProfiles[user?.email]?.displayName||user?.email||"Admin")+". Open R&D & QC → this project to view formulation, steps & print sheet.",
+            type:"trial_assigned",read:false,_createdAt:ts()
+          })
+        ));
+        showToast("Trial saved & QC notified ✓");
+      }else{
+        showToast("Trial saved ✓");
+      }
+      setForm(blank);setShowForm(false);
+    }catch(e){showToast("Error","error");}
     setSaving(false);
   };
 
@@ -1694,6 +1853,27 @@ function ProjectWorkspace({project,isAdmin,showToast,sysUnits,sysRmCats,onAddRmC
         <Field label="Outcome"><select style={sl} value={form.outcome} onChange={e=>setForm({...form,outcome:e.target.value})}>{TRIAL_OUTCOMES.map(o=><option key={o}>{o}</option>)}</select></Field>
       </Grid4>
       <Field label="Formulation — Ingredients"><IngredientTable rows={form.ingredients} onChange={rows=>setForm({...form,ingredients:rows})}/></Field>
+      <Field label="Assign To (QC) — notifies on save">
+        <select style={sl} value={form.assignedTo} onChange={e=>setForm({...form,assignedTo:e.target.value})}>
+          <option value="">— Not assigned (no notification) —</option>
+          {qcUsers.length>1&&<option value="__all_qc__">📢 All QC users</option>}
+          {qcUsers.map(email=><option key={email} value={email}>{allProfiles[email]?.displayName||email}</option>)}
+        </select>
+      </Field>
+      {/* Process Steps — numbered, sequential instructions for QC to follow */}
+      <div style={{marginBottom:"12px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"8px"}}>
+          <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em"}}>Process Steps (sequential instructions)</div>
+          <button onClick={()=>setForm(f=>({...f,processSteps:[...f.processSteps,{id:newId(),text:""}]}))} style={{background:"none",border:"1px dashed #1e3a5f",borderRadius:"6px",padding:"4px 12px",color:"#93c5fd",cursor:"pointer",fontSize:"11.5px",fontWeight:"600"}}>+ Add Step</button>
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:"6px"}}>
+          {form.processSteps.map((s,i)=><div key={s.id} style={{display:"flex",gap:"8px",alignItems:"flex-start"}}>
+            <div style={{width:"24px",height:"24px",borderRadius:"50%",background:"#1e293b",color:"#93c5fd",fontSize:"11px",fontWeight:"700",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginTop:"6px"}}>{i+1}</div>
+            <textarea style={{...ta,minHeight:"36px",flex:1}} value={s.text} onChange={e=>setForm(f=>({...f,processSteps:f.processSteps.map(x=>x.id===s.id?{...x,text:e.target.value}:x)}))} placeholder={`Step ${i+1} instruction…`}/>
+            <button onClick={()=>setForm(f=>({...f,processSteps:f.processSteps.length>1?f.processSteps.filter(x=>x.id!==s.id):f.processSteps}))} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"15px",padding:"6px 2px"}}>×</button>
+          </div>)}
+        </div>
+      </div>
       <Grid2>
         <Field label="Process / Mixing Method"><textarea style={{...ta,minHeight:"70px"}} value={form.process} onChange={e=>setForm({...form,process:e.target.value})} placeholder="Mixing sequence, temperature, RPM..."/></Field>
         <Field label="Properties Tested"><textarea style={{...ta,minHeight:"70px"}} value={form.propertiesTested} onChange={e=>setForm({...form,propertiesTested:e.target.value})} placeholder="Viscosity, pH, Gloss..."/></Field>
@@ -1708,7 +1888,7 @@ function ProjectWorkspace({project,isAdmin,showToast,sysUnits,sysRmCats,onAddRmC
     {trials.length===0&&!showForm?<div style={{textAlign:"center",padding:"24px",border:"1px dashed #1e293b",borderRadius:"10px",marginBottom:"14px"}}>
       <div style={{fontSize:"26px",marginBottom:"6px"}}>⚗️</div>
       <div style={{fontSize:"13px",color:"#475569"}}>No trials yet.</div>
-    </div>:trials.map((t,i)=><TrialCard key={t.id} trial={t} index={i} isAdmin={isAdmin} onDelete={isAdmin?deleteTrial:null} onUpdate={updateTrial} sysUnits={sysUnits} onAddUnit={onAddUnit}/>)}
+    </div>:trials.map((t,i)=><TrialCard key={t.id} trial={t} index={i} isAdmin={isAdmin} onDelete={isAdmin?deleteTrial:null} onUpdate={updateTrial} sysUnits={sysUnits} onAddUnit={onAddUnit} project={live} allProfiles={allProfiles}/>)}
     {/* Notes section */}
     <div style={{marginTop:"20px"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"10px",paddingBottom:"10px",borderBottom:"1px solid #1e293b"}}>
@@ -6469,7 +6649,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
 
     {/* Project Workspace */}
     <Modal wide open={!!activeProject} onClose={()=>setActiveProject(null)} title="Project Workspace">
-      {activeProject&&<ProjectWorkspace key={activeProject.id} project={activeProject} isAdmin={isAdmin} showToast={showToast} sysUnits={sysUnits} sysRmCats={sysRmCats} onAddRmCat={addGlobalRmCat} onAddUnit={addGlobalUnit}/>}
+      {activeProject&&<ProjectWorkspace key={activeProject.id} project={activeProject} isAdmin={isAdmin} showToast={showToast} sysUnits={sysUnits} sysRmCats={sysRmCats} onAddRmCat={addGlobalRmCat} onAddUnit={addGlobalUnit} allProfiles={allProfiles} allRoles={allRoles} user={user}/>}
     </Modal>
 
     {/* Add Project */}
