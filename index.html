@@ -6025,12 +6025,14 @@ function ShadeCorrectionCalc({showToast,user,isAdmin,canApprove}){
   const [bomBaseSize,setBomBaseSize]=useState(0);
   const [batchSize,setBatchSize]=useState("100");
   const [lastScaledSize,setLastScaledSize]=useState(0); // tracks size pigments were last scaled to
-  const [pigments,setPigments]=useState([{id:"p1",name:"",qty:"",pigmentPct:""},{id:"p2",name:"",qty:"",pigmentPct:""}]);
+  const [pigments,setPigments]=useState([{id:"p1",name:"",qty:"",pigmentPct:"",adjustMode:"qty"},{id:"p2",name:"",qty:"",pigmentPct:"",adjustMode:"qty"}]);
   const [targetTotal,setTargetTotal]=useState("");
   const [targetOverride,setTargetOverride]=useState(false);
   const [stainers,setStainers]=useState([{id:"s1",name:"",amt:"",pigment:""}]);
   const [submitting,setSubmitting]=useState(false);
   const [reviewingId,setReviewingId]=useState(null);
+  const [editingCorrId,setEditingCorrId]=useState(null);
+  const [editRows,setEditRows]=useState([]);
 
   useEffect(()=>{
     const u1=C("bom_products").orderBy("productName").onSnapshot(s=>setBoms(s.docs.map(d=>({id:d.id,...d.data()}))));
@@ -6061,8 +6063,8 @@ function ShadeCorrectionCalc({showToast,user,isAdmin,canApprove}){
       setBomBaseSize(base);
       const mult=actualSize/base;
       const rows=(matchedBom.ingredients||[]).filter(i=>!i.isProcess&&i.name&&parseFloat(i.standardQty)>0&&(isPigmentCode(i.name)||isStrName(i.name)))
-        .map(i=>({id:i.id||newId(),name:i.name,qty:((parseFloat(i.standardQty)||0)*mult).toFixed(3),pigmentPct:""}));
-      setPigments(rows.length?rows:[{id:"p1",name:"",qty:"",pigmentPct:""},{id:"p2",name:"",qty:"",pigmentPct:""}]);
+        .map(i=>({id:i.id||newId(),name:i.name,qty:((parseFloat(i.standardQty)||0)*mult).toFixed(3),pigmentPct:"",adjustMode:"qty"}));
+      setPigments(rows.length?rows:[{id:"p1",name:"",qty:"",pigmentPct:"",adjustMode:"qty"},{id:"p2",name:"",qty:"",pigmentPct:"",adjustMode:"qty"}]);
     }else{
       setBomId("");setBomBaseSize(0);
       showToast("No BOM found for "+b.productName+" — enter pigments manually","error");
@@ -6079,7 +6081,7 @@ function ShadeCorrectionCalc({showToast,user,isAdmin,canApprove}){
     showToast("Pigment quantities rescaled to "+newSize+" ✓");
   };
 
-  const addPigment=()=>setPigments(p=>[...p,{id:"p"+Date.now()+Math.random(),name:"",qty:"",pigmentPct:""}]);
+  const addPigment=()=>setPigments(p=>[...p,{id:"p"+Date.now()+Math.random(),name:"",qty:"",pigmentPct:"",adjustMode:"qty"}]);
   const removePigment=(id)=>setPigments(p=>p.filter(x=>x.id!==id));
   const updatePigment=(id,field,val)=>setPigments(p=>p.map(x=>x.id===id?{...x,[field]:val}:x));
 
@@ -6125,7 +6127,7 @@ function ShadeCorrectionCalc({showToast,user,isAdmin,canApprove}){
       const rawQty=parseFloat(p.qty)||0;
       const pureMass=pigmentPureMass(p);
       return {
-        id:p.id,name:p.name,isStr:rowIsStr,pigmentPct:p.pigmentPct,
+        id:p.id,name:p.name,isStr:rowIsStr,pigmentPct:p.pigmentPct,adjustMode:p.adjustMode||"qty",
         oldQty:pureMass,oldQtyRaw:rawQty,
         added:stainerContrib[p.id]||0,
         afterAddition:pureMass+(stainerContrib[p.id]||0),
@@ -6133,7 +6135,7 @@ function ShadeCorrectionCalc({showToast,user,isAdmin,canApprove}){
       };
     }),
     ...newPigmentsFromStainer.map(n=>({
-      id:n.key,name:n.name,isStr:false,pigmentPct:"",
+      id:n.key,name:n.name,isStr:false,pigmentPct:"",adjustMode:"qty",
       oldQty:0,oldQtyRaw:0,added:n.mass,afterAddition:n.mass,isNew:true
     }))
   ];
@@ -6142,8 +6144,14 @@ function ShadeCorrectionCalc({showToast,user,isAdmin,canApprove}){
   const finalRows=combinedRows.map(r=>{
     const newQtyPure=r.afterAddition*scale;
     const pct=parseFloat(r.pigmentPct)||0;
+    if(r.isStr&&r.adjustMode==="pct"){
+      // Stainer-form: keep raw quantity fixed, solve for the new pigment% needed instead
+      const newPigmentPct=r.oldQtyRaw>0?(newQtyPure/r.oldQtyRaw)*100:pct;
+      return {...r,newQty:newQtyPure,newQtyRaw:r.oldQtyRaw,newPigmentPct};
+    }
+    // Pigment-form (default): keep pigment% fixed, solve for the new raw quantity instead
     const newQtyRaw=r.isStr&&pct>0?newQtyPure/(pct/100):newQtyPure;
-    return {...r,newQty:newQtyPure,newQtyRaw};
+    return {...r,newQty:newQtyPure,newQtyRaw,newPigmentPct:pct};
   });
 
   const hasValidInputs=currentTotal>0&&validStainers.length>0&&effectiveTarget>0;
@@ -6160,7 +6168,8 @@ function ShadeCorrectionCalc({showToast,user,isAdmin,canApprove}){
         name:r.name,oldQty:r.oldQtyRaw,newQty:r.newQtyRaw,
         newQtyAtBase:multiplierToBase>0?r.newQtyRaw/multiplierToBase:r.newQtyRaw,
         isNew:r.isNew,matchedIngId:r.isNew?null:r.id,
-        isStr:r.isStr,pigmentPct:r.pigmentPct||null
+        isStr:r.isStr,pigmentPct:r.pigmentPct||null,
+        adjustMode:r.adjustMode||"qty",newPigmentPct:r.newPigmentPct||null
       }));
       await C("shade_corrections").add({
         productName:productName||(boms.find(b=>b.id===bomId)?.productName)||"",
@@ -6185,15 +6194,22 @@ function ShadeCorrectionCalc({showToast,user,isAdmin,canApprove}){
     setSubmitting(false);
   };
 
-  const approveCorrection=async(corr)=>{
+  const approveCorrection=async(corr,overrideRows)=>{
     if(!corr.bomId)return showToast("No BOM linked — cannot apply","error");
     setReviewingId(corr.id);
     try{
+      const rowsToApply=overrideRows||corr.suggestedRows;
       const bomSnap=await C("bom_products").doc(corr.bomId).get();
       if(!bomSnap.exists)throw new Error("BOM no longer exists");
       const bomData=bomSnap.data();
       let ingredients=[...(bomData.ingredients||[])];
-      corr.suggestedRows.forEach(row=>{
+      const pctNotes=[];
+      rowsToApply.forEach(row=>{
+        if(row.adjustMode==="pct"){
+          // Stainer-form: BOM quantity stays unchanged; the stainer's own concentration needs updating instead
+          pctNotes.push(`${row.name}: update stainer concentration to ${row.newPigmentPct?.toFixed(2)}% (was ${row.pigmentPct}%) — qty in this BOM unchanged`);
+          return;
+        }
         if(row.matchedIngId){
           const idx=ingredients.findIndex(i=>i.id===row.matchedIngId);
           if(idx>=0)ingredients[idx]={...ingredients[idx],standardQty:row.newQtyAtBase.toFixed(3)};
@@ -6204,11 +6220,12 @@ function ShadeCorrectionCalc({showToast,user,isAdmin,canApprove}){
       // Archive current version, then update
       await C("bom_versions").add({...bomData,productId:corr.bomId,archivedAt:ts(),archivedBy:user.email});
       await C("bom_products").doc(corr.bomId).update({ingredients,currentVersion:(bomData.currentVersion||1)+1,updatedBy:user.email,updatedAt:ts()});
-      await C("shade_corrections").doc(corr.id).update({status:"Approved",reviewedBy:user.email,reviewedAt:ts()});
+      await C("shade_corrections").doc(corr.id).update({status:"Approved",reviewedBy:user.email,reviewedAt:ts(),appliedRows:rowsToApply,...(overrideRows?{editedByApprover:true}:{})});
       if(corr.batchId)await C("batches").doc(corr.batchId).update({shadeCorrectionStatus:"Approved"});
-      showToast("Approved & applied to BOM — new version saved ✓");
+      showToast(pctNotes.length?"Approved — BOM updated. "+pctNotes.join("; "):"Approved & applied to BOM — new version saved ✓");
     }catch(e){showToast("Error: "+e.message,"error");}
     setReviewingId(null);
+    setEditingCorrId(null);
   };
 
   const rejectCorrection=async(corr)=>{
@@ -6221,6 +6238,30 @@ function ShadeCorrectionCalc({showToast,user,isAdmin,canApprove}){
     setReviewingId(null);
   };
 
+  const startEditingCorrection=(corr)=>{
+    setEditingCorrId(corr.id);
+    const corrMultiplier=corr.bomBaseBatchSize>0?corr.productionBatchSize/corr.bomBaseBatchSize:1;
+    setEditRows(corr.suggestedRows.map(r=>({...r,_mult:corrMultiplier})));
+  };
+  const updateEditRow=(idx,field,val)=>setEditRows(rows=>rows.map((r,i)=>{
+    if(i!==idx)return r;
+    if(field==="newQty"){
+      const v=parseFloat(val)||0;
+      return {...r,newQty:val,newQtyAtBase:r._mult>0?v/r._mult:v};
+    }
+    return {...r,[field]:val};
+  }));
+  const roundEditRow=(idx,decimals)=>setEditRows(rows=>rows.map((r,i)=>{
+    if(i!==idx)return r;
+    if(r.adjustMode==="pct"){
+      const rounded=parseFloat((parseFloat(r.newPigmentPct)||0).toFixed(decimals));
+      return {...r,newPigmentPct:rounded};
+    }
+    const rounded=parseFloat((parseFloat(r.newQty)||0).toFixed(decimals));
+    return {...r,newQty:rounded,newQtyAtBase:r._mult>0?rounded/r._mult:rounded};
+  }));
+  const saveEditsAndApprove=(corr)=>approveCorrection(corr,editRows.map(({_mult,...r})=>r));
+
   return <div>
     <SectionHead title="🎯 Shade Correction → Pigment Ratio Tuner"/>
     <InfoBox color="#3b82f6">Select the product and batch where a stainer was added to correct shade. The tool redistributes pigment proportionally — maintain total pigment level, or increase/decrease it — then submit for Admin/Issuer approval before it's applied to the BOM.</InfoBox>
@@ -6228,7 +6269,9 @@ function ShadeCorrectionCalc({showToast,user,isAdmin,canApprove}){
     {/* Pending Corrections — visible to all, actionable by admin/issuer */}
     {pendingCorrections.length>0&&<div style={{background:"#0c1a2e",border:"1px solid #06b6d440",borderRadius:"10px",padding:"14px",marginBottom:"18px"}}>
       <div style={{fontSize:"12px",fontWeight:"700",color:"#22d3ee",marginBottom:"10px"}}>⏳ Pending Shade Corrections ({pendingCorrections.length})</div>
-      {pendingCorrections.map(corr=><div key={corr.id} style={{background:"#080d18",border:"1px solid #1e293b",borderRadius:"8px",padding:"10px 12px",marginBottom:"8px"}}>
+      {pendingCorrections.map(corr=>{
+        const isEditing=editingCorrId===corr.id;
+        return <div key={corr.id} style={{background:"#080d18",border:"1px solid #1e293b",borderRadius:"8px",padding:"10px 12px",marginBottom:"8px"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:"8px"}}>
           <div>
             <div style={{fontSize:"13px",fontWeight:"700",color:"#e2e8f0"}}>{corr.productName} {corr.batchNo&&<span style={{color:"#64748b",fontWeight:"400"}}>· Batch {corr.batchNo}</span>}</div>
@@ -6236,16 +6279,39 @@ function ShadeCorrectionCalc({showToast,user,isAdmin,canApprove}){
               Stainer: {corr.stainers.map(s=>s.name).join(", ")} · Target pigment: {corr.targetTotal.toFixed(2)} · Submitted by {corr.createdBy}
             </div>
           </div>
-          {canApprove&&<div style={{display:"flex",gap:"6px",flexShrink:0}}>
+          {canApprove&&!isEditing&&<div style={{display:"flex",gap:"6px",flexShrink:0}}>
+            <button disabled={reviewingId===corr.id} onClick={()=>startEditingCorrection(corr)} style={{background:"#1e1b4b",border:"1px solid #4338ca",borderRadius:"6px",color:"#a5b4fc",cursor:"pointer",fontSize:"12px",fontWeight:"600",padding:"5px 12px"}}>✏️ Edit</button>
             <button disabled={reviewingId===corr.id} onClick={()=>approveCorrection(corr)} style={{background:"#052e16",border:"1px solid #166534",borderRadius:"6px",color:"#4ade80",cursor:"pointer",fontSize:"12px",fontWeight:"600",padding:"5px 12px"}}>✅ Approve & Apply</button>
             <button disabled={reviewingId===corr.id} onClick={()=>rejectCorrection(corr)} style={{background:"#2e0a0a",border:"1px solid #7f1d1d",borderRadius:"6px",color:"#f87171",cursor:"pointer",fontSize:"12px",fontWeight:"600",padding:"5px 12px"}}>❌ Reject</button>
           </div>}
           {!canApprove&&<span style={{fontSize:"11px",color:"#475569",fontStyle:"italic"}}>Awaiting Admin/Issuer review</span>}
         </div>
-        <div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginTop:"8px"}}>
-          {corr.suggestedRows.map((r,i)=><span key={i} style={{fontSize:"10.5px",background:"#0b1220",border:"1px solid #1e293b",borderRadius:"6px",padding:"2px 8px",color:"#94a3b8"}}>{r.name}: {r.oldQty.toFixed(2)}→<strong style={{color:"#4ade80"}}>{r.newQty.toFixed(2)}</strong></span>)}
-        </div>
-      </div>)}
+
+        {!isEditing&&<div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginTop:"8px"}}>
+          {corr.suggestedRows.map((r,i)=><span key={i} style={{fontSize:"10.5px",background:"#0b1220",border:"1px solid #1e293b",borderRadius:"6px",padding:"2px 8px",color:"#94a3b8"}}>
+            {r.name}: {r.oldQty.toFixed(2)}→<strong style={{color:"#4ade80"}}>{r.adjustMode==="pct"?r.oldQty.toFixed(2)+" (qty same)":r.newQty.toFixed(2)}</strong>
+            {r.adjustMode==="pct"&&<span style={{color:"#d8b4fe"}}> · {r.pigmentPct}%→{r.newPigmentPct?.toFixed(2)}%</span>}
+          </span>)}
+        </div>}
+
+        {isEditing&&<div style={{marginTop:"10px",border:"1px solid #4338ca40",borderRadius:"8px",overflow:"hidden"}}>
+          <div style={{display:"grid",gridTemplateColumns:"1.4fr 90px 110px 50px",gap:"6px",background:"#0b1220",padding:"6px 10px"}}>
+            {["Pigment","Current","Recommended",""].map(h=><div key={h} style={{fontSize:"9px",fontWeight:"700",color:"#334155",textTransform:"uppercase"}}>{h}</div>)}
+          </div>
+          {editRows.map((r,idx)=><div key={idx} style={{display:"grid",gridTemplateColumns:"1.4fr 90px 110px 50px",gap:"6px",padding:"6px 10px",borderTop:"1px solid #1e293b",alignItems:"center"}}>
+            <div style={{fontSize:"12px",color:"#e2e8f0"}}>{r.name}{r.adjustMode==="pct"&&<span style={{fontSize:"10px",color:"#d8b4fe"}}> (% mode)</span>}</div>
+            <div style={{fontSize:"11px",color:"#64748b",textAlign:"center"}}>{r.oldQty.toFixed(3)}</div>
+            {r.adjustMode==="pct"
+              ?<input style={{...sml,textAlign:"center"}} type="number" step="0.01" value={r.newPigmentPct} onChange={e=>updateEditRow(idx,"newPigmentPct",e.target.value)}/>
+              :<input style={{...sml,textAlign:"center"}} type="number" step="0.001" value={r.newQty} onChange={e=>updateEditRow(idx,"newQty",e.target.value)}/>}
+            <button onClick={()=>roundEditRow(idx,2)} title="Round to 2 decimals" style={{background:"none",border:"1px solid #334155",borderRadius:"5px",color:"#94a3b8",cursor:"pointer",fontSize:"10px",padding:"3px 6px"}}>⊙2dp</button>
+          </div>)}
+          <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",padding:"10px",background:"#0a1520"}}>
+            <button onClick={()=>setEditingCorrId(null)} style={{background:"none",border:"1px solid #334155",borderRadius:"6px",color:"#64748b",cursor:"pointer",fontSize:"12px",padding:"6px 14px"}}>Cancel</button>
+            <button disabled={reviewingId===corr.id} onClick={()=>saveEditsAndApprove(corr)} style={{background:"#052e16",border:"1px solid #166534",borderRadius:"6px",color:"#4ade80",cursor:"pointer",fontSize:"12px",fontWeight:"600",padding:"6px 14px"}}>💾 Save Adjustments & Approve</button>
+          </div>
+        </div>}
+      </div>;})}
     </div>}
 
     {/* Product + Batch selection */}
@@ -6306,6 +6372,11 @@ function ShadeCorrectionCalc({showToast,user,isAdmin,canApprove}){
             <div>
               <input style={sml} value={p.name} onChange={e=>updatePigment(p.id,"name",e.target.value)} placeholder={"Pigment "+(i+1)+" (e.g. Titanium Dioxide)"}/>
               {rowIsStr&&<div style={{fontSize:"10px",color:"#22d3ee",marginTop:"3px"}}>🎨 Stainer (STR) — enter its pigment%{pigmentPureMass(p)>0&&<span style={{color:"#475569"}}> · = {pigmentPureMass(p).toFixed(3)} pure pigment</span>}</div>}
+              {rowIsStr&&<div style={{display:"flex",gap:"4px",marginTop:"5px"}}>
+                <span style={{fontSize:"9px",color:"#475569",alignSelf:"center"}}>Adjust via:</span>
+                <button onClick={()=>updatePigment(p.id,"adjustMode","qty")} style={{fontSize:"10px",padding:"2px 8px",borderRadius:"5px",border:`1px solid ${(p.adjustMode||"qty")==="qty"?"#3b82f6":"#1e293b"}`,background:(p.adjustMode||"qty")==="qty"?"#0f1d35":"transparent",color:(p.adjustMode||"qty")==="qty"?"#93c5fd":"#475569",cursor:"pointer"}}>Pigment form (qty)</button>
+                <button onClick={()=>updatePigment(p.id,"adjustMode","pct")} style={{fontSize:"10px",padding:"2px 8px",borderRadius:"5px",border:`1px solid ${p.adjustMode==="pct"?"#a855f7":"#1e293b"}`,background:p.adjustMode==="pct"?"#2e1065":"transparent",color:p.adjustMode==="pct"?"#d8b4fe":"#475569",cursor:"pointer"}}>Stainer form (%)</button>
+              </div>}
             </div>
             <input style={{...sml,textAlign:"center"}} type="number" min="0" step="0.001" value={p.qty} onChange={e=>updatePigment(p.id,"qty",e.target.value)} placeholder="kg"/>
             {rowIsStr
@@ -6373,7 +6444,8 @@ function ShadeCorrectionCalc({showToast,user,isAdmin,canApprove}){
           <div>
             <div style={{fontSize:"12px",color:"#e2e8f0",fontWeight:"600"}}>{r.name}</div>
             {r.isNew&&<div style={{fontSize:"10px",color:"#f59e0b"}}>⚠ New — add to BOM</div>}
-            {r.isStr&&<div style={{fontSize:"10px",color:"#22d3ee"}}>🎨 Stainer @ {r.pigmentPct||"?"}% — qty shown is raw material</div>}
+            {r.isStr&&r.adjustMode==="pct"&&<div style={{fontSize:"10px",color:"#d8b4fe"}}>🎨 Qty fixed at {r.oldQtyRaw.toFixed(3)} — new pigment%: <strong>{r.newPigmentPct.toFixed(2)}%</strong> (was {r.pigmentPct}%)</div>}
+            {r.isStr&&r.adjustMode!=="pct"&&<div style={{fontSize:"10px",color:"#22d3ee"}}>🎨 Stainer @ {r.pigmentPct||"?"}% — qty shown is raw material</div>}
           </div>
           <div style={{fontSize:"12px",color:"#64748b",textAlign:"center"}}>{r.oldQtyRaw>0?r.oldQtyRaw.toFixed(3):"—"}</div>
           <div style={{fontSize:"12px",color:r.added>0?"#fbbf24":"#334155",fontWeight:r.added>0?"700":"400",textAlign:"center"}}>{r.added>0?"+"+r.added.toFixed(3):"—"}</div>
