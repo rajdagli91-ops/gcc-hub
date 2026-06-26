@@ -6163,13 +6163,14 @@ function ShadeCorrectionCalc({showToast,user,isAdmin,canApprove,canSubmit}){
         isNew:false,isStandaloneStainer:false
       };
     }),
-    // New corrections that didn't match an existing row — always correctly converted back
-    // to raw stainer quantity using their own (mass-weighted) pigment%, since they were
-    // explicitly entered with a real concentration regardless of the base formulation type.
+    // New corrections that didn't match an existing row. Output form follows the GLOBAL
+    // formulation type — in "Pigment-based" mode, every row (including new ones) is expressed
+    // as pure pigment mass, consistent with the rest of the table. In "Stainer-based" mode,
+    // it's converted back to raw stainer quantity using its own (mass-weighted) pigment%.
     ...standaloneStainers.map(n=>{
       const effectivePct=n.rawMass>0?(n.pureMass/n.rawMass*100):0;
       return {
-        id:n.key,name:n.name,isStr:true,pigmentPct:effectivePct.toFixed(2),
+        id:n.key,name:n.name,isStr:formulationType==="stainer",pigmentPct:effectivePct.toFixed(2),
         oldQty:0,oldQtyRaw:0,added:n.pureMass,afterAddition:n.pureMass,
         isNew:true,isStandaloneStainer:true
       };
@@ -6520,6 +6521,7 @@ function ShadeCorrectionCalc({showToast,user,isAdmin,canApprove,canSubmit}){
           <div>
             <div style={{fontSize:"12px",color:"#e2e8f0",fontWeight:"600"}}>{r.name}</div>
             {r.isNew&&<div style={{fontSize:"10px",color:"#f59e0b"}}>⚠ New — add to BOM</div>}
+            {r.isNew&&r.isStandaloneStainer&&!r.isStr&&<div style={{fontSize:"10px",color:"#fbbf24"}}>🎨 New colorant, derived from stainer @ {r.pigmentPct||"?"}% — shown as pure pigment (matches table basis)</div>}
             {r.isStr&&r.isStandaloneStainer&&<div style={{fontSize:"10px",color:"#d8b4fe"}}>🎨 New stainer addition @ {r.pigmentPct||"?"}% — kept separate, qty shown is raw stainer to add</div>}
             {r.isStr&&!r.isStandaloneStainer&&<div style={{fontSize:"10px",color:"#22d3ee"}}>🎨 Stainer @ {r.pigmentPct||"?"}% — qty shown is raw material</div>}
           </div>
@@ -6535,7 +6537,7 @@ function ShadeCorrectionCalc({showToast,user,isAdmin,canApprove,canSubmit}){
           <div style={{fontSize:"13px",fontWeight:"700",color:"#4ade80",textAlign:"center"}}>{finalRows.reduce((s,r)=>s+r.newQtyRaw,0).toFixed(3)}</div>
         </div>
       </div>
-      {finalRows.some(r=>r.isStandaloneStainer)&&<div style={{fontSize:"11px",color:"#64748b",marginTop:"8px",padding:"8px 10px",background:"#060d1a",border:"1px solid #1e293b",borderRadius:"6px"}}>
+      {finalRows.some(r=>r.isStr&&r.isStandaloneStainer)&&<div style={{fontSize:"11px",color:"#64748b",marginTop:"8px",padding:"8px 10px",background:"#060d1a",border:"1px solid #1e293b",borderRadius:"6px"}}>
         ℹ️ The column above shows <strong style={{color:"#e2e8f0"}}>raw material to add</strong> for each row — for new stainer additions this is more than their pure pigment content (since they're diluted), so the column doesn't sum to the pigment total directly.
         <br/>✅ Pure pigment verification — total should equal target: <strong style={{color:"#4ade80"}}>{finalRows.reduce((s,r)=>s+r.newQty,0).toFixed(3)}</strong> (target: {effectiveTarget.toFixed(3)})
       </div>}
