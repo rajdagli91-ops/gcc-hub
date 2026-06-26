@@ -6185,7 +6185,7 @@ function ShadeCorrectionCalc({showToast,user,isAdmin,canApprove,canSubmit}){
     return {...r,newQty:newQtyPure,newQtyRaw,newPigmentPct:pct};
   });
 
-  const hasValidInputs=currentTotal>0&&validStainers.length>0&&effectiveTarget>0;
+  const hasValidInputs=currentTotal>0&&effectiveTarget>0;
   const fmt=(v)=>v!==0?v.toFixed(3):"—";
   const pctChange=effectiveTarget>0&&currentTotal>0?((effectiveTarget-currentTotal)/currentTotal*100):0;
   const prodBatchSizeNum=parseFloat(batchSize)||0;
@@ -6348,7 +6348,7 @@ function ShadeCorrectionCalc({showToast,user,isAdmin,canApprove,canSubmit}){
           <div>
             <div style={{fontSize:"13px",fontWeight:"700",color:"#e2e8f0"}}>{corr.productName} {corr.batchNo&&<span style={{color:"#64748b",fontWeight:"400"}}>· Batch {corr.batchNo}</span>}</div>
             <div style={{fontSize:"11px",color:"#64748b",marginTop:"3px"}}>
-              Stainer: {corr.stainers.map(s=>s.name).join(", ")} · Target pigment: {corr.targetTotal.toFixed(2)} · Submitted by {corr.createdBy}
+              {corr.stainers.length>0?`Stainer: ${corr.stainers.map(s=>s.name).join(", ")} · `:"Pigment ratio adjustment (no stainer) · "}Target pigment: {corr.targetTotal.toFixed(2)} · Submitted by {corr.createdBy}
             </div>
           </div>
           {canApprove&&!isEditing&&<div style={{display:"flex",gap:"6px",flexShrink:0}}>
