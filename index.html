@@ -105,12 +105,12 @@ function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, char
   const oldStockCount=(oldStocks||[]).length;
   const contentWeight=ingCount+stepCount+extraItemCount+(oldStockCount>0?oldStockCount+1:0);
   let D; // density tier — more ingredients/steps = tighter spacing, guaranteeing a single A4 page
-  if(contentWeight<=10)D={rowPad:7,fontSz:11,addlMatRows:6,extraPad:8,extraBlanks:0,qcPad:7,qcFont:11,packPad:7,packFont:10,bodyPad:5,coNameSz:18,sheetTitleSz:15,batchNoSz:18};
-  else if(contentWeight<=14)D={rowPad:6,fontSz:10.5,addlMatRows:5,extraPad:7,extraBlanks:0,qcPad:6,qcFont:10.5,packPad:6,packFont:9.5,bodyPad:4,coNameSz:17,sheetTitleSz:14,batchNoSz:17};
-  else if(contentWeight<=18)D={rowPad:5,fontSz:10,addlMatRows:4,extraPad:6,extraBlanks:0,qcPad:5,qcFont:10,packPad:5,packFont:9,bodyPad:3,coNameSz:16,sheetTitleSz:13.5,batchNoSz:16};
-  else if(contentWeight<=22)D={rowPad:4,fontSz:9.5,addlMatRows:3,extraPad:5,extraBlanks:0,qcPad:4,qcFont:9.5,packPad:4,packFont:8.5,bodyPad:2,coNameSz:15,sheetTitleSz:13,batchNoSz:15};
-  else if(contentWeight<=27)D={rowPad:3,fontSz:9,addlMatRows:2,extraPad:4,extraBlanks:0,qcPad:3,qcFont:9,packPad:3,packFont:8,bodyPad:2,coNameSz:14,sheetTitleSz:12,batchNoSz:14};
-  else D={rowPad:2,fontSz:8.5,addlMatRows:1,extraPad:3,extraBlanks:0,qcPad:2,qcFont:8.5,packPad:2,packFont:7.5,bodyPad:1,coNameSz:13,sheetTitleSz:11,batchNoSz:13};
+  if(contentWeight<=10)D={rowPad:7,fontSz:11,addlMatRows:3,extraPad:8,extraBlanks:0,qcPad:7,qcFont:11,packPad:7,packFont:10,bodyPad:5,coNameSz:18,sheetTitleSz:15,batchNoSz:18};
+  else if(contentWeight<=14)D={rowPad:6,fontSz:10.5,addlMatRows:3,extraPad:7,extraBlanks:0,qcPad:6,qcFont:10.5,packPad:6,packFont:9.5,bodyPad:4,coNameSz:17,sheetTitleSz:14,batchNoSz:17};
+  else if(contentWeight<=18)D={rowPad:5,fontSz:10,addlMatRows:2,extraPad:6,extraBlanks:0,qcPad:5,qcFont:10,packPad:5,packFont:9,bodyPad:3,coNameSz:16,sheetTitleSz:13.5,batchNoSz:16};
+  else if(contentWeight<=22)D={rowPad:4,fontSz:9.5,addlMatRows:1,extraPad:5,extraBlanks:0,qcPad:4,qcFont:9.5,packPad:4,packFont:8.5,bodyPad:2,coNameSz:15,sheetTitleSz:13,batchNoSz:15};
+  else if(contentWeight<=27)D={rowPad:3,fontSz:9,addlMatRows:1,extraPad:4,extraBlanks:0,qcPad:3,qcFont:9,packPad:3,packFont:8,bodyPad:2,coNameSz:14,sheetTitleSz:12,batchNoSz:14};
+  else D={rowPad:2,fontSz:8.5,addlMatRows:0,extraPad:3,extraBlanks:0,qcPad:2,qcFont:8.5,packPad:2,packFont:7.5,bodyPad:1,coNameSz:13,sheetTitleSz:11,batchNoSz:13};
   let ingRows="";
   let rowNo=0;
   (bom.ingredients||[]).forEach(ing=>{
@@ -229,7 +229,7 @@ function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, char
             <td style="border:1px solid #999;padding:7pt 5pt"></td>
           </tr>
           <tr><td colspan="5" style="border:1px solid #999;padding:3pt 6pt;font-size:9pt;font-style:italic;font-weight:600;background:#fff3cd">Additional Materials (if any)</td></tr>
-          ${Array.from({length:D.addlMatRows}).map(()=>`<tr><td style="border:1px solid #999;padding:${D.rowPad}pt 5pt"></td><td style="border:1px solid #999;padding:${D.rowPad}pt 5pt"></td><td style="border:1px solid #999;padding:${D.rowPad}pt 5pt"></td><td style="border:1px solid #999;padding:${D.rowPad}pt 5pt"></td><td style="border:1px solid #999;padding:${D.rowPad}pt 5pt"></td></tr>`).join("")}
+          ${Array.from({length:D.addlMatRows}).map(()=>`<tr><td style="border:1px solid #999;padding:${D.rowPad+6}pt 5pt"></td><td style="border:1px solid #999;padding:${D.rowPad+6}pt 5pt"></td><td style="border:1px solid #999;padding:${D.rowPad+6}pt 5pt"></td><td style="border:1px solid #999;padding:${D.rowPad+6}pt 5pt"></td><td style="border:1px solid #999;padding:${D.rowPad+6}pt 5pt"></td></tr>`).join("")}
           <tr><td colspan="5" style="border:1px solid #999;padding:3px 5px;font-size:10px;font-style:italic;font-weight:600;background:#f5f5f5">EXTRA ADDITIONS</td></tr>
           ${(function(){
             var cfg=extraConfig||{};
