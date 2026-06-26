@@ -226,30 +226,30 @@ function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, char
           </tr>
           <tr><td colspan="5" style="border:1px solid #999;padding:3pt 6pt;font-size:9pt;font-style:italic;font-weight:600;background:#fff3cd">Additional Materials (if any)</td></tr>
           ${Array.from({length:D.addlMatRows}).map(()=>`<tr><td style="border:1px solid #999;padding:${D.rowPad}pt 5pt"></td><td style="border:1px solid #999;padding:${D.rowPad}pt 5pt"></td><td style="border:1px solid #999;padding:${D.rowPad}pt 5pt"></td><td style="border:1px solid #999;padding:${D.rowPad}pt 5pt"></td><td style="border:1px solid #999;padding:${D.rowPad}pt 5pt"></td></tr>`).join("")}
-          <tr><td colspan="6" style="border:1px solid #999;padding:3px 5px;font-size:10px;font-style:italic;font-weight:600;background:#f5f5f5">EXTRA ADDITIONS</td></tr>
+          <tr><td colspan="5" style="border:1px solid #999;padding:3px 5px;font-size:10px;font-style:italic;font-weight:600;background:#f5f5f5">EXTRA ADDITIONS</td></tr>
           ${(function(){
             var cfg=extraConfig||{};
             var rows='';
             var normalStyle='border:1px solid #999;padding:'+D.extraPad+'px 5px;font-size:11px;font-style:italic';
             var highlightStyle='border:1px solid #999;padding:'+(D.extraPad-1)+'px 5px;font-size:11px;font-style:italic;font-weight:700;background:#f0f0f0';
-            var blankCells='<td style="border:1px solid #999;padding:'+D.extraPad+'px 5px"></td><td style="border:1px solid #999;padding:'+D.extraPad+'px 5px"></td>';
+            var blankCell='<td style="border:1px solid #999;padding:'+D.extraPad+'px 5px"></td>';
             var items=cfg.items||['Dhoyela','Extra Output','Dhoyela'];
             items.forEach(function(label){
               var isHighlight=label==='Extra Output'||label.toLowerCase().includes('extra output');
               var style=isHighlight?highlightStyle:normalStyle;
-              rows+='<tr><td colspan="4" style="'+style+'">'+label+'</td>'+blankCells+'</tr>';
+              rows+='<tr><td colspan="4" style="'+style+'">'+label+'</td>'+blankCell+'</tr>';
             });
             var blanks=cfg.blankRows!==undefined?cfg.blankRows:D.extraBlanks;
-            for(var i=0;i<blanks;i++) rows+='<tr><td colspan="4" style="'+normalStyle+'">&nbsp;</td>'+blankCells+'</tr>';
+            for(var i=0;i<blanks;i++) rows+='<tr><td colspan="4" style="'+normalStyle+'">&nbsp;</td>'+blankCell+'</tr>';
             return rows;
           })()}
           ${(function(){
             var stocks=oldStocks||[];
             if(!stocks.length) return '';
-            var rows='<tr><td colspan="6" style="border:2px solid #b45309;padding:3pt 6pt;font-size:8pt;font-weight:800;background:#fef3c7;color:#92400e;text-transform:uppercase;letter-spacing:0.04em">⚠ Old / Rejected Material Available — Use First</td></tr>';
+            var rows='<tr><td colspan="5" style="border:2px solid #b45309;padding:3pt 6pt;font-size:8pt;font-weight:800;background:#fef3c7;color:#92400e;text-transform:uppercase;letter-spacing:0.04em">⚠ Old / Rejected Material Available — Use First</td></tr>';
             stocks.forEach(function(s){
               rows+='<tr style="background:#fffbeb">'
-                +'<td colspan="3" style="border:1px solid #d97706;padding:5pt 6pt;font-size:9pt;font-weight:600;color:#92400e">'+s.productName+(s.notes?' ('+s.notes+')':'')+'</td>'
+                +'<td colspan="2" style="border:1px solid #d97706;padding:5pt 6pt;font-size:9pt;font-weight:600;color:#92400e">'+s.productName+(s.notes?' ('+s.notes+')':'')+'</td>'
                 +'<td style="border:1px solid #d97706;padding:5pt 6pt;font-size:9pt;text-align:center;color:#92400e">'+s.qty+' '+(s.unit||'')+'</td>'
                 +'<td colspan="2" style="border:1px solid #d97706;padding:5pt 6pt;font-size:8pt;color:#b45309"></td>'
                 +'</tr>';
@@ -4959,15 +4959,14 @@ function PrintDialog({bom,packSizes,sysQcParams,onClose}){
   const addItem=(label)=>setExtraItems(v=>[...v,label]);
   const removeItem=(i)=>setExtraItems(v=>v.filter((_,idx)=>idx!==i));
 
-  // Fetch available old/rejected stock for this product
+  // Fetch available old/rejected stock for this exact product only
   useEffect(()=>{
     C("old_stock").where("status","==","Available").get()
       .then(snap=>{
         const all=snap.docs.map(d=>({id:d.id,...d.data()}));
-        // Match by product name (loose) or show all available
         const matched=all.filter(s=>s.productName&&bom.productName&&
-          s.productName.toLowerCase().includes(bom.productName.toLowerCase().slice(0,6)));
-        setOldStocks(matched.length>0?matched:all);
+          s.productName.trim().toLowerCase()===bom.productName.trim().toLowerCase());
+        setOldStocks(matched);
       }).catch(()=>{});
   },[bom.productName]);
 
@@ -6763,7 +6762,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
               const osSnap=await C("old_stock").where("status","==","Available").get();
               const allOs=osSnap.docs.map(d=>({id:d.id,...d.data()}));
               oldStocksForPrint=allOs.filter(s=>s.productName&&bom.productName&&
-                s.productName.toLowerCase().includes(bom.productName.toLowerCase().slice(0,6)));
+                s.productName.trim().toLowerCase()===bom.productName.trim().toLowerCase());
             }catch(_){}
             printProductionSheet(bom,batchForm.batchSize,bNo,"","","",sysPackSizes,batchForm.dateIssued,bom.extraAdditions||{},sysQcParams,oldStocksForPrint);
           }
@@ -7018,7 +7017,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
                       const osSnap=await C("old_stock").where("status","==","Available").get();
                       const allOs=osSnap.docs.map(d=>({id:d.id,...d.data()}));
                       oldStocksForPrint=allOs.filter(s=>s.productName&&bomData.productName&&
-                        s.productName.toLowerCase().includes(bomData.productName.toLowerCase().slice(0,6)));
+                        s.productName.trim().toLowerCase()===bomData.productName.trim().toLowerCase());
                     }catch(_){}
                     printProductionSheet(bomData,batch.batchSize,batch.batchNo,"","","",sysPackSizes,batch.dateIssued,bomData.extraAdditions||{},sysQcParams,oldStocksForPrint);
                   }else{
