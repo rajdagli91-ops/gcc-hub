@@ -91,7 +91,7 @@ window.onerror=function(msg,src,line,col,err){
 <script>
 // Print production sheet — extracted from Babel to avoid large template literal issues
 // Print production sheet — opens in new window, auto-prints
-function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, chargingDate, packSizes, issueDate, extraConfig, sysQcParams, oldStocks){
+function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, chargingDate, packSizes, issueDate, extraConfig, sysQcParams, oldStocks, viewOnly){
   const bs=parseFloat(batchSize)||parseFloat(bom.baseBatchSize)||100;
   const base=parseFloat(bom.baseBatchSize)||100;
   const factor=bs/base;
@@ -295,7 +295,11 @@ function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, char
   <div>Check by: ________________________________</div>
   <div>Prepared by: ________________________________</div>
 </div>
-<script>window.onload=()=>{setTimeout(()=>{window.focus();window.print();},400);}<\/script>
+${viewOnly?`<div class="no-print" style="position:fixed;bottom:20px;right:20px;z-index:999">
+  <button onclick="window.print()" style="background:#0D3569;color:#fff;border:none;border-radius:10px;padding:11px 22px;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 4px 16px rgba(13,53,105,0.4);font-family:Arial,sans-serif">🖨 Print This Sheet</button>
+</div>
+<style>@media print{.no-print{display:none!important}}</style>`
+:`<script>window.onload=()=>{setTimeout(()=>{window.focus();window.print();},400);}<\/script>`}
 </body></html>`;
   const w=window.open("","_blank");
   w.document.write(html);w.document.close();
@@ -5157,7 +5161,10 @@ function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes,sysQcParams}
                 <span style={{fontSize:"12px",fontWeight:"700",color:"#22c55e"}}>v{b.currentVersion||1} (Current)</span>
                 <span style={{fontSize:"11px",color:"#64748b",marginLeft:"10px"}}>{(b.ingredients||[]).filter(i=>!i.isProcess).length} ingredients · Updated by {b.updatedBy||b.createdBy}</span>
               </div>
-              <Btn label="🖨 Print" onClick={()=>setActiveBOM({bom:b,mode:"print"})} color="#22c55e" small/>
+              <div style={{display:"flex",gap:"6px"}}>
+                <Btn label="👁 View" onClick={()=>printProductionSheet(b,b.baseBatchSize,"","","","",sysPackSizes,"",b.extraAdditions||{},sysQcParams,null,true)} color="#3b82f6" small outline/>
+                <Btn label="🖨 Print" onClick={()=>setActiveBOM({bom:b,mode:"print"})} color="#22c55e" small/>
+              </div>
             </div>
             {/* Archived versions */}
             {bVersions.map(v=><div key={v.id} style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"8px",padding:"10px 14px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"8px"}}>
@@ -5167,6 +5174,7 @@ function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes,sysQcParams}
                 <span style={{fontSize:"10px",color:"#334155",marginLeft:"8px"}}>{v.archivedAt?.toDate?.()?.toLocaleDateString("en-IN")||""}</span>
               </div>
               <div style={{display:"flex",gap:"6px"}}>
+                <Btn label="👁 View" onClick={()=>printProductionSheet(v,v.baseBatchSize,"","","","",sysPackSizes,"",v.extraAdditions||{},sysQcParams,null,true)} color="#3b82f6" small outline/>
                 <Btn label="🖨 Print this version" onClick={()=>printProductionSheet(v,v.baseBatchSize,"","","","",sysPackSizes,"",v.extraAdditions||{},sysQcParams)} color="#64748b" small outline/>
                 {canEdit&&<Btn label="⬆ Restore as Current" onClick={async()=>{if(!confirm("Restore v"+v.currentVersion+" as current BOM? Current will be archived."))return;const curr=boms.find(x=>x.id===b.id);if(curr)await C("bom_versions").add({...curr,productId:b.id,archivedAt:ts(),archivedBy:user.email});await C("bom_products").doc(b.id).update({...v,currentVersion:(curr?.currentVersion||1)+1,updatedBy:user.email,updatedAt:ts()});await C("bom_versions").doc(v.id).delete();showToast("Version restored ✓");}} color="#f59e0b" small/>}
               </div>
@@ -6197,7 +6205,7 @@ function ShadeCorrectionCalc({showToast,user,isAdmin,canApprove}){
     setSubmitting(false);
   };
 
-  const approveCorrection=async(corr,overrideRows)=>{
+  const approveCorrection=async(corr,overrideRows,overrideIngredients)=>{
     if(!corr.bomId)return showToast("No BOM linked — cannot apply","error");
     setReviewingId(corr.id);
     try{
@@ -6205,25 +6213,30 @@ function ShadeCorrectionCalc({showToast,user,isAdmin,canApprove}){
       const bomSnap=await C("bom_products").doc(corr.bomId).get();
       if(!bomSnap.exists)throw new Error("BOM no longer exists");
       const bomData=bomSnap.data();
-      let ingredients=[...(bomData.ingredients||[])];
+      let ingredients;
       const pctNotes=[];
-      rowsToApply.forEach(row=>{
-        if(row.adjustMode==="pct"){
-          // Stainer-form: BOM quantity stays unchanged; the stainer's own concentration needs updating instead
-          pctNotes.push(`${row.name}: update stainer concentration to ${row.newPigmentPct?.toFixed(2)}% (was ${row.pigmentPct}%) — qty in this BOM unchanged`);
-          return;
-        }
-        if(row.matchedIngId){
-          const idx=ingredients.findIndex(i=>i.id===row.matchedIngId);
-          if(idx>=0)ingredients[idx]={...ingredients[idx],standardQty:row.newQtyAtBase.toFixed(3)};
-        }else{
-          ingredients.push({id:newId(),name:row.name,standardQty:row.newQtyAtBase.toFixed(3),isProcess:false});
-        }
-      });
+      if(overrideIngredients){
+        // Full-BOM edit path: admin reviewed/reordered the whole ingredient list directly
+        ingredients=overrideIngredients.map(({_changed,...i})=>i);
+      }else{
+        ingredients=[...(bomData.ingredients||[])];
+        rowsToApply.forEach(row=>{
+          if(row.adjustMode==="pct"){
+            pctNotes.push(`${row.name}: update stainer concentration to ${row.newPigmentPct?.toFixed(2)}% (was ${row.pigmentPct}%) — qty in this BOM unchanged`);
+            return;
+          }
+          if(row.matchedIngId){
+            const idx=ingredients.findIndex(i=>i.id===row.matchedIngId);
+            if(idx>=0)ingredients[idx]={...ingredients[idx],standardQty:row.newQtyAtBase.toFixed(3)};
+          }else{
+            ingredients.push({id:newId(),name:row.name,standardQty:row.newQtyAtBase.toFixed(3),isProcess:false});
+          }
+        });
+      }
       // Archive current version, then update
       await C("bom_versions").add({...bomData,productId:corr.bomId,archivedAt:ts(),archivedBy:user.email});
       await C("bom_products").doc(corr.bomId).update({ingredients,currentVersion:(bomData.currentVersion||1)+1,updatedBy:user.email,updatedAt:ts()});
-      await C("shade_corrections").doc(corr.id).update({status:"Approved",reviewedBy:user.email,reviewedAt:ts(),appliedRows:rowsToApply,...(overrideRows?{editedByApprover:true}:{})});
+      await C("shade_corrections").doc(corr.id).update({status:"Approved",reviewedBy:user.email,reviewedAt:ts(),appliedRows:rowsToApply,...(overrideRows||overrideIngredients?{editedByApprover:true}:{})});
       if(corr.batchId)await C("batches").doc(corr.batchId).update({shadeCorrectionStatus:"Approved"});
       showToast(pctNotes.length?"Approved — BOM updated. "+pctNotes.join("; "):"Approved & applied to BOM — new version saved ✓");
     }catch(e){showToast("Error: "+e.message,"error");}
@@ -6241,11 +6254,44 @@ function ShadeCorrectionCalc({showToast,user,isAdmin,canApprove}){
     setReviewingId(null);
   };
 
-  const startEditingCorrection=(corr)=>{
+  const [editBomIngredients,setEditBomIngredients]=useState([]);
+  const [loadingFullBom,setLoadingFullBom]=useState(false);
+  const startEditingCorrection=async(corr)=>{
     setEditingCorrId(corr.id);
     const corrMultiplier=corr.bomBaseBatchSize>0?corr.productionBatchSize/corr.bomBaseBatchSize:1;
     setEditRows(corr.suggestedRows.map(r=>({...r,_mult:corrMultiplier})));
+    // Fetch the FULL current BOM so admin can see everything, not just the changed pigments,
+    // and can reorder the ingredient sequence before approving.
+    if(corr.bomId){
+      setLoadingFullBom(true);
+      try{
+        const bomSnap=await C("bom_products").doc(corr.bomId).get();
+        if(bomSnap.exists){
+          const bomData=bomSnap.data();
+          let ingredients=(bomData.ingredients||[]).map(i=>({...i}));
+          corr.suggestedRows.forEach(row=>{
+            if(row.adjustMode==="pct")return; // qty unchanged for stainer-% rows
+            if(row.matchedIngId){
+              const idx=ingredients.findIndex(i=>i.id===row.matchedIngId);
+              if(idx>=0)ingredients[idx]={...ingredients[idx],standardQty:row.newQtyAtBase.toFixed(3),_changed:true};
+            }else{
+              ingredients.push({id:newId(),name:row.name,standardQty:row.newQtyAtBase.toFixed(3),isProcess:false,_changed:true});
+            }
+          });
+          setEditBomIngredients(ingredients);
+        }
+      }catch(e){showToast("Error loading BOM: "+e.message,"error");}
+      setLoadingFullBom(false);
+    }
   };
+  const moveIngredient=(idx,dir)=>setEditBomIngredients(list=>{
+    const newIdx=idx+dir;
+    if(newIdx<0||newIdx>=list.length)return list;
+    const copy=[...list];
+    [copy[idx],copy[newIdx]]=[copy[newIdx],copy[idx]];
+    return copy;
+  });
+  const updateBomIngredientQty=(idx,val)=>setEditBomIngredients(list=>list.map((ing,i)=>i===idx?{...ing,standardQty:val}:ing));
   const updateEditRow=(idx,field,val)=>setEditRows(rows=>rows.map((r,i)=>{
     if(i!==idx)return r;
     if(field==="newQty"){
@@ -6263,7 +6309,7 @@ function ShadeCorrectionCalc({showToast,user,isAdmin,canApprove}){
     const rounded=parseFloat((parseFloat(r.newQty)||0).toFixed(decimals));
     return {...r,newQty:rounded,newQtyAtBase:r._mult>0?rounded/r._mult:rounded};
   }));
-  const saveEditsAndApprove=(corr)=>approveCorrection(corr,editRows.map(({_mult,...r})=>r));
+  const saveEditsAndApprove=(corr)=>approveCorrection(corr,editRows.map(({_mult,...r})=>r),editBomIngredients.length?editBomIngredients:null);
 
   return <div>
     <SectionHead title="🎯 Shade Correction → Pigment Ratio Tuner"/>
@@ -6298,20 +6344,28 @@ function ShadeCorrectionCalc({showToast,user,isAdmin,canApprove}){
         </div>}
 
         {isEditing&&<div style={{marginTop:"10px",border:"1px solid #4338ca40",borderRadius:"8px",overflow:"hidden"}}>
-          <div style={{display:"grid",gridTemplateColumns:"1.4fr 90px 110px 50px",gap:"6px",background:"#0b1220",padding:"6px 10px"}}>
-            {["Pigment","Current","Recommended",""].map(h=><div key={h} style={{fontSize:"9px",fontWeight:"700",color:"#334155",textTransform:"uppercase"}}>{h}</div>)}
+          <div style={{padding:"8px 10px",background:"#0b1220",fontSize:"11px",color:"#a5b4fc",fontWeight:"700"}}>
+            📋 Full BOM — reorder with ▲▼, edit any quantity. Rows marked 🎯 were changed by this correction.
           </div>
-          {editRows.map((r,idx)=><div key={idx} style={{display:"grid",gridTemplateColumns:"1.4fr 90px 110px 50px",gap:"6px",padding:"6px 10px",borderTop:"1px solid #1e293b",alignItems:"center"}}>
-            <div style={{fontSize:"12px",color:"#e2e8f0"}}>{r.name}{r.adjustMode==="pct"&&<span style={{fontSize:"10px",color:"#d8b4fe"}}> (% mode)</span>}</div>
-            <div style={{fontSize:"11px",color:"#64748b",textAlign:"center"}}>{r.oldQty.toFixed(3)}</div>
-            {r.adjustMode==="pct"
-              ?<input style={{...sml,textAlign:"center"}} type="number" step="0.01" value={r.newPigmentPct} onChange={e=>updateEditRow(idx,"newPigmentPct",e.target.value)}/>
-              :<input style={{...sml,textAlign:"center"}} type="number" step="0.001" value={r.newQty} onChange={e=>updateEditRow(idx,"newQty",e.target.value)}/>}
-            <button onClick={()=>roundEditRow(idx,2)} title="Round to 2 decimals" style={{background:"none",border:"1px solid #334155",borderRadius:"5px",color:"#94a3b8",cursor:"pointer",fontSize:"10px",padding:"3px 6px"}}>⊙2dp</button>
-          </div>)}
+          {loadingFullBom&&<div style={{padding:"16px",textAlign:"center",fontSize:"12px",color:"#64748b"}}>Loading BOM…</div>}
+          {!loadingFullBom&&<>
+            <div style={{display:"grid",gridTemplateColumns:"50px 1.6fr 110px",gap:"6px",background:"#0b1220",padding:"6px 10px",borderTop:"1px solid #1e293b"}}>
+              {["Order","Ingredient","Quantity"].map(h=><div key={h} style={{fontSize:"9px",fontWeight:"700",color:"#334155",textTransform:"uppercase"}}>{h}</div>)}
+            </div>
+            {editBomIngredients.map((ing,idx)=><div key={ing.id||idx} style={{display:"grid",gridTemplateColumns:"50px 1.6fr 110px",gap:"6px",padding:"6px 10px",borderTop:"1px solid #1e293b",alignItems:"center",background:ing._changed?"#0c1a2e":"transparent"}}>
+              <div style={{display:"flex",gap:"3px"}}>
+                <button onClick={()=>moveIngredient(idx,-1)} disabled={idx===0} style={{background:"none",border:"1px solid #334155",borderRadius:"4px",color:idx===0?"#1e293b":"#94a3b8",cursor:idx===0?"default":"pointer",fontSize:"10px",padding:"2px 5px"}}>▲</button>
+                <button onClick={()=>moveIngredient(idx,1)} disabled={idx===editBomIngredients.length-1} style={{background:"none",border:"1px solid #334155",borderRadius:"4px",color:idx===editBomIngredients.length-1?"#1e293b":"#94a3b8",cursor:idx===editBomIngredients.length-1?"default":"pointer",fontSize:"10px",padding:"2px 5px"}}>▼</button>
+              </div>
+              {ing.isProcess
+                ?<div style={{fontSize:"11px",color:"#94a3b8",fontStyle:"italic",fontWeight:"600"}}>⚙ {ing.name}</div>
+                :<div style={{fontSize:"12px",color:"#e2e8f0"}}>{ing.name}{ing._changed&&<span style={{fontSize:"10px",color:"#22d3ee",marginLeft:"6px"}}>🎯 changed</span>}</div>}
+              {!ing.isProcess&&<input style={{...sml,textAlign:"center",borderColor:ing._changed?"#22d3ee60":"#1e293b"}} type="number" step="0.001" value={ing.standardQty} onChange={e=>updateBomIngredientQty(idx,e.target.value)}/>}
+            </div>)}
+          </>}
           <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",padding:"10px",background:"#0a1520"}}>
             <button onClick={()=>setEditingCorrId(null)} style={{background:"none",border:"1px solid #334155",borderRadius:"6px",color:"#64748b",cursor:"pointer",fontSize:"12px",padding:"6px 14px"}}>Cancel</button>
-            <button disabled={reviewingId===corr.id} onClick={()=>saveEditsAndApprove(corr)} style={{background:"#052e16",border:"1px solid #166534",borderRadius:"6px",color:"#4ade80",cursor:"pointer",fontSize:"12px",fontWeight:"600",padding:"6px 14px"}}>💾 Save Adjustments & Approve</button>
+            <button disabled={reviewingId===corr.id||loadingFullBom} onClick={()=>saveEditsAndApprove(corr)} style={{background:"#052e16",border:"1px solid #166534",borderRadius:"6px",color:"#4ade80",cursor:"pointer",fontSize:"12px",fontWeight:"600",padding:"6px 14px"}}>💾 Save BOM &amp; Approve</button>
           </div>
         </div>}
       </div>;})}
