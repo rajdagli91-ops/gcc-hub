@@ -104,11 +104,13 @@ function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, char
   const extraItemCount=(extraConfig?.items||['Dhoyela','Extra Output','Dhoyela']).length;
   const oldStockCount=(oldStocks||[]).length;
   const contentWeight=ingCount+stepCount+extraItemCount+(oldStockCount>0?oldStockCount+1:0);
-  let D; // density tier
-  if(contentWeight<=10)D={rowPad:7,fontSz:11,addlMatRows:4,extraPad:8,extraBlanks:0,qcPad:7,qcFont:11,packPad:7,packFont:10,bodyPad:5};
-  else if(contentWeight<=14)D={rowPad:6,fontSz:10.5,addlMatRows:3,extraPad:7,extraBlanks:0,qcPad:6,qcFont:10.5,packPad:6,packFont:9.5,bodyPad:4};
-  else if(contentWeight<=18)D={rowPad:5,fontSz:10,addlMatRows:2,extraPad:6,extraBlanks:0,qcPad:5,qcFont:10,packPad:5,packFont:9,bodyPad:3};
-  else D={rowPad:4,fontSz:9.5,addlMatRows:1,extraPad:5,extraBlanks:0,qcPad:4,qcFont:9.5,packPad:4,packFont:8.5,bodyPad:2};
+  let D; // density tier — more ingredients/steps = tighter spacing, guaranteeing a single A4 page
+  if(contentWeight<=10)D={rowPad:7,fontSz:11,addlMatRows:4,extraPad:8,extraBlanks:0,qcPad:7,qcFont:11,packPad:7,packFont:10,bodyPad:5,coNameSz:18,sheetTitleSz:15,batchNoSz:18};
+  else if(contentWeight<=14)D={rowPad:6,fontSz:10.5,addlMatRows:3,extraPad:7,extraBlanks:0,qcPad:6,qcFont:10.5,packPad:6,packFont:9.5,bodyPad:4,coNameSz:17,sheetTitleSz:14,batchNoSz:17};
+  else if(contentWeight<=18)D={rowPad:5,fontSz:10,addlMatRows:2,extraPad:6,extraBlanks:0,qcPad:5,qcFont:10,packPad:5,packFont:9,bodyPad:3,coNameSz:16,sheetTitleSz:13.5,batchNoSz:16};
+  else if(contentWeight<=22)D={rowPad:4,fontSz:9.5,addlMatRows:1,extraPad:5,extraBlanks:0,qcPad:4,qcFont:9.5,packPad:4,packFont:8.5,bodyPad:2,coNameSz:15,sheetTitleSz:13,batchNoSz:15};
+  else if(contentWeight<=27)D={rowPad:3,fontSz:9,addlMatRows:1,extraPad:4,extraBlanks:0,qcPad:3,qcFont:9,packPad:3,packFont:8,bodyPad:2,coNameSz:14,sheetTitleSz:12,batchNoSz:14};
+  else D={rowPad:2,fontSz:8.5,addlMatRows:0,extraPad:3,extraBlanks:0,qcPad:2,qcFont:8.5,packPad:2,packFont:7.5,bodyPad:1,coNameSz:13,sheetTitleSz:11,batchNoSz:13};
   let ingRows="";
   let rowNo=0;
   (bom.ingredients||[]).forEach(ing=>{
@@ -182,8 +184,8 @@ function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, char
 <body>
 <table class="header-table">
   <tr>
-    <td style="width:28%"><span class="co-name">VEEBEE</span><br><span style="font-size:8pt">G.C.C/7.2.1/F/03</span></td>
-    <td style="width:32%;text-align:center"><span class="sheet-title">PRODUCTION SHEET</span></td>
+    <td style="width:28%"><span class="co-name" style="font-size:${D.coNameSz}pt">VEEBEE</span><br><span style="font-size:8pt">G.C.C/7.2.1/F/03</span></td>
+    <td style="width:32%;text-align:center"><span class="sheet-title" style="font-size:${D.sheetTitleSz}pt">PRODUCTION SHEET</span></td>
     <td style="width:40%;text-align:right;font-size:8pt;line-height:1.35">
       <span style="white-space:nowrap"><b>MILL NO:</b> _________</span><br>
       <span style="white-space:nowrap"><b>CHARGING DATE:</b> __________</span><br>
@@ -196,7 +198,7 @@ function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, char
   <tr>
     <td style="padding:6pt 10pt;width:55%;border-right:2px solid #000;">
       <span style="font-size:8pt;font-weight:700;text-transform:uppercase;color:#444;">Batch No</span><br>
-      <span style="font-size:18pt;font-weight:900;letter-spacing:2px;">${batchNo||"____________"}</span>
+      <span style="font-size:${D.batchNoSz}pt;font-weight:900;letter-spacing:2px;">${batchNo||"____________"}</span>
     </td>
     <td style="padding:6pt 10pt;width:45%;">
       <span style="font-size:8pt;font-weight:700;text-transform:uppercase;color:#444;">Issue Date</span><br>
@@ -265,12 +267,10 @@ function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, char
     <td style="width:37%;vertical-align:top">
       <table class="right-table" style="width:100%">
         <colgroup><col style="width:40%"><col style="width:27%"><col style="width:33%"></colgroup>
-        <tr><td colspan="3" class="section-head">Charging Time</td></tr>
-        <tr><td>Date</td><td colspan="2"></td></tr>
-        <tr><td>Time</td><td colspan="2"></td></tr>
-        <tr><td colspan="3" class="section-head">Discharge Time</td></tr>
-        <tr><td>Date</td><td colspan="2"></td></tr>
-        <tr><td>Time</td><td colspan="2"></td></tr>
+        <tr><td>Charging Date</td><td colspan="2"></td></tr>
+        <tr><td>Charging Time</td><td colspan="2"></td></tr>
+        <tr><td>Discharge Date</td><td colspan="2"></td></tr>
+        <tr><td>Discharge Time</td><td colspan="2"></td></tr>
         <tr><td colspan="3" class="section-head" style="margin-top:4px">Test Parameters</td></tr>
         <tr>
           <th style="border:1px solid #999;padding:5px 5px;background:#d0d0d0;font-size:10px">Parameter</th>
