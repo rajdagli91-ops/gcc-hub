@@ -105,9 +105,9 @@ function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, char
   const oldStockCount=(oldStocks||[]).length;
   const contentWeight=ingCount+stepCount+extraItemCount+(oldStockCount>0?oldStockCount+1:0);
   let D; // density tier
-  if(contentWeight<=10)D={rowPad:7,fontSz:11,addlMatRows:4,extraPad:8,extraBlanks:1,qcPad:7,qcFont:11,packPad:7,packFont:10,bodyPad:5};
-  else if(contentWeight<=14)D={rowPad:6,fontSz:10.5,addlMatRows:3,extraPad:7,extraBlanks:1,qcPad:6,qcFont:10.5,packPad:6,packFont:9.5,bodyPad:4};
-  else if(contentWeight<=18)D={rowPad:5,fontSz:10,addlMatRows:2,extraPad:6,extraBlanks:1,qcPad:5,qcFont:10,packPad:5,packFont:9,bodyPad:3};
+  if(contentWeight<=10)D={rowPad:7,fontSz:11,addlMatRows:4,extraPad:8,extraBlanks:0,qcPad:7,qcFont:11,packPad:7,packFont:10,bodyPad:5};
+  else if(contentWeight<=14)D={rowPad:6,fontSz:10.5,addlMatRows:3,extraPad:7,extraBlanks:0,qcPad:6,qcFont:10.5,packPad:6,packFont:9.5,bodyPad:4};
+  else if(contentWeight<=18)D={rowPad:5,fontSz:10,addlMatRows:2,extraPad:6,extraBlanks:0,qcPad:5,qcFont:10,packPad:5,packFont:9,bodyPad:3};
   else D={rowPad:4,fontSz:9.5,addlMatRows:1,extraPad:5,extraBlanks:0,qcPad:4,qcFont:9.5,packPad:4,packFont:8.5,bodyPad:2};
   let ingRows="";
   let rowNo=0;
@@ -118,18 +118,20 @@ function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, char
       rowNo++;
       const stdQty=parseFloat(ing.standardQty)||0;
       const currQty=(stdQty*factor).toFixed(3).replace(/\.?0+$/,"");
+      const ingUnit=ing.unit||bom.baseUnit;
+      const unitSuffix=ingUnit!==bom.baseUnit?` <span style="color:#b45309;font-weight:700">${ingUnit}</span>`:` <span style="color:#999">${ingUnit}</span>`;
       const nameDisplay=ing.name+(ing.desc?` (${ing.desc})`:"");
       ingRows+=`<tr>
         <td style="border:1px solid #999;padding:${D.rowPad}pt 5pt;text-align:center;font-size:${D.fontSz}pt">${rowNo}</td>
         <td style="border:1px solid #999;padding:${D.rowPad}pt 5pt;font-size:${D.fontSz}pt">${nameDisplay}</td>
-        <td style="border:1px solid #999;padding:${D.rowPad}pt 5pt;text-align:center;font-size:${D.fontSz}pt">${stdQty||""}</td>
-        <td style="border:1px solid #999;padding:${D.rowPad}pt 5pt;text-align:center;font-size:${D.fontSz}pt">${currQty||""}</td>
+        <td style="border:1px solid #999;padding:${D.rowPad}pt 5pt;text-align:center;font-size:${D.fontSz}pt">${stdQty?stdQty+unitSuffix:""}</td>
+        <td style="border:1px solid #999;padding:${D.rowPad}pt 5pt;text-align:center;font-size:${D.fontSz}pt">${currQty?currQty+unitSuffix:""}</td>
         <td style="border:1px solid #999;padding:${D.rowPad}pt 5pt;text-align:center;font-size:${D.fontSz}pt"></td>
       </tr>`;
     }
   });
-  // Total row
-  const totalStd=(bom.ingredients||[]).filter(i=>!i.isProcess).reduce((s,i)=>s+(parseFloat(i.standardQty)||0),0);
+  // Total row — only sum ingredients matching the batch's own unit (mixed units can't be summed meaningfully)
+  const totalStd=(bom.ingredients||[]).filter(i=>!i.isProcess&&(i.unit||bom.baseUnit)===bom.baseUnit).reduce((s,i)=>s+(parseFloat(i.standardQty)||0),0);
   const totalCurr=(totalStd*factor).toFixed(3).replace(/\.?0+$/,"");
   // Normalise qcTests — product-specific params take priority; if empty, fall back to category defaults
   const _qcRaw=bom.qcTests||{};
@@ -170,9 +172,9 @@ function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, char
   .right-table td{border:1px solid #999;padding:5pt 6pt;}
   .section-head{font-weight:700;background:#e0e0e0;padding:3pt 5pt;font-size:10pt;text-transform:uppercase;}
   .footer-row{display:flex;justify-content:space-between;margin-top:12pt;font-size:11pt;}
-  @page{size:210mm 297mm portrait;margin:${Math.max(4,D.bodyPad)}mm 8mm ${Math.max(4,D.bodyPad)}mm 8mm;}
+  @page{size:210mm 297mm portrait;margin:${Math.max(4,D.bodyPad)}mm 8mm 3mm 8mm;}
   @media print{
-    body{padding:${D.bodyPad}pt 8pt ${D.bodyPad}pt 25mm!important;}
+    body{padding:${D.bodyPad}pt 8pt 2pt 25mm!important;}
     tr{page-break-inside:avoid;}
   }
 </style>
@@ -4763,7 +4765,7 @@ function BOMForm({form,setForm,saving,isEdit,onCancel,onSave,sysProducts,sysQcPa
     if(!synced.length)return;
     setForm({...form,qcTests:synced});
   };
-  const addIng=()=>setForm(f=>({...f,ingredients:[...f.ingredients,{id:newId(),name:"",standardQty:"",isProcess:false}]}));
+  const addIng=()=>setForm(f=>({...f,ingredients:[...f.ingredients,{id:newId(),name:"",standardQty:"",unit:f.baseUnit||"L",isProcess:false}]}));
   const addProcess=()=>setForm(f=>({...f,ingredients:[...f.ingredients,{id:newId(),name:"",isProcess:true}]}));
   const updIng=(id,field,val)=>setForm(f=>({...f,ingredients:f.ingredients.map(i=>i.id===id?{...i,[field]:val}:i)}));
   const delIng=(id)=>setForm(f=>({...f,ingredients:f.ingredients.filter(i=>i.id!==id)}));
@@ -4797,35 +4799,40 @@ function BOMForm({form,setForm,saving,isEdit,onCancel,onSave,sysProducts,sysQcPa
     <div style={{marginBottom:"14px"}}>
       <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"6px"}}>Ingredients & Process Steps</div>
       <div style={{border:"1px solid #1e293b",borderRadius:"8px",overflow:"hidden",marginBottom:"6px"}}>
-        <div style={{display:"grid",gridTemplateColumns:"28px 2fr 100px 1.2fr 50px 28px",background:"#0b1220",padding:"6px 10px",gap:"6px"}}>
-          {["↕","Material / Step","Std Qty (per "+form.baseBatchSize+form.baseUnit+")","Description / Notes","",""].map((h,i)=><div key={i} style={{fontSize:"9px",fontWeight:"700",color:"#334155",textTransform:"uppercase"}}>{h}</div>)}
+        <div style={{display:"grid",gridTemplateColumns:"28px 1.8fr 85px 65px 1fr 50px 28px",background:"#0b1220",padding:"6px 10px",gap:"6px"}}>
+          {["↕","Material / Step","Std Qty","Unit","Description / Notes","",""].map((h,i)=><div key={i} style={{fontSize:"9px",fontWeight:"700",color:"#334155",textTransform:"uppercase"}}>{h}</div>)}
         </div>
         {(form.ingredients||[]).map((ing,idx)=>
           ing.isProcess
-            ?<div key={ing.id} style={{display:"grid",gridTemplateColumns:"28px 2fr 100px 1.2fr 50px 28px",padding:"5px 10px",gap:"6px",borderTop:"1px solid #1e293b",alignItems:"center",background:"#0a1520"}}>
+            ?<div key={ing.id} style={{display:"grid",gridTemplateColumns:"28px 1.8fr 85px 65px 1fr 50px 28px",padding:"5px 10px",gap:"6px",borderTop:"1px solid #1e293b",alignItems:"center",background:"#0a1520"}}>
               <div style={{display:"flex",flexDirection:"column",gap:"1px"}}>
                 <button onClick={()=>moveIng(idx,-1)} style={{background:"none",border:"none",color:"#334155",cursor:"pointer",fontSize:"10px",padding:"1px",lineHeight:1}}>▲</button>
                 <button onClick={()=>moveIng(idx,1)} style={{background:"none",border:"none",color:"#334155",cursor:"pointer",fontSize:"10px",padding:"1px",lineHeight:1}}>▼</button>
               </div>
               <input style={{...sml,color:"#f59e0b",fontStyle:"italic",background:"#0f1d10",borderColor:"#f59e0b30"}} value={ing.name} onChange={e=>updIng(ing.id,"name",e.target.value)} placeholder="Process instruction e.g. Grind for 6hrs"/>
               <div style={{fontSize:"10px",color:"#475569",fontStyle:"italic"}}>— process —</div>
+              <div/>
               <input style={{...sml,color:"#64748b"}} value={ing.desc||""} onChange={e=>updIng(ing.id,"desc",e.target.value)} placeholder="Notes (optional)"/>
               <span style={{fontSize:"10px",color:"#64748b",background:"#0f1720",border:"1px solid #1e293b",borderRadius:"4px",padding:"2px 5px",textAlign:"center"}}>Step</span>
               <button onClick={()=>delIng(ing.id)} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"14px",padding:0}}>×</button>
             </div>
-            :<div key={ing.id} style={{display:"grid",gridTemplateColumns:"28px 2fr 100px 1.2fr 50px 28px",padding:"5px 10px",gap:"6px",borderTop:"1px solid #1e293b",alignItems:"center"}}>
+            :<div key={ing.id} style={{display:"grid",gridTemplateColumns:"28px 1.8fr 85px 65px 1fr 50px 28px",padding:"5px 10px",gap:"6px",borderTop:"1px solid #1e293b",alignItems:"center"}}>
               <div style={{display:"flex",flexDirection:"column",gap:"1px"}}>
                 <button onClick={()=>moveIng(idx,-1)} style={{background:"none",border:"none",color:"#334155",cursor:"pointer",fontSize:"10px",padding:"1px",lineHeight:1}}>▲</button>
                 <button onClick={()=>moveIng(idx,1)} style={{background:"none",border:"none",color:"#334155",cursor:"pointer",fontSize:"10px",padding:"1px",lineHeight:1}}>▼</button>
               </div>
               <input style={sml} value={ing.name} onChange={e=>updIng(ing.id,"name",e.target.value)} placeholder="Material/ingredient name"/>
               <input style={{...sml,textAlign:"center"}} type="number" step="0.001" value={ing.standardQty} onChange={e=>updIng(ing.id,"standardQty",e.target.value)} placeholder="0"/>
+              <select style={{...sml,padding:"6px 4px",fontSize:"11.5px"}} value={ing.unit||form.baseUnit||"L"} onChange={e=>updIng(ing.id,"unit",e.target.value)}>
+                {["L","kg","g","mL"].map(u=><option key={u} value={u}>{u}</option>)}
+              </select>
               <input style={{...sml,color:"#94a3b8"}} value={ing.desc||""} onChange={e=>updIng(ing.id,"desc",e.target.value)} placeholder="e.g. imported, grind 6hrs, wash 1"/>
               <div style={{fontSize:"10px",color:"#22c55e",background:"#052e16",border:"1px solid #166534",borderRadius:"4px",padding:"2px 5px",textAlign:"center"}}>Ingr.</div>
               <button onClick={()=>delIng(ing.id)} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"14px",padding:0}}>×</button>
             </div>
         )}
       </div>
+      <div style={{fontSize:"10px",color:"#475569",marginBottom:"8px"}}>Set the unit per ingredient if it differs from the batch unit — e.g. paint batch in Litres, but a raw material weighed in kg.</div>
       <div style={{display:"flex",gap:"8px"}}>
         <button onClick={addIng} style={{background:"#052e16",border:"1px dashed #166534",borderRadius:"6px",padding:"5px 12px",color:"#22c55e",cursor:"pointer",fontSize:"12px"}}>+ Add Ingredient</button>
         <button onClick={addProcess} style={{background:"#0f1d10",border:"1px dashed #f59e0b50",borderRadius:"6px",padding:"5px 12px",color:"#f59e0b",cursor:"pointer",fontSize:"12px"}}>+ Add Process Step</button>
@@ -4933,7 +4940,7 @@ function BOMForm({form,setForm,saving,isEdit,onCancel,onSave,sysProducts,sysQcPa
           style={{background:"none",border:"1px dashed #1e293b",borderRadius:"6px",padding:"4px 10px",color:"#475569",cursor:"pointer",fontSize:"12px"}}>+ Custom Row</button>
         <div style={{display:"flex",alignItems:"center",gap:"6px",marginLeft:"auto"}}>
           <span style={{fontSize:"11px",color:"#475569"}}>Blank rows:</span>
-          <input type="number" min="0" max="8" value={(form.extraAdditions||{}).blankRows!=null?(form.extraAdditions||{}).blankRows:2}
+          <input type="number" min="0" max="8" value={(form.extraAdditions||{}).blankRows!=null?(form.extraAdditions||{}).blankRows:0}
             onChange={e=>setForm({...form,extraAdditions:{...(form.extraAdditions||{}),blankRows:parseInt(e.target.value)||0}})}
             style={{...sml,width:"48px",textAlign:"center"}}/>
         </div>
@@ -4952,9 +4959,9 @@ function BOMForm({form,setForm,saving,isEdit,onCancel,onSave,sysProducts,sysQcPa
 function PrintDialog({bom,packSizes,sysQcParams,onClose}){
   const [batchSize,setBatchSize]=useState(bom.baseBatchSize||"100");
   const [batchNo,setBatchNo]=useState("");
-  const storedExtra=bom.extraAdditions||{items:["Dhoyela","Extra Output","Dhoyela"],blankRows:2};
+  const storedExtra=bom.extraAdditions||{items:["Dhoyela","Extra Output","Dhoyela"],blankRows:0};
   const [extraItems,setExtraItems]=useState([...(storedExtra.items||["Dhoyela","Extra Output","Dhoyela"])]);
-  const [blankRows,setBlankRows]=useState(storedExtra.blankRows!=null?storedExtra.blankRows:2);
+  const [blankRows,setBlankRows]=useState(storedExtra.blankRows!=null?storedExtra.blankRows:0);
   const [oldStocks,setOldStocks]=useState([]);
   const addItem=(label)=>setExtraItems(v=>[...v,label]);
   const removeItem=(i)=>setExtraItems(v=>v.filter((_,idx)=>idx!==i));
@@ -5045,7 +5052,7 @@ function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes,sysQcParams}
     ingredients:[{id:newId(),name:"",standardQty:"",isProcess:false}],
     qcTests:defaultQCParams(""),
     packingSizes:[],
-    extraAdditions:{items:["Dhoyela","Extra Output","Dhoyela"],blankRows:2}};
+    extraAdditions:{items:["Dhoyela","Extra Output","Dhoyela"],blankRows:0}};
   const [form,setForm]=useState({...blankBOM});
 
   useEffect(()=>{
@@ -5086,14 +5093,14 @@ function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes,sysQcParams}
 
   const exportAllBOMs=()=>{
     if(!boms.length)return showToast("No BOMs to export","error");
-    const rows=[["Product Name","Category","Base Batch Size","Unit","Version","Last Updated","Ingredient No","Ingredient/Step","Standard Qty","Is Process Step","SD","TF","HD","Colour","Finish","Viscosity","SG","Remarks"]];
+    const rows=[["Product Name","Category","Base Batch Size","Unit","Version","Last Updated","Ingredient No","Ingredient/Step","Standard Qty","Ingredient Unit","Is Process Step","SD","TF","HD","Colour","Finish","Viscosity","SG","Remarks"]];
     boms.forEach(b=>{
       const q=b.qcTests||{};
       (b.ingredients||[]).forEach((ing,i)=>{
         const qcSD=i===0?q.sd||"":"";const qcTF=i===0?q.tf||"":"";const qcHD=i===0?q.hd||"":"";
         const qcCol=i===0?q.colour||"":"";const qcFin=i===0?q.finish||"":"";
         const qcVis=i===0?q.viscosity||"":"";const qcSG=i===0?q.sg||"":"";const qcRem=i===0?q.remarks||"":"";
-        rows.push([b.productName,b.category||"",b.baseBatchSize||100,b.baseUnit||"L",b.currentVersion||1,b.updatedAt?.toDate?.()?.toLocaleDateString("en-IN")||"",i+1,ing.name||"",ing.isProcess?"":ing.standardQty||"",ing.isProcess?"Yes":"No",qcSD,qcTF,qcHD,qcCol,qcFin,qcVis,qcSG,qcRem]);
+        rows.push([b.productName,b.category||"",b.baseBatchSize||100,b.baseUnit||"L",b.currentVersion||1,b.updatedAt?.toDate?.()?.toLocaleDateString("en-IN")||"",i+1,ing.name||"",ing.isProcess?"":ing.standardQty||"",ing.isProcess?"":(ing.unit||b.baseUnit||"L"),ing.isProcess?"Yes":"No",qcSD,qcTF,qcHD,qcCol,qcFin,qcVis,qcSG,qcRem]);
       });
     });
     const csv=rows.map(r=>r.map(v=>`"${String(v||"").replace(/"/g,'""')}"`).join(",")).join("\n");
@@ -5119,7 +5126,8 @@ function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes,sysQcParams}
     const mode=activeBOM?.mode;
     const bVersions=versions.filter(v=>v.productId===b.id).sort((a,z)=>z.currentVersion-a.currentVersion);
     const totalIngr=(b.ingredients||[]).filter(i=>!i.isProcess).length;
-    const totalStd=(b.ingredients||[]).filter(i=>!i.isProcess).reduce((s,i)=>s+(parseFloat(i.standardQty)||0),0);
+    const totalStd=(b.ingredients||[]).filter(i=>!i.isProcess&&(i.unit||b.baseUnit)===b.baseUnit).reduce((s,i)=>s+(parseFloat(i.standardQty)||0),0);
+    const hasMixedUnits=(b.ingredients||[]).some(i=>!i.isProcess&&i.unit&&i.unit!==b.baseUnit);
     const borderStyle=groupByCat&&filterCat==="All"
       ?{border:"none",borderLeft:"3px solid #3b82f6",borderBottom:isLastInGroup?"none":"1px solid #1e293b",borderRadius:0,marginBottom:0}
       :{border:"1px solid #1e293b",borderLeft:"3px solid #3b82f6",borderRadius:"12px",marginBottom:"10px"};
@@ -5129,7 +5137,7 @@ function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes,sysQcParams}
           <div style={{flex:1,cursor:"pointer"}} onClick={()=>setActiveBOM(isOpen&&mode==="view"?null:{bom:b,mode:"view"})}>
             <div style={{fontSize:"14px",fontWeight:"700",color:"#f1f5f9"}}>{b.productName}</div>
             <div style={{fontSize:"11.5px",color:"#475569",marginTop:"2px"}}>
-              {(!groupByCat||filterCat!=="All")&&b.category&&<span>{b.category} · </span>}Base: {b.baseBatchSize} {b.baseUnit} · {totalIngr} ingredients · Total: {totalStd.toFixed(2)}{b.baseUnit} · v{b.currentVersion||1}
+              {(!groupByCat||filterCat!=="All")&&b.category&&<span>{b.category} · </span>}Base: {b.baseBatchSize} {b.baseUnit} · {totalIngr} ingredients · Total: {totalStd.toFixed(2)}{b.baseUnit}{hasMixedUnits&&<span style={{color:"#f59e0b"}}> (mixed units)</span>} · v{b.currentVersion||1}
               {bVersions.length>0&&<span style={{color:"#64748b",marginLeft:"6px"}}>· {bVersions.length} archived version{bVersions.length!==1?"s":""}</span>}
             </div>
           </div>
@@ -5208,7 +5216,7 @@ function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes,sysQcParams}
                   :<div key={i} style={{display:"grid",gridTemplateColumns:"20px 1fr 70px",padding:"5px 10px",borderTop:"1px solid #1e293b",gap:"6px",alignItems:"center"}}>
                     <div style={{fontSize:"10px",color:"#475569"}}>{i+1}</div>
                     <div style={{fontSize:"12px",color:"#cbd5e1"}}>{ing.name}</div>
-                    <div style={{fontSize:"12px",color:"#22c55e",textAlign:"right"}}>{ing.standardQty} {b.baseUnit}</div>
+                    <div style={{fontSize:"12px",color:"#22c55e",textAlign:"right"}}>{ing.standardQty} {ing.unit||b.baseUnit}</div>
                   </div>
                 )}
                 <div style={{display:"grid",gridTemplateColumns:"20px 1fr 70px",padding:"6px 10px",borderTop:"1px solid #1e293b",background:"#0b1220",gap:"6px"}}>
