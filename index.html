@@ -105,12 +105,12 @@ function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, char
   const oldStockCount=(oldStocks||[]).length;
   const contentWeight=ingCount+stepCount+extraItemCount+(oldStockCount>0?oldStockCount+1:0);
   let D; // density tier — more ingredients/steps = tighter spacing, guaranteeing a single A4 page
-  if(contentWeight<=10)D={rowPad:7,fontSz:11,addlMatRows:4,extraPad:8,extraBlanks:0,qcPad:7,qcFont:11,packPad:7,packFont:10,bodyPad:5,coNameSz:18,sheetTitleSz:15,batchNoSz:18};
-  else if(contentWeight<=14)D={rowPad:6,fontSz:10.5,addlMatRows:3,extraPad:7,extraBlanks:0,qcPad:6,qcFont:10.5,packPad:6,packFont:9.5,bodyPad:4,coNameSz:17,sheetTitleSz:14,batchNoSz:17};
-  else if(contentWeight<=18)D={rowPad:5,fontSz:10,addlMatRows:2,extraPad:6,extraBlanks:0,qcPad:5,qcFont:10,packPad:5,packFont:9,bodyPad:3,coNameSz:16,sheetTitleSz:13.5,batchNoSz:16};
-  else if(contentWeight<=22)D={rowPad:4,fontSz:9.5,addlMatRows:1,extraPad:5,extraBlanks:0,qcPad:4,qcFont:9.5,packPad:4,packFont:8.5,bodyPad:2,coNameSz:15,sheetTitleSz:13,batchNoSz:15};
-  else if(contentWeight<=27)D={rowPad:3,fontSz:9,addlMatRows:1,extraPad:4,extraBlanks:0,qcPad:3,qcFont:9,packPad:3,packFont:8,bodyPad:2,coNameSz:14,sheetTitleSz:12,batchNoSz:14};
-  else D={rowPad:2,fontSz:8.5,addlMatRows:0,extraPad:3,extraBlanks:0,qcPad:2,qcFont:8.5,packPad:2,packFont:7.5,bodyPad:1,coNameSz:13,sheetTitleSz:11,batchNoSz:13};
+  if(contentWeight<=10)D={rowPad:7,fontSz:11,addlMatRows:6,extraPad:8,extraBlanks:0,qcPad:7,qcFont:11,packPad:7,packFont:10,bodyPad:5,coNameSz:18,sheetTitleSz:15,batchNoSz:18};
+  else if(contentWeight<=14)D={rowPad:6,fontSz:10.5,addlMatRows:5,extraPad:7,extraBlanks:0,qcPad:6,qcFont:10.5,packPad:6,packFont:9.5,bodyPad:4,coNameSz:17,sheetTitleSz:14,batchNoSz:17};
+  else if(contentWeight<=18)D={rowPad:5,fontSz:10,addlMatRows:4,extraPad:6,extraBlanks:0,qcPad:5,qcFont:10,packPad:5,packFont:9,bodyPad:3,coNameSz:16,sheetTitleSz:13.5,batchNoSz:16};
+  else if(contentWeight<=22)D={rowPad:4,fontSz:9.5,addlMatRows:3,extraPad:5,extraBlanks:0,qcPad:4,qcFont:9.5,packPad:4,packFont:8.5,bodyPad:2,coNameSz:15,sheetTitleSz:13,batchNoSz:15};
+  else if(contentWeight<=27)D={rowPad:3,fontSz:9,addlMatRows:2,extraPad:4,extraBlanks:0,qcPad:3,qcFont:9,packPad:3,packFont:8,bodyPad:2,coNameSz:14,sheetTitleSz:12,batchNoSz:14};
+  else D={rowPad:2,fontSz:8.5,addlMatRows:1,extraPad:3,extraBlanks:0,qcPad:2,qcFont:8.5,packPad:2,packFont:7.5,bodyPad:1,coNameSz:13,sheetTitleSz:11,batchNoSz:13};
   let ingRows="";
   let rowNo=0;
   (bom.ingredients||[]).forEach(ing=>{
@@ -156,8 +156,8 @@ function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, char
     }).filter(Boolean);
   }
   var packRows=catPackSizes.length
-    ?catPackSizes.map(function(s){return '<tr><td style="border:1px solid #999;padding:'+D.packPad+'pt 5pt;font-size:'+D.packFont+'pt">'+s+'</td><td colspan="2" style="border:1px solid #999;padding:'+D.packPad+'pt 5pt;min-width:60pt">&nbsp;</td></tr>';}).join("")
-    :'<tr><td style="border:1px solid #999;padding:'+D.packPad+'pt 5pt">&nbsp;</td><td colspan="2" style="border:1px solid #999;padding:'+D.packPad+'pt 5pt">&nbsp;</td></tr><tr><td style="border:1px solid #999;padding:'+D.packPad+'pt 5pt">&nbsp;</td><td colspan="2" style="border:1px solid #999;padding:'+D.packPad+'pt 5pt">&nbsp;</td></tr><tr><td style="border:1px solid #999;padding:'+D.packPad+'pt 5pt">&nbsp;</td><td colspan="2" style="border:1px solid #999;padding:'+D.packPad+'pt 5pt">&nbsp;</td></tr>';
+    ?catPackSizes.map(function(s){return '<tr><td style="border:1px solid #999;padding:'+(D.packPad+3)+'pt 6pt;font-size:'+(D.packFont+2)+'pt">'+s+'</td><td colspan="2" style="border:1px solid #999;padding:'+(D.packPad+3)+'pt 6pt;min-width:60pt">&nbsp;</td></tr>';}).join("")
+    :'<tr><td style="border:1px solid #999;padding:'+(D.packPad+3)+'pt 6pt">&nbsp;</td><td colspan="2" style="border:1px solid #999;padding:'+(D.packPad+3)+'pt 6pt">&nbsp;</td></tr><tr><td style="border:1px solid #999;padding:'+(D.packPad+3)+'pt 6pt">&nbsp;</td><td colspan="2" style="border:1px solid #999;padding:'+(D.packPad+3)+'pt 6pt">&nbsp;</td></tr><tr><td style="border:1px solid #999;padding:'+(D.packPad+3)+'pt 6pt">&nbsp;</td><td colspan="2" style="border:1px solid #999;padding:'+(D.packPad+3)+'pt 6pt">&nbsp;</td></tr>';
   const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Production Sheet — ${bom.productName}</title>
 <style>
   *{box-sizing:border-box;}
@@ -243,7 +243,7 @@ function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, char
               var style=isHighlight?highlightStyle:normalStyle;
               rows+='<tr><td colspan="4" style="'+style+'">'+label+'</td>'+blankCell+'</tr>';
             });
-            var blanks=cfg.blankRows!==undefined?cfg.blankRows:D.extraBlanks;
+            var blanks=0;
             for(var i=0;i<blanks;i++) rows+='<tr><td colspan="4" style="'+normalStyle+'">&nbsp;</td>'+blankCell+'</tr>';
             return rows;
           })()}
@@ -267,26 +267,26 @@ function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, char
     <td style="width:37%;vertical-align:top">
       <table class="right-table" style="width:100%">
         <colgroup><col style="width:40%"><col style="width:27%"><col style="width:33%"></colgroup>
-        <tr><td>Charging Date</td><td colspan="2"></td></tr>
-        <tr><td>Charging Time</td><td colspan="2"></td></tr>
-        <tr><td>Discharge Date</td><td colspan="2"></td></tr>
-        <tr><td>Discharge Time</td><td colspan="2"></td></tr>
-        <tr><td colspan="3" class="section-head" style="margin-top:4px">Test Parameters</td></tr>
+        <tr><td style="font-size:9pt;padding:3pt 6pt;white-space:nowrap">Charging Date</td><td colspan="2" style="padding:3pt 6pt"></td></tr>
+        <tr><td style="font-size:9pt;padding:3pt 6pt;white-space:nowrap">Charging Time</td><td colspan="2" style="padding:3pt 6pt"></td></tr>
+        <tr><td style="font-size:9pt;padding:3pt 6pt;white-space:nowrap">Discharge Date</td><td colspan="2" style="padding:3pt 6pt"></td></tr>
+        <tr><td style="font-size:9pt;padding:3pt 6pt;white-space:nowrap">Discharge Time</td><td colspan="2" style="padding:3pt 6pt"></td></tr>
+        <tr><td colspan="3" class="section-head" style="margin-top:4px;font-size:12pt;padding:5pt 6pt">Test Parameters</td></tr>
         <tr>
-          <th style="border:1px solid #999;padding:5px 5px;background:#d0d0d0;font-size:10px">Parameter</th>
-          <th style="border:1px solid #999;padding:5px 5px;background:#d0d0d0;font-size:10px">Standard</th>
-          <th style="border:1px solid #999;padding:5px 5px;background:#d0d0d0;font-size:10px">Actual Value</th>
+          <th style="border:1px solid #999;padding:7px 6px;background:#d0d0d0;font-size:12px">Parameter</th>
+          <th style="border:1px solid #999;padding:7px 6px;background:#d0d0d0;font-size:12px">Standard</th>
+          <th style="border:1px solid #999;padding:7px 6px;background:#d0d0d0;font-size:12px">Actual Value</th>
         </tr>
         ${qcParams.length
           ?qcParams.map(p=>`<tr>
-            <td style="border:1px solid #999;padding:${D.qcPad}px 5px;font-size:${D.qcFont}px">${p.name||""}</td>
-            <td style="border:1px solid #999;padding:${D.qcPad}px 5px;font-size:${D.qcFont}px;text-align:center">${p.standard||""}</td>
-            <td style="border:1px solid #999;padding:${D.qcPad}px 5px;min-width:70px">&nbsp;</td>
+            <td style="border:1px solid #999;padding:${D.qcPad+3}px 6px;font-size:${D.qcFont+2}px">${p.name||""}</td>
+            <td style="border:1px solid #999;padding:${D.qcPad+3}px 6px;font-size:${D.qcFont+2}px;text-align:center">${p.standard||""}</td>
+            <td style="border:1px solid #999;padding:${D.qcPad+3}px 6px;min-width:70px">&nbsp;</td>
           </tr>`).join("")
           :"<tr><td colspan='3' style='color:#999;font-style:italic;border:1px solid #999;padding:7px 5px'>No QC parameters defined</td></tr>"
         }
-        <tr><td colspan="3" class="section-head" style="padding-top:6px">Packing</td></tr>
-        <tr><th style="border:1px solid #999;padding:5px 5px;background:#d0d0d0;font-size:10px">Size</th><th colspan="2" style="border:1px solid #999;padding:5px 5px;background:#d0d0d0;font-size:10px">No. of Packs</th></tr>
+        <tr><td colspan="3" class="section-head" style="padding-top:6px;font-size:12pt;padding:5pt 6pt">Packing</td></tr>
+        <tr><th style="border:1px solid #999;padding:7px 6px;background:#d0d0d0;font-size:12px">Size</th><th colspan="2" style="border:1px solid #999;padding:7px 6px;background:#d0d0d0;font-size:12px">No. of Packs</th></tr>
         ${packRows}
       </table>
       <div style="margin-top:8px;font-size:10px;color:#555">BOM v${bom.currentVersion||1} · Printed: ${today()}</div>
