@@ -132,8 +132,8 @@ function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, char
       </tr>`;
     }
   });
-  // Total row — only sum ingredients matching the batch's own unit (mixed units can't be summed meaningfully)
-  const totalStd=(bom.ingredients||[]).filter(i=>!i.isProcess&&(i.unit||bom.baseUnit)===bom.baseUnit).reduce((s,i)=>s+(parseFloat(i.standardQty)||0),0);
+  // Total row — sums all ingredients regardless of unit
+  const totalStd=(bom.ingredients||[]).filter(i=>!i.isProcess).reduce((s,i)=>s+(parseFloat(i.standardQty)||0),0);
   const totalCurr=(totalStd*factor).toFixed(3).replace(/\.?0+$/,"");
   // Normalise qcTests — product-specific params take priority; if empty, fall back to category defaults
   const _qcRaw=bom.qcTests||{};
@@ -5126,8 +5126,7 @@ function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes,sysQcParams}
     const mode=activeBOM?.mode;
     const bVersions=versions.filter(v=>v.productId===b.id).sort((a,z)=>z.currentVersion-a.currentVersion);
     const totalIngr=(b.ingredients||[]).filter(i=>!i.isProcess).length;
-    const totalStd=(b.ingredients||[]).filter(i=>!i.isProcess&&(i.unit||b.baseUnit)===b.baseUnit).reduce((s,i)=>s+(parseFloat(i.standardQty)||0),0);
-    const hasMixedUnits=(b.ingredients||[]).some(i=>!i.isProcess&&i.unit&&i.unit!==b.baseUnit);
+    const totalStd=(b.ingredients||[]).filter(i=>!i.isProcess).reduce((s,i)=>s+(parseFloat(i.standardQty)||0),0);
     const borderStyle=groupByCat&&filterCat==="All"
       ?{border:"none",borderLeft:"3px solid #3b82f6",borderBottom:isLastInGroup?"none":"1px solid #1e293b",borderRadius:0,marginBottom:0}
       :{border:"1px solid #1e293b",borderLeft:"3px solid #3b82f6",borderRadius:"12px",marginBottom:"10px"};
@@ -5137,7 +5136,7 @@ function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes,sysQcParams}
           <div style={{flex:1,cursor:"pointer"}} onClick={()=>setActiveBOM(isOpen&&mode==="view"?null:{bom:b,mode:"view"})}>
             <div style={{fontSize:"14px",fontWeight:"700",color:"#f1f5f9"}}>{b.productName}</div>
             <div style={{fontSize:"11.5px",color:"#475569",marginTop:"2px"}}>
-              {(!groupByCat||filterCat!=="All")&&b.category&&<span>{b.category} · </span>}Base: {b.baseBatchSize} {b.baseUnit} · {totalIngr} ingredients · Total: {totalStd.toFixed(2)}{b.baseUnit}{hasMixedUnits&&<span style={{color:"#f59e0b"}}> (mixed units)</span>} · v{b.currentVersion||1}
+              {(!groupByCat||filterCat!=="All")&&b.category&&<span>{b.category} · </span>}Base: {b.baseBatchSize} {b.baseUnit} · {totalIngr} ingredients · Total: {totalStd.toFixed(2)} · v{b.currentVersion||1}
               {bVersions.length>0&&<span style={{color:"#64748b",marginLeft:"6px"}}>· {bVersions.length} archived version{bVersions.length!==1?"s":""}</span>}
             </div>
           </div>
@@ -5221,7 +5220,7 @@ function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes,sysQcParams}
                 )}
                 <div style={{display:"grid",gridTemplateColumns:"20px 1fr 70px",padding:"6px 10px",borderTop:"1px solid #1e293b",background:"#0b1220",gap:"6px"}}>
                   <div/><div style={{fontSize:"11px",fontWeight:"700",color:"#94a3b8"}}>Total</div>
-                  <div style={{fontSize:"12px",fontWeight:"700",color:"#22c55e",textAlign:"right"}}>{totalStd.toFixed(2)} {b.baseUnit}</div>
+                  <div style={{fontSize:"12px",fontWeight:"700",color:"#22c55e",textAlign:"right"}}>{totalStd.toFixed(2)}</div>
                 </div>
               </div>
             </div>
