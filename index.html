@@ -6025,7 +6025,8 @@ function ShadeCorrectionCalc({showToast,user,isAdmin,canApprove}){
   const [bomBaseSize,setBomBaseSize]=useState(0);
   const [batchSize,setBatchSize]=useState("100");
   const [lastScaledSize,setLastScaledSize]=useState(0); // tracks size pigments were last scaled to
-  const [pigments,setPigments]=useState([{id:"p1",name:"",qty:"",pigmentPct:"",adjustMode:"qty"},{id:"p2",name:"",qty:"",pigmentPct:"",adjustMode:"qty"}]);
+  const [pigments,setPigments]=useState([{id:"p1",name:"",qty:"",pigmentPct:""},{id:"p2",name:"",qty:"",pigmentPct:""}]);
+  const [formulationType,setFormulationType]=useState("pigment"); // "pigment" or "stainer" — auto-detected, user-overridable
   const [targetTotal,setTargetTotal]=useState("");
   const [targetOverride,setTargetOverride]=useState(false);
   const [stainers,setStainers]=useState([{id:"s1",name:"",amt:"",pigment:""}]);
@@ -6063,8 +6064,10 @@ function ShadeCorrectionCalc({showToast,user,isAdmin,canApprove}){
       setBomBaseSize(base);
       const mult=actualSize/base;
       const rows=(matchedBom.ingredients||[]).filter(i=>!i.isProcess&&i.name&&parseFloat(i.standardQty)>0&&(isPigmentCode(i.name)||isStrName(i.name)))
-        .map(i=>({id:i.id||newId(),name:i.name,qty:((parseFloat(i.standardQty)||0)*mult).toFixed(3),pigmentPct:"",adjustMode:"qty"}));
-      setPigments(rows.length?rows:[{id:"p1",name:"",qty:"",pigmentPct:"",adjustMode:"qty"},{id:"p2",name:"",qty:"",pigmentPct:"",adjustMode:"qty"}]);
+        .map(i=>({id:i.id||newId(),name:i.name,qty:((parseFloat(i.standardQty)||0)*mult).toFixed(3),pigmentPct:""}));
+      setPigments(rows.length?rows:[{id:"p1",name:"",qty:"",pigmentPct:""},{id:"p2",name:"",qty:"",pigmentPct:""}]);
+      // Auto-detect: if any ingredient is stainer-named, this product is formulated via stainer
+      setFormulationType(rows.some(r=>isStrName(r.name))?"stainer":"pigment");
     }else{
       setBomId("");setBomBaseSize(0);
       showToast("No BOM found for "+b.productName+" — enter pigments manually","error");
@@ -6081,7 +6084,7 @@ function ShadeCorrectionCalc({showToast,user,isAdmin,canApprove}){
     showToast("Pigment quantities rescaled to "+newSize+" ✓");
   };
 
-  const addPigment=()=>setPigments(p=>[...p,{id:"p"+Date.now()+Math.random(),name:"",qty:"",pigmentPct:"",adjustMode:"qty"}]);
+  const addPigment=()=>setPigments(p=>[...p,{id:"p"+Date.now()+Math.random(),name:"",qty:"",pigmentPct:""}]);
   const removePigment=(id)=>setPigments(p=>p.filter(x=>x.id!==id));
   const updatePigment=(id,field,val)=>setPigments(p=>p.map(x=>x.id===id?{...x,[field]:val}:x));
 
@@ -6091,7 +6094,7 @@ function ShadeCorrectionCalc({showToast,user,isAdmin,canApprove}){
 
   const pigmentPureMass=(p)=>{
     const qty=parseFloat(p.qty)||0;
-    if(isStrName(p.name)){
+    if(formulationType==="stainer"){
       const pct=parseFloat(p.pigmentPct)||0;
       return qty*pct/100;
     }
@@ -6099,11 +6102,11 @@ function ShadeCorrectionCalc({showToast,user,isAdmin,canApprove}){
   };
   const currentTotal=pigments.reduce((sum,p)=>sum+pigmentPureMass(p),0);
   const effectiveTarget=targetOverride?(parseFloat(targetTotal)||0):currentTotal;
-  const missingStrPct=pigments.some(p=>p.name.trim()&&isStrName(p.name)&&!(parseFloat(p.pigmentPct)>0));
+  const missingStrPct=formulationType==="stainer"&&pigments.some(p=>p.name.trim()&&!(parseFloat(p.pigmentPct)>0));
 
   const validStainers=stainers.filter(s=>s.name.trim()&&parseFloat(s.amt)>0&&parseFloat(s.pigment)>0);
   const stainerContrib={};
-  const newPigmentsFromStainer=[];
+  const standaloneStainers=[]; // new corrections that don't match anything already in the batch
   validStainers.forEach(s=>{
     const amt=parseFloat(s.amt)||0;
     const pct=parseFloat(s.pigment)||0;
@@ -6115,41 +6118,41 @@ function ShadeCorrectionCalc({showToast,user,isAdmin,canApprove}){
       stainerContrib[match.id]=(stainerContrib[match.id]||0)+pureMass;
     }else{
       const key="_new_"+s.name.trim();
-      const existing=newPigmentsFromStainer.find(n=>n.key===key);
-      if(existing)existing.mass+=pureMass;
-      else newPigmentsFromStainer.push({key,name:s.name.trim(),mass:pureMass});
+      const existing=standaloneStainers.find(n=>n.key===key);
+      if(existing){existing.pureMass+=pureMass;existing.rawMass+=amt;}
+      else standaloneStainers.push({key,name:s.name.trim(),pureMass,rawMass:amt});
     }
   });
 
   const combinedRows=[
     ...pigments.filter(p=>p.name.trim()).map(p=>{
-      const rowIsStr=isStrName(p.name);
       const rawQty=parseFloat(p.qty)||0;
       const pureMass=pigmentPureMass(p);
       return {
-        id:p.id,name:p.name,isStr:rowIsStr,pigmentPct:p.pigmentPct,adjustMode:p.adjustMode||"qty",
+        id:p.id,name:p.name,isStr:formulationType==="stainer",pigmentPct:p.pigmentPct,
         oldQty:pureMass,oldQtyRaw:rawQty,
         added:stainerContrib[p.id]||0,
         afterAddition:pureMass+(stainerContrib[p.id]||0),
-        isNew:false
+        isNew:false,isStandaloneStainer:false
       };
     }),
-    ...newPigmentsFromStainer.map(n=>({
-      id:n.key,name:n.name,isStr:false,pigmentPct:"",adjustMode:"qty",
-      oldQty:0,oldQtyRaw:0,added:n.mass,afterAddition:n.mass,isNew:true
-    }))
+    // New corrections that didn't match an existing row — always correctly converted back
+    // to raw stainer quantity using their own (mass-weighted) pigment%, since they were
+    // explicitly entered with a real concentration regardless of the base formulation type.
+    ...standaloneStainers.map(n=>{
+      const effectivePct=n.rawMass>0?(n.pureMass/n.rawMass*100):0;
+      return {
+        id:n.key,name:n.name,isStr:true,pigmentPct:effectivePct.toFixed(2),
+        oldQty:0,oldQtyRaw:0,added:n.pureMass,afterAddition:n.pureMass,
+        isNew:true,isStandaloneStainer:true
+      };
+    })
   ];
   const grandTotalAfterAddition=combinedRows.reduce((s,r)=>s+r.afterAddition,0);
   const scale=grandTotalAfterAddition>0?effectiveTarget/grandTotalAfterAddition:0;
   const finalRows=combinedRows.map(r=>{
     const newQtyPure=r.afterAddition*scale;
     const pct=parseFloat(r.pigmentPct)||0;
-    if(r.isStr&&r.adjustMode==="pct"){
-      // Stainer-form: keep raw quantity fixed, solve for the new pigment% needed instead
-      const newPigmentPct=r.oldQtyRaw>0?(newQtyPure/r.oldQtyRaw)*100:pct;
-      return {...r,newQty:newQtyPure,newQtyRaw:r.oldQtyRaw,newPigmentPct};
-    }
-    // Pigment-form (default): keep pigment% fixed, solve for the new raw quantity instead
     const newQtyRaw=r.isStr&&pct>0?newQtyPure/(pct/100):newQtyPure;
     return {...r,newQty:newQtyPure,newQtyRaw,newPigmentPct:pct};
   });
@@ -6289,8 +6292,8 @@ function ShadeCorrectionCalc({showToast,user,isAdmin,canApprove}){
 
         {!isEditing&&<div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginTop:"8px"}}>
           {corr.suggestedRows.map((r,i)=><span key={i} style={{fontSize:"10.5px",background:"#0b1220",border:"1px solid #1e293b",borderRadius:"6px",padding:"2px 8px",color:"#94a3b8"}}>
-            {r.name}: {r.oldQty.toFixed(2)}→<strong style={{color:"#4ade80"}}>{r.adjustMode==="pct"?r.oldQty.toFixed(2)+" (qty same)":r.newQty.toFixed(2)}</strong>
-            {r.adjustMode==="pct"&&<span style={{color:"#d8b4fe"}}> · {r.pigmentPct}%→{r.newPigmentPct?.toFixed(2)}%</span>}
+            {r.name}: {r.oldQty.toFixed(2)}→<strong style={{color:"#4ade80"}}>{r.newQty.toFixed(2)}</strong>
+            {r.isNew&&<span style={{color:"#d8b4fe"}}> · new stainer line</span>}
           </span>)}
         </div>}
 
@@ -6358,40 +6361,36 @@ function ShadeCorrectionCalc({showToast,user,isAdmin,canApprove}){
 
     {/* Pigments in batch */}
     <div style={{marginBottom:"14px"}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"8px"}}>
-        <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em"}}>Pigments Currently in Batch</div>
-        <button onClick={addPigment} style={{background:"none",border:"1px dashed #1e3a5f",borderRadius:"6px",padding:"4px 14px",color:"#93c5fd",cursor:"pointer",fontSize:"12px",fontWeight:"600"}}>+ Add Pigment</button>
-      </div>
-      <div style={{border:"1px solid #1e293b",borderRadius:"8px",overflow:"hidden"}}>
-        <div style={{display:"grid",gridTemplateColumns:"1.6fr 100px 90px 28px",gap:"6px",background:"#0b1220",padding:"6px 10px"}}>
-          {["Pigment Name","Current Qty","Pigment % (if STR)",""].map(h=><div key={h} style={{fontSize:"9px",fontWeight:"700",color:"#334155",textTransform:"uppercase"}}>{h}</div>)}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"8px",flexWrap:"wrap",gap:"8px"}}>
+        <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em"}}>{formulationType==="stainer"?"Stainers Currently in Batch":"Pigments Currently in Batch"}</div>
+        <div style={{display:"flex",gap:"8px",alignItems:"center"}}>
+          <div style={{display:"flex",gap:"4px",background:"#080d18",border:"1px solid #1e293b",borderRadius:"7px",padding:"3px"}}>
+            <button onClick={()=>setFormulationType("pigment")} style={{fontSize:"11px",padding:"4px 10px",borderRadius:"5px",border:"none",background:formulationType==="pigment"?"#1e293b":"transparent",color:formulationType==="pigment"?"#93c5fd":"#475569",cursor:"pointer",fontWeight:formulationType==="pigment"?"700":"400"}}>🎨 Pigment-based</button>
+            <button onClick={()=>setFormulationType("stainer")} style={{fontSize:"11px",padding:"4px 10px",borderRadius:"5px",border:"none",background:formulationType==="stainer"?"#2e1065":"transparent",color:formulationType==="stainer"?"#d8b4fe":"#475569",cursor:"pointer",fontWeight:formulationType==="stainer"?"700":"400"}}>🧪 Stainer-based</button>
+          </div>
+          <button onClick={addPigment} style={{background:"none",border:"1px dashed #1e3a5f",borderRadius:"6px",padding:"4px 14px",color:"#93c5fd",cursor:"pointer",fontSize:"12px",fontWeight:"600"}}>+ Add {formulationType==="stainer"?"Stainer":"Pigment"}</button>
         </div>
-        {pigments.map((p,i)=>{
-          const rowIsStr=isStrName(p.name);
-          return <div key={p.id} style={{display:"grid",gridTemplateColumns:"1.6fr 100px 90px 28px",gap:"6px",padding:"7px 10px",borderTop:"1px solid #1e293b",alignItems:"center",background:rowIsStr?"#0c1a2e":"transparent"}}>
-            <div>
-              <input style={sml} value={p.name} onChange={e=>updatePigment(p.id,"name",e.target.value)} placeholder={"Pigment "+(i+1)+" (e.g. Titanium Dioxide)"}/>
-              {rowIsStr&&<div style={{fontSize:"10px",color:"#22d3ee",marginTop:"3px"}}>🎨 Stainer (STR) — enter its pigment%{pigmentPureMass(p)>0&&<span style={{color:"#475569"}}> · = {pigmentPureMass(p).toFixed(3)} pure pigment</span>}</div>}
-              {rowIsStr&&<div style={{display:"flex",gap:"4px",marginTop:"5px"}}>
-                <span style={{fontSize:"9px",color:"#475569",alignSelf:"center"}}>Adjust via:</span>
-                <button onClick={()=>updatePigment(p.id,"adjustMode","qty")} style={{fontSize:"10px",padding:"2px 8px",borderRadius:"5px",border:`1px solid ${(p.adjustMode||"qty")==="qty"?"#3b82f6":"#1e293b"}`,background:(p.adjustMode||"qty")==="qty"?"#0f1d35":"transparent",color:(p.adjustMode||"qty")==="qty"?"#93c5fd":"#475569",cursor:"pointer"}}>Pigment form (qty)</button>
-                <button onClick={()=>updatePigment(p.id,"adjustMode","pct")} style={{fontSize:"10px",padding:"2px 8px",borderRadius:"5px",border:`1px solid ${p.adjustMode==="pct"?"#a855f7":"#1e293b"}`,background:p.adjustMode==="pct"?"#2e1065":"transparent",color:p.adjustMode==="pct"?"#d8b4fe":"#475569",cursor:"pointer"}}>Stainer form (%)</button>
-              </div>}
-            </div>
+      </div>
+      <div style={{fontSize:"10px",color:"#475569",marginBottom:"8px"}}>Auto-detected from the original formulation when loaded from a BOM — switch manually if you want the recommendation expressed the other way.</div>
+      <div style={{border:"1px solid #1e293b",borderRadius:"8px",overflow:"hidden"}}>
+        <div style={{display:"grid",gridTemplateColumns:formulationType==="stainer"?"1.6fr 100px 90px 28px":"1.6fr 100px 28px",gap:"6px",background:"#0b1220",padding:"6px 10px"}}>
+          {(formulationType==="stainer"?["Name","Current Qty","Pigment %",""]:["Pigment Name","Current Qty",""]).map(h=><div key={h} style={{fontSize:"9px",fontWeight:"700",color:"#334155",textTransform:"uppercase"}}>{h}</div>)}
+        </div>
+        {pigments.map((p,i)=>
+          <div key={p.id} style={{display:"grid",gridTemplateColumns:formulationType==="stainer"?"1.6fr 100px 90px 28px":"1.6fr 100px 28px",gap:"6px",padding:"7px 10px",borderTop:"1px solid #1e293b",alignItems:"center"}}>
+            <input style={sml} value={p.name} onChange={e=>updatePigment(p.id,"name",e.target.value)} placeholder={(formulationType==="stainer"?"Stainer ":"Pigment ")+(i+1)+" (e.g. Titanium Dioxide)"}/>
             <input style={{...sml,textAlign:"center"}} type="number" min="0" step="0.001" value={p.qty} onChange={e=>updatePigment(p.id,"qty",e.target.value)} placeholder="kg"/>
-            {rowIsStr
-              ?<input style={{...sml,textAlign:"center",borderColor:!parseFloat(p.pigmentPct)?"#f59e0b60":"#1e293b"}} type="number" min="0" max="100" step="0.1" value={p.pigmentPct} onChange={e=>updatePigment(p.id,"pigmentPct",e.target.value)} placeholder="%"/>
-              :<div style={{textAlign:"center",color:"#334155",fontSize:"12px"}}>—</div>}
+            {formulationType==="stainer"&&<input style={{...sml,textAlign:"center",borderColor:!parseFloat(p.pigmentPct)?"#f59e0b60":"#1e293b"}} type="number" min="0" max="100" step="0.1" value={p.pigmentPct} onChange={e=>updatePigment(p.id,"pigmentPct",e.target.value)} placeholder="%"/>}
             <button onClick={()=>removePigment(p.id)} disabled={pigments.length===1} style={{background:"none",border:"none",color:pigments.length>1?"#ef4444":"#1e293b",cursor:pigments.length>1?"pointer":"default",fontSize:"16px",lineHeight:1,padding:0}}>×</button>
-          </div>;
-        })}
-        {pigments.length>1&&<div style={{display:"grid",gridTemplateColumns:"1.6fr 100px 90px 28px",gap:"6px",padding:"6px 10px",borderTop:"1px solid #1e3a5f",background:"#0a1520"}}>
-          <div style={{fontSize:"10px",fontWeight:"700",color:"#475569"}}>CURRENT TOTAL (pure pigment)</div>
+          </div>
+        )}
+        {pigments.length>1&&<div style={{display:"grid",gridTemplateColumns:formulationType==="stainer"?"1.6fr 100px 90px 28px":"1.6fr 100px 28px",gap:"6px",padding:"6px 10px",borderTop:"1px solid #1e3a5f",background:"#0a1520"}}>
+          <div style={{fontSize:"10px",fontWeight:"700",color:"#475569"}}>CURRENT TOTAL{formulationType==="stainer"?" (pure pigment)":""}</div>
           <div style={{fontSize:"11px",fontWeight:"700",color:"#f1f5f9",textAlign:"center"}}>{currentTotal.toFixed(3)}</div>
-          <div/><div/>
+          <div/>{formulationType==="stainer"&&<div/>}
         </div>}
       </div>
-      {missingStrPct&&<div style={{fontSize:"11px",color:"#f59e0b",marginTop:"6px"}}>⚠ Enter Pigment % for the stainer (STR) ingredient(s) above — without it, its pigment contribution can't be calculated.</div>}
+      {missingStrPct&&<div style={{fontSize:"11px",color:"#f59e0b",marginTop:"6px"}}>⚠ Enter Pigment % for the stainer(s) above — without it, pigment contribution can't be calculated.</div>}
     </div>
 
     {/* Target total pigment */}
@@ -6430,6 +6429,7 @@ function ShadeCorrectionCalc({showToast,user,isAdmin,canApprove}){
           <button onClick={()=>removeStainer(s.id)} disabled={stainers.length===1} style={{background:"none",border:"none",color:stainers.length>1?"#ef4444":"#1e293b",cursor:stainers.length>1?"pointer":"default",fontSize:"16px",lineHeight:1,padding:0}}>×</button>
         </div>)}
       </div>
+      <div style={{fontSize:"10px",color:"#475569",marginTop:"6px"}}>If the name matches an existing pigment/stainer above, it's merged in automatically. Otherwise it's added as a new line, correctly converted using its own pigment%.</div>
     </div>
 
     {/* Results */}
@@ -6444,8 +6444,8 @@ function ShadeCorrectionCalc({showToast,user,isAdmin,canApprove}){
           <div>
             <div style={{fontSize:"12px",color:"#e2e8f0",fontWeight:"600"}}>{r.name}</div>
             {r.isNew&&<div style={{fontSize:"10px",color:"#f59e0b"}}>⚠ New — add to BOM</div>}
-            {r.isStr&&r.adjustMode==="pct"&&<div style={{fontSize:"10px",color:"#d8b4fe"}}>🎨 Qty fixed at {r.oldQtyRaw.toFixed(3)} — new pigment%: <strong>{r.newPigmentPct.toFixed(2)}%</strong> (was {r.pigmentPct}%)</div>}
-            {r.isStr&&r.adjustMode!=="pct"&&<div style={{fontSize:"10px",color:"#22d3ee"}}>🎨 Stainer @ {r.pigmentPct||"?"}% — qty shown is raw material</div>}
+            {r.isStr&&r.isStandaloneStainer&&<div style={{fontSize:"10px",color:"#d8b4fe"}}>🎨 New stainer addition @ {r.pigmentPct||"?"}% — kept separate, qty shown is raw stainer to add</div>}
+            {r.isStr&&!r.isStandaloneStainer&&<div style={{fontSize:"10px",color:"#22d3ee"}}>🎨 Stainer @ {r.pigmentPct||"?"}% — qty shown is raw material</div>}
           </div>
           <div style={{fontSize:"12px",color:"#64748b",textAlign:"center"}}>{r.oldQtyRaw>0?r.oldQtyRaw.toFixed(3):"—"}</div>
           <div style={{fontSize:"12px",color:r.added>0?"#fbbf24":"#334155",fontWeight:r.added>0?"700":"400",textAlign:"center"}}>{r.added>0?"+"+r.added.toFixed(3):"—"}</div>
