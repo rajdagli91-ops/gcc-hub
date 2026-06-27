@@ -5209,15 +5209,12 @@ function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes,sysQcParams}
       const cell=(text,opts)=>({text:text==null?"":text,...opts});
       const blankRow5=()=>[cell(""),cell(""),cell(""),cell(""),cell("")];
 
-      left.push([cell("VEEBEE",{cls:"title",colspan:2}),null,cell("PRODUCTION SHEET",{cls:"title2",colspan:3}),null,null]);
-      left.push([cell("G.C.C/7.2.1/F/03"),cell(""),cell(""),cell(""),cell("")]);
-      left.push(blankRow5());
-      left.push([cell("Base Batch Size",{cls:"b"}),cell(base),cell(unit),cell(""),cell("")]);
+      left.push([cell("VEEBEE",{cls:"d title",colspan:2}),null,cell("PRODUCTION SHEET",{cls:"d title2",colspan:3}),null,null]);
+      left.push([cell("G.C.C/7.2.1/F/03",{cls:"d"}),cell("",{cls:"d"}),cell("",{cls:"d"}),cell("",{cls:"d"}),cell("",{cls:"d"})]);
+      left.push([cell("Base Batch Size",{cls:"d b"}),cell(base,{cls:"d ctr"}),cell(unit,{cls:"d"}),cell("",{cls:"d"}),cell("",{cls:"d"})]);
       const enterBatchRowIdx=left.length; // 0-indexed, row holding the editable batch size
-      left.push([cell("Enter Batch Size",{cls:"b"}),cell(base),cell(unit),cell("← change this cell",{cls:"hint"}),cell("")]);
-      left.push(blankRow5());
-      left.push([cell("PRODUCT NAME:",{cls:"b"}),cell(b.productName||"",{cls:"b big"}),cell(""),cell("Version",{cls:"b"}),cell("v"+(b.currentVersion||1))]);
-      left.push(blankRow5());
+      left.push([cell("Enter Batch Size",{cls:"d b"}),cell(base,{cls:"d ctr"}),cell(unit,{cls:"d"}),cell("← change this cell",{cls:"d hint"}),cell("",{cls:"d"})]);
+      left.push([cell("PRODUCT NAME:",{cls:"d b"}),cell(b.productName||"",{cls:"d b big"}),cell("",{cls:"d"}),cell("Version",{cls:"d b"}),cell("v"+(b.currentVersion||1),{cls:"d"})]);
       const headerRowIdx0=left.length;
       left.push([cell("NO",{cls:"hdr"}),cell("INGREDIENTS",{cls:"hdr"}),cell("STANDARD QTY",{cls:"hdr"}),cell("CURRENT QTY",{cls:"hdr"}),cell("ACTUAL QTY",{cls:"hdr"})]);
       const baseRowExcel=enterBatchRowIdx-1+1; // Excel row of "Base Batch Size" (1-indexed) = enterBatchRowIdx (0-idx of Enter row) since Base is row above
@@ -5226,7 +5223,7 @@ function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes,sysQcParams}
       const dataStart0=left.length;
       (b.ingredients||[]).forEach(ing=>{
         if(ing.isProcess){
-          left.push([cell(""),cell("→ "+(ing.name||""),{cls:"step",colspan:4}),null,null,null]);
+          left.push([cell("",{cls:"d"}),cell("→ "+(ing.name||""),{cls:"d step",colspan:4}),null,null,null]);
         }else{
           rowNo++;
           const excelRow=left.length+1; // 1-indexed row this will occupy
@@ -5235,18 +5232,14 @@ function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes,sysQcParams}
         }
       });
       const lastIngExcelRow=left.length;
-      const totalExcelRow=left.length+1;
       left.push([cell("",{cls:"d"}),cell("TOTAL",{cls:"d b"}),
         cell("",{cls:"d b ctr",fmla:`SUM(C${dataStart0+1}:C${lastIngExcelRow})`}),
         cell("",{cls:"d b ctr",fmla:`SUM(D${dataStart0+1}:D${lastIngExcelRow})`}),cell("",{cls:"d"})]);
-      left.push(blankRow5());
       left.push([cell("Additional Materials (if any)",{cls:"amber",colspan:5}),null,null,null,null]);
       for(let i=0;i<3;i++)left.push([cell("",{cls:"d"}),cell("",{cls:"d"}),cell("",{cls:"d"}),cell("",{cls:"d"}),cell("",{cls:"d"})]);
-      left.push(blankRow5());
       left.push([cell("EXTRA ADDITIONS",{cls:"section",colspan:5}),null,null,null,null]);
       extraItems.forEach(item=>left.push([cell(item,{cls:"d em"}),cell("",{cls:"d"}),cell("",{cls:"d"}),cell("",{cls:"d"}),cell("",{cls:"d"})]));
-      left.push(blankRow5());
-      left.push([cell("Check by:",{cls:"b"}),cell(""),cell("Prepared by:",{cls:"b"}),cell(""),cell("")]);
+      left.push([cell("Check by:",{cls:"d b"}),cell("",{cls:"d"}),cell("Prepared by:",{cls:"d b"}),cell("",{cls:"d"}),cell("",{cls:"d"})]);
 
       // ── RIGHT block: QC Standards + Packing ──
       const right=[];
@@ -5254,8 +5247,6 @@ function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes,sysQcParams}
       right.push([cell("Parameter",{cls:"hdr"}),cell("Standard",{cls:"hdr"}),cell("Actual Value",{cls:"hdr"})]);
       if(qcParams.length)qcParams.forEach(p=>right.push([cell(p.name||"",{cls:"d"}),cell(p.standard||"",{cls:"d ctr"}),cell("",{cls:"d"})]));
       else right.push([cell("No QC parameters defined",{cls:"d",colspan:3}),null,null]);
-      right.push([cell(""),cell(""),cell("")]);
-      const packHeaderIdx=right.length;
       right.push([cell("PACKING",{cls:"section",colspan:3}),null,null]);
       right.push([cell("Size",{cls:"hdr"}),cell("No. of Packs",{cls:"hdr",colspan:2}),null]);
       if(catPackSizes.length)catPackSizes.forEach(s=>right.push([cell(s,{cls:"d"}),cell("",{cls:"d",colspan:2}),null]));
