@@ -5216,10 +5216,12 @@ function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes,sysQcParams}
       aoa.push([null,null,null,null,null]);
       aoa.push(["PRODUCT NAME:",b.productName||"",null,"Version","v"+(b.currentVersion||1)]);
       aoa.push([null,null,null,null,null]);
+      const headerRowIdx=aoa.length; // 0-indexed row of NO/INGREDIENTS header
       aoa.push(["NO","INGREDIENTS","STANDARD QTY","CURRENT QTY","ACTUAL QTY"]);
       const firstDataRow=10;
       let rowNo=0;
       const ingredientRowIdxs=[];
+      const dataRowsStart0=aoa.length; // 0-indexed
       (b.ingredients||[]).forEach(ing=>{
         if(ing.isProcess){
           aoa.push([null,"→ "+(ing.name||""),null,null,null]);
@@ -5230,20 +5232,28 @@ function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes,sysQcParams}
         }
       });
       const lastIngRow=aoa.length;
+      const totalRow0=aoa.length; // 0-indexed row of TOTAL
       aoa.push(["","TOTAL",{f:`SUM(C${firstDataRow}:C${lastIngRow})`},{f:`SUM(D${firstDataRow}:D${lastIngRow})`},null]);
       aoa.push([null,null,null,null,null]);
+      const addlMatHeaderRow0=aoa.length;
       aoa.push(["Additional Materials (if any)",null,null,null,null]);
+      const addlMatBlankStart0=aoa.length;
       aoa.push([null,null,null,null,null]);
       aoa.push([null,null,null,null,null]);
       aoa.push([null,null,null,null,null]);
+      const addlMatBlankEnd0=aoa.length-1;
+      const extraHeaderRow0=aoa.length;
       aoa.push(["EXTRA ADDITIONS",null,null,null,null]);
+      const extraStart0=aoa.length;
       extraItems.forEach(item=>aoa.push([item,null,null,null,null]));
+      const extraEnd0=aoa.length-1;
       aoa.push([null,null,null,null,null]);
+      const footerRow0=aoa.length;
       aoa.push(["Check by:",null,"Prepared by:",null,null]);
 
       const ws=XLSX.utils.aoa_to_sheet(aoa);
       ingredientRowIdxs.forEach(r=>{ ws["D"+r]={f:`C${r}*$B$5/$B$4`}; });
-      ws["!cols"]=[{wch:6},{wch:30},{wch:14},{wch:14},{wch:14},{wch:3},{wch:20},{wch:14},{wch:14}];
+      ws["!cols"]=[{wch:6},{wch:30},{wch:13},{wch:13},{wch:13},{wch:3},{wch:18},{wch:13},{wch:13}];
       ws["!merges"]=[{s:{r:0,c:0},e:{r:0,c:1}},{s:{r:0,c:2},e:{r:0,c:4}}];
 
       // ── RIGHT BLOCK: QC Standards + Packing, grafted at column G ──
@@ -5257,16 +5267,68 @@ function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes,sysQcParams}
       right.push(["Size","No. of Packs",""]);
       if(catPackSizes.length)catPackSizes.forEach(s=>right.push([s,"",""]));
       else for(let i=0;i<3;i++)right.push(["","",""]);
-      XLSX.utils.sheet_add_aoa(ws,right,{origin:"G9"});
-      ws["!merges"].push({s:{r:8,c:6},e:{r:8,c:8}});
-      const packHeaderRow=8+2+qcParams.length+1+1; // 0-indexed row of "PACKING" header
-      ws["!merges"].push({s:{r:packHeaderRow,c:6},e:{r:packHeaderRow,c:8}});
+      const rightOriginRow0=8; // row 9 (0-indexed 8) — aligns with NO/INGREDIENTS header
+      XLSX.utils.sheet_add_aoa(ws,right,{origin:{r:rightOriginRow0,c:6}});
+      ws["!merges"].push({s:{r:rightOriginRow0,c:6},e:{r:rightOriginRow0,c:8}});
+      const qcRowCount=qcParams.length?qcParams.length:1; // fallback adds exactly 1 row when empty
+      const packHeaderRow0=rightOriginRow0+2+qcRowCount+1; // 0-indexed row of "PACKING" header
+      ws["!merges"].push({s:{r:packHeaderRow0,c:6},e:{r:packHeaderRow0,c:8}});
+
+      // ── STYLING: borders, bold headers, so it visually matches the printed sheet ──
+      const thin={style:"thin",color:{rgb:"999999"}};
+      const allBorder={top:thin,bottom:thin,left:thin,right:thin};
+      const setStyle=(r0,c0,style)=>{
+        const addr=XLSX.utils.encode_cell({r:r0,c:c0});
+        if(!ws[addr])ws[addr]={t:"s",v:""};
+        ws[addr].s={...(ws[addr].s||{}),...style};
+      };
+      const borderRange=(r0Start,r0End,c0Start,c0End,extra)=>{
+        for(let r=r0Start;r<=r0End;r++)for(let c=c0Start;c<=c0End;c++)setStyle(r,c,{border:allBorder,...(extra||{})});
+      };
+      // Title row
+      setStyle(0,0,{font:{bold:true,sz:16}});
+      setStyle(0,2,{font:{bold:true,sz:13}});
+      // Batch size + product name rows — bold labels
+      [3,4].forEach(r=>setStyle(r,0,{font:{bold:true}}));
+      setStyle(6,0,{font:{bold:true}});
+      setStyle(6,1,{font:{bold:true,sz:12}});
+      // Ingredient table header (bold + border + light fill)
+      borderRange(headerRowIdx,headerRowIdx,0,4,{font:{bold:true},fill:{fgColor:{rgb:"D9D9D9"}},alignment:{horizontal:"center"}});
+      // Ingredient/process rows — border across all 5 cols
+      borderRange(dataRowsStart0,totalRow0,0,4);
+      setStyle(totalRow0,1,{font:{bold:true}});
+      setStyle(totalRow0,2,{font:{bold:true}});
+      setStyle(totalRow0,3,{font:{bold:true}});
+      // Additional Materials section
+      setStyle(addlMatHeaderRow0,0,{font:{bold:true,italic:true},fill:{fgColor:{rgb:"FFF3CD"}}});
+      borderRange(addlMatBlankStart0,addlMatBlankEnd0,0,4);
+      // Extra Additions section
+      setStyle(extraHeaderRow0,0,{font:{bold:true,italic:true},fill:{fgColor:{rgb:"F0F0F0"}}});
+      borderRange(extraStart0,extraEnd0,0,4);
+      // Right block: QC Standards header + table
+      borderRange(rightOriginRow0,rightOriginRow0,6,8,{font:{bold:true},fill:{fgColor:{rgb:"D9D9D9"}},alignment:{horizontal:"center"}});
+      borderRange(rightOriginRow0+1,rightOriginRow0+1,6,8,{font:{bold:true},fill:{fgColor:{rgb:"D9D9D9"}}});
+      borderRange(rightOriginRow0+2,packHeaderRow0-1,6,8);
+      // Right block: Packing header + table
+      const rightBlockEnd0=rightOriginRow0+right.length-1; // 0-indexed last row of the right block
+      borderRange(packHeaderRow0,packHeaderRow0,6,8,{font:{bold:true,italic:true},fill:{fgColor:{rgb:"D9D9D9"}},alignment:{horizontal:"center"}});
+      borderRange(packHeaderRow0+1,packHeaderRow0+1,6,8,{font:{bold:true}});
+      borderRange(packHeaderRow0+2,rightBlockEnd0,6,8);
+
+      // ── PRINT SETUP: fit to one page, portrait, tight margins, set print area ──
+      const lastRow0=Math.max(aoa.length-1,rightBlockEnd0);
+      ws["!margins"]={left:0.25,right:0.25,top:0.3,bottom:0.3,header:0,footer:0};
+      ws["!pageSetup"]={orientation:"portrait",fitToPage:true,fitToWidth:1,fitToHeight:1,scale:90};
+      ws["!printArea"]=`A1:I${lastRow0+1}`;
+      if(!ws["!ref"]||XLSX.utils.decode_range(ws["!ref"]).e.r<lastRow0){
+        ws["!ref"]=`A1:I${lastRow0+1}`;
+      }
 
       const sheetName=(b.productName||"BOM").replace(/[\\\/\?\*\[\]:]/g,"").slice(0,31).trim()||"BOM";
       const wb=XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb,ws,sheetName);
-      XLSX.writeFile(wb,`GCC_${sheetName.replace(/\s+/g,"_")}_${today()}.xlsx`);
-      showToast("Excel exported ✓ — change 'Enter Batch Size' (B5) to auto-recalculate");
+      XLSX.writeFile(wb,`GCC_${sheetName.replace(/\s+/g,"_")}_${today()}.xlsx`,{cellStyles:true});
+      showToast("Excel exported ✓ — change 'Enter Batch Size' (B5) to auto-recalculate. Print area set for 1 page.");
     }catch(e){showToast("Error: "+e.message,"error");}
     setExportingOne(null);
   };
