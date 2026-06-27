@@ -5324,53 +5324,49 @@ ${topHtml}${midHtml}${bottomHtml}
   };
 
   // ── Assemble a full multi-sheet .xls HTML document from [{name, tableHtml}] ──
-  const buildWorkbookXLS=(sheets)=>{
-    const wsXml=sheets.map(s=>`<x:ExcelWorksheet>
-<x:Name>${s.name}</x:Name>
-<x:WorksheetOptions><x:Print><x:FitWidth>1</x:FitWidth><x:FitHeight>1</x:FitHeight><x:PaperSizeIndex>9</x:PaperSizeIndex>
-<x:LeftMargin>0.25</x:LeftMargin><x:RightMargin>0.25</x:RightMargin><x:TopMargin>0.3</x:TopMargin><x:BottomMargin>0.3</x:BottomMargin>
-</x:Print><x:DoNotDisplayGridlines/></x:WorksheetOptions>
-</x:ExcelWorksheet>`).join("\n");
-    const tables=sheets.map(s=>s.tableHtml).join("\n");
+  // Wrap ONE table into a complete, single-sheet .xls document — this is what reliably
+  // gives correct borders + single-page print fit. Excel's HTML-import does NOT actually
+  // create separate worksheet tabs from multiple <table> elements — they just stack into
+  // one continuous sheet, which breaks both the print-area and the page-fit. So each
+  // version (current or archived) must be its own file, not a "sheet" within one file.
+  const buildSingleSheetXLS=(tableHtml,sheetName)=>{
+    const safeName=sheetName.replace(/[\\\/\?\*\[\]:<>|]/g,"").slice(0,31);
     return `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
 <head><meta charset="UTF-8">
-<!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets>
-${wsXml}
-</x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
+<!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet>
+<x:Name>${safeName}</x:Name>
+<x:WorksheetOptions><x:Print><x:FitWidth>1</x:FitWidth><x:FitHeight>1</x:FitHeight><x:PaperSizeIndex>9</x:PaperSizeIndex>
+<x:LeftMargin>0.25</x:LeftMargin><x:RightMargin>0.25</x:RightMargin><x:TopMargin>0.3</x:TopMargin><x:BottomMargin>0.3</x:BottomMargin>
+</x:Print><x:Selected/><x:DoNotDisplayGridlines/></x:WorksheetOptions>
+</x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
 <style>table{border-collapse:collapse;font-family:Calibri,Arial,sans-serif;font-size:10pt;}td,th{vertical-align:middle;line-height:1.15;}</style>
-</head><body>${tables}</body></html>`;
+</head><body>${tableHtml}</body></html>`;
   };
 
-  // Build {name, tableHtml} sheet list for a product: Current + all archived versions, oldest-to-current order avoided —
-  // Current first, then most recent archive first, so the live formula is always on the first/most visible tab.
-  const buildSheetsForProduct=(b)=>{
-    const bVersionsForB=versions.filter(v=>v.productId===b.id).sort((x,y)=>(y.currentVersion||0)-(x.currentVersion||0));
-    const used={};
-    const nameFor=(label)=>{
-      let n=label.replace(/[\\\/\?\*\[\]:<>|]/g,"").slice(0,31);
-      if(used[n]!=null){used[n]++;n=n.slice(0,27)+"_"+used[n];} else used[n]=0;
-      return n;
-    };
-    const sheets=[{name:nameFor(`Current (v${b.currentVersion||1})`),tableHtml:buildBOMTableHTML(b)}];
-    bVersionsForB.forEach(v=>{
-      sheets.push({name:nameFor(`v${v.currentVersion||"?"} (Archived)`),tableHtml:buildBOMTableHTML(v)});
-    });
-    return sheets;
-  };
-
+  // Export just the CURRENT version of one product — single file, single sheet, guaranteed single-page print.
   const exportSingleBOMExcel=(b)=>{
     setExportingOne(b.id);
     try{
-      const sheets=buildSheetsForProduct(b);
-      const html=buildWorkbookXLS(sheets);
+      const html=buildSingleSheetXLS(buildBOMTableHTML(b),b.productName||"BOM");
       const blob=new Blob([html],{type:"application/vnd.ms-excel"});
       const a=document.createElement("a");a.href=URL.createObjectURL(blob);
       const sheetFileName=(b.productName||"BOM").replace(/[\\\/\?\*\[\]:<>|]/g,"").replace(/\s+/g,"_");
-      a.download=`GCC_${sheetFileName}_${today()}.xls`;a.click();
-      const histNote=sheets.length>1?` Includes ${sheets.length-1} archived version(s) as separate sheets.`:"";
-      showToast("Excel exported ✓ — change 'Enter Batch Size' to auto-recalculate."+histNote);
+      a.download=`GCC_${sheetFileName}_v${b.currentVersion||1}_${today()}.xls`;a.click();
+      showToast("Excel exported ✓ — change 'Enter Batch Size' to auto-recalculate.");
     }catch(e){showToast("Error: "+e.message,"error");}
     setExportingOne(null);
+  };
+
+  // Export ONE specific archived version (used from the BOM History view).
+  const exportVersionExcel=(v)=>{
+    try{
+      const html=buildSingleSheetXLS(buildBOMTableHTML(v),`${v.productName||"BOM"} v${v.currentVersion||"?"}`);
+      const blob=new Blob([html],{type:"application/vnd.ms-excel"});
+      const a=document.createElement("a");a.href=URL.createObjectURL(blob);
+      const fname=(v.productName||"BOM").replace(/[\\\/\?\*\[\]:<>|]/g,"").replace(/\s+/g,"_");
+      a.download=`GCC_${fname}_v${v.currentVersion||"?"}_Archived_${today()}.xls`;a.click();
+      showToast("Archived version exported ✓");
+    }catch(e){showToast("Error: "+e.message,"error");}
   };
 
   const [exportingZip,setExportingZip]=useState(false);
@@ -5383,26 +5379,30 @@ ${wsXml}
     document.head.appendChild(s);
   });
 
-  // Download ALL BOMs at once — one .xls file per product (each with Current + Archived version
-  // sheets inside it), all bundled together into a single ZIP.
+  // Download ALL BOMs at once — one .xls FILE per version (current + every archived version),
+  // each correctly single-sheet/single-page, organized into a per-product folder within the ZIP.
   const exportAllBOMsZip=async()=>{
     if(!boms.length)return showToast("No BOMs to export","error");
     setExportingZip(true);
     try{
       await loadJSZip();
       const zip=new window.JSZip();
-      const usedFile={};
+      let fileCount=0;
       boms.forEach(b=>{
-        const sheets=buildSheetsForProduct(b);
-        const html=buildWorkbookXLS(sheets);
-        let fname=(b.productName||"BOM").replace(/[\\\/\?\*\[\]:<>|]/g,"").replace(/\s+/g,"_");
-        if(usedFile[fname]!=null){usedFile[fname]++;fname=fname+"_"+usedFile[fname];} else usedFile[fname]=0;
-        zip.file(`${fname}.xls`,html);
+        const folder=(b.productName||"BOM").replace(/[\\\/\?\*\[\]:<>|]/g,"").replace(/\s+/g,"_");
+        const curHtml=buildSingleSheetXLS(buildBOMTableHTML(b),b.productName||"BOM");
+        zip.file(`${folder}/Current_v${b.currentVersion||1}.xls`,curHtml);
+        fileCount++;
+        versions.filter(v=>v.productId===b.id).sort((x,y)=>(y.currentVersion||0)-(x.currentVersion||0)).forEach(v=>{
+          const vHtml=buildSingleSheetXLS(buildBOMTableHTML(v),`${v.productName||"BOM"} v${v.currentVersion||"?"}`);
+          zip.file(`${folder}/Archived_v${v.currentVersion||"?"}.xls`,vHtml);
+          fileCount++;
+        });
       });
       const blob=await zip.generateAsync({type:"blob"});
       const a=document.createElement("a");a.href=URL.createObjectURL(blob);
       a.download=`GCC_All_BOMs_${today()}.zip`;a.click();
-      showToast(`✓ ${boms.length} BOMs exported as ZIP — each file includes its version history as separate sheets.`);
+      showToast(`✓ ${boms.length} products exported as ZIP (${fileCount} files total) — each product has its own folder with Current + Archived versions.`);
     }catch(e){showToast("Error: "+e.message,"error");}
     setExportingZip(false);
   };
@@ -5494,6 +5494,7 @@ ${wsXml}
               <div style={{display:"flex",gap:"6px"}}>
                 <Btn label="👁 View" onClick={()=>printProductionSheet(v,v.baseBatchSize,"","","","",sysPackSizes,"",v.extraAdditions||{},sysQcParams,null,true)} color="#3b82f6" small outline/>
                 <Btn label="🖨 Print this version" onClick={()=>printProductionSheet(v,v.baseBatchSize,"","","","",sysPackSizes,"",v.extraAdditions||{},sysQcParams)} color="#64748b" small outline/>
+                <Btn label="📊 Excel" onClick={()=>exportVersionExcel(v)} color="#16a34a" small outline/>
                 {canEdit&&<Btn label="⬆ Restore as Current" onClick={async()=>{if(!confirm("Restore v"+v.currentVersion+" as current BOM? Current will be archived."))return;const curr=boms.find(x=>x.id===b.id);if(curr)await C("bom_versions").add({...curr,productId:b.id,archivedAt:ts(),archivedBy:user.email});await C("bom_products").doc(b.id).update({...v,currentVersion:(curr?.currentVersion||1)+1,updatedBy:user.email,updatedAt:ts()});await C("bom_versions").doc(v.id).delete();showToast("Version restored ✓");}} color="#f59e0b" small/>}
               </div>
             </div>)}
