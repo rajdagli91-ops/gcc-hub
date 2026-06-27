@@ -5174,6 +5174,103 @@ function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes,sysQcParams}
     setExportingExcel(false);
   };
 
+  // Export ONE BOM as Excel laid out like the production sheet (left: ingredients table
+  // with live formula scaling; right: QC Standards + Packing), for that single product.
+  const [exportingOne,setExportingOne]=useState(null);
+  const exportSingleBOMExcel=async(b)=>{
+    setExportingOne(b.id);
+    try{
+      await loadXLSX();
+      const XLSX=window.XLSX;
+      const base=parseFloat(b.baseBatchSize)||100;
+      const unit=b.baseUnit||"L";
+
+      // Resolve QC params — product-specific first, else category default (same logic as print sheet)
+      const _qcRaw=b.qcTests||{};
+      let qcParams=Array.isArray(_qcRaw)?_qcRaw:[];
+      if(!qcParams.length&&sysQcParams&&b.category&&sysQcParams[b.category]){
+        qcParams=(sysQcParams[b.category]||[]).map(p=>typeof p==="string"?{name:p,standard:""}:{name:p.name||"",standard:""});
+      }
+      if(!qcParams.length){
+        qcParams=[
+          {name:"SD (Drying)",standard:_qcRaw.sd||""},{name:"TF (Drying)",standard:_qcRaw.tf||""},
+          {name:"HD (Drying)",standard:_qcRaw.hd||""},{name:"Colour",standard:_qcRaw.colour||""},
+          {name:"Finish",standard:_qcRaw.finish||""},{name:"Viscosity",standard:_qcRaw.viscosity||""},
+          {name:"Specific Gravity",standard:_qcRaw.sg||""}
+        ].filter(p=>p.standard);
+      }
+      // Resolve pack sizes for this product's category (same logic as print sheet)
+      let catPackSizes=[];
+      if(sysPackSizes&&b.category&&sysPackSizes[b.category]){
+        catPackSizes=(sysPackSizes[b.category]||[]).map(p=>typeof p==="string"?p:(p.size||p.label||String(p))).filter(Boolean);
+      }
+      const extraItems=(b.extraAdditions?.items)||["Dhoyela","Extra Output","Dhoyela"];
+
+      // ── LEFT BLOCK: header + ingredients table with live formulas ──
+      const aoa=[];
+      aoa.push(["VEEBEE","","PRODUCTION SHEET","",""]);
+      aoa.push(["G.C.C/7.2.1/F/03","","","",""]);
+      aoa.push([null,null,null,null,null]);
+      aoa.push(["Base Batch Size",base,unit,null,null]);
+      aoa.push(["Enter Batch Size",base,unit,"← change this cell",null]);
+      aoa.push([null,null,null,null,null]);
+      aoa.push(["PRODUCT NAME:",b.productName||"",null,"Version","v"+(b.currentVersion||1)]);
+      aoa.push([null,null,null,null,null]);
+      aoa.push(["NO","INGREDIENTS","STANDARD QTY","CURRENT QTY","ACTUAL QTY"]);
+      const firstDataRow=10;
+      let rowNo=0;
+      const ingredientRowIdxs=[];
+      (b.ingredients||[]).forEach(ing=>{
+        if(ing.isProcess){
+          aoa.push([null,"→ "+(ing.name||""),null,null,null]);
+        }else{
+          rowNo++;
+          aoa.push([rowNo,ing.name||"",parseFloat(ing.standardQty)||0,null,null]);
+          ingredientRowIdxs.push(aoa.length);
+        }
+      });
+      const lastIngRow=aoa.length;
+      aoa.push(["","TOTAL",{f:`SUM(C${firstDataRow}:C${lastIngRow})`},{f:`SUM(D${firstDataRow}:D${lastIngRow})`},null]);
+      aoa.push([null,null,null,null,null]);
+      aoa.push(["Additional Materials (if any)",null,null,null,null]);
+      aoa.push([null,null,null,null,null]);
+      aoa.push([null,null,null,null,null]);
+      aoa.push([null,null,null,null,null]);
+      aoa.push(["EXTRA ADDITIONS",null,null,null,null]);
+      extraItems.forEach(item=>aoa.push([item,null,null,null,null]));
+      aoa.push([null,null,null,null,null]);
+      aoa.push(["Check by:",null,"Prepared by:",null,null]);
+
+      const ws=XLSX.utils.aoa_to_sheet(aoa);
+      ingredientRowIdxs.forEach(r=>{ ws["D"+r]={f:`C${r}*$B$5/$B$4`}; });
+      ws["!cols"]=[{wch:6},{wch:30},{wch:14},{wch:14},{wch:14},{wch:3},{wch:20},{wch:14},{wch:14}];
+      ws["!merges"]=[{s:{r:0,c:0},e:{r:0,c:1}},{s:{r:0,c:2},e:{r:0,c:4}}];
+
+      // ── RIGHT BLOCK: QC Standards + Packing, grafted at column G ──
+      const right=[];
+      right.push(["QC STANDARDS","",""]);
+      right.push(["Parameter","Standard","Actual Value"]);
+      if(qcParams.length)qcParams.forEach(p=>right.push([p.name||"",p.standard||"",""]));
+      else right.push(["No QC parameters defined","",""]);
+      right.push(["","",""]);
+      right.push(["PACKING","",""]);
+      right.push(["Size","No. of Packs",""]);
+      if(catPackSizes.length)catPackSizes.forEach(s=>right.push([s,"",""]));
+      else for(let i=0;i<3;i++)right.push(["","",""]);
+      XLSX.utils.sheet_add_aoa(ws,right,{origin:"G9"});
+      ws["!merges"].push({s:{r:8,c:6},e:{r:8,c:8}});
+      const packHeaderRow=8+2+qcParams.length+1+1; // 0-indexed row of "PACKING" header
+      ws["!merges"].push({s:{r:packHeaderRow,c:6},e:{r:packHeaderRow,c:8}});
+
+      const sheetName=(b.productName||"BOM").replace(/[\\\/\?\*\[\]:]/g,"").slice(0,31).trim()||"BOM";
+      const wb=XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb,ws,sheetName);
+      XLSX.writeFile(wb,`GCC_${sheetName.replace(/\s+/g,"_")}_${today()}.xlsx`);
+      showToast("Excel exported ✓ — change 'Enter Batch Size' (B5) to auto-recalculate");
+    }catch(e){showToast("Error: "+e.message,"error");}
+    setExportingOne(null);
+  };
+
   const cats=[...new Set(boms.map(b=>b.category).filter(Boolean))].sort();
   const fb=boms.filter(b=>{
     const q=normalize(search);
@@ -5206,6 +5303,7 @@ function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes,sysQcParams}
           </div>
           <div style={{display:"flex",gap:"6px",flexShrink:0,flexWrap:"wrap"}}>
             <Btn label="🖨 Print" onClick={()=>directPrintBOM(b)} color="#22c55e" small/>
+            <Btn label={exportingOne===b.id?"…":"📊 Excel"} onClick={()=>exportSingleBOMExcel(b)} color="#16a34a" small outline disabled={exportingOne===b.id}/>
             {bVersions.length>0&&<Btn label={`📚 History (${bVersions.length})`} onClick={()=>setActiveBOM(isOpen&&mode==="history"?null:{bom:b,mode:"history"})} color="#64748b" small outline/>}
             {canEdit&&<Btn label="📋 Copy" onClick={()=>{
               const copied={...blankBOM,...b,
@@ -5247,6 +5345,7 @@ function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes,sysQcParams}
               <div style={{display:"flex",gap:"6px"}}>
                 <Btn label="👁 View" onClick={()=>printProductionSheet(b,b.baseBatchSize,"","","","",sysPackSizes,"",b.extraAdditions||{},sysQcParams,null,true)} color="#3b82f6" small outline/>
                 <Btn label="🖨 Print" onClick={()=>directPrintBOM(b)} color="#22c55e" small/>
+                <Btn label={exportingOne===b.id?"…":"📊 Excel"} onClick={()=>exportSingleBOMExcel(b)} color="#16a34a" small outline disabled={exportingOne===b.id}/>
               </div>
             </div>
             {/* Archived versions */}
