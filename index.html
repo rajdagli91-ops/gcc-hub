@@ -4750,7 +4750,20 @@ function RawMaterialStockTab({role,user,showToast,sysUnits,sysRmCats,onAddRmCat,
 
 
 // BOM Form component — stable to avoid cursor loss
-function BOMForm({form,setForm,saving,isEdit,onCancel,onSave,sysProducts,sysQcParams}){
+function BOMForm({form,setForm,saving,isEdit,onCancel,onSave,sysProducts,sysQcParams,usedProductNames}){
+  // Filter out products that already have a BOM — only when creating a NEW BOM (not editing)
+  const filteredSysProducts=(()=>{
+    if(isEdit||!usedProductNames||!usedProductNames.size)return sysProducts;
+    const source=sysProducts||DEFAULT_PRODUCTS;
+    const out={};
+    Object.keys(source).forEach(cat=>{
+      out[cat]=(source[cat]||[]).filter(p=>{
+        const name=typeof p==="string"?p:(p?.name||"");
+        return !usedProductNames.has(name);
+      });
+    });
+    return out;
+  })();
   // Helper: build BOM QC params from Settings QC params for a category
   const buildQCFromSettings=(category)=>{
     const settingsParams=(sysQcParams||DEFAULT_QC_PARAMS)[category]||[];
@@ -4783,10 +4796,11 @@ function BOMForm({form,setForm,saving,isEdit,onCancel,onSave,sysProducts,sysQcPa
           }}
           productName={form.productName}
           setProductName={p=>setForm({...form,productName:typeof p==="string"?p:(p?.name||p)})}
-          products={sysProducts}
+          products={filteredSysProducts}
           catUnits={{}}
         />
         {!form.productName&&<div style={{fontSize:"10.5px",color:"#334155",marginTop:"4px"}}>Select category first, then product</div>}
+        {!isEdit&&usedProductNames&&usedProductNames.size>0&&<div style={{fontSize:"10px",color:"#f59e0b",marginTop:"4px"}}>⚠ Products that already have a BOM aren't shown — edit the existing BOM instead.</div>}
       </div>
       <Field label="Category (auto-filled)"><input style={{...inp,color:"#64748b"}} value={form.category} readOnly placeholder="Auto-fills from product"/></Field>
       <Grid2>
@@ -5034,6 +5048,8 @@ function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes,sysQcParams}
     printProductionSheet(b,b.baseBatchSize,"","","","",sysPackSizes,"",b.extraAdditions||{},sysQcParams,oldStocksForPrint);
   };
   const [boms,setBoms]=useState([]);
+  // Products that already have a BOM — used to prevent creating a duplicate BOM for the same product
+  const usedProductNames=new Set(boms.map(b=>b.productName).filter(Boolean));
   const [versions,setVersions]=useState([]);
   const [loading,setLoading]=useState(true);
   const [search,setSearch]=useState("");
@@ -5063,6 +5079,9 @@ function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes,sysQcParams}
 
   const saveBOM=async(isEdit=false,editId=null)=>{
     if(!form.productName.trim())return showToast("Product name required","error");
+    if(!isEdit&&boms.some(b=>b.productName.trim().toLowerCase()===form.productName.trim().toLowerCase())){
+      return showToast(`A BOM already exists for "${form.productName}" — edit that one instead of creating a duplicate.`,"error");
+    }
     setSaving(true);
     try{
       if(isEdit&&editId){
@@ -5476,7 +5495,7 @@ ${topHtml}${midHtml}${bottomHtml}
     {/* Create form */}
     {showCreate&&<div style={{background:"#080d18",border:"1px solid #3b82f630",borderRadius:"12px",padding:"18px",marginBottom:"16px"}}>
       <div style={{fontSize:"13px",fontWeight:"700",color:"#93c5fd",marginBottom:"14px"}}>📋 New Bill of Materials</div>
-      <BOMForm form={form} setForm={setForm} saving={saving} isEdit={false} onCancel={()=>{setShowCreate(false);setForm({...blankBOM});}} onSave={()=>saveBOM(false)} sysProducts={sysProducts} sysQcParams={sysQcParams}/>
+      <BOMForm form={form} setForm={setForm} saving={saving} isEdit={false} onCancel={()=>{setShowCreate(false);setForm({...blankBOM});}} onSave={()=>saveBOM(false)} sysProducts={sysProducts} sysQcParams={sysQcParams} usedProductNames={usedProductNames}/>
     </div>}
 
     {loading&&<div style={{textAlign:"center",padding:"40px",color:"#475569"}}>Loading…</div>}
