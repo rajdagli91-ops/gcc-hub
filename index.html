@@ -5272,21 +5272,22 @@ function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes,sysQcParams}
 </x:Print><x:Selected/><x:DoNotDisplayGridlines/></x:WorksheetOptions>
 </x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
 <style>
-table{border-collapse:collapse;font-family:Calibri,Arial,sans-serif;font-size:11pt;}
-td,th{padding:3px 7px;vertical-align:middle;}
+table{border-collapse:collapse;font-family:Calibri,Arial,sans-serif;font-size:10pt;}
+td,th{padding:1px 6px;vertical-align:middle;line-height:1.15;}
 .d{border:1px solid #888;}
 .hdr{border:1px solid #888;font-weight:bold;background:#D9D9D9;text-align:center;}
 .section{font-weight:bold;font-style:italic;background:#F0F0F0;border:1px solid #888;}
 .amber{font-weight:bold;font-style:italic;background:#FFF3CD;border:1px solid #888;}
-.title{font-weight:bold;font-size:16pt;}
-.title2{font-weight:bold;font-size:13pt;}
+.title{font-weight:bold;font-size:14pt;}
+.title2{font-weight:bold;font-size:12pt;}
 .b{font-weight:bold;}
-.big{font-size:12pt;}
+.big{font-size:11pt;}
 .em{font-style:italic;}
 .step{font-style:italic;color:#92400e;}
 .ctr{text-align:center;}
 .hint{color:#16a34a;font-weight:bold;}
-</style></head><body><table>`;
+</style></head><body><table>
+<colgroup><col width="30"><col width="170"><col width="75"><col width="75"><col width="75"><col width="12"><col width="100"><col width="80"><col width="80"></colgroup>`;
 
       for(let r=0;r<totalRows;r++){
         html+="<tr>";
