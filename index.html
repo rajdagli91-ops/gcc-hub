@@ -177,7 +177,7 @@ function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, char
   @page{size:210mm 297mm portrait;margin:${Math.max(4,D.bodyPad)}mm 8mm 3mm 8mm;}
   @media print{
     body{padding:${D.bodyPad}pt 8pt 2pt 25mm!important;}
-    tr{page-break-inside:avoid;}
+    .main-table tr,.right-table tr,.header-table tr{page-break-inside:avoid;}
   }
 </style>
 </head>
