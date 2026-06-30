@@ -2311,9 +2311,11 @@ function RMDetailView({entry,showToast,allProfiles={}}){
 // ══════════════════════════════════════════════════════════
 // DASHBOARD TAB
 // ══════════════════════════════════════════════════════════
-function DashboardTab({role,user,onNavigate}){
-  const [counts,setCounts]=useState({batches:0,activeBatches:0,openComplaints:0,rdProjects:0,rmTests:0,qcPending:0});
+function DashboardTab({role,roles,hp,user,onNavigate}){
+  const [counts,setCounts]=useState({batches:0,activeBatches:0,openComplaints:0,rdProjects:0,rmTests:0,qcPending:0,openEnquiries:0,newEnquiries:0});
   const [myTasks,setMyTasks]=useState([]);
+  const canSeeEnquiries=roles?.includes("admin")||hp?.("enquiries_create")||hp?.("enquiries_view_all")||hp?.("enquiries_update");
+  const canViewAllEnquiries=roles?.includes("admin")||hp?.("enquiries_view_all");
   useEffect(()=>{
     const u=C("tasks").where("assignedTo","==",user.email).where("status","==","pending")
       .onSnapshot(s=>{
@@ -2335,9 +2337,23 @@ function DashboardTab({role,user,onNavigate}){
       complaintsQuery.get(),
       // R&D active = Ongoing or Pending Approval only (exclude Completed, Cancelled, On Hold)
       C("rd_projects").where("status","in",["Ongoing","Pending Approval"]).get(),
-      C("rm_tests").get()
-    ]).then(([b,ab,qc,oc,rd,rm])=>setCounts({batches:b.size,activeBatches:ab.size,qcPending:qc.size,openComplaints:oc.size,rdProjects:rd.size,rmTests:rm.size}));
+      C("rm_tests").get(),
+    ]).then(([b,ab,qc,oc,rd,rm])=>setCounts(c=>({...c,batches:b.size,activeBatches:ab.size,qcPending:qc.size,openComplaints:oc.size,rdProjects:rd.size,rmTests:rm.size})));
   },[role,user?.email]);
+  useEffect(()=>{
+    if(!canSeeEnquiries)return;
+    const openStatuses=["New","Samples to be Shared","Price List Shared","Already Buying from Our Customer"];
+    const eq=canViewAllEnquiries
+      ? C("enquiries").where("status","in",openStatuses)
+      : C("enquiries").where("assignedTo","==",user?.email||"__none__");
+    const unsub=eq.onSnapshot(s=>{
+      const docs=s.docs.map(d=>d.data());
+      const open=canViewAllEnquiries?docs.length:docs.filter(d=>openStatuses.includes(d.status)).length;
+      const fresh=docs.filter(d=>d.status==="New").length;
+      setCounts(c=>({...c,openEnquiries:open,newEnquiries:fresh}));
+    },()=>{});
+    return unsub;
+  },[canSeeEnquiries,canViewAllEnquiries,user?.email]);
 
   const tiles=[
     {label:"Active Batches",val:counts.activeBatches,color:"#3b82f6",icon:"📦",tab:"batches",hint:"Batches pending packing (not yet Packed)",roles:["admin","issuer","qc"]},
@@ -2346,6 +2362,10 @@ function DashboardTab({role,user,onNavigate}){
     {label:"R&D Active",val:counts.rdProjects,color:"#22c55e",icon:"🧪",tab:"rd",hint:"Ongoing R&D projects (excludes Completed/Cancelled)",roles:["admin","qc"]},
     {label:"RM Tests",val:counts.rmTests,color:"#f59e0b",icon:"🧫",tab:"rd",hint:"Go to R&D & QC",roles:["admin","qc"]},
     {label:"Total Batches",val:counts.batches,color:"#64748b",icon:"📋",tab:"batches",hint:"View all batches",roles:["admin","issuer"]},
+    ...(canSeeEnquiries?[
+      {label:role==="sales"&&!canViewAllEnquiries?"My Open Enquiries":"Open Enquiries",val:counts.openEnquiries,color:"#06b6d4",icon:"📞",tab:"enquiries",hint:"Go to Enquiries",roles:["admin","sales","ho"]},
+      ...(canViewAllEnquiries?[{label:"New (Unactioned) Enquiries",val:counts.newEnquiries,color:"#ec4899",icon:"🆕",tab:"enquiries",hint:"Enquiries with no status update yet",roles:["admin","sales","ho"]}]:[])
+    ]:[]),
   ].filter(t=>t.roles.includes(role));
 
   return <div>
@@ -3457,7 +3477,12 @@ function FYArchiveTab({showToast}){
         C("sample_tests").get()
       ]);
       const {from,to}=fyRange(fy);
-      const batches=bSnap.docs.filter(d=>getBFY(d.data())===fy);
+      // Only archive/delete batches that are fully PACKED — a batch still in Issued/In
+      // Production/QC Pending/QC Pass/QC Fail is unfinished work and must never be deleted,
+      // regardless of how old its issue date is.
+      const allFYBatches=bSnap.docs.filter(d=>getBFY(d.data())===fy);
+      const pendingBatchCount=allFYBatches.filter(d=>d.data().status!=="Packed").length;
+      const batches=allFYBatches.filter(d=>d.data().status==="Packed");
       const complaints=cSnap.docs.filter(d=>inFY(d.data().dateCreated,fy));
       // Only archive/delete OLD STOCK that has actually been USED — pending/Available stock
       // must NEVER be touched, regardless of how old it is, since it's still usable inventory.
@@ -3469,12 +3494,21 @@ function FYArchiveTab({showToast}){
       });
       const rdProjects=rdSnap.docs.filter(d=>inFY(d.data().startDate||d.data()._createdAt?.toDate?.()?.toISOString?.()?.slice(0,10),fy));
       const rmConsumption=txSnap.docs.filter(d=>{const dat=d.data();return dat.type==="consumption"&&inFY(dat.date,fy);});
-      const rmTests=rmtSnap.docs.filter(d=>inFY(d.data().dateReceived||d.data()._createdAt?.toDate?.()?.toISOString?.()?.slice(0,10),fy));
-      const sampleTests=stSnap.docs.filter(d=>inFY(d.data().dateReceived||d.data().date||d.data()._createdAt?.toDate?.()?.toISOString?.()?.slice(0,10),fy));
+      // Only archive/delete RM Tests & Sample Tests with a FINAL result (Pass/Fail/Conditional
+      // Pass). "Pending" (no result yet) or "Retest Required" means the test is still open and
+      // must be kept, same logic as pending batches above.
+      const isFinalResult=(r)=>["Pass","Fail","Conditional Pass"].includes(r);
+      const allFYRmTests=rmtSnap.docs.filter(d=>inFY(d.data().dateReceived||d.data()._createdAt?.toDate?.()?.toISOString?.()?.slice(0,10),fy));
+      const pendingRmTestCount=allFYRmTests.filter(d=>!isFinalResult(d.data().testResult)).length;
+      const rmTests=allFYRmTests.filter(d=>isFinalResult(d.data().testResult));
+      const allFYSampleTests=stSnap.docs.filter(d=>inFY(d.data().dateReceived||d.data().date||d.data()._createdAt?.toDate?.()?.toISOString?.()?.slice(0,10),fy));
+      const pendingSampleTestCount=allFYSampleTests.filter(d=>!isFinalResult(d.data().testResult||d.data().result)).length;
+      const sampleTests=allFYSampleTests.filter(d=>isFinalResult(d.data().testResult||d.data().result));
       setCounts({
         batches:batches.length, complaints:complaints.length, oldStock:oldStock.length,
         rdProjects:rdProjects.length, rmConsumption:rmConsumption.length,
         rmTests:rmTests.length, sampleTests:sampleTests.length,
+        pendingBatchCount, pendingRmTestCount, pendingSampleTestCount,
         batchIds:batches.map(d=>d.id), complaintIds:complaints.map(d=>d.id), oldStockIds:oldStock.map(d=>d.id),
         rmConsumptionIds:rmConsumption.map(d=>d.id),
         rmTestIds:rmTests.map(d=>d.id), sampleTestIds:sampleTests.map(d=>d.id),
@@ -3612,7 +3646,7 @@ function FYArchiveTab({showToast}){
     {loading&&<div style={{fontSize:"13px",color:"#475569",padding:"10px 0"}}>⏳ Loading data counts…</div>}
     {counts&&isPrevFY&&step!=="done"&&<>
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"10px",marginBottom:"16px"}}>
-        {[["📦 Batches",counts.batches,"#3b82f6","Deleted"],["⚠️ Complaints",counts.complaints,"#ef4444","Deleted"],["🔄 Used Old Stock",counts.oldStock,"#f59e0b","Deleted"],["🧪 R&D Projects",counts.rdProjects,"#22c55e","Kept ✓"],["📉 RM Consumption",counts.rmConsumption,"#a855f7","Deleted"],["🧫 RM Tests",counts.rmTests,"#06b6d4","Deleted"],["🔭 Sample Testing",counts.sampleTests,"#ec4899","Deleted"]].map(([lbl,count,color,action])=>(
+        {[["📦 Packed Batches",counts.batches,"#3b82f6","Deleted"],["⚠️ Complaints",counts.complaints,"#ef4444","Deleted"],["🔄 Used Old Stock",counts.oldStock,"#f59e0b","Deleted"],["🧪 R&D Projects",counts.rdProjects,"#22c55e","Kept ✓"],["📉 RM Consumption",counts.rmConsumption,"#a855f7","Deleted"],["🧫 RM Tests (completed)",counts.rmTests,"#06b6d4","Deleted"],["🔭 Sample Tests (completed)",counts.sampleTests,"#ec4899","Deleted"]].map(([lbl,count,color,action])=>(
           <div key={lbl} style={{background:"#0b1220",border:`1px solid ${color}30`,borderRadius:"10px",padding:"12px 14px",textAlign:"center"}}>
             <div style={{fontSize:"22px",fontWeight:"700",color}}>{count}</div>
             <div style={{fontSize:"11px",color:"#64748b",marginTop:"2px"}}>{lbl}</div>
@@ -3623,14 +3657,17 @@ function FYArchiveTab({showToast}){
 
       <div style={{background:"#052e16",border:"1px solid #166534",borderRadius:"10px",padding:"16px",marginBottom:"12px"}}>
         <div style={{fontSize:"13px",fontWeight:"700",color:"#22c55e",marginBottom:"6px"}}>Step 1: Export FY {label} Data</div>
-        <div style={{fontSize:"12px",color:"#86efac",marginBottom:"12px"}}>Downloads Batches, Complaints, Used Old Stock, R&D Projects, RM Consumption, RM Tests and Sample Testing as separate Excel sheets. R&D projects are exported but <strong>never deleted</strong> from the system. <strong>Pending (Available) old/rejected stock is never included or touched</strong> — only stock already marked "Used" is archived.</div>
+        <div style={{fontSize:"12px",color:"#86efac",marginBottom:"12px"}}>Downloads Packed Batches, Complaints, Used Old Stock, R&D Projects, RM Consumption, completed RM Tests and Sample Testing as separate Excel sheets. R&D projects are exported but <strong>never deleted</strong> from the system. <strong>Pending/unfinished items are never included or touched</strong> — only stock marked "Used", batches marked "Packed", and tests with a final Pass/Fail/Conditional Pass result are archived.</div>
+        {(counts.pendingBatchCount>0||counts.pendingRmTestCount>0||counts.pendingSampleTestCount>0)&&<div style={{fontSize:"11.5px",color:"#fcd34d",background:"#1a1500",border:"1px solid #92400e40",borderRadius:"8px",padding:"8px 12px",marginBottom:"12px"}}>
+          ⚠ Excluded from this archive (kept in the system, unfinished): {counts.pendingBatchCount>0&&`${counts.pendingBatchCount} batch(es) not yet Packed`}{counts.pendingBatchCount>0&&(counts.pendingRmTestCount>0||counts.pendingSampleTestCount>0)?", ":""}{counts.pendingRmTestCount>0&&`${counts.pendingRmTestCount} RM test(s) awaiting result`}{counts.pendingRmTestCount>0&&counts.pendingSampleTestCount>0?", ":""}{counts.pendingSampleTestCount>0&&`${counts.pendingSampleTestCount} sample test(s) awaiting result`}.
+        </div>}
         <Btn label={exporting?"Exporting…":`📥 Download FY ${label} Archive (Excel)`} onClick={exportFY} disabled={exporting||totalCount+counts.rdProjects===0} color="#22c55e"/>
         {totalCount+counts.rdProjects===0&&<div style={{fontSize:"12px",color:"#334155",marginTop:"6px"}}>No data found for FY {label}.</div>}
       </div>
 
       {totalCount>0&&<div style={{background:"#450a0a",border:"1px solid #7f1d1d",borderRadius:"10px",padding:"16px"}}>
         <div style={{fontSize:"13px",fontWeight:"700",color:"#ef4444",marginBottom:"6px"}}>Step 2: Delete FY {label} Data</div>
-        <div style={{fontSize:"12px",color:"#fca5a5",marginBottom:"12px"}}>Permanently deletes {counts.batches} batches, {counts.complaints} complaints, {counts.oldStock} used old stock, {counts.rmConsumption} RM consumption records, {counts.rmTests} RM tests, {counts.sampleTests} sample tests. <strong>R&D projects ({counts.rdProjects}) and pending/Available old stock are NOT deleted.</strong></div>
+        <div style={{fontSize:"12px",color:"#fca5a5",marginBottom:"12px"}}>Permanently deletes {counts.batches} packed batches, {counts.complaints} complaints, {counts.oldStock} used old stock, {counts.rmConsumption} RM consumption records, {counts.rmTests} completed RM tests, {counts.sampleTests} completed sample tests. <strong>R&D projects ({counts.rdProjects}), pending/Available old stock, unpacked batches, and tests awaiting a result are NOT deleted.</strong></div>
         {step==="idle"&&<Btn label={`🗑 Delete FY ${label} Data (excl. R&D & pending stock)`} onClick={()=>setStep("confirm")} color="#ef4444" outline/>}
         {step==="confirm"&&<div>
           <div style={{fontSize:"13px",fontWeight:"700",color:"#ef4444",marginBottom:"10px"}}>⚠️ Type the FY label to confirm deletion:</div>
@@ -7837,7 +7874,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
     <div style={{maxWidth:"1000px",margin:"0 auto",padding:"24px 28px 0"}}>
 
       {/* DASHBOARD */}
-      {tab==="dashboard"&&<DashboardTab role={role} user={user} onNavigate={setTab}/>}
+      {tab==="dashboard"&&<DashboardTab role={role} roles={roles} hp={hp} user={user} onNavigate={setTab}/>}
 
       {/* BATCHES */}
       {tab==="batches"&&<>
@@ -8255,7 +8292,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
 // ══════════════════════════════════════════════════════════
 // ROOT
 // ══════════════════════════════════════════════════════════
-const ROLE_PRIORITY=["admin","qc","issuer","sales","store"];
+const ROLE_PRIORITY=["admin","qc","issuer","ho","sales","store"];
 const primaryRole=(rolesArr)=>ROLE_PRIORITY.find(r=>(rolesArr||[]).includes(r))||rolesArr?.[0]||null;
 
 function App(){
