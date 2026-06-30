@@ -96,49 +96,9 @@ function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, char
   const base=parseFloat(bom.baseBatchSize)||100;
   const factor=bs/base;
 
-  // ── Auto-fit density: scale font size & padding based on content length,
-  // so the sheet always fits a single A4 page regardless of ingredient count ──
-  const allIngRows=(bom.ingredients||[]);
-  const ingCount=allIngRows.filter(i=>!i.isProcess).length;
-  const stepCount=allIngRows.filter(i=>i.isProcess).length;
-  const extraItemCount=(extraConfig?.items||['Dhoyela','Extra Output','Dhoyela']).length;
-  const oldStockCount=(oldStocks||[]).length;
-  const contentWeight=ingCount+stepCount+extraItemCount+(oldStockCount>0?oldStockCount+1:0);
-  let D; // density tier — more ingredients/steps = tighter spacing, guaranteeing a single A4 page
-  if(contentWeight<=10)D={rowPad:7,fontSz:11,addlMatRows:3,extraPad:8,extraBlanks:0,qcPad:7,qcFont:11,packPad:7,packFont:10,bodyPad:5,coNameSz:18,sheetTitleSz:15,batchNoSz:18};
-  else if(contentWeight<=14)D={rowPad:6,fontSz:10.5,addlMatRows:3,extraPad:7,extraBlanks:0,qcPad:6,qcFont:10.5,packPad:6,packFont:9.5,bodyPad:4,coNameSz:17,sheetTitleSz:14,batchNoSz:17};
-  else if(contentWeight<=18)D={rowPad:5,fontSz:10,addlMatRows:2,extraPad:6,extraBlanks:0,qcPad:5,qcFont:10,packPad:5,packFont:9,bodyPad:3,coNameSz:16,sheetTitleSz:13.5,batchNoSz:16};
-  else if(contentWeight<=22)D={rowPad:4,fontSz:9.5,addlMatRows:1,extraPad:5,extraBlanks:0,qcPad:4,qcFont:9.5,packPad:4,packFont:8.5,bodyPad:2,coNameSz:15,sheetTitleSz:13,batchNoSz:15};
-  else if(contentWeight<=27)D={rowPad:3,fontSz:9,addlMatRows:1,extraPad:4,extraBlanks:0,qcPad:3,qcFont:9,packPad:3,packFont:8,bodyPad:2,coNameSz:14,sheetTitleSz:12,batchNoSz:14};
-  else D={rowPad:2,fontSz:8.5,addlMatRows:0,extraPad:3,extraBlanks:0,qcPad:2,qcFont:8.5,packPad:2,packFont:7.5,bodyPad:1,coNameSz:13,sheetTitleSz:11,batchNoSz:13};
-  let ingRows="";
-  let rowNo=0;
-  (bom.ingredients||[]).forEach(ing=>{
-    if(ing.isProcess){
-      ingRows+=`<tr style="background:#f0f0f0"><td colspan="5" style="padding:${D.rowPad}pt 6pt;font-style:italic;font-weight:600;font-size:${D.fontSz}pt;border:1px solid #999">${ing.name||""}</td></tr>`;
-    }else{
-      rowNo++;
-      const stdQty=parseFloat(ing.standardQty)||0;
-      const currQty=(stdQty*factor).toFixed(3).replace(/\.?0+$/,"");
-      const ingUnit=ing.unit||bom.baseUnit;
-      const unitSuffix=ingUnit!==bom.baseUnit?` <span style="color:#b45309;font-weight:700">${ingUnit}</span>`:` <span style="color:#999">${ingUnit}</span>`;
-      const nameDisplay=ing.name+(ing.desc?` (${ing.desc})`:"");
-      ingRows+=`<tr>
-        <td style="border:1px solid #999;padding:${D.rowPad}pt 5pt;text-align:center;font-size:${D.fontSz}pt">${rowNo}</td>
-        <td style="border:1px solid #999;padding:${D.rowPad}pt 5pt;font-size:${D.fontSz}pt">${nameDisplay}</td>
-        <td style="border:1px solid #999;padding:${D.rowPad}pt 5pt;text-align:center;font-size:${D.fontSz}pt">${stdQty?stdQty+unitSuffix:""}</td>
-        <td style="border:1px solid #999;padding:${D.rowPad}pt 5pt;text-align:center;font-size:${D.fontSz}pt">${currQty?currQty+unitSuffix:""}</td>
-        <td style="border:1px solid #999;padding:${D.rowPad}pt 5pt;text-align:center;font-size:${D.fontSz}pt"></td>
-      </tr>`;
-    }
-  });
-  // Total row — sums all ingredients regardless of unit
-  const totalStd=(bom.ingredients||[]).filter(i=>!i.isProcess).reduce((s,i)=>s+(parseFloat(i.standardQty)||0),0);
-  const totalCurr=(totalStd*factor).toFixed(3).replace(/\.?0+$/,"");
-  // Normalise qcTests — product-specific params take priority; if empty, fall back to category defaults
+  // ── Resolve QC params + pack sizes FIRST, so their row counts can drive right-column sizing ──
   const _qcRaw=bom.qcTests||{};
   var productQcParams=Array.isArray(_qcRaw)?_qcRaw:[];
-  // Fall back to category defaults if no product-specific params
   if(!productQcParams.length&&sysQcParams&&bom.category&&sysQcParams[bom.category]){
     productQcParams=(sysQcParams[bom.category]||[]).map(function(p){return typeof p==='string'?{name:p,standard:''}:{name:p.name||'',standard:''};});
   }
@@ -148,16 +108,74 @@ function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, char
       {name:"Finish",standard:_qcRaw.finish||""},{name:"Viscosity",standard:_qcRaw.viscosity||""},
       {name:"Specific Gravity",standard:_qcRaw.sg||""}
     ].filter(p=>p.standard);
-  // Get pack sizes for this product's category from settings
   var catPackSizes=[];
   if(packSizes&&bom.category&&packSizes[bom.category]){
     catPackSizes=(packSizes[bom.category]||[]).map(function(p){
       return typeof p==='string'?p:(p.size||p.label||String(p));
     }).filter(Boolean);
   }
+
+  // ── Auto-fit density: scale font size & padding based on content length,
+  // so the sheet always fits a single A4 page regardless of ingredient/QC/packing count.
+  // LEFT (ingredient table) and RIGHT (QC+Packing) are sized INDEPENDENTLY, since one
+  // can be long while the other is short — e.g. 5 ingredients but 10 pack sizes. ──
+  const allIngRows=(bom.ingredients||[]);
+  const ingCount=allIngRows.filter(i=>!i.isProcess).length;
+  const stepCount=allIngRows.filter(i=>i.isProcess).length;
+  const extraItemCount=(extraConfig?.items||['Dhoyela','Extra Output','Dhoyela']).length;
+  const oldStockCount=(oldStocks||[]).length;
+  const leftWeight=ingCount+stepCount+extraItemCount+(oldStockCount>0?oldStockCount+1:0);
+  // Right column weight: QC header+subheader(2) + each QC row + Packing header+subheader(2) + each pack row
+  const rightWeight=4+qcParams.length+(catPackSizes.length||3);
+
+  const TIERS=[
+    {rowPad:7,fontSz:11,addlMatRows:3,extraPad:8,extraBlanks:0,qcPad:7,qcFont:11,packPad:7,packFont:10,bodyPad:5,coNameSz:18,sheetTitleSz:15,batchNoSz:18},
+    {rowPad:6,fontSz:10.5,addlMatRows:3,extraPad:7,extraBlanks:0,qcPad:6,qcFont:10.5,packPad:6,packFont:9.5,bodyPad:4,coNameSz:17,sheetTitleSz:14,batchNoSz:17},
+    {rowPad:5,fontSz:10,addlMatRows:2,extraPad:6,extraBlanks:0,qcPad:5,qcFont:10,packPad:5,packFont:9,bodyPad:3,coNameSz:16,sheetTitleSz:13.5,batchNoSz:16},
+    {rowPad:4,fontSz:9.5,addlMatRows:1,extraPad:5,extraBlanks:0,qcPad:4,qcFont:9.5,packPad:4,packFont:8.5,bodyPad:2,coNameSz:15,sheetTitleSz:13,batchNoSz:15},
+    {rowPad:3,fontSz:9,addlMatRows:1,extraPad:4,extraBlanks:0,qcPad:3,qcFont:9,packPad:3,packFont:8,bodyPad:2,coNameSz:14,sheetTitleSz:12,batchNoSz:14},
+    {rowPad:2,fontSz:8.5,addlMatRows:0,extraPad:3,extraBlanks:0,qcPad:2,qcFont:8.5,packPad:2,packFont:7.5,bodyPad:1,coNameSz:13,sheetTitleSz:11,batchNoSz:13},
+    {rowPad:1.5,fontSz:8,addlMatRows:0,extraPad:2,extraBlanks:0,qcPad:1.5,qcFont:8,packPad:1.5,packFont:7,bodyPad:1,coNameSz:12,sheetTitleSz:10,batchNoSz:12},
+    {rowPad:1,fontSz:7.5,addlMatRows:0,extraPad:1.5,extraBlanks:0,qcPad:1,qcFont:7.5,packPad:1,packFont:6.5,bodyPad:1,coNameSz:11,sheetTitleSz:9.5,batchNoSz:11},
+  ];
+  const tierIdxFor=(weight)=>{
+    const thresholds=[10,14,18,22,27,33,40]; // weight ceilings per tier (last tier has no ceiling)
+    for(let i=0;i<thresholds.length;i++)if(weight<=thresholds[i])return i;
+    return TIERS.length-1;
+  };
+  const leftIdx=tierIdxFor(leftWeight);
+  const rightIdx=tierIdxFor(rightWeight);
+  const overallIdx=Math.max(leftIdx,rightIdx); // page-level chrome (header sizes, margins) follows whichever side is denser
+  const DL=TIERS[leftIdx];   // drives ingredient table row sizing
+  const DR=TIERS[rightIdx];  // drives QC + Packing row sizing
+  const D=TIERS[overallIdx]; // drives shared page chrome (body padding, header/title/batch-no font sizes, addlMatRows, extra additions)
+  let ingRows="";
+  let rowNo=0;
+  (bom.ingredients||[]).forEach(ing=>{
+    if(ing.isProcess){
+      ingRows+=`<tr style="background:#f0f0f0"><td colspan="5" style="padding:${DL.rowPad}pt 6pt;font-style:italic;font-weight:600;font-size:${DL.fontSz}pt;border:1px solid #999">${ing.name||""}</td></tr>`;
+    }else{
+      rowNo++;
+      const stdQty=parseFloat(ing.standardQty)||0;
+      const currQty=(stdQty*factor).toFixed(3).replace(/\.?0+$/,"");
+      const ingUnit=ing.unit||bom.baseUnit;
+      const unitSuffix=ingUnit!==bom.baseUnit?` <span style="color:#b45309;font-weight:700">${ingUnit}</span>`:` <span style="color:#999">${ingUnit}</span>`;
+      const nameDisplay=ing.name+(ing.desc?` (${ing.desc})`:"");
+      ingRows+=`<tr>
+        <td style="border:1px solid #999;padding:${DL.rowPad}pt 5pt;text-align:center;font-size:${DL.fontSz}pt">${rowNo}</td>
+        <td style="border:1px solid #999;padding:${DL.rowPad}pt 5pt;font-size:${DL.fontSz}pt">${nameDisplay}</td>
+        <td style="border:1px solid #999;padding:${DL.rowPad}pt 5pt;text-align:center;font-size:${DL.fontSz}pt">${stdQty?stdQty+unitSuffix:""}</td>
+        <td style="border:1px solid #999;padding:${DL.rowPad}pt 5pt;text-align:center;font-size:${DL.fontSz}pt">${currQty?currQty+unitSuffix:""}</td>
+        <td style="border:1px solid #999;padding:${DL.rowPad}pt 5pt;text-align:center;font-size:${DL.fontSz}pt"></td>
+      </tr>`;
+    }
+  });
+  // Total row — sums all ingredients regardless of unit
+  const totalStd=(bom.ingredients||[]).filter(i=>!i.isProcess).reduce((s,i)=>s+(parseFloat(i.standardQty)||0),0);
+  const totalCurr=(totalStd*factor).toFixed(3).replace(/\.?0+$/,"");
   var packRows=catPackSizes.length
-    ?catPackSizes.map(function(s){return '<tr><td style="border:1px solid #999;padding:'+(D.packPad+3)+'pt 6pt;font-size:'+(D.packFont+2)+'pt">'+s+'</td><td colspan="2" style="border:1px solid #999;padding:'+(D.packPad+3)+'pt 6pt;min-width:60pt">&nbsp;</td></tr>';}).join("")
-    :'<tr><td style="border:1px solid #999;padding:'+(D.packPad+3)+'pt 6pt">&nbsp;</td><td colspan="2" style="border:1px solid #999;padding:'+(D.packPad+3)+'pt 6pt">&nbsp;</td></tr><tr><td style="border:1px solid #999;padding:'+(D.packPad+3)+'pt 6pt">&nbsp;</td><td colspan="2" style="border:1px solid #999;padding:'+(D.packPad+3)+'pt 6pt">&nbsp;</td></tr><tr><td style="border:1px solid #999;padding:'+(D.packPad+3)+'pt 6pt">&nbsp;</td><td colspan="2" style="border:1px solid #999;padding:'+(D.packPad+3)+'pt 6pt">&nbsp;</td></tr>';
+    ?catPackSizes.map(function(s){return '<tr><td style="border:1px solid #999;padding:'+DR.packPad+'pt 6pt;font-size:'+DR.packFont+'pt">'+s+'</td><td colspan="2" style="border:1px solid #999;padding:'+DR.packPad+'pt 6pt;min-width:60pt">&nbsp;</td></tr>';}).join("")
+    :'<tr><td style="border:1px solid #999;padding:'+DR.packPad+'pt 6pt">&nbsp;</td><td colspan="2" style="border:1px solid #999;padding:'+DR.packPad+'pt 6pt">&nbsp;</td></tr><tr><td style="border:1px solid #999;padding:'+DR.packPad+'pt 6pt">&nbsp;</td><td colspan="2" style="border:1px solid #999;padding:'+DR.packPad+'pt 6pt">&nbsp;</td></tr><tr><td style="border:1px solid #999;padding:'+DR.packPad+'pt 6pt">&nbsp;</td><td colspan="2" style="border:1px solid #999;padding:'+DR.packPad+'pt 6pt">&nbsp;</td></tr>';
   const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Production Sheet — ${bom.productName}</title>
 <style>
   *{box-sizing:border-box;}
@@ -279,9 +297,9 @@ function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, char
         </tr>
         ${qcParams.length
           ?qcParams.map(p=>`<tr>
-            <td style="border:1px solid #999;padding:${D.qcPad+3}px 6px;font-size:${D.qcFont+2}px">${p.name||""}</td>
-            <td style="border:1px solid #999;padding:${D.qcPad+3}px 6px;font-size:${D.qcFont+2}px;text-align:center">${p.standard||""}</td>
-            <td style="border:1px solid #999;padding:${D.qcPad+3}px 6px;min-width:70px">&nbsp;</td>
+            <td style="border:1px solid #999;padding:${DR.qcPad}px 6px;font-size:${DR.qcFont}px">${p.name||""}</td>
+            <td style="border:1px solid #999;padding:${DR.qcPad}px 6px;font-size:${DR.qcFont}px;text-align:center">${p.standard||""}</td>
+            <td style="border:1px solid #999;padding:${DR.qcPad}px 6px;min-width:70px">&nbsp;</td>
           </tr>`).join("")
           :"<tr><td colspan='3' style='color:#999;font-style:italic;border:1px solid #999;padding:7px 5px'>No QC parameters defined</td></tr>"
         }
