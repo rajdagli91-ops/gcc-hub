@@ -5112,14 +5112,14 @@ function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes,sysQcParams}
 
   const exportAllBOMs=()=>{
     if(!boms.length)return showToast("No BOMs to export","error");
-    const rows=[["Product Name","Category","Base Batch Size","Unit","Version","Last Updated","Ingredient No","Ingredient/Step","Standard Qty","Ingredient Unit","Is Process Step","SD","TF","HD","Colour","Finish","Viscosity","SG","Remarks"]];
+    const rows=[["Product Name","Category","Base Batch Size","Unit","Version","Last Updated","Ingredient No","Ingredient/Step","Standard Qty","Ingredient Unit","Notes/Description","Is Process Step","SD","TF","HD","Colour","Finish","Viscosity","SG","Remarks"]];
     boms.forEach(b=>{
       const q=b.qcTests||{};
       (b.ingredients||[]).forEach((ing,i)=>{
         const qcSD=i===0?q.sd||"":"";const qcTF=i===0?q.tf||"":"";const qcHD=i===0?q.hd||"":"";
         const qcCol=i===0?q.colour||"":"";const qcFin=i===0?q.finish||"":"";
         const qcVis=i===0?q.viscosity||"":"";const qcSG=i===0?q.sg||"":"";const qcRem=i===0?q.remarks||"":"";
-        rows.push([b.productName,b.category||"",b.baseBatchSize||100,b.baseUnit||"L",b.currentVersion||1,b.updatedAt?.toDate?.()?.toLocaleDateString("en-IN")||"",i+1,ing.name||"",ing.isProcess?"":ing.standardQty||"",ing.isProcess?"":(ing.unit||b.baseUnit||"L"),ing.isProcess?"Yes":"No",qcSD,qcTF,qcHD,qcCol,qcFin,qcVis,qcSG,qcRem]);
+        rows.push([b.productName,b.category||"",b.baseBatchSize||100,b.baseUnit||"L",b.currentVersion||1,b.updatedAt?.toDate?.()?.toLocaleDateString("en-IN")||"",i+1,ing.name||"",ing.isProcess?"":ing.standardQty||"",ing.isProcess?"":(ing.unit||b.baseUnit||"L"),ing.desc||"",ing.isProcess?"Yes":"No",qcSD,qcTF,qcHD,qcCol,qcFin,qcVis,qcSG,qcRem]);
       });
     });
     const csv=rows.map(r=>r.map(v=>`"${String(v||"").replace(/"/g,'""')}"`).join(",")).join("\n");
@@ -5219,154 +5219,148 @@ function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes,sysQcParams}
     return {qcParams,catPackSizes,extraItems};
   };
 
-  // ── Build ONE <table>...</table> HTML block (full production-sheet layout) for a single BOM/version snapshot ──
-  const buildBOMTableHTML=(b)=>{
+  const loadExcelJS=()=>new Promise((resolve,reject)=>{
+    if(window.ExcelJS)return resolve();
+    const s=document.createElement("script");
+    s.src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js";
+    s.onload=()=>resolve();
+    s.onerror=()=>reject(new Error("Failed to load Excel library"));
+    document.head.appendChild(s);
+  });
+
+  // ── Build ONE real worksheet (genuine sheet, not a fake HTML stack) inside the given workbook,
+  // laid out like the production sheet, with real borders/fonts/fills AND live formulas. ──
+  const addBOMSheetToWorkbook=(workbook,sheetName,b)=>{
     const base=parseFloat(b.baseBatchSize)||100;
     const unit=b.baseUnit||"L";
     const {qcParams,catPackSizes,extraItems}=resolveQcPackExtra(b);
+    const safeName=sheetName.replace(/[\\\/\?\*\[\]:]/g,"").slice(0,31);
+    const ws=workbook.addWorksheet(safeName,{pageSetup:{
+      fitToPage:true,fitToWidth:1,fitToHeight:1,orientation:"portrait",paperSize:9,
+      margins:{left:0.25,right:0.25,top:0.3,bottom:0.3,header:0,footer:0}
+    }});
+    ws.views=[{showGridLines:false}];
+    ws.columns=[
+      {width:16},{width:34},{width:11},{width:11},{width:11},{width:2.5},{width:16},{width:12},{width:12}
+    ];
 
-    const BORDER="border:1px solid #888;";
-    const PAD="padding:2px 6px;";
-    const ST={
-      d:BORDER+PAD,
-      dctr:BORDER+PAD+"text-align:center;",
-      db:BORDER+PAD+"font-weight:bold;",
-      dbctr:BORDER+PAD+"font-weight:bold;text-align:center;",
-      hdr:BORDER+PAD+"font-weight:bold;background:#D9D9D9;text-align:center;",
-      section:BORDER+PAD+"font-weight:bold;font-style:italic;background:#F0F0F0;",
-      amber:BORDER+PAD+"font-weight:bold;font-style:italic;background:#FFF3CD;",
-      title:BORDER+PAD+"font-weight:bold;font-size:14pt;",
-      title2:BORDER+PAD+"font-weight:bold;font-size:12pt;text-align:center;",
-      bnw:BORDER+PAD+"font-weight:bold;white-space:nowrap;",
-      bnwctr:BORDER+PAD+"font-weight:bold;white-space:nowrap;text-align:center;",
-      bignw:BORDER+PAD+"font-weight:bold;font-size:11pt;white-space:nowrap;",
-      em:BORDER+PAD+"font-style:italic;",
-      step:BORDER+PAD+"font-style:italic;color:#92400e;",
-      hint:BORDER+PAD+"color:#16a34a;font-weight:bold;white-space:nowrap;",
-      blank:BORDER+PAD,
+    const thin={style:"thin",color:{argb:"FF888888"}};
+    const allBorder={top:thin,bottom:thin,left:thin,right:thin};
+    const fillGrey={type:"pattern",pattern:"solid",fgColor:{argb:"FFD9D9D9"}};
+    const fillAmber={type:"pattern",pattern:"solid",fgColor:{argb:"FFFFF3CD"}};
+    const fillLight={type:"pattern",pattern:"solid",fgColor:{argb:"FFF0F0F0"}};
+    const setCell=(addr,value,opts={})=>{
+      const c=ws.getCell(addr);
+      c.value=value;
+      c.border=opts.noBorder?undefined:allBorder;
+      if(opts.bold||opts.font)c.font={bold:!!opts.bold,italic:!!opts.italic,size:opts.size||10,color:opts.color?{argb:opts.color}:undefined};
+      if(opts.fill)c.fill=opts.fill;
+      if(opts.center)c.alignment={horizontal:"center",vertical:"middle",wrapText:!!opts.wrap};
+      else c.alignment={vertical:"top",wrapText:opts.wrap!==false};
+      return c;
     };
-    const cell=(text,opts)=>({text:text==null?"":text,...opts});
-    const td=(cd)=>{
-      if(cd===null)return "";
-      const span=cd.colspan?` colspan="${cd.colspan}"`:"";
-      const fmlaAttr=cd.fmla?` x:fmla="=${cd.fmla}"`:"";
-      const style=ST[cd.st||"d"]||ST.d;
-      return `<td${span} style="${style}"${fmlaAttr}>${cd.text}</td>`;
-    };
+    const merge=(range)=>ws.mergeCells(range);
 
-    // ── TOP rows: span the FULL page width (all 9 columns) ──
-    let topHtml="";
-    topHtml+="<tr>"+td(cell("VEEBEE",{st:"title",colspan:2}))+td(cell("PRODUCTION SHEET",{st:"title2",colspan:7}))+"</tr>";
-    topHtml+="<tr>"+td(cell("G.C.C/7.2.1/F/03",{st:"d",colspan:9}))+"</tr>";
-    topHtml+="<tr>"+td(cell("Base Batch Size",{st:"bnw"}))+td(cell(base,{st:"dctr"}))+td(cell(unit,{st:"d"}))+td(cell("",{st:"blank",colspan:6}))+"</tr>";
-    topHtml+="<tr>"+td(cell("Enter Batch Size",{st:"bnw"}))+td(cell(base,{st:"dctr"}))+td(cell(unit,{st:"d"}))+td(cell("← change this cell",{st:"hint"}))+td(cell("",{st:"blank",colspan:5}))+"</tr>";
-    topHtml+="<tr>"+td(cell("PRODUCT NAME:",{st:"bnw"}))+td(cell(b.productName||"",{st:"bignw",colspan:2}))+td(cell("Version",{st:"bnwctr"}))+td(cell("v"+(b.currentVersion||1),{st:"d",colspan:5}))+"</tr>";
-    const baseRowExcel=3, enterRowExcel=4;
+    let r=1;
+    // Title row
+    merge(`A${r}:B${r}`); setCell(`A${r}`,"VEEBEE",{bold:true,size:16});
+    merge(`C${r}:I${r}`); setCell(`C${r}`,"PRODUCTION SHEET",{bold:true,size:13,center:true});
+    r++;
+    merge(`A${r}:I${r}`); setCell(`A${r}`,"G.C.C/7.2.1/F/03",{});
+    r++;
+    // Batch Size — single row (no separate "base" row); the original base value is baked
+    // into the formula as a constant, so we don't need a second reference row for it.
+    const batchSizeRow=r;
+    setCell(`A${r}`,"Batch Size",{bold:true});
+    setCell(`B${r}`,base,{center:true});
+    setCell(`C${r}`,unit,{});
+    merge(`D${r}:I${r}`); setCell(`D${r}`,"← change this cell to recalculate",{bold:true,color:"FF16A34A"});
+    r++;
+    // Product Name — given the full row width since Version was removed, so long names don't overlap
+    setCell(`A${r}`,"PRODUCT NAME:",{bold:true});
+    merge(`B${r}:I${r}`); setCell(`B${r}`,b.productName||"",{bold:true,size:11});
+    r++;
 
-    // ── MIDDLE: two-column zip (ingredients table left, QC+Packing right) ──
-    const left=[];
-    left.push([cell("NO",{st:"hdr"}),cell("INGREDIENTS",{st:"hdr"}),cell("STANDARD QTY",{st:"hdr"}),cell("CURRENT QTY",{st:"hdr"}),cell("ACTUAL QTY",{st:"hdr"})]);
+    // Ingredient table header + QC Standards header (same row)
+    const headerRow=r;
+    ["NO","INGREDIENTS","STANDARD QTY","CURRENT QTY","ACTUAL QTY"].forEach((h,i)=>{
+      setCell(ws.getCell(headerRow,1+i).address,h,{bold:true,center:true,fill:fillGrey});
+    });
+    merge(`G${headerRow}:I${headerRow}`); setCell(`G${headerRow}`,"QC STANDARDS",{bold:true,center:true,fill:fillGrey});
+    r++;
+    // QC sub-header sits one row below its title; ingredient data starts directly below its header
+    ["Parameter","Standard","Actual Value"].forEach((h,i)=>{
+      setCell(ws.getCell(r,7+i).address,h,{bold:true,center:true,fill:fillGrey});
+    });
+    const qcDataStartRow=r+1;
+    let qcRow=qcDataStartRow;
+    if(qcParams.length)qcParams.forEach(p=>{
+      setCell(`G${qcRow}`,p.name||"",{});setCell(`H${qcRow}`,p.standard||"",{center:true});setCell(`I${qcRow}`,"",{});
+      qcRow++;
+    });else{ merge(`G${qcRow}:I${qcRow}`); setCell(`G${qcRow}`,"No QC parameters defined",{}); qcRow++; }
+    const packHeaderRow=qcRow;
+    merge(`G${packHeaderRow}:I${packHeaderRow}`); setCell(`G${packHeaderRow}`,"PACKING",{bold:true,italic:true,center:true,fill:fillLight});
+    setCell(`G${packHeaderRow+1}`,"Size",{bold:true,center:true,fill:fillGrey});
+    merge(`H${packHeaderRow+1}:I${packHeaderRow+1}`); setCell(`H${packHeaderRow+1}`,"No. of Packs",{bold:true,center:true,fill:fillGrey});
+    let packRow=packHeaderRow+2;
+    const packSizesToShow=catPackSizes.length?catPackSizes:["","",""];
+    packSizesToShow.forEach(s=>{
+      setCell(`G${packRow}`,s,{});merge(`H${packRow}:I${packRow}`);setCell(`H${packRow}`,"",{});
+      packRow++;
+    });
+    const rightBlockEndRow=packRow-1;
+
+    // Ingredient rows (left side), starting at headerRow+1
     let rowNo=0;
-    const headerExcelRow=6;
-    const dataStart0=left.length;
+    const dataStartRow=headerRow+1;
+    let lr=dataStartRow;
     (b.ingredients||[]).forEach(ing=>{
       if(ing.isProcess){
-        left.push([cell("",{st:"d"}),cell("→ "+(ing.name||""),{st:"step",colspan:4}),null,null,null]);
+        merge(`B${lr}:E${lr}`);
+        setCell(`A${lr}`,"",{});
+        setCell(`B${lr}`,"→ "+(ing.name||""),{italic:true,color:"FF92400E"});
+        lr++;
       }else{
         rowNo++;
-        const excelRow=headerExcelRow+left.length;
-        left.push([cell(rowNo,{st:"dctr"}),cell(ing.name||"",{st:"d"}),cell(parseFloat(ing.standardQty)||0,{st:"dctr"}),
-          cell(parseFloat(ing.standardQty)||0,{st:"dctr",fmla:`C${excelRow}*$B$${enterRowExcel}/$B$${baseRowExcel}`}),cell("",{st:"d"})]);
+        const nameDisplay=ing.name+(ing.desc?` (${ing.desc})`:"");
+        setCell(`A${lr}`,rowNo,{center:true});
+        setCell(`B${lr}`,nameDisplay,{wrap:true});
+        const stdQty=parseFloat(ing.standardQty)||0;
+        setCell(`C${lr}`,stdQty,{center:true});
+        const curCell=setCell(`D${lr}`,null,{center:true});
+        curCell.value={formula:`C${lr}*$B$${batchSizeRow}/${base}`};
+        setCell(`E${lr}`,"",{});
+        lr++;
       }
     });
-    const lastIngExcelRow=headerExcelRow+left.length-1;
-    const dataStartExcel=headerExcelRow+dataStart0;
-    left.push([cell("",{st:"d"}),cell("TOTAL",{st:"db"}),
-      cell("",{st:"dbctr",fmla:`SUM(C${dataStartExcel}:C${lastIngExcelRow})`}),
-      cell("",{st:"dbctr",fmla:`SUM(D${dataStartExcel}:D${lastIngExcelRow})`}),cell("",{st:"d"})]);
+    const lastIngRow=lr-1;
+    const totalRow=lr;
+    setCell(`A${totalRow}`,"",{});
+    setCell(`B${totalRow}`,"TOTAL",{bold:true});
+    const totalStdCell=setCell(`C${totalRow}`,null,{bold:true,center:true});
+    totalStdCell.value={formula:`SUM(C${dataStartRow}:C${lastIngRow})`};
+    const totalCurCell=setCell(`D${totalRow}`,null,{bold:true,center:true});
+    totalCurCell.value={formula:`SUM(D${dataStartRow}:D${lastIngRow})`};
+    setCell(`E${totalRow}`,"",{});
 
-    const right=[];
-    right.push([cell("QC STANDARDS",{st:"hdr",colspan:3}),null,null]);
-    right.push([cell("Parameter",{st:"hdr"}),cell("Standard",{st:"hdr"}),cell("Actual Value",{st:"hdr"})]);
-    if(qcParams.length)qcParams.forEach(p=>right.push([cell(p.name||"",{st:"d"}),cell(p.standard||"",{st:"dctr"}),cell("",{st:"d"})]));
-    else right.push([cell("No QC parameters defined",{st:"d",colspan:3}),null,null]);
-    right.push([cell("PACKING",{st:"section",colspan:3}),null,null]);
-    right.push([cell("Size",{st:"hdr"}),cell("No. of Packs",{st:"hdr",colspan:2}),null]);
-    if(catPackSizes.length)catPackSizes.forEach(s=>right.push([cell(s,{st:"d"}),cell("",{st:"d",colspan:2}),null]));
-    else for(let i=0;i<3;i++)right.push([cell("",{st:"d"}),cell("",{st:"d",colspan:2}),null]);
-
-    const totalMidRows=Math.max(left.length,right.length);
-    let midHtml="";
-    for(let r=0;r<totalMidRows;r++){
-      midHtml+="<tr>";
-      const lrow=left[r]||[cell("",{st:"blank"}),cell("",{st:"blank"}),cell("",{st:"blank"}),cell("",{st:"blank"}),cell("",{st:"blank"})];
-      lrow.forEach(cd=>{ midHtml+=td(cd); });
-      midHtml+=`<td style="border:none;padding:0 4px;"></td>`;
-      const rrow=right[r]||[cell("",{st:"blank"}),cell("",{st:"blank"}),cell("",{st:"blank"})];
-      rrow.forEach(cd=>{ midHtml+=td(cd); });
-      midHtml+="</tr>";
-    }
-
-    // ── BOTTOM rows: span the FULL page width again ──
-    let bottomHtml="";
-    bottomHtml+="<tr>"+td(cell("Additional Materials (if any)",{st:"amber",colspan:9}))+"</tr>";
-    for(let i=0;i<3;i++)bottomHtml+="<tr>"+td(cell("",{st:"d",colspan:9}))+"</tr>";
-    bottomHtml+="<tr>"+td(cell("EXTRA ADDITIONS",{st:"section",colspan:9}))+"</tr>";
+    // Bottom rows span the FULL width
+    let br=Math.max(totalRow,rightBlockEndRow)+1;
+    merge(`A${br}:I${br}`); setCell(`A${br}`,"Additional Materials (if any)",{bold:true,italic:true,fill:fillAmber});
+    br++;
+    for(let i=0;i<3;i++){ merge(`A${br}:I${br}`); setCell(`A${br}`,"",{}); br++; }
+    merge(`A${br}:I${br}`); setCell(`A${br}`,"EXTRA ADDITIONS",{bold:true,italic:true,fill:fillLight});
+    br++;
     extraItems.forEach(item=>{
-      bottomHtml+="<tr>"+td(cell(item,{st:"em"}))+td(cell("",{st:"d",colspan:8}))+"</tr>";
+      setCell(`A${br}`,item,{italic:true});
+      merge(`B${br}:I${br}`); setCell(`B${br}`,"",{});
+      br++;
     });
-    bottomHtml+="<tr>"+td(cell("Check by:",{st:"bnw"}))+td(cell("",{st:"d",colspan:3}))+td(cell("Prepared by:",{st:"bnw"}))+td(cell("",{st:"d",colspan:4}))+"</tr>";
+    setCell(`A${br}`,"Check by:",{bold:true});
+    merge(`B${br}:D${br}`); setCell(`B${br}`,"",{});
+    setCell(`E${br}`,"Prepared by:",{bold:true});
+    merge(`F${br}:I${br}`); setCell(`F${br}`,"",{});
 
-    return `<table>
-<colgroup><col width="100"><col width="165"><col width="68"><col width="68"><col width="68"><col width="8"><col width="95"><col width="70"><col width="70"></colgroup>
-${topHtml}${midHtml}${bottomHtml}
-</table>`;
-  };
-
-  // ── Assemble a full multi-sheet .xls HTML document from [{name, tableHtml}] ──
-  // Wrap ONE table into a complete, single-sheet .xls document — this is what reliably
-  // gives correct borders + single-page print fit. Excel's HTML-import does NOT actually
-  // create separate worksheet tabs from multiple <table> elements — they just stack into
-  // one continuous sheet, which breaks both the print-area and the page-fit. So each
-  // version (current or archived) must be its own file, not a "sheet" within one file.
-  const buildSingleSheetXLS=(tableHtml,sheetName)=>{
-    const safeName=sheetName.replace(/[\\\/\?\*\[\]:<>|]/g,"").slice(0,31);
-    return `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
-<head><meta charset="UTF-8">
-<!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet>
-<x:Name>${safeName}</x:Name>
-<x:WorksheetOptions><x:Print><x:FitWidth>1</x:FitWidth><x:FitHeight>1</x:FitHeight><x:PaperSizeIndex>9</x:PaperSizeIndex>
-<x:LeftMargin>0.25</x:LeftMargin><x:RightMargin>0.25</x:RightMargin><x:TopMargin>0.3</x:TopMargin><x:BottomMargin>0.3</x:BottomMargin>
-</x:Print><x:Selected/><x:DoNotDisplayGridlines/></x:WorksheetOptions>
-</x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
-<style>table{border-collapse:collapse;font-family:Calibri,Arial,sans-serif;font-size:10pt;}td,th{vertical-align:middle;line-height:1.15;}</style>
-</head><body>${tableHtml}</body></html>`;
-  };
-
-  // Export just the CURRENT version of one product — single file, single sheet, guaranteed single-page print.
-  const exportSingleBOMExcel=(b)=>{
-    setExportingOne(b.id);
-    try{
-      const html=buildSingleSheetXLS(buildBOMTableHTML(b),b.productName||"BOM");
-      const blob=new Blob([html],{type:"application/vnd.ms-excel"});
-      const a=document.createElement("a");a.href=URL.createObjectURL(blob);
-      const sheetFileName=(b.productName||"BOM").replace(/[\\\/\?\*\[\]:<>|]/g,"").replace(/\s+/g,"_");
-      a.download=`GCC_${sheetFileName}_v${b.currentVersion||1}_${today()}.xls`;a.click();
-      showToast("Excel exported ✓ — change 'Enter Batch Size' to auto-recalculate.");
-    }catch(e){showToast("Error: "+e.message,"error");}
-    setExportingOne(null);
-  };
-
-  // Export ONE specific archived version (used from the BOM History view).
-  const exportVersionExcel=(v)=>{
-    try{
-      const html=buildSingleSheetXLS(buildBOMTableHTML(v),`${v.productName||"BOM"} v${v.currentVersion||"?"}`);
-      const blob=new Blob([html],{type:"application/vnd.ms-excel"});
-      const a=document.createElement("a");a.href=URL.createObjectURL(blob);
-      const fname=(v.productName||"BOM").replace(/[\\\/\?\*\[\]:<>|]/g,"").replace(/\s+/g,"_");
-      a.download=`GCC_${fname}_v${v.currentVersion||"?"}_Archived_${today()}.xls`;a.click();
-      showToast("Archived version exported ✓");
-    }catch(e){showToast("Error: "+e.message,"error");}
+    return ws;
   };
 
   const [exportingZip,setExportingZip]=useState(false);
@@ -5379,30 +5373,65 @@ ${topHtml}${midHtml}${bottomHtml}
     document.head.appendChild(s);
   });
 
-  // Download ALL BOMs at once — one .xls FILE per version (current + every archived version),
-  // each correctly single-sheet/single-page, organized into a per-product folder within the ZIP.
+  // Export ONE product as a real multi-sheet workbook: "Current (vX)" + one sheet per archived version.
+  const exportSingleBOMExcel=async(b)=>{
+    setExportingOne(b.id);
+    try{
+      await loadExcelJS();
+      const workbook=new window.ExcelJS.Workbook();
+      addBOMSheetToWorkbook(workbook,`Current (v${b.currentVersion||1})`,b);
+      const bVersions=versions.filter(v=>v.productId===b.id).sort((x,y)=>(y.currentVersion||0)-(x.currentVersion||0));
+      bVersions.forEach(v=>addBOMSheetToWorkbook(workbook,`v${v.currentVersion||"?"} (Archived)`,v));
+      const buffer=await workbook.xlsx.writeBuffer();
+      const blob=new Blob([buffer],{type:"application/octet-stream"});
+      const a=document.createElement("a");a.href=URL.createObjectURL(blob);
+      const fname=(b.productName||"BOM").replace(/[\\\/\?\*\[\]:<>|]/g,"").replace(/\s+/g,"_");
+      a.download=`GCC_${fname}_${today()}.xlsx`;a.click();
+      const histNote=bVersions.length?` Includes ${bVersions.length} archived version(s) as separate sheets in the same file.`:"";
+      showToast("Excel exported ✓ — change Batch Size to auto-recalculate."+histNote);
+    }catch(e){showToast("Error: "+e.message,"error");}
+    setExportingOne(null);
+  };
+
+  // Export ONE specific archived version standalone (used from the BOM History view).
+  const exportVersionExcel=async(v)=>{
+    try{
+      await loadExcelJS();
+      const workbook=new window.ExcelJS.Workbook();
+      addBOMSheetToWorkbook(workbook,`v${v.currentVersion||"?"} (Archived)`,v);
+      const buffer=await workbook.xlsx.writeBuffer();
+      const blob=new Blob([buffer],{type:"application/octet-stream"});
+      const a=document.createElement("a");a.href=URL.createObjectURL(blob);
+      const fname=(v.productName||"BOM").replace(/[\\\/\?\*\[\]:<>|]/g,"").replace(/\s+/g,"_");
+      a.download=`GCC_${fname}_v${v.currentVersion||"?"}_Archived_${today()}.xlsx`;a.click();
+      showToast("Archived version exported ✓");
+    }catch(e){showToast("Error: "+e.message,"error");}
+  };
+
+  // Download ALL BOMs at once — ONE real multi-sheet .xlsx workbook per product
+  // (Current + every Archived version as separate sheets within that single file),
+  // all bundled together into one ZIP.
   const exportAllBOMsZip=async()=>{
     if(!boms.length)return showToast("No BOMs to export","error");
     setExportingZip(true);
     try{
-      await loadJSZip();
+      await Promise.all([loadExcelJS(),loadJSZip()]);
       const zip=new window.JSZip();
-      let fileCount=0;
-      boms.forEach(b=>{
-        const folder=(b.productName||"BOM").replace(/[\\\/\?\*\[\]:<>|]/g,"").replace(/\s+/g,"_");
-        const curHtml=buildSingleSheetXLS(buildBOMTableHTML(b),b.productName||"BOM");
-        zip.file(`${folder}/Current_v${b.currentVersion||1}.xls`,curHtml);
-        fileCount++;
-        versions.filter(v=>v.productId===b.id).sort((x,y)=>(y.currentVersion||0)-(x.currentVersion||0)).forEach(v=>{
-          const vHtml=buildSingleSheetXLS(buildBOMTableHTML(v),`${v.productName||"BOM"} v${v.currentVersion||"?"}`);
-          zip.file(`${folder}/Archived_v${v.currentVersion||"?"}.xls`,vHtml);
-          fileCount++;
-        });
-      });
+      const usedFile={};
+      for(const b of boms){
+        const workbook=new window.ExcelJS.Workbook();
+        addBOMSheetToWorkbook(workbook,`Current (v${b.currentVersion||1})`,b);
+        const bVersions=versions.filter(v=>v.productId===b.id).sort((x,y)=>(y.currentVersion||0)-(x.currentVersion||0));
+        bVersions.forEach(v=>addBOMSheetToWorkbook(workbook,`v${v.currentVersion||"?"} (Archived)`,v));
+        const buffer=await workbook.xlsx.writeBuffer();
+        let fname=(b.productName||"BOM").replace(/[\\\/\?\*\[\]:<>|]/g,"").replace(/\s+/g,"_");
+        if(usedFile[fname]!=null){usedFile[fname]++;fname=fname+"_"+usedFile[fname];} else usedFile[fname]=0;
+        zip.file(`${fname}.xlsx`,buffer);
+      }
       const blob=await zip.generateAsync({type:"blob"});
       const a=document.createElement("a");a.href=URL.createObjectURL(blob);
       a.download=`GCC_All_BOMs_${today()}.zip`;a.click();
-      showToast(`✓ ${boms.length} products exported as ZIP (${fileCount} files total) — each product has its own folder with Current + Archived versions.`);
+      showToast(`✓ ${boms.length} products exported as ZIP — each file contains Current + Archived versions as separate sheets.`);
     }catch(e){showToast("Error: "+e.message,"error");}
     setExportingZip(false);
   };
