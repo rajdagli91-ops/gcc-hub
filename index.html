@@ -5234,7 +5234,15 @@ function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes,sysQcParams}
     const base=parseFloat(b.baseBatchSize)||100;
     const unit=b.baseUnit||"L";
     const {qcParams,catPackSizes,extraItems}=resolveQcPackExtra(b);
-    const safeName=sheetName.replace(/[\\\/\?\*\[\]:]/g,"").slice(0,31);
+    let safeName=sheetName.replace(/[\\\/\?\*\[\]:]/g,"").slice(0,31)||"Sheet";
+    // Guarantee uniqueness within this workbook — two archived versions can share the same
+    // currentVersion number (data inconsistency), which would otherwise throw "Worksheet
+    // name already exists" and abort the whole export.
+    if(workbook.getWorksheet(safeName)){
+      let n=2;
+      while(workbook.getWorksheet(`${safeName.slice(0,28)} (${n})`))n++;
+      safeName=`${safeName.slice(0,28)} (${n})`;
+    }
     const ws=workbook.addWorksheet(safeName,{pageSetup:{
       fitToPage:true,fitToWidth:1,fitToHeight:1,orientation:"portrait",paperSize:9,
       margins:{left:0.25,right:0.25,top:0.3,bottom:0.3,header:0,footer:0}
@@ -5253,7 +5261,7 @@ function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes,sysQcParams}
       const c=ws.getCell(addr);
       c.value=value;
       c.border=opts.noBorder?undefined:allBorder;
-      if(opts.bold||opts.font)c.font={bold:!!opts.bold,italic:!!opts.italic,size:opts.size||10,color:opts.color?{argb:opts.color}:undefined};
+      c.font={bold:!!opts.bold,italic:!!opts.italic,size:opts.size||11,color:opts.color?{argb:opts.color}:undefined};
       if(opts.fill)c.fill=opts.fill;
       if(opts.center)c.alignment={horizontal:"center",vertical:"middle",wrapText:!!opts.wrap};
       else c.alignment={vertical:"top",wrapText:opts.wrap!==false};
@@ -5295,7 +5303,7 @@ function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes,sysQcParams}
     const qcDataStartRow=r+1;
     let qcRow=qcDataStartRow;
     if(qcParams.length)qcParams.forEach(p=>{
-      setCell(`G${qcRow}`,p.name||"",{});setCell(`H${qcRow}`,p.standard||"",{center:true});setCell(`I${qcRow}`,"",{});
+      setCell(`G${qcRow}`,p.name||"",{size:11});setCell(`H${qcRow}`,p.standard||"",{center:true,size:11});setCell(`I${qcRow}`,"",{size:11});
       qcRow++;
     });else{ merge(`G${qcRow}:I${qcRow}`); setCell(`G${qcRow}`,"No QC parameters defined",{}); qcRow++; }
     const packHeaderRow=qcRow;
@@ -5305,7 +5313,7 @@ function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes,sysQcParams}
     let packRow=packHeaderRow+2;
     const packSizesToShow=catPackSizes.length?catPackSizes:["","",""];
     packSizesToShow.forEach(s=>{
-      setCell(`G${packRow}`,s,{});merge(`H${packRow}:I${packRow}`);setCell(`H${packRow}`,"",{});
+      setCell(`G${packRow}`,s,{size:11});merge(`H${packRow}:I${packRow}`);setCell(`H${packRow}`,"",{size:11});
       packRow++;
     });
     const rightBlockEndRow=packRow-1;
@@ -5318,18 +5326,20 @@ function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes,sysQcParams}
       if(ing.isProcess){
         merge(`B${lr}:E${lr}`);
         setCell(`A${lr}`,"",{});
-        setCell(`B${lr}`,"→ "+(ing.name||""),{italic:true,color:"FF92400E"});
+        setCell(`B${lr}`,"→ "+(ing.name||""),{italic:true,color:"FF92400E",size:11});
+        ws.getRow(lr).height=20;
         lr++;
       }else{
         rowNo++;
         const nameDisplay=ing.name+(ing.desc?` (${ing.desc})`:"");
-        setCell(`A${lr}`,rowNo,{center:true});
-        setCell(`B${lr}`,nameDisplay,{wrap:true});
+        setCell(`A${lr}`,rowNo,{center:true,size:12});
+        setCell(`B${lr}`,nameDisplay,{wrap:true,size:12});
         const stdQty=parseFloat(ing.standardQty)||0;
-        setCell(`C${lr}`,stdQty,{center:true});
-        const curCell=setCell(`D${lr}`,null,{center:true});
+        setCell(`C${lr}`,stdQty,{center:true,size:12});
+        const curCell=setCell(`D${lr}`,null,{center:true,size:12});
         curCell.value={formula:`C${lr}*$B$${batchSizeRow}/${base}`};
-        setCell(`E${lr}`,"",{});
+        setCell(`E${lr}`,"",{size:12});
+        ws.getRow(lr).height=20;
         lr++;
       }
     });
@@ -5347,11 +5357,11 @@ function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes,sysQcParams}
     let br=Math.max(totalRow,rightBlockEndRow)+1;
     merge(`A${br}:I${br}`); setCell(`A${br}`,"Additional Materials (if any)",{bold:true,italic:true,fill:fillAmber});
     br++;
-    for(let i=0;i<3;i++){ merge(`A${br}:I${br}`); setCell(`A${br}`,"",{}); br++; }
+    merge(`A${br}:I${br}`); setCell(`A${br}`,"",{}); ws.getRow(br).height=20; br++;
     merge(`A${br}:I${br}`); setCell(`A${br}`,"EXTRA ADDITIONS",{bold:true,italic:true,fill:fillLight});
     br++;
     extraItems.forEach(item=>{
-      setCell(`A${br}`,item,{italic:true});
+      setCell(`A${br}`,item,{italic:true,size:11});
       merge(`B${br}:I${br}`); setCell(`B${br}`,"",{});
       br++;
     });
