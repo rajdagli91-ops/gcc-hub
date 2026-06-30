@@ -1516,7 +1516,7 @@ function ComplaintWorkspace({complaint,role,showToast}){
         </div>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginBottom:"10px"}}>
-        {[["Product",live.productName],["Batch No",live.batchNo||"—"],["Month/Year",live.monthYear||"—"],["Invoice No",live.invoiceNo||"—"],["Material Available",live.materialAvailable||"—"],["Complaint By",live.addedBy]].map(([l,v])=><div key={l} style={{background:"#060b16",border:"1px solid #1e293b",borderRadius:"6px",padding:"7px 10px"}}>
+        {[["Product",live.productName],["Batch No",live.batchNo||"—"],["Month/Year",live.monthYear||"—"],["Invoice No",live.invoiceNo||"—"],["Material Available",live.materialAvailable||"—"],["Complaint By",live.addedBy],...(live.applicationProcess?[["Process of Application",live.applicationProcess]]:[]),...(live.thinnerUsed?[["Thinner Used",live.thinnerUsed]]:[])].map(([l,v])=><div key={l} style={{background:"#060b16",border:"1px solid #1e293b",borderRadius:"6px",padding:"7px 10px"}}>
           <div style={{fontSize:"10px",color:"#334155",fontWeight:"600",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:"2px"}}>{l}</div>
           <div style={{fontSize:"12.5px",color:"#94a3b8"}}>{v}</div>
         </div>)}
@@ -4286,7 +4286,7 @@ function NoAccessScreen(){
 const EP={projectName:"",projectCode:"",paintType:"Emulsion",application:"",status:"Ongoing",objective:"",formulationBase:"",assignedTo:"",targetDate:"",notes:""};
 const ER={materialName:"",vendorName:"",category:"Resin / Binder",batchNo:"",lotNo:"",quantityReceived:"",dateReceived:"",specsToTest:"",assignedTo:"",testedBy:"",testResult:"Pending",testsPerformed:"",observations:"",remarks:""};
 const EB={category:"",productName:"",shade:"",batchSize:"",unit:"kg",dateIssued:today(),issuedBy:"",oldStockUsed:"",issueNotes:""};
-const EC={customerName:"",productName:"",batchNo:"",monthYear:"",invoiceNo:"",materialAvailable:"",complaint:""};
+const EC={customerName:"",productName:"",batchNo:"",monthYear:"",invoiceNo:"",materialAvailable:"",complaint:"",applicationProcess:"",thinnerUsed:""};
 
 // ══════════════════════════════════════════════════════════
 // SAMPLE TESTING TAB — Customer / Competitor Samples
@@ -8051,6 +8051,10 @@ function MainApp({user,role,roles=[],permissions=[]}){
         <Field label="Invoice No"><input style={inp} value={complaintForm.invoiceNo} onChange={e=>setComplaintForm({...complaintForm,invoiceNo:e.target.value})} placeholder="Invoice number"/></Field>
       </Grid3>
       <Field label="Material Available with Customer"><input style={inp} value={complaintForm.materialAvailable} onChange={e=>setComplaintForm({...complaintForm,materialAvailable:e.target.value})} placeholder="e.g. 15 L, 2 tins, approx half drum"/></Field>
+      <Grid2>
+        <Field label="Process of Application (if paint)"><input style={inp} value={complaintForm.applicationProcess} onChange={e=>setComplaintForm({...complaintForm,applicationProcess:e.target.value})} placeholder="e.g. Spray, brush, roller, dip..."/></Field>
+        <Field label="Thinner Used (if paint)"><input style={inp} value={complaintForm.thinnerUsed} onChange={e=>setComplaintForm({...complaintForm,thinnerUsed:e.target.value})} placeholder="e.g. PU Thinner, NC Thinner, ratio used..."/></Field>
+      </Grid2>
       <Field label="Complaint Description *"><textarea style={{...ta,minHeight:"100px"}} value={complaintForm.complaint} onChange={e=>setComplaintForm({...complaintForm,complaint:e.target.value})} placeholder="Describe the complaint in detail — what is the issue, when was it noticed, what conditions..."/></Field>
       <div style={{marginBottom:"14px"}}>
         <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"6px"}}>📎 Attach Photos / Videos (optional)</div>
