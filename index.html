@@ -2475,11 +2475,13 @@ function EnquiryDetail({entry,onClose,canUpdate,isAdmin,allProfiles={},showToast
     if(!callForm.summary.trim())return showToast("Add a summary of the call","error");
     setSaving(true);
     try{
-      const nc={...callForm,id:newId(),by:entry._currentUserEmail||"",_createdAt:ts()};
+      // NOTE: Firestore's serverTimestamp() sentinel (ts()) is NOT allowed inside array
+      // elements — only as a top-level/object field. Use a plain ISO string here instead.
+      const nc={...callForm,id:newId(),by:entry._currentUserEmail||"",_createdAt:new Date().toISOString()};
       await C("enquiries").doc(entry.id).update({callSummaries:[...(live.callSummaries||[]),nc]});
       setCallForm({date:today(),summary:""});setShowCallForm(false);
       showToast("Call summary added ✓");
-    }catch(e){showToast("Error","error");}
+    }catch(e){showToast("Error: "+e.message,"error");}
     setSaving(false);
   };
 
