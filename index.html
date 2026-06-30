@@ -579,6 +579,7 @@ const PERMISSION_GROUPS=[
     {k:"enquiries_create", l:"Create new enquiries & assign to salesman"},
     {k:"enquiries_view_all", l:"View all enquiries (not just assigned to me)"},
     {k:"enquiries_update", l:"Update status & add call summaries on assigned enquiries"},
+    {k:"enquiries_dispatch", l:"View & dispatch samples for enquiries marked 'Samples to be Shared'"},
   ]},
   {key:"settings", label:"⚙️ Settings",    perms:[
     {k:"settings_products", l:"Products, categories & pack sizes"},
@@ -603,7 +604,7 @@ const userHasPerm=(roles,permissions,perm)=>{
     // Fall back to role-based check
     const rolePermsMap={
       admin:["batches_view","batches_issue","batches_qc","complaints_view_all","complaints_add","complaints_respond","rd_view","rd_edit","calc_tools","shade_submit","shade_approve","bom_view","bom_edit","tasks_own","tasks_assign","stock_view","stock_consume","stock_manage","testimonials","settings_products","settings_advanced"],
-      issuer:["batches_view","batches_issue","bom_view","bom_edit","complaints_view_all","tasks_own","stock_view","stock_consume","settings_products","calc_tools","shade_approve"],
+      issuer:["batches_view","batches_issue","bom_view","bom_edit","complaints_view_all","tasks_own","stock_view","stock_consume","settings_products","calc_tools","shade_approve","enquiries_dispatch"],
       qc:["batches_view","batches_qc","rd_view","rd_edit","calc_tools","shade_submit","complaints_view_all","complaints_respond","tasks_own","settings_advanced"],
       sales:["complaints_add","complaints_view_all","tasks_own","testimonials","enquiries_update"],
       store:["stock_view","stock_consume","tasks_own"],
@@ -629,7 +630,7 @@ const CAN_SEE = {
   stock:    ["admin","store","qc","issuer"],
   users:    ["admin"],
   settings: ["admin","issuer","qc"],
-  enquiries:["admin","sales","ho"]
+  enquiries:["admin","sales","ho","issuer"]
 };
 
 // Default product catalogue — admin can override via Settings tab
@@ -2456,6 +2457,7 @@ function EnquiryCard({e,onClick,onDelete,isAdmin,allProfiles={}}){
       </div>
       <div style={{display:"flex",gap:"6px",alignItems:"center",flexShrink:0}}>
         <Bdg label={e.status} color={sc}/>
+        {e.status==="Samples to be Shared"&&(e.sampleDispatched?<Bdg label="📦 Dispatched" color="#22c55e"/>:<Bdg label="⏳ Awaiting Dispatch" color="#f59e0b"/>)}
         {isAdmin&&<button onClick={ev=>{ev.stopPropagation();onDelete(e.id)}} style={{background:"none",border:"none",color:"#334155",fontSize:"15px",padding:"2px 4px",cursor:"pointer"}}>🗑</button>}
       </div>
     </div>
@@ -2469,7 +2471,7 @@ function EnquiryCard({e,onClick,onDelete,isAdmin,allProfiles={}}){
   </div>;
 }
 
-function EnquiryDetail({entry,onClose,canUpdate,isAdmin,allProfiles={},showToast,salesmen}){
+function EnquiryDetail({entry,onClose,canUpdate,canDispatch,isAdmin,allProfiles={},showToast,salesmen}){
   const [live,setLive]=useState(entry);
   const [newStatus,setNewStatus]=useState(entry.status);
   const [rejReason,setRejReason]=useState(entry.rejectionReason||"");
@@ -2477,12 +2479,38 @@ function EnquiryDetail({entry,onClose,canUpdate,isAdmin,allProfiles={},showToast
   const [existingCustomerProducts,setExistingCustomerProducts]=useState(entry.existingCustomerProducts||"");
   const [callForm,setCallForm]=useState({date:today(),summary:""});
   const [showCallForm,setShowCallForm]=useState(false);
+  const [dispatchForm,setDispatchForm]=useState({date:today(),notes:""});
+  const [showDispatchForm,setShowDispatchForm]=useState(false);
   const [saving,setSaving]=useState(false);
 
   useEffect(()=>{
     const unsub=C("enquiries").doc(entry.id).onSnapshot(snap=>{ if(snap.exists)setLive({id:snap.id,...snap.data()}); });
     return unsub;
   },[entry.id]);
+
+  const markSampleDispatched=async()=>{
+    setSaving(true);
+    try{
+      await C("enquiries").doc(entry.id).update({
+        sampleDispatched:true,
+        sampleDispatchedDate:dispatchForm.date,
+        sampleDispatchedBy:entry._currentUserEmail||"",
+        sampleDispatchNotes:dispatchForm.notes,
+        updatedAt:ts()
+      });
+      if(live.assignedTo){
+        await C("notifications").add({
+          assignedTo:live.assignedTo,
+          title:"📦 Sample dispatched: "+live.customerName,
+          message:"Sample dispatched on "+dispatchForm.date+(dispatchForm.notes?" — "+dispatchForm.notes:"")+". Follow up with the customer.",
+          type:"sample_dispatched",read:false,_createdAt:ts()
+        });
+      }
+      showToast("Marked as dispatched ✓ — salesman notified");
+      setShowDispatchForm(false);
+    }catch(e){showToast("Error: "+e.message,"error");}
+    setSaving(false);
+  };
 
   const updateStatus=async()=>{
     if(newStatus==="Rejected"&&!rejReason.trim())return showToast("Please give a reason for rejection","error");
@@ -2491,12 +2519,18 @@ function EnquiryDetail({entry,onClose,canUpdate,isAdmin,allProfiles={},showToast
     }
     setSaving(true);
     try{
+      const who=entry._currentUserEmail||"";
+      // _createdAt-style serverTimestamp() can't be used inside an array element (Firestore
+      // restriction — same issue fixed earlier for call summaries), so use a plain ISO string.
+      const historyEntry={status:newStatus,by:who,date:new Date().toISOString(),id:newId()};
       await C("enquiries").doc(entry.id).update({
         status:newStatus,
         rejectionReason:newStatus==="Rejected"?rejReason:"",
         existingCustomerName:newStatus==="Already Buying from Our Customer"?existingCustomerName:"",
         existingCustomerProducts:newStatus==="Already Buying from Our Customer"?existingCustomerProducts:"",
-        updatedAt:ts()
+        updatedAt:ts(),
+        updatedBy:who,
+        statusHistory:[...(live.statusHistory||[]),historyEntry]
       });
       showToast("Status updated ✓");
     }catch(e){showToast("Error: "+e.message,"error");}
@@ -2532,7 +2566,7 @@ function EnquiryDetail({entry,onClose,canUpdate,isAdmin,allProfiles={},showToast
       </div>
     </div>
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginBottom:"14px"}}>
-      {[["Product Interest",live.productInterest],["Source",live.source],["Assigned To",allProfiles[live.assignedTo]?.displayName||live.assignedTo],["Enquiry Date",live.enquiryDate]].map(([l,v])=>v&&<div key={l} style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"7px",padding:"8px 12px"}}>
+      {[["Product Interest",live.productInterest],["Source",live.source],["Assigned To",allProfiles[live.assignedTo]?.displayName||live.assignedTo],["Enquiry Date",live.enquiryDate],...(live.updatedBy?[["Status Last Updated By",allProfiles[live.updatedBy]?.displayName||live.updatedBy.split("@")[0]]]:[])].map(([l,v])=>v&&<div key={l} style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"7px",padding:"8px 12px"}}>
         <div style={{fontSize:"10px",color:"#475569",fontWeight:"600",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:"2px"}}>{l}</div>
         <div style={{fontSize:"13px",color:"#94a3b8",fontWeight:"600"}}>{v}</div>
       </div>)}
@@ -2544,6 +2578,32 @@ function EnquiryDetail({entry,onClose,canUpdate,isAdmin,allProfiles={},showToast
     {live.status==="Already Buying from Our Customer"&&live.existingCustomerName&&<div style={{background:"#0c1a2e",border:"1px solid #06b6d440",borderRadius:"10px",padding:"10px 14px",marginBottom:"14px"}}>
       <div style={{fontSize:"10px",fontWeight:"700",color:"#22d3ee",textTransform:"uppercase",letterSpacing:"0.09em",marginBottom:"4px"}}>🔵 Already Buying From Our Customer</div>
       <div style={{fontSize:"13px",color:"#cbd5e1",lineHeight:1.6}}><strong>{live.existingCustomerName}</strong> — {live.existingCustomerProducts}</div>
+    </div>}
+
+    {/* Sample Dispatch — visible whenever status is "Samples to be Shared", or once already dispatched */}
+    {(live.status==="Samples to be Shared"||live.sampleDispatched)&&<div style={{border:`1px solid ${live.sampleDispatched?"#16653440":"#3b82f660"}`,background:live.sampleDispatched?"#052e16":"#0c1a2e",borderRadius:"10px",padding:"12px 14px",marginBottom:"14px"}}>
+      {live.sampleDispatched
+        ?<div>
+          <div style={{fontSize:"11px",fontWeight:"700",color:"#4ade80",marginBottom:"4px"}}>✅ Sample Dispatched</div>
+          <div style={{fontSize:"13px",color:"#86efac"}}>Dispatched on <strong>{live.sampleDispatchedDate}</strong> by {allProfiles[live.sampleDispatchedBy]?.displayName||live.sampleDispatchedBy?.split("@")[0]}{live.sampleDispatchNotes?` — ${live.sampleDispatchNotes}`:""}</div>
+        </div>
+        :<div>
+          <div style={{fontSize:"11px",fontWeight:"700",color:"#93c5fd",marginBottom:"8px"}}>📦 Sample Pending Dispatch</div>
+          {canDispatch
+            ?(showDispatchForm
+              ?<div>
+                <Grid2>
+                  <Field label="Dispatch Date"><input type="date" style={inp} value={dispatchForm.date} onChange={e=>setDispatchForm({...dispatchForm,date:e.target.value})}/></Field>
+                  <Field label="Courier / Tracking Notes"><input style={inp} value={dispatchForm.notes} onChange={e=>setDispatchForm({...dispatchForm,notes:e.target.value})} placeholder="e.g. Via Bluedart, AWB123456"/></Field>
+                </Grid2>
+                <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
+                  <Btn label="Cancel" onClick={()=>setShowDispatchForm(false)} outline color="#475569" small/>
+                  <Btn label={saving?"Saving…":"✓ Confirm Dispatched"} onClick={markSampleDispatched} disabled={saving} color="#3b82f6" small/>
+                </div>
+              </div>
+              :<Btn label="📦 Mark Sample Dispatched" onClick={()=>setShowDispatchForm(true)} color="#3b82f6" small/>)
+            :<div style={{fontSize:"12.5px",color:"#64748b"}}>Awaiting Issuer/HO to dispatch the sample.</div>}
+        </div>}
     </div>}
 
     {/* Status update */}
@@ -2568,8 +2628,17 @@ function EnquiryDetail({entry,onClose,canUpdate,isAdmin,allProfiles={},showToast
       </div>}
     </div>}
 
-    {/* Call summaries */}
-    <div style={{borderTop:"1px solid #1e293b",paddingTop:"14px"}}>
+    {/* Status History — who changed status and when, for accountability */}
+    {!(canDispatch&&!canUpdate)&&(live.statusHistory||[]).length>0&&<div style={{border:"1px solid #1e293b",borderRadius:"10px",padding:"10px 14px",marginBottom:"14px"}}>
+      <div style={{fontSize:"11px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.09em",marginBottom:"8px"}}>🕒 Status History</div>
+      {live.statusHistory.slice().reverse().map(h=><div key={h.id} style={{display:"flex",justifyContent:"space-between",fontSize:"12px",padding:"4px 0",borderTop:"1px solid #0f172a"}}>
+        <span><Bdg label={h.status} color={ENQUIRY_STATUS_COLORS[h.status]||"#94a3b8"} small/> <span style={{color:"#64748b",marginLeft:"6px"}}>by {allProfiles[h.by]?.displayName||h.by?.split("@")[0]||"—"}</span></span>
+        <span style={{color:"#334155"}}>{h.date?new Date(h.date).toLocaleString("en-IN",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}):""}</span>
+      </div>)}
+    </div>}
+
+    {/* Call summaries — hidden for dispatch-only access (e.g. Issuer), who don't need customer call history */}
+    {!(canDispatch&&!canUpdate)&&<div style={{borderTop:"1px solid #1e293b",paddingTop:"14px"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"10px"}}>
         <span style={{fontSize:"11px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.09em"}}>📞 Call Summary Log ({calls.length})</span>
         {canUpdate&&<button onClick={()=>setShowCallForm(v=>!v)} style={{background:"#1e293b",border:"1px solid #334155",borderRadius:"7px",padding:"5px 12px",color:"#93c5fd",fontSize:"11.5px",fontWeight:"700",cursor:"pointer"}}>
@@ -2593,7 +2662,7 @@ function EnquiryDetail({entry,onClose,canUpdate,isAdmin,allProfiles={},showToast
         <div style={{fontSize:"11px",color:"#475569",marginBottom:"4px"}}>📅 {c.date}{c.by?` · ${allProfiles[c.by]?.displayName||c.by.split("@")[0]}`:""}</div>
         <div style={{fontSize:"13px",color:"#94a3b8",lineHeight:1.6,whiteSpace:"pre-wrap"}}>{c.summary}</div>
       </div>)}
-    </div>
+    </div>}
   </div>;
 }
 
@@ -2606,6 +2675,10 @@ function EnquiriesTab({role,roles,user,showToast,allProfiles={},allRoles={},isAd
   const canCreate=isAdmin||hp("enquiries_create");
   const canViewAll=isAdmin||hp("enquiries_view_all");
   const canUpdateAny=isAdmin||hp("enquiries_update");
+  const canDispatch=isAdmin||hp("enquiries_dispatch");
+  // "Dispatch only" = can see samples pending dispatch, but has no broader enquiry access
+  // (e.g. Issuer role) — restricted to just what they need to do their job.
+  const dispatchOnly=canDispatch&&!canViewAll&&!canUpdateAny;
 
   const salesmen=Object.keys(allProfiles).filter(email=>(allRoles[email]||[]).includes("sales"));
 
@@ -2615,9 +2688,27 @@ function EnquiriesTab({role,roles,user,showToast,allProfiles={},allRoles={},isAd
   const [saving,setSaving]=useState(false);
 
   useEffect(()=>{
-    // Restrict the QUERY itself (not just client-side filtering) for salesmen who can only
-    // see enquiries assigned to them — otherwise their browser would still receive every
-    // customer's data over the wire via the Firestore listener, just hidden in the UI.
+    // Restrict the QUERY itself (not just client-side filtering) for users who can only see
+    // a subset — otherwise their browser would still receive every customer's data over the
+    // wire via the Firestore listener, just hidden in the UI.
+    if(dispatchOnly){
+      // Issuer-style access: only enquiries currently awaiting sample dispatch, plus a short
+      // recent history of ones they've already dispatched (for reference/tracking lookups).
+      let pendingDocs=[],dispatchedDocs=[];
+      const merge=()=>{
+        const map={};
+        [...pendingDocs,...dispatchedDocs].forEach(d=>{map[d.id]=d;});
+        setEnquiries(Object.values(map).sort((a,b)=>(b._createdAt?.seconds||0)-(a._createdAt?.seconds||0)));
+        setLoading(false);
+      };
+      const u1=C("enquiries").where("status","==","Samples to be Shared").onSnapshot(snap=>{
+        pendingDocs=snap.docs.map(d=>({id:d.id,...d.data()}));merge();
+      },()=>{});
+      const u2=C("enquiries").where("sampleDispatched","==",true).onSnapshot(snap=>{
+        dispatchedDocs=snap.docs.map(d=>({id:d.id,...d.data()})).slice(0,20);merge();
+      },()=>{});
+      return ()=>{u1();u2();};
+    }
     const base=canViewAll
       ? C("enquiries").orderBy("_createdAt","desc")
       : C("enquiries").where("assignedTo","==",user?.email||"__none__");
@@ -2637,7 +2728,7 @@ function EnquiriesTab({role,roles,user,showToast,allProfiles={},allRoles={},isAd
       }
     );
     return unsub;
-  },[canViewAll,user?.email]);
+  },[canViewAll,dispatchOnly,user?.email]);
 
   const visible=enquiries; // already server-restricted to assigned-only when !canViewAll
   const filtered=visible.filter(e=>statusFilter==="All"||e.status===statusFilter);
@@ -2647,7 +2738,10 @@ function EnquiriesTab({role,roles,user,showToast,allProfiles={},allRoles={},isAd
     if(!form.assignedTo)return showToast("Please assign to a salesman","error");
     setSaving(true);
     try{
-      await C("enquiries").add({...form,_createdAt:ts(),createdBy:user?.email});
+      await C("enquiries").add({
+        ...form,_createdAt:ts(),createdBy:user?.email,
+        statusHistory:[{status:form.status,by:user?.email||"",date:new Date().toISOString(),id:newId()}]
+      });
       await C("notifications").add({
         assignedTo:form.assignedTo,
         title:"📞 New enquiry assigned: "+form.customerName,
@@ -2712,7 +2806,7 @@ function EnquiriesTab({role,roles,user,showToast,allProfiles={},allRoles={},isAd
       </div>
     </div>}
 
-    {active&&<EnquiryDetail entry={{...active,_currentUserEmail:user?.email}} onClose={()=>setActiveId(null)} canUpdate={isAdmin||(canUpdateAny&&active.assignedTo===user?.email)||(canViewAll)} isAdmin={isAdmin} allProfiles={allProfiles} showToast={showToast} salesmen={salesmen}/>}
+    {active&&<EnquiryDetail entry={{...active,_currentUserEmail:user?.email}} onClose={()=>setActiveId(null)} canUpdate={isAdmin||(canUpdateAny&&active.assignedTo===user?.email)||(canViewAll)} canDispatch={canDispatch} isAdmin={isAdmin} allProfiles={allProfiles} showToast={showToast} salesmen={salesmen}/>}
 
     {loading?<div style={{textAlign:"center",padding:"40px",color:"#475569"}}>Loading…</div>
     :filtered.length===0?<div style={{textAlign:"center",padding:"50px 0"}}><div style={{fontSize:"36px",marginBottom:"10px"}}>📞</div><div style={{fontSize:"13px",color:"#475569"}}>No enquiries{statusFilter!=="All"?" with this status":""}.</div></div>
@@ -7800,7 +7894,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
       bom:hp("bom_view"),
       tasks:hp("tasks_own"),
       testimonials:hp("testimonials"),
-      enquiries:hp("enquiries_create")||hp("enquiries_view_all")||hp("enquiries_update"),
+      enquiries:hp("enquiries_create")||hp("enquiries_view_all")||hp("enquiries_update")||hp("enquiries_dispatch"),
       stock:hp("stock_view"),
       users:isAdmin,
       settings:hp("settings_products")||hp("settings_advanced"),
