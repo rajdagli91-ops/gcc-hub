@@ -297,8 +297,8 @@ function printProductionSheet(bom, batchSize, batchNo, millNo, fillingDate, char
         </tr>
         ${qcParams.length
           ?qcParams.map(p=>`<tr>
-            <td style="border:1px solid #999;padding:${DR.qcPad}px 6px;font-size:${DR.qcFont}px">${p.name||""}</td>
-            <td style="border:1px solid #999;padding:${DR.qcPad}px 6px;font-size:${DR.qcFont}px;text-align:center">${p.standard||""}</td>
+            <td style="border:1px solid #999;padding:${DR.qcPad}px 6px;font-size:${DR.qcFont+2}px">${p.name||""}</td>
+            <td style="border:1px solid #999;padding:${DR.qcPad}px 6px;font-size:${DR.qcFont+2}px;text-align:center;font-weight:600">${p.standard||""}</td>
             <td style="border:1px solid #999;padding:${DR.qcPad}px 6px;min-width:70px">&nbsp;</td>
           </tr>`).join("")
           :"<tr><td colspan='3' style='color:#999;font-style:italic;border:1px solid #999;padding:7px 5px'>No QC parameters defined</td></tr>"
