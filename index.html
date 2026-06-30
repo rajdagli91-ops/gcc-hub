@@ -434,6 +434,99 @@ ${stepRows?`<table style="margin-bottom:8pt">
   const w=window.open("","_blank");
   w.document.write(html);w.document.close();
 }
+
+function printRMTestSheet(entry){
+  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>RM Test Sheet — ${entry.materialName}</title>
+<style>
+  *{box-sizing:border-box}
+  body{font-family:Arial,sans-serif;margin:0;padding:8pt 10pt;font-size:11pt;}
+  @page{size:210mm 297mm portrait;margin:8mm;}
+  table{border-collapse:collapse;width:100%}
+  .co-name{font-size:20pt;font-weight:800;letter-spacing:1px}
+  .sheet-title{font-size:15pt;font-weight:700}
+  .section-head{background:#0D3569;color:#fff;font-weight:700;padding:5pt 8pt;font-size:10.5pt;text-transform:uppercase;letter-spacing:0.04em}
+</style></head>
+<body>
+<table>
+  <tr>
+    <td style="width:50%"><span class="co-name">VEEBEE</span></td>
+    <td style="width:50%;text-align:right"><span class="sheet-title">RAW MATERIAL TEST SHEET</span></td>
+  </tr>
+</table>
+<table style="border:2px solid #000;margin:6pt 0">
+  <tr>
+    <td style="width:60%;padding:6pt 10pt;border-right:1px solid #999">
+      <div style="font-size:9pt;color:#666">MATERIAL</div>
+      <div style="font-size:13pt;font-weight:700">${entry.materialName||"—"}</div>
+    </td>
+    <td style="width:40%;padding:6pt 10pt">
+      <div style="font-size:9pt;color:#666">VENDOR / SUPPLIER</div>
+      <div style="font-size:13pt;font-weight:700">${entry.vendorName||"—"}</div>
+    </td>
+  </tr>
+</table>
+<table style="margin-bottom:6pt">
+  <tr>
+    <td style="border:1px solid #999;padding:5pt 8pt;font-size:9.5pt"><b>Category:</b> ${entry.category||"—"}</td>
+    <td style="border:1px solid #999;padding:5pt 8pt;font-size:9.5pt"><b>Batch/Lot No:</b> ${entry.batchNo||entry.lotNo||"—"}</td>
+    <td style="border:1px solid #999;padding:5pt 8pt;font-size:9.5pt"><b>Qty Received:</b> ${entry.quantityReceived||"—"}</td>
+  </tr>
+  <tr>
+    <td style="border:1px solid #999;padding:5pt 8pt;font-size:9.5pt"><b>Date Received:</b> ${entry.dateReceived||"—"}</td>
+    <td style="border:1px solid #999;padding:5pt 8pt;font-size:9.5pt" colspan="2"><b>Assigned To:</b> ${entry.assignedTo?entry.assignedTo.split("@")[0]:"_______________"}</td>
+  </tr>
+</table>
+
+<table style="margin-bottom:8pt">
+  <tr><td class="section-head">Specification — What to Test</td></tr>
+  <tr><td style="border:1px solid #999;padding:10pt;font-size:10.5pt;min-height:50pt">${(entry.specsToTest||"").replace(/\n/g,"<br>")||"<span style='color:#999'>— No specification provided —</span>"}</td></tr>
+</table>
+
+<table style="margin-bottom:8pt">
+  <tr><td colspan="2" class="section-head">QC — Tests Performed &amp; Results ${entry.testsPerformed||entry.observations?'':'<span style="font-weight:400;text-transform:none;font-size:8.5pt">(to be filled by QC)</span>'}</td></tr>
+  <tr>
+    <td style="border:1px solid #999;padding:5pt 8pt;font-size:9.5pt;width:50%;vertical-align:top"><b>Tests Performed</b><br>${entry.testsPerformed?('<div style="font-size:10pt;margin-top:4pt;white-space:pre-wrap">'+entry.testsPerformed.replace(/\n/g,"<br>")+'</div>'):'<div style="height:60pt"></div>'}</td>
+    <td style="border:1px solid #999;padding:5pt 8pt;font-size:9.5pt;width:50%;vertical-align:top"><b>Results / Observed Values</b><br>${entry.observations?('<div style="font-size:10pt;margin-top:4pt;white-space:pre-wrap">'+entry.observations.replace(/\n/g,"<br>")+'</div>'):'<div style="height:60pt"></div>'}</td>
+  </tr>
+</table>
+
+<table style="margin-bottom:10pt">
+  <tr><td class="section-head">Result</td></tr>
+  <tr><td style="border:1px solid #999;padding:8pt">
+    ${["Pass","Fail","Conditional Pass","Retest Required"].map(o=>(entry.testResult===o?'☑ <b>'+o+'</b>':'☐ '+o)).join('&nbsp;&nbsp;&nbsp;&nbsp;')}
+  </td></tr>
+</table>
+
+<table style="margin-bottom:10pt">
+  <tr><td class="section-head">Remarks / Action Taken</td></tr>
+  <tr><td style="border:1px solid #999;padding:10pt;${entry.remarks?'':'height:40pt'}">${entry.remarks?entry.remarks.replace(/\n/g,"<br>"):''}</td></tr>
+</table>
+
+<table style="margin-top:20pt">
+  <tr>
+    <td style="width:50%;border-top:1px solid #000;padding-top:4pt;font-size:10pt">Tested By &amp; Date${entry.testedBy?(': <b>'+entry.testedBy+'</b>'+(entry.dateReceived?' · '+entry.dateReceived:'')):''}</td>
+    <td style="width:50%;border-top:1px solid #000;padding-top:4pt;font-size:10pt">Checked / Approved By</td>
+  </tr>
+</table>
+${(entry.retests||[]).length?`<table style="margin-top:14pt">
+  <tr><td colspan="3" class="section-head">Retest History (${entry.retests.length})</td></tr>
+  <tr>
+    <th style="border:1px solid #999;padding:5pt;background:#d0d0d0;font-size:9pt">#</th>
+    <th style="border:1px solid #999;padding:5pt;background:#d0d0d0;font-size:9pt">Tested By / Date</th>
+    <th style="border:1px solid #999;padding:5pt;background:#d0d0d0;font-size:9pt">Results &amp; New Status</th>
+  </tr>
+  ${entry.retests.map((r,i)=>`<tr>
+    <td style="border:1px solid #999;padding:5pt;text-align:center;font-size:9pt">${i+1}</td>
+    <td style="border:1px solid #999;padding:5pt;font-size:9pt">${r.testedBy||""}${r.date?'<br>'+r.date:''}</td>
+    <td style="border:1px solid #999;padding:5pt;font-size:9pt">${(r.results||r.testsPerformed||"").replace(/\n/g,"<br>")}<br><b>Result: ${r.newResult||""}</b>${r.remarks?'<br><i>'+r.remarks+'</i>':''}</td>
+  </tr>`).join("")}
+</table>`:""}
+<div style="margin-top:10pt;font-size:8.5pt;color:#888">Printed: ${today()}</div>
+<script>window.onload=()=>{setTimeout(()=>{window.focus();window.print();},400);}<\/script>
+</body></html>`;
+  const w=window.open("","_blank");
+  w.document.write(html);w.document.close();
+}
 </script>
 <script type="text/babel">
 const {useState,useEffect,useRef} = React;
@@ -444,8 +537,8 @@ const db = window._db;
 // CONSTANTS
 // ══════════════════════════════════════════════════════════
 const ADMIN_EMAILS = ["r-and-d-gcc@gmail.com","raj@gujaratcolours.com","rajdagli91@gmail.com","vijayddagli@gmail.com"];
-const ROLE_LABELS = {admin:"🔑 Admin",issuer:"📦 Issuer",qc:"🔬 QC",sales:"💼 Sales",store:"🏪 Store"};
-const ROLE_COLORS = {admin:"#3b82f6",issuer:"#f59e0b",qc:"#22c55e",sales:"#a855f7",store:"#38bdf8"};
+const ROLE_LABELS = {admin:"🔑 Admin",issuer:"📦 Issuer",qc:"🔬 QC",sales:"💼 Sales",store:"🏪 Store",ho:"📞 HO"};
+const ROLE_COLORS = {admin:"#3b82f6",issuer:"#f59e0b",qc:"#22c55e",sales:"#a855f7",store:"#38bdf8",ho:"#ec4899"};
 
 // ── Granular Permissions System ──
 const PERMISSION_GROUPS=[
@@ -482,6 +575,11 @@ const PERMISSION_GROUPS=[
   {key:"testimonials",label:"⭐ Testimonials",perms:[
     {k:"testimonials",l:"View & manage testimonials"},
   ]},
+  {key:"enquiries",label:"📞 Enquiries",perms:[
+    {k:"enquiries_create", l:"Create new enquiries & assign to salesman"},
+    {k:"enquiries_view_all", l:"View all enquiries (not just assigned to me)"},
+    {k:"enquiries_update", l:"Update status & add call summaries on assigned enquiries"},
+  ]},
   {key:"settings", label:"⚙️ Settings",    perms:[
     {k:"settings_products", l:"Products, categories & pack sizes"},
     {k:"settings_advanced", l:"Units, paint types, RM categories"},
@@ -507,8 +605,9 @@ const userHasPerm=(roles,permissions,perm)=>{
       admin:["batches_view","batches_issue","batches_qc","complaints_view_all","complaints_add","complaints_respond","rd_view","rd_edit","calc_tools","shade_submit","shade_approve","bom_view","bom_edit","tasks_own","tasks_assign","stock_view","stock_consume","stock_manage","testimonials","settings_products","settings_advanced"],
       issuer:["batches_view","batches_issue","bom_view","bom_edit","complaints_view_all","tasks_own","stock_view","stock_consume","settings_products","calc_tools","shade_approve"],
       qc:["batches_view","batches_qc","rd_view","rd_edit","calc_tools","shade_submit","complaints_view_all","complaints_respond","tasks_own","settings_advanced"],
-      sales:["complaints_add","complaints_view_all","tasks_own","testimonials"],
+      sales:["complaints_add","complaints_view_all","tasks_own","testimonials","enquiries_update"],
       store:["stock_view","stock_consume","tasks_own"],
+      ho:["enquiries_create","enquiries_view_all","tasks_own"],
     };
     return (roles||[]).some(r=>r==="admin"||(rolePermsMap[r]||[]).includes(perm));
   }
@@ -520,16 +619,17 @@ const userHasPerm=(roles,permissions,perm)=>{
 
 // Tab access per role
 const CAN_SEE = {
-  dashboard:["admin","issuer","qc","sales","store"],
+  dashboard:["admin","issuer","qc","sales","store","ho"],
   batches:  ["admin","issuer","qc"],
   complaints:["admin","issuer","qc","sales"],
   rd:       ["admin","qc"],
   bom:      ["admin","issuer","qc"],
-  tasks:    ["admin","issuer","qc","sales","store"],
+  tasks:    ["admin","issuer","qc","sales","store","ho"],
   testimonials:["admin","sales"],
   stock:    ["admin","store","qc","issuer"],
   users:    ["admin"],
-  settings: ["admin","issuer","qc"]
+  settings: ["admin","issuer","qc"],
+  enquiries:["admin","sales","ho"]
 };
 
 // Default product catalogue — admin can override via Settings tab
@@ -1996,9 +2096,10 @@ function ProjectCard({p,onClick,onDelete,onEdit,isAdmin}){
 }
 
 // ══ RM MODULE
-function RMCard({r,onClick,onDelete,onEdit,isAdmin}){
+function RMCard({r,onClick,onDelete,onEdit,isAdmin,allProfiles={}}){
   const rc=RESULT_COLORS[r.testResult]||"#94a3b8";
   const retestCount=(r.retests||[]).length;
+  const awaitingTest=!r.testsPerformed&&!r.observations;
   return <div onClick={onClick} onMouseEnter={e=>e.currentTarget.style.background="#0f1f35"} onMouseLeave={e=>e.currentTarget.style.background="#0f172a"}
     style={{background:"#0f172a",border:"1px solid #1e293b",borderLeft:`3px solid ${rc}`,borderRadius:"12px",padding:"15px 20px",cursor:"pointer",transition:"background 0.15s",boxShadow:"0 2px 10px rgba(0,0,0,0.3)",marginBottom:"10px"}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:"8px"}}>
@@ -2008,20 +2109,24 @@ function RMCard({r,onClick,onDelete,onEdit,isAdmin}){
       </div>
       <div style={{display:"flex",gap:"6px",alignItems:"center",flexShrink:0}}>
         {r.testResult==="Retest Required"&&<Bdg label="⚠️ Retest" color="#f97316" small/>}
+        {awaitingTest&&r.testResult==="Pending"&&<Bdg label="⏳ Awaiting QC" color="#a855f7" small/>}
         <Bdg label={r.testResult} color={rc}/>
+        <button onClick={e=>{e.stopPropagation();printRMTestSheet(r);}} style={{background:"#052e16",border:"1px solid #16653440",borderRadius:"6px",color:"#4ade80",cursor:"pointer",fontSize:"11.5px",fontWeight:"600",padding:"3px 10px"}}>🖨 Print</button>
         {isAdmin&&<button onClick={e=>{e.stopPropagation();onEdit(r)}} style={{background:"none",border:"1px solid #1e293b",borderRadius:"6px",color:"#475569",fontSize:"12px",padding:"2px 8px",cursor:"pointer"}}>✏️</button>}
         {isAdmin&&<button onClick={e=>{e.stopPropagation();onDelete(r.id)}} style={{background:"none",border:"none",color:"#334155",fontSize:"15px",padding:"2px 4px",cursor:"pointer"}}>🗑</button>}
       </div>
     </div>
+    {r.specsToTest&&<div style={{fontSize:"11.5px",color:"#94a3b8",background:"#0b1220",border:"1px solid #1e293b",borderRadius:"6px",padding:"6px 10px",marginBottom:"8px",fontStyle:"italic"}}>📋 {r.specsToTest}</div>}
     <div style={{display:"flex",gap:"10px",flexWrap:"wrap",alignItems:"center"}}>
       {r.dateReceived&&<span style={{fontSize:"11px",color:"#475569"}}>📦 {r.dateReceived}</span>}
       {r.testedBy&&<span style={{fontSize:"11px",color:"#475569"}}>🔬 {r.testedBy}</span>}
+      {r.assignedTo&&<span style={{fontSize:"10px",fontWeight:"700",color:"#fbbf24",background:"#fbbf2418",border:"1px solid #fbbf2430",padding:"2px 8px",borderRadius:"99px"}}>👤 {allProfiles[r.assignedTo]?.displayName||r.assignedTo.split("@")[0]}</span>}
       {retestCount>0&&<span style={{fontSize:"11px",color:"#f97316",background:"#f9731612",border:"1px solid #f9731625",borderRadius:"6px",padding:"2px 8px"}}>🔄 {retestCount} retest{retestCount!==1?"s":""}</span>}
     </div>
   </div>;
 }
 
-function RMDetailView({entry,showToast}){
+function RMDetailView({entry,showToast,allProfiles={}}){
   const [live,setLive]=useState(entry);
   const [showForm,setShowForm]=useState(false);
   const [saving,setSaving]=useState(false);
@@ -2029,6 +2134,11 @@ function RMDetailView({entry,showToast}){
   const [newResult,setNewResult]=useState(entry.testResult);
   const blank={date:today(),testedBy:"",testsPerformed:"",results:"",newResult:"Pass",remarks:""};
   const [retestForm,setRetestForm]=useState(blank);
+  // Initial test result form — used when this entry was created as a "to test" request
+  // (no original test logged yet), so QC can fill in the FIRST result, not a retest.
+  const blankInitial={date:today(),testedBy:"",testsPerformed:"",observations:"",testResult:"Pass",remarks:""};
+  const [initialForm,setInitialForm]=useState(blankInitial);
+  const [showInitialForm,setShowInitialForm]=useState(false);
 
   useEffect(()=>{
     const unsub=C("rm_tests").doc(entry.id).onSnapshot(snap=>{
@@ -2040,6 +2150,21 @@ function RMDetailView({entry,showToast}){
   const retests=live.retests||[];
   const rc=RESULT_COLORS[live.testResult]||"#94a3b8";
   const isRetest=live.testResult==="Retest Required";
+  const hasOriginalTest=!!(live.testsPerformed||live.observations);
+
+  const saveInitialTest=async()=>{
+    if(!initialForm.testsPerformed.trim()&&!initialForm.observations.trim())return showToast("Add tests performed or observations","error");
+    if(saving)return;setSaving(true);
+    try{
+      await C("rm_tests").doc(entry.id).update({
+        dateReceived:live.dateReceived||initialForm.date,
+        testedBy:initialForm.testedBy,testsPerformed:initialForm.testsPerformed,
+        observations:initialForm.observations,testResult:initialForm.testResult,remarks:initialForm.remarks
+      });
+      setShowInitialForm(false);showToast("Test result logged ✓");
+    }catch(e){showToast("Error","error");}
+    setSaving(false);
+  };
 
   const saveRetest=async()=>{
     if(!retestForm.results.trim()&&!retestForm.testsPerformed.trim())return showToast("Add results or tests performed","error");
@@ -2068,8 +2193,14 @@ function RMDetailView({entry,showToast}){
       <div style={{display:"flex",gap:"8px",alignItems:"center",flexShrink:0}}>
         {retests.length>0&&<Bdg label={`🔄 ${retests.length} Retest${retests.length!==1?"s":""}`} color="#f97316" small/>}
         <Bdg label={live.testResult} color={rc}/>
+        <button onClick={()=>printRMTestSheet(live)} style={{background:"#052e16",border:"1px solid #16653440",borderRadius:"6px",color:"#4ade80",cursor:"pointer",fontSize:"11.5px",fontWeight:"600",padding:"4px 10px"}}>🖨 Print</button>
       </div>
     </div>
+    {live.assignedTo&&<div style={{marginBottom:"10px"}}><span style={{fontSize:"11px",fontWeight:"700",color:"#fbbf24",background:"#fbbf2418",border:"1px solid #fbbf2430",padding:"3px 10px",borderRadius:"99px"}}>👤 Assigned to {allProfiles[live.assignedTo]?.displayName||live.assignedTo.split("@")[0]}</span></div>}
+    {live.specsToTest&&<div style={{background:"#0c1a2e",border:"1px solid #2563eb40",borderRadius:"10px",padding:"10px 14px",marginBottom:"12px"}}>
+      <div style={{fontSize:"10px",fontWeight:"700",color:"#93c5fd",textTransform:"uppercase",letterSpacing:"0.09em",marginBottom:"4px"}}>📋 Specification — What to Test</div>
+      <div style={{fontSize:"13px",color:"#cbd5e1",lineHeight:1.6,whiteSpace:"pre-wrap"}}>{live.specsToTest}</div>
+    </div>}
     {isRetest&&<div style={{background:"#431407",border:"1px solid #ea580c50",borderRadius:"10px",padding:"10px 14px",marginBottom:"12px",display:"flex",alignItems:"center",gap:"8px"}}>
       <span>⚠️</span><div><div style={{fontSize:"12px",fontWeight:"700",color:"#f97316"}}>Retest Required</div><div style={{fontSize:"11.5px",color:"#c2410c"}}>This sample needs retesting.</div></div>
     </div>}
@@ -2079,7 +2210,7 @@ function RMDetailView({entry,showToast}){
         <div style={{fontSize:"13px",color:"#94a3b8",fontWeight:"600"}}>{v}</div>
       </div>)}
     </div>
-    <div style={{border:"1px solid #1e293b",borderRadius:"10px",marginBottom:"12px",overflow:"hidden"}}>
+    {hasOriginalTest&&<div style={{border:"1px solid #1e293b",borderRadius:"10px",marginBottom:"12px",overflow:"hidden"}}>
       <div style={{background:"#0b1220",padding:"9px 14px",fontSize:"11px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.09em",borderBottom:"1px solid #1e293b"}}>🧫 Original Test</div>
       <div style={{padding:"12px 14px"}}>
         {[["Tests Performed",live.testsPerformed],["Observations / Results",live.observations],["Remarks",live.remarks]].map(([l,v])=>v&&<div key={l} style={{marginBottom:"8px"}}>
@@ -2087,7 +2218,31 @@ function RMDetailView({entry,showToast}){
           <div style={{fontSize:"13px",color:"#94a3b8",lineHeight:1.6,whiteSpace:"pre-wrap"}}>{v}</div>
         </div>)}
       </div>
-    </div>
+    </div>}
+    {!hasOriginalTest&&<div style={{border:"1px solid #7c3aed40",borderRadius:"10px",marginBottom:"12px",overflow:"hidden",background:"#0a0f1e"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px"}}>
+        <span style={{fontSize:"11px",fontWeight:"700",color:"#a855f7",textTransform:"uppercase",letterSpacing:"0.09em"}}>⏳ Awaiting Test Result</span>
+        <button onClick={()=>setShowInitialForm(v=>!v)} style={{background:"#3b0764",border:"1px solid #7c3aed",borderRadius:"7px",padding:"5px 12px",color:"#c4b5fd",fontSize:"11.5px",fontWeight:"700",cursor:"pointer"}}>
+          {showInitialForm?"▲ Cancel":"+ Log Test Result"}</button>
+      </div>
+      {!showInitialForm&&<div style={{padding:"0 14px 12px",fontSize:"12px",color:"#475569"}}>No test result logged yet. Print the sheet above, perform the test, then click "+ Log Test Result" to record findings.</div>}
+      {showInitialForm&&<div style={{padding:"0 14px 14px"}}>
+        <Grid3>
+          <Field label="Date"><input type="date" style={inp} value={initialForm.date} onChange={e=>setInitialForm({...initialForm,date:e.target.value})}/></Field>
+          <Field label="Tested By"><input style={inp} value={initialForm.testedBy} onChange={e=>setInitialForm({...initialForm,testedBy:e.target.value})}/></Field>
+          <Field label="Result"><select style={{...sl,borderColor:(RESULT_COLORS[initialForm.testResult]||"#1e293b")+"60"}} value={initialForm.testResult} onChange={e=>setInitialForm({...initialForm,testResult:e.target.value})}>{TEST_RESULTS.map(r=><option key={r}>{r}</option>)}</select></Field>
+        </Grid3>
+        <Grid2>
+          <Field label="Tests Performed"><textarea style={{...ta,minHeight:"70px"}} value={initialForm.testsPerformed} onChange={e=>setInitialForm({...initialForm,testsPerformed:e.target.value})}/></Field>
+          <Field label="Observations / Results"><textarea style={{...ta,minHeight:"70px"}} value={initialForm.observations} onChange={e=>setInitialForm({...initialForm,observations:e.target.value})}/></Field>
+        </Grid2>
+        <Field label="Remarks"><textarea style={{...ta,minHeight:"50px"}} value={initialForm.remarks} onChange={e=>setInitialForm({...initialForm,remarks:e.target.value})}/></Field>
+        <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
+          <Btn label="Cancel" onClick={()=>setShowInitialForm(false)} outline color="#475569" small/>
+          <Btn label={saving?"Saving…":"Save Result"} onClick={saveInitialTest} disabled={saving} color="#7c3aed" small/>
+        </div>
+      </div>}
+    </div>}
     {/* Retests */}
     <div style={{borderTop:"1px solid #1e293b",paddingTop:"14px"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"10px"}}>
@@ -2263,6 +2418,260 @@ function DashboardTab({role,user,onNavigate}){
 // ══════════════════════════════════════════════════════════
 // TESTIMONIALS MODULE
 // ══════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════
+// ENQUIRIES — HO logs enquiries, assigns to salesman, salesman tracks status + call summaries
+// ══════════════════════════════════════════════════════════
+const ENQUIRY_STATUSES=["New","Samples to be Shared","Price List Shared","Approved & Form Filled","Rejected"];
+const ENQUIRY_STATUS_COLORS={"New":"#64748b","Samples to be Shared":"#3b82f6","Price List Shared":"#f59e0b","Approved & Form Filled":"#22c55e","Rejected":"#ef4444"};
+
+function EnquiryCard({e,onClick,onDelete,isAdmin,allProfiles={}}){
+  const sc=ENQUIRY_STATUS_COLORS[e.status]||"#94a3b8";
+  const lastCall=(e.callSummaries||[]).slice(-1)[0];
+  return <div onClick={onClick} onMouseEnter={ev=>ev.currentTarget.style.background="#0f1f35"} onMouseLeave={ev=>ev.currentTarget.style.background="#0f172a"}
+    style={{background:"#0f172a",border:"1px solid #1e293b",borderLeft:`3px solid ${sc}`,borderRadius:"12px",padding:"15px 20px",cursor:"pointer",transition:"background 0.15s",boxShadow:"0 2px 10px rgba(0,0,0,0.3)",marginBottom:"10px"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:"8px"}}>
+      <div style={{flex:1}}>
+        <div style={{fontSize:"14px",fontWeight:"700",color:"#f1f5f9",marginBottom:"3px",fontFamily:"'DM Serif Display',serif"}}>{e.customerName}</div>
+        <div style={{fontSize:"11.5px",color:"#64748b"}}>{e.companyName&&`${e.companyName} · `}{e.contact}{e.location?` · ${e.location}`:""}</div>
+      </div>
+      <div style={{display:"flex",gap:"6px",alignItems:"center",flexShrink:0}}>
+        <Bdg label={e.status} color={sc}/>
+        {isAdmin&&<button onClick={ev=>{ev.stopPropagation();onDelete(e.id)}} style={{background:"none",border:"none",color:"#334155",fontSize:"15px",padding:"2px 4px",cursor:"pointer"}}>🗑</button>}
+      </div>
+    </div>
+    {e.productInterest&&<div style={{fontSize:"11.5px",color:"#94a3b8",background:"#0b1220",border:"1px solid #1e293b",borderRadius:"6px",padding:"6px 10px",marginTop:"8px",marginBottom:"6px"}}>🎨 {e.productInterest}</div>}
+    <div style={{display:"flex",gap:"10px",flexWrap:"wrap",alignItems:"center",marginTop:"6px"}}>
+      <span style={{fontSize:"11px",color:"#475569"}}>👤 {allProfiles[e.assignedTo]?.displayName||e.assignedTo?.split("@")[0]||"Unassigned"}</span>
+      {e.status==="Rejected"&&e.rejectionReason&&<span style={{fontSize:"11px",color:"#f87171"}}>· Reason: {e.rejectionReason}</span>}
+      {lastCall&&<span style={{fontSize:"11px",color:"#22d3ee"}}>· 📞 Last call {lastCall.date}: {lastCall.summary.slice(0,50)}{lastCall.summary.length>50?"…":""}</span>}
+    </div>
+  </div>;
+}
+
+function EnquiryDetail({entry,onClose,canUpdate,isAdmin,allProfiles={},showToast,salesmen}){
+  const [live,setLive]=useState(entry);
+  const [newStatus,setNewStatus]=useState(entry.status);
+  const [rejReason,setRejReason]=useState(entry.rejectionReason||"");
+  const [callForm,setCallForm]=useState({date:today(),summary:""});
+  const [showCallForm,setShowCallForm]=useState(false);
+  const [saving,setSaving]=useState(false);
+
+  useEffect(()=>{
+    const unsub=C("enquiries").doc(entry.id).onSnapshot(snap=>{ if(snap.exists)setLive({id:snap.id,...snap.data()}); });
+    return unsub;
+  },[entry.id]);
+
+  const updateStatus=async()=>{
+    if(newStatus==="Rejected"&&!rejReason.trim())return showToast("Please give a reason for rejection","error");
+    setSaving(true);
+    try{
+      await C("enquiries").doc(entry.id).update({status:newStatus,rejectionReason:newStatus==="Rejected"?rejReason:"",updatedAt:ts()});
+      showToast("Status updated ✓");
+    }catch(e){showToast("Error","error");}
+    setSaving(false);
+  };
+
+  const addCallSummary=async()=>{
+    if(!callForm.summary.trim())return showToast("Add a summary of the call","error");
+    setSaving(true);
+    try{
+      const nc={...callForm,id:newId(),by:entry._currentUserEmail||"",_createdAt:ts()};
+      await C("enquiries").doc(entry.id).update({callSummaries:[...(live.callSummaries||[]),nc]});
+      setCallForm({date:today(),summary:""});setShowCallForm(false);
+      showToast("Call summary added ✓");
+    }catch(e){showToast("Error","error");}
+    setSaving(false);
+  };
+
+  const calls=(live.callSummaries||[]).slice().reverse();
+  const sc=ENQUIRY_STATUS_COLORS[live.status]||"#94a3b8";
+
+  return <div style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"14px",padding:"20px",marginBottom:"16px"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"14px"}}>
+      <div>
+        <div style={{fontSize:"20px",fontWeight:"400",fontFamily:"'DM Serif Display',serif",color:"#f1f5f9"}}>{live.customerName}</div>
+        <div style={{fontSize:"12px",color:"#64748b"}}>{live.companyName&&`${live.companyName} · `}{live.contact}{live.email?` · ${live.email}`:""}{live.location?` · ${live.location}`:""}</div>
+      </div>
+      <div style={{display:"flex",gap:"8px",alignItems:"center"}}>
+        <Bdg label={live.status} color={sc}/>
+        <button onClick={onClose} style={{background:"none",border:"1px solid #1e293b",borderRadius:"6px",color:"#475569",fontSize:"12px",padding:"4px 10px",cursor:"pointer"}}>✕ Close</button>
+      </div>
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginBottom:"14px"}}>
+      {[["Product Interest",live.productInterest],["Source",live.source],["Assigned To",allProfiles[live.assignedTo]?.displayName||live.assignedTo],["Enquiry Date",live.enquiryDate]].map(([l,v])=>v&&<div key={l} style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"7px",padding:"8px 12px"}}>
+        <div style={{fontSize:"10px",color:"#475569",fontWeight:"600",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:"2px"}}>{l}</div>
+        <div style={{fontSize:"13px",color:"#94a3b8",fontWeight:"600"}}>{v}</div>
+      </div>)}
+    </div>
+    {live.enquiryDetails&&<div style={{background:"#0c1a2e",border:"1px solid #2563eb40",borderRadius:"10px",padding:"10px 14px",marginBottom:"14px"}}>
+      <div style={{fontSize:"10px",fontWeight:"700",color:"#93c5fd",textTransform:"uppercase",letterSpacing:"0.09em",marginBottom:"4px"}}>📋 Enquiry Details</div>
+      <div style={{fontSize:"13px",color:"#cbd5e1",lineHeight:1.6,whiteSpace:"pre-wrap"}}>{live.enquiryDetails}</div>
+    </div>}
+
+    {/* Status update */}
+    {canUpdate&&<div style={{border:"1px solid #1e293b",borderRadius:"10px",padding:"12px 14px",marginBottom:"14px",background:"#080d18"}}>
+      <div style={{fontSize:"11px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.09em",marginBottom:"8px"}}>Update Status</div>
+      <div style={{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap"}}>
+        <select style={{...sl,flex:1,minWidth:"180px",borderColor:(ENQUIRY_STATUS_COLORS[newStatus]||"#1e293b")+"60"}} value={newStatus} onChange={e=>setNewStatus(e.target.value)}>
+          {ENQUIRY_STATUSES.map(s=><option key={s}>{s}</option>)}
+        </select>
+        {newStatus==="Rejected"&&<input style={{...inp,flex:1,minWidth:"180px"}} value={rejReason} onChange={e=>setRejReason(e.target.value)} placeholder="Reason for rejection"/>}
+        <Btn label={saving?"Saving…":"✓ Update"} onClick={updateStatus} disabled={saving} color="#2563eb" small/>
+      </div>
+    </div>}
+
+    {/* Call summaries */}
+    <div style={{borderTop:"1px solid #1e293b",paddingTop:"14px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"10px"}}>
+        <span style={{fontSize:"11px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.09em"}}>📞 Call Summary Log ({calls.length})</span>
+        {canUpdate&&<button onClick={()=>setShowCallForm(v=>!v)} style={{background:"#1e293b",border:"1px solid #334155",borderRadius:"7px",padding:"5px 12px",color:"#93c5fd",fontSize:"11.5px",fontWeight:"700",cursor:"pointer"}}>
+          {showCallForm?"▲ Cancel":"+ Add Call Summary"}</button>}
+      </div>
+      {showCallForm&&<div style={{background:"#0a0f1e",border:"1px solid #2563eb40",borderRadius:"10px",padding:"12px",marginBottom:"10px"}}>
+        <Grid2>
+          <Field label="Date"><input type="date" style={inp} value={callForm.date} onChange={e=>setCallForm({...callForm,date:e.target.value})}/></Field>
+          <div/>
+        </Grid2>
+        <Field label="What was discussed / next step *"><textarea style={{...ta,minHeight:"70px"}} value={callForm.summary} onChange={e=>setCallForm({...callForm,summary:e.target.value})} placeholder="e.g. Customer wants samples of XYZ, will follow up Friday..."/></Field>
+        <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
+          <Btn label="Cancel" onClick={()=>setShowCallForm(false)} outline color="#475569" small/>
+          <Btn label={saving?"Saving…":"Save"} onClick={addCallSummary} disabled={saving} color="#2563eb" small/>
+        </div>
+      </div>}
+      {calls.length===0&&!showCallForm&&<div style={{textAlign:"center",padding:"12px",border:"1px dashed #1e293b",borderRadius:"8px"}}>
+        <div style={{fontSize:"12px",color:"#334155"}}>No call summaries logged yet.</div>
+      </div>}
+      {calls.map(c=><div key={c.id} style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"8px",padding:"10px 12px",marginBottom:"8px"}}>
+        <div style={{fontSize:"11px",color:"#475569",marginBottom:"4px"}}>📅 {c.date}{c.by?` · ${allProfiles[c.by]?.displayName||c.by.split("@")[0]}`:""}</div>
+        <div style={{fontSize:"13px",color:"#94a3b8",lineHeight:1.6,whiteSpace:"pre-wrap"}}>{c.summary}</div>
+      </div>)}
+    </div>
+  </div>;
+}
+
+function EnquiriesTab({role,roles,user,showToast,allProfiles={},allRoles={},isAdmin,hp}){
+  const [enquiries,setEnquiries]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [activeId,setActiveId]=useState(null);
+  const [showCreate,setShowCreate]=useState(false);
+  const [statusFilter,setStatusFilter]=useState("All");
+  const canCreate=isAdmin||hp("enquiries_create");
+  const canViewAll=isAdmin||hp("enquiries_view_all");
+  const canUpdateAny=isAdmin||hp("enquiries_update");
+
+  const salesmen=Object.keys(allProfiles).filter(email=>(allRoles[email]||[]).includes("sales"));
+
+  const blank={customerName:"",companyName:"",contact:"",email:"",location:"",productInterest:"",
+    enquiryDetails:"",source:"",enquiryDate:today(),assignedTo:"",status:"New",rejectionReason:"",callSummaries:[]};
+  const [form,setForm]=useState(blank);
+  const [saving,setSaving]=useState(false);
+
+  useEffect(()=>{
+    // Restrict the QUERY itself (not just client-side filtering) for salesmen who can only
+    // see enquiries assigned to them — otherwise their browser would still receive every
+    // customer's data over the wire via the Firestore listener, just hidden in the UI.
+    const base=canViewAll
+      ? C("enquiries").orderBy("_createdAt","desc")
+      : C("enquiries").where("assignedTo","==",user?.email||"__none__");
+    const unsub=base.onSnapshot(
+      snap=>{
+        let docs=snap.docs.map(d=>({id:d.id,...d.data()}));
+        if(!canViewAll)docs=docs.sort((a,b)=>(b._createdAt?.seconds||0)-(a._createdAt?.seconds||0));
+        setEnquiries(docs);setLoading(false);
+      },
+      ()=>{
+        // Fallback if the composite index isn't ready yet — same restricted query, no orderBy
+        const fallback=canViewAll?C("enquiries"):C("enquiries").where("assignedTo","==",user?.email||"__none__");
+        fallback.onSnapshot(snap=>{
+          const docs=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b._createdAt?.seconds||0)-(a._createdAt?.seconds||0));
+          setEnquiries(docs);setLoading(false);
+        });
+      }
+    );
+    return unsub;
+  },[canViewAll,user?.email]);
+
+  const visible=enquiries; // already server-restricted to assigned-only when !canViewAll
+  const filtered=visible.filter(e=>statusFilter==="All"||e.status===statusFilter);
+
+  const createEnquiry=async()=>{
+    if(!form.customerName.trim()||!form.contact.trim())return showToast("Customer name and contact required","error");
+    if(!form.assignedTo)return showToast("Please assign to a salesman","error");
+    setSaving(true);
+    try{
+      await C("enquiries").add({...form,_createdAt:ts(),createdBy:user?.email});
+      await C("notifications").add({
+        assignedTo:form.assignedTo,
+        title:"📞 New enquiry assigned: "+form.customerName,
+        message:"From "+(allProfiles[user?.email]?.displayName||user?.email||"HO")+(form.productInterest?" · Interested in: "+form.productInterest:"")+". Open Enquiries to view & update status.",
+        type:"enquiry_assigned",read:false,_createdAt:ts()
+      });
+      showToast("Enquiry created & salesman notified ✓");
+      setForm(blank);setShowCreate(false);
+    }catch(e){showToast("Error: "+e.message,"error");}
+    setSaving(false);
+  };
+
+  const deleteEnquiry=async(id)=>{
+    if(!isAdmin)return showToast("Admin only","error");
+    if(!confirm("Delete this enquiry?"))return;
+    await C("enquiries").doc(id).delete();
+    showToast("Deleted","error");
+  };
+
+  const active=enquiries.find(e=>e.id===activeId);
+  const statusCounts=ENQUIRY_STATUSES.reduce((acc,s)=>({...acc,[s]:visible.filter(e=>e.status===s).length}),{});
+
+  return <div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"16px",flexWrap:"wrap",gap:"10px"}}>
+      <div style={{fontSize:"22px",fontWeight:"400",fontFamily:"'DM Serif Display',serif",color:"#f1f5f9"}}>📞 Customer Enquiries</div>
+      {canCreate&&<button onClick={()=>setShowCreate(v=>!v)} style={{background:"#1e3a5f",border:"1px solid #2563eb",borderRadius:"8px",padding:"8px 16px",color:"#93c5fd",fontWeight:"700",fontSize:"13px",cursor:"pointer"}}>
+        {showCreate?"▲ Cancel":"+ New Enquiry"}</button>}
+    </div>
+
+    {/* Status summary chips */}
+    <div style={{display:"flex",gap:"8px",flexWrap:"wrap",marginBottom:"16px"}}>
+      <button onClick={()=>setStatusFilter("All")} style={{background:statusFilter==="All"?"#1e293b":"transparent",border:"1px solid #1e293b",borderRadius:"99px",padding:"5px 14px",color:statusFilter==="All"?"#f1f5f9":"#64748b",fontSize:"12px",fontWeight:"700",cursor:"pointer"}}>All ({visible.length})</button>
+      {ENQUIRY_STATUSES.map(s=><button key={s} onClick={()=>setStatusFilter(s)} style={{background:statusFilter===s?ENQUIRY_STATUS_COLORS[s]+"22":"transparent",border:`1px solid ${ENQUIRY_STATUS_COLORS[s]}50`,borderRadius:"99px",padding:"5px 14px",color:ENQUIRY_STATUS_COLORS[s],fontSize:"12px",fontWeight:"700",cursor:"pointer"}}>{s} ({statusCounts[s]||0})</button>)}
+    </div>
+
+    {canCreate&&showCreate&&<div style={{border:"1px solid #2563eb",borderRadius:"12px",padding:"20px",background:"#060d1a",marginBottom:"16px"}}>
+      <div style={{fontSize:"13px",fontWeight:"700",color:"#93c5fd",marginBottom:"14px"}}>📞 New Customer Enquiry</div>
+      <Grid3>
+        <Field label="Customer Name *"><input style={inp} value={form.customerName} onChange={e=>setForm({...form,customerName:e.target.value})}/></Field>
+        <Field label="Company Name"><input style={inp} value={form.companyName} onChange={e=>setForm({...form,companyName:e.target.value})}/></Field>
+        <Field label="Contact (Phone) *"><input style={inp} value={form.contact} onChange={e=>setForm({...form,contact:e.target.value})}/></Field>
+      </Grid3>
+      <Grid3>
+        <Field label="Email"><input style={inp} value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/></Field>
+        <Field label="Location"><input style={inp} value={form.location} onChange={e=>setForm({...form,location:e.target.value})}/></Field>
+        <Field label="Source"><input style={inp} value={form.source} onChange={e=>setForm({...form,source:e.target.value})} placeholder="Referral, Cold call, Website..."/></Field>
+      </Grid3>
+      <Grid2>
+        <Field label="Product Interest"><input style={inp} value={form.productInterest} onChange={e=>setForm({...form,productInterest:e.target.value})} placeholder="e.g. Industrial enamel, 200L/month"/></Field>
+        <Field label="Enquiry Date"><input type="date" style={inp} value={form.enquiryDate} onChange={e=>setForm({...form,enquiryDate:e.target.value})}/></Field>
+      </Grid2>
+      <Field label="Enquiry Details"><textarea style={ta} value={form.enquiryDetails} onChange={e=>setForm({...form,enquiryDetails:e.target.value})} placeholder="What does the customer need..."/></Field>
+      <Field label="Assign To (Salesman) *">
+        <select style={sl} value={form.assignedTo} onChange={e=>setForm({...form,assignedTo:e.target.value})}>
+          <option value="">— Select salesman —</option>
+          {salesmen.map(email=><option key={email} value={email}>{allProfiles[email]?.displayName||email}</option>)}
+        </select>
+      </Field>
+      <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
+        <Btn label="Cancel" onClick={()=>setShowCreate(false)} outline color="#475569" small/>
+        <Btn label={saving?"Saving…":"Save & Notify Salesman"} onClick={createEnquiry} disabled={saving} color="#2563eb" small/>
+      </div>
+    </div>}
+
+    {active&&<EnquiryDetail entry={{...active,_currentUserEmail:user?.email}} onClose={()=>setActiveId(null)} canUpdate={isAdmin||(canUpdateAny&&active.assignedTo===user?.email)||(canViewAll)} isAdmin={isAdmin} allProfiles={allProfiles} showToast={showToast} salesmen={salesmen}/>}
+
+    {loading?<div style={{textAlign:"center",padding:"40px",color:"#475569"}}>Loading…</div>
+    :filtered.length===0?<div style={{textAlign:"center",padding:"50px 0"}}><div style={{fontSize:"36px",marginBottom:"10px"}}>📞</div><div style={{fontSize:"13px",color:"#475569"}}>No enquiries{statusFilter!=="All"?" with this status":""}.</div></div>
+    :filtered.map(e=><EnquiryCard key={e.id} e={e} onClick={()=>setActiveId(e.id===activeId?null:e.id)} onDelete={deleteEnquiry} isAdmin={isAdmin} allProfiles={allProfiles}/>)}
+  </div>;
+}
+
 function TestimonialsTab({role,user,showToast}){
   const [testimonials,setTestimonials]=useState([]);
   const [loading,setLoading]=useState(true);
@@ -2602,7 +3011,7 @@ function UsersTab({currentUser}){
       <Grid2>
         <Field label="Role *">
           <select style={sl} value={createRole} onChange={e=>setCreateRole(e.target.value)}>
-            {["admin","issuer","qc","sales","store"].map(r=><option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+            {["admin","issuer","qc","sales","store","ho"].map(r=><option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
           </select>
         </Field>
         <Field label={createRole==="admin"?"Full Name (optional)":"Full Name / Username *"}>
@@ -3010,30 +3419,45 @@ function FYArchiveTab({showToast}){
   const loadCounts=async(fy)=>{
     setLoading(true);setCounts(null);
     try{
-      const [bSnap,cSnap,osSnap,rdSnap,txSnap]=await Promise.all([
+      const [bSnap,cSnap,osSnap,rdSnap,txSnap,rmtSnap,stSnap]=await Promise.all([
         C("batches").get(),
         C("complaints").get(),
         C("old_stock").get(),
         C("rd_projects").get(),
-        C("rm_stock_transactions").get()
+        C("rm_stock_transactions").get(),
+        C("rm_tests").get(),
+        C("sample_tests").get()
       ]);
       const {from,to}=fyRange(fy);
       const batches=bSnap.docs.filter(d=>getBFY(d.data())===fy);
       const complaints=cSnap.docs.filter(d=>inFY(d.data().dateCreated,fy));
-      const oldStock=osSnap.docs.filter(d=>inFY(d.data().dateAdded,fy));
+      // Only archive/delete OLD STOCK that has actually been USED — pending/Available stock
+      // must NEVER be touched, regardless of how old it is, since it's still usable inventory.
+      const oldStock=osSnap.docs.filter(d=>{
+        const dat=d.data();
+        if(dat.status!=="Used")return false;
+        const relevantDate=dat.usedDate||dat.dateAdded;
+        return inFY(relevantDate,fy);
+      });
       const rdProjects=rdSnap.docs.filter(d=>inFY(d.data().startDate||d.data()._createdAt?.toDate?.()?.toISOString?.()?.slice(0,10),fy));
       const rmConsumption=txSnap.docs.filter(d=>{const dat=d.data();return dat.type==="consumption"&&inFY(dat.date,fy);});
+      const rmTests=rmtSnap.docs.filter(d=>inFY(d.data().dateReceived||d.data()._createdAt?.toDate?.()?.toISOString?.()?.slice(0,10),fy));
+      const sampleTests=stSnap.docs.filter(d=>inFY(d.data().dateReceived||d.data().date||d.data()._createdAt?.toDate?.()?.toISOString?.()?.slice(0,10),fy));
       setCounts({
         batches:batches.length, complaints:complaints.length, oldStock:oldStock.length,
         rdProjects:rdProjects.length, rmConsumption:rmConsumption.length,
+        rmTests:rmTests.length, sampleTests:sampleTests.length,
         batchIds:batches.map(d=>d.id), complaintIds:complaints.map(d=>d.id), oldStockIds:oldStock.map(d=>d.id),
         rmConsumptionIds:rmConsumption.map(d=>d.id),
+        rmTestIds:rmTests.map(d=>d.id), sampleTestIds:sampleTests.map(d=>d.id),
         // R&D never deleted — no rdIds in delete
         batchDocs:batches.map(d=>({id:d.id,...d.data()})),
         complaintDocs:complaints.map(d=>({id:d.id,...d.data()})),
         oldStockDocs:oldStock.map(d=>({id:d.id,...d.data()})),
         rdDocs:rdProjects.map(d=>({id:d.id,...d.data()})),
-        rmConsumptionDocs:rmConsumption.map(d=>({id:d.id,...d.data()}))
+        rmConsumptionDocs:rmConsumption.map(d=>({id:d.id,...d.data()})),
+        rmTestDocs:rmTests.map(d=>({id:d.id,...d.data()})),
+        sampleTestDocs:sampleTests.map(d=>({id:d.id,...d.data()}))
       });
     }catch(e){showToast("Error loading: "+e.message,"error");}
     setLoading(false);
@@ -3056,9 +3480,11 @@ function FYArchiveTab({showToast}){
         ["Data Type","Count","Action on Archive"],
         ["Batches",counts.batches,"Deleted after export"],
         ["Complaints",counts.complaints,"Deleted after export"],
-        ["Old/Rejected Stock",counts.oldStock,"Deleted after export"],
+        ["Old/Rejected Stock (Used only — pending stock never touched)",counts.oldStock,"Deleted after export"],
         ["R&D Projects",counts.rdProjects,"Exported only — NOT deleted"],
         ["RM Consumption Transactions",counts.rmConsumption,"Deleted after export"],
+        ["RM Tests",counts.rmTests,"Deleted after export"],
+        ["Sample Testing",counts.sampleTests,"Deleted after export"],
       ];
       const wsSum=XLSX.utils.aoa_to_sheet(sumRows);wsSum["!cols"]=[{wch:36},{wch:10},{wch:30}];
       XLSX.utils.book_append_sheet(wb,wsSum,"Summary");
@@ -3093,6 +3519,18 @@ function FYArchiveTab({showToast}){
       const wsRM=XLSX.utils.aoa_to_sheet(rmRows);wsRM["!cols"]=[{wch:14},{wch:28},{wch:8},{wch:12},{wch:12},{wch:24},{wch:32}];
       XLSX.utils.book_append_sheet(wb,wsRM,"RM Consumption");
 
+      // ── RM Tests ──
+      const rmtRows=[["Material","Vendor","Category","Batch/Lot No","Qty Received","Date Received","Specification","Tests Performed","Observations","Result","Tested By","Remarks","Retests"]];
+      counts.rmTestDocs.forEach(t=>{rmtRows.push([t.materialName||"",t.vendorName||"",t.category||"",t.batchNo||t.lotNo||"",t.quantityReceived||"",t.dateReceived||"",t.specsToTest||"",t.testsPerformed||"",t.observations||"",t.testResult||"",t.testedBy||"",t.remarks||"",(t.retests||[]).length]);});
+      const wsRMT=XLSX.utils.aoa_to_sheet(rmtRows);wsRMT["!cols"]=[{wch:22},{wch:20},{wch:14},{wch:14},{wch:12},{wch:12},{wch:32},{wch:24},{wch:24},{wch:14},{wch:18},{wch:28},{wch:8}];
+      XLSX.utils.book_append_sheet(wb,wsRMT,"RM Tests");
+
+      // ── Sample Testing ──
+      const stRows=[["Sample Name","Customer/Source","Category","Date Received","Specification","Tests Performed","Observations","Result","Tested By","Remarks"]];
+      counts.sampleTestDocs.forEach(s=>{stRows.push([s.sampleName||s.materialName||"",s.customerName||s.source||"",s.category||"",s.dateReceived||s.date||"",s.specsToTest||"",s.testsPerformed||"",s.observations||"",s.testResult||s.result||"",s.testedBy||"",s.remarks||""]);});
+      const wsST=XLSX.utils.aoa_to_sheet(stRows);wsST["!cols"]=[{wch:22},{wch:20},{wch:14},{wch:12},{wch:32},{wch:24},{wch:24},{wch:14},{wch:18},{wch:28}];
+      XLSX.utils.book_append_sheet(wb,wsST,"Sample Testing");
+
       XLSX.writeFile(wb,`GCC_FY_${label.replace("-","_")}_Archive.xlsx`);
       showToast(`FY ${label} archive exported ✓ — ${counts.rdProjects} R&D projects included (not deleted)`);
     }catch(e){showToast("Export failed: "+e.message,"error");}
@@ -3110,14 +3548,17 @@ function FYArchiveTab({showToast}){
           await wb_.commit();
         }
       };
-      // R&D projects are NEVER deleted
+      // R&D projects are NEVER deleted. Old Stock: only "Used" items were ever included in
+      // counts.oldStockIds (see loadCounts) — pending/Available stock is never in this list.
       await Promise.all([
         deleteAll(counts.batchIds,"batches"),
         deleteAll(counts.complaintIds,"complaints"),
         deleteAll(counts.oldStockIds,"old_stock"),
         deleteAll(counts.rmConsumptionIds,"rm_stock_transactions"),
+        deleteAll(counts.rmTestIds,"rm_tests"),
+        deleteAll(counts.sampleTestIds,"sample_tests"),
       ]);
-      showToast(`FY ${getFYLabel(parseInt(selFY))} data deleted ✓ (R&D projects kept)`);
+      showToast(`FY ${getFYLabel(parseInt(selFY))} data deleted ✓ (R&D projects + pending stock kept)`);
       setStep("done");loadCounts(selFY);
     }catch(e){showToast("Delete failed: "+e.message,"error");}
     setDeleting(false);
@@ -3126,7 +3567,7 @@ function FYArchiveTab({showToast}){
   const fy_=parseInt(selFY);
   const label=getFYLabel(fy_);
   const isPrevFY=fy_<curFY;
-  const totalCount=(counts?.batches||0)+(counts?.complaints||0)+(counts?.oldStock||0)+(counts?.rmConsumption||0);
+  const totalCount=(counts?.batches||0)+(counts?.complaints||0)+(counts?.oldStock||0)+(counts?.rmConsumption||0)+(counts?.rmTests||0)+(counts?.sampleTests||0);
 
   return <div>
     <InfoBox color="#f59e0b">⚠️ Archive completed financial years. R&D projects are NEVER deleted. Current FY: <strong style={{color:"#fcd34d"}}>FY {getFYLabel(curFY)}</strong></InfoBox>
@@ -3142,8 +3583,8 @@ function FYArchiveTab({showToast}){
 
     {loading&&<div style={{fontSize:"13px",color:"#475569",padding:"10px 0"}}>⏳ Loading data counts…</div>}
     {counts&&isPrevFY&&step!=="done"&&<>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:"10px",marginBottom:"16px"}}>
-        {[["📦 Batches",counts.batches,"#3b82f6","Deleted"],["⚠️ Complaints",counts.complaints,"#ef4444","Deleted"],["🔄 Old Stock",counts.oldStock,"#f59e0b","Deleted"],["🧪 R&D Projects",counts.rdProjects,"#22c55e","Kept ✓"],["📉 RM Consumption",counts.rmConsumption,"#a855f7","Deleted"]].map(([lbl,count,color,action])=>(
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"10px",marginBottom:"16px"}}>
+        {[["📦 Batches",counts.batches,"#3b82f6","Deleted"],["⚠️ Complaints",counts.complaints,"#ef4444","Deleted"],["🔄 Used Old Stock",counts.oldStock,"#f59e0b","Deleted"],["🧪 R&D Projects",counts.rdProjects,"#22c55e","Kept ✓"],["📉 RM Consumption",counts.rmConsumption,"#a855f7","Deleted"],["🧫 RM Tests",counts.rmTests,"#06b6d4","Deleted"],["🔭 Sample Testing",counts.sampleTests,"#ec4899","Deleted"]].map(([lbl,count,color,action])=>(
           <div key={lbl} style={{background:"#0b1220",border:`1px solid ${color}30`,borderRadius:"10px",padding:"12px 14px",textAlign:"center"}}>
             <div style={{fontSize:"22px",fontWeight:"700",color}}>{count}</div>
             <div style={{fontSize:"11px",color:"#64748b",marginTop:"2px"}}>{lbl}</div>
@@ -3154,15 +3595,15 @@ function FYArchiveTab({showToast}){
 
       <div style={{background:"#052e16",border:"1px solid #166534",borderRadius:"10px",padding:"16px",marginBottom:"12px"}}>
         <div style={{fontSize:"13px",fontWeight:"700",color:"#22c55e",marginBottom:"6px"}}>Step 1: Export FY {label} Data</div>
-        <div style={{fontSize:"12px",color:"#86efac",marginBottom:"12px"}}>Downloads Batches, Complaints, Old Stock, R&D Projects and RM Consumption as separate Excel sheets. R&D projects are exported but <strong>never deleted</strong> from the system.</div>
+        <div style={{fontSize:"12px",color:"#86efac",marginBottom:"12px"}}>Downloads Batches, Complaints, Used Old Stock, R&D Projects, RM Consumption, RM Tests and Sample Testing as separate Excel sheets. R&D projects are exported but <strong>never deleted</strong> from the system. <strong>Pending (Available) old/rejected stock is never included or touched</strong> — only stock already marked "Used" is archived.</div>
         <Btn label={exporting?"Exporting…":`📥 Download FY ${label} Archive (Excel)`} onClick={exportFY} disabled={exporting||totalCount+counts.rdProjects===0} color="#22c55e"/>
         {totalCount+counts.rdProjects===0&&<div style={{fontSize:"12px",color:"#334155",marginTop:"6px"}}>No data found for FY {label}.</div>}
       </div>
 
       {totalCount>0&&<div style={{background:"#450a0a",border:"1px solid #7f1d1d",borderRadius:"10px",padding:"16px"}}>
         <div style={{fontSize:"13px",fontWeight:"700",color:"#ef4444",marginBottom:"6px"}}>Step 2: Delete FY {label} Data</div>
-        <div style={{fontSize:"12px",color:"#fca5a5",marginBottom:"12px"}}>Permanently deletes {counts.batches} batches, {counts.complaints} complaints, {counts.oldStock} old stock, {counts.rmConsumption} RM consumption records. <strong>R&D projects ({counts.rdProjects}) are NOT deleted.</strong></div>
-        {step==="idle"&&<Btn label={`🗑 Delete FY ${label} Data (excl. R&D)`} onClick={()=>setStep("confirm")} color="#ef4444" outline/>}
+        <div style={{fontSize:"12px",color:"#fca5a5",marginBottom:"12px"}}>Permanently deletes {counts.batches} batches, {counts.complaints} complaints, {counts.oldStock} used old stock, {counts.rmConsumption} RM consumption records, {counts.rmTests} RM tests, {counts.sampleTests} sample tests. <strong>R&D projects ({counts.rdProjects}) and pending/Available old stock are NOT deleted.</strong></div>
+        {step==="idle"&&<Btn label={`🗑 Delete FY ${label} Data (excl. R&D & pending stock)`} onClick={()=>setStep("confirm")} color="#ef4444" outline/>}
         {step==="confirm"&&<div>
           <div style={{fontSize:"13px",fontWeight:"700",color:"#ef4444",marginBottom:"10px"}}>⚠️ Type the FY label to confirm deletion:</div>
           <ConfirmDelete expected={label} onConfirm={deleteFY} onCancel={()=>setStep("idle")} saving={deleting}/>
@@ -3843,7 +4284,7 @@ function NoAccessScreen(){
 // MAIN APP
 // ══════════════════════════════════════════════════════════
 const EP={projectName:"",projectCode:"",paintType:"Emulsion",application:"",status:"Ongoing",objective:"",formulationBase:"",assignedTo:"",targetDate:"",notes:""};
-const ER={materialName:"",vendorName:"",category:"Resin / Binder",batchNo:"",lotNo:"",quantityReceived:"",dateReceived:"",testedBy:"",testResult:"Pending",testsPerformed:"",observations:"",remarks:""};
+const ER={materialName:"",vendorName:"",category:"Resin / Binder",batchNo:"",lotNo:"",quantityReceived:"",dateReceived:"",specsToTest:"",assignedTo:"",testedBy:"",testResult:"Pending",testsPerformed:"",observations:"",remarks:""};
 const EB={category:"",productName:"",shade:"",batchSize:"",unit:"kg",dateIssued:today(),issuedBy:"",oldStockUsed:"",issueNotes:""};
 const EC={customerName:"",productName:"",batchNo:"",monthYear:"",invoiceNo:"",materialAvailable:"",complaint:""};
 
@@ -7042,6 +7483,8 @@ function MainApp({user,role,roles=[],permissions=[]}){
   const rdUsers=Object.keys(allProfiles).filter(email=>
     userHasPerm(allRoles[email]||[],allPermissions[email]||[],"rd_view")
   );
+  // QC users — for RM Test "Assign To" dropdown
+  const qcUsersForRM=Object.keys(allProfiles).filter(email=>(allRoles[email]||[]).includes("qc"));
   const [rmForm,setRmForm]=useState(ER);
   const [saving,setSaving]=useState(false);
 
@@ -7184,7 +7627,24 @@ function MainApp({user,role,roles=[],permissions=[]}){
   const saveRM=async()=>{
     if(!rmForm.materialName.trim()||!rmForm.vendorName.trim())return showToast("Material and vendor required","error");
     if(saving)return;setSaving(true);
-    try{await C("rm_tests").add({...rmForm,_createdAt:ts()});setRmForm(ER);setShowAddRM(false);showToast("Entry saved ✓");}
+    try{
+      await C("rm_tests").add({...rmForm,_createdAt:ts()});
+      if(rmForm.assignedTo){
+        const recipients=rmForm.assignedTo==="__all_qc__"?qcUsersForRM:[rmForm.assignedTo];
+        await Promise.all(recipients.filter(r=>r&&r!==user?.email).map(email=>
+          C("notifications").add({
+            assignedTo:email,
+            title:"🧫 New RM test to perform: "+(rmForm.materialName||"Material"),
+            message:"Vendor: "+(rmForm.vendorName||"")+" · Assigned by "+(allProfiles[user?.email]?.displayName||user?.email||"Admin")+". Open R&D & QC → RM Tests to view specification & print sheet.",
+            type:"rm_test_assigned",read:false,_createdAt:ts()
+          })
+        ));
+        showToast("Entry saved & QC notified ✓");
+      }else{
+        showToast("Entry saved ✓");
+      }
+      setRmForm(ER);setShowAddRM(false);
+    }
     catch(e){showToast("Error saving","error");}
     setSaving(false);
   };
@@ -7262,6 +7722,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
     {key:"tasks",label:"✅ Tasks"},
     {key:"stock",label:"🏪 RM Stock"},
     {key:"testimonials",label:"⭐ Testimonials"},
+    {key:"enquiries",label:"📞 Enquiries"},
     {key:"users",label:"👥 Users"},
     {key:"settings",label:"⚙️ Settings"},
   ].filter(t=>{
@@ -7274,6 +7735,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
       bom:hp("bom_view"),
       tasks:hp("tasks_own"),
       testimonials:hp("testimonials"),
+      enquiries:hp("enquiries_create")||hp("enquiries_view_all")||hp("enquiries_update"),
       stock:hp("stock_view"),
       users:isAdmin,
       settings:hp("settings_products")||hp("settings_advanced"),
@@ -7451,7 +7913,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
             </div>
             <Btn label="+ Add Test Entry" onClick={()=>setShowAddRM(true)} color="#3b82f6"/>
           </div>
-          {frm.length===0?<div style={{textAlign:"center",padding:"50px 0"}}><div style={{fontSize:"36px",marginBottom:"10px"}}>🧫</div><div style={{fontSize:"13px",color:"#475569"}}>No entries.</div></div>:frm.map(r=><RMCard key={r.id} r={r} onClick={()=>setViewRM(r)} onDelete={async(id)=>{if(!confirm("Delete?"))return;await C("rm_tests").doc(id).delete();showToast("Deleted","error");}} onEdit={r=>setEditRM({...r})} isAdmin={isAdmin}/>)}
+          {frm.length===0?<div style={{textAlign:"center",padding:"50px 0"}}><div style={{fontSize:"36px",marginBottom:"10px"}}>🧫</div><div style={{fontSize:"13px",color:"#475569"}}>No entries.</div></div>:frm.map(r=><RMCard key={r.id} r={r} onClick={()=>setViewRM(r)} onDelete={async(id)=>{if(!confirm("Delete?"))return;await C("rm_tests").doc(id).delete();showToast("Deleted","error");}} onEdit={r=>setEditRM({...r})} isAdmin={isAdmin} allProfiles={allProfiles}/>)}
         </>}
         {rdSubTab==="sampletests"&&<SampleTestsTab role={role} user={user} showToast={showToast} sysQcParams={sysQcParams}
           onCreateProject={(prefill)=>{setProjForm({...EP,...prefill});setShowAddProject(true);setRdSubTab("projects");}}
@@ -7464,6 +7926,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
       {tab==="tasks"&&<TasksTab user={user} roles={roles} showToast={showToast} allRoles={allRoles} allProfiles={allProfiles}/>}
       {tab==="stock"&&<RawMaterialStockTab role={role} user={user} showToast={showToast} sysUnits={sysUnits} sysRmCats={sysRmCats} onAddRmCat={addGlobalRmCat} onAddUnit={addGlobalUnit}/>}
       {tab==="testimonials"&&<TestimonialsTab role={role} user={user} showToast={showToast}/>}
+      {tab==="enquiries"&&<EnquiriesTab role={role} roles={roles} user={user} showToast={showToast} allProfiles={allProfiles} allRoles={allRoles} isAdmin={isAdmin} hp={hp}/>}
       {tab==="users"&&<UsersTab currentUser={user}/>}
 
       {/* SETTINGS */}
@@ -7684,13 +8147,24 @@ function MainApp({user,role,roles=[],permissions=[]}){
         <Field label="Batch / Lot No"><input style={inp} value={rmForm.batchNo} onChange={e=>setRmForm({...rmForm,batchNo:e.target.value})}/></Field>
         <Field label="Quantity Received"><input style={inp} value={rmForm.quantityReceived} onChange={e=>setRmForm({...rmForm,quantityReceived:e.target.value})} placeholder="e.g. 25 kg"/></Field>
       </Grid2>
-      <Grid2>
-        <Field label="Tested By"><input style={inp} value={rmForm.testedBy} onChange={e=>setRmForm({...rmForm,testedBy:e.target.value})}/></Field>
-        <Field label="Test Result"><select style={sl} value={rmForm.testResult} onChange={e=>setRmForm({...rmForm,testResult:e.target.value})}>{TEST_RESULTS.map(r=><option key={r}>{r}</option>)}</select></Field>
-      </Grid2>
-      <Field label="Tests Performed"><textarea style={ta} value={rmForm.testsPerformed} onChange={e=>setRmForm({...rmForm,testsPerformed:e.target.value})} placeholder="Viscosity, pH, Fineness, Density..."/></Field>
-      <Field label="Observations / Results"><textarea style={ta} value={rmForm.observations} onChange={e=>setRmForm({...rmForm,observations:e.target.value})} placeholder="Values measured, deviations from spec..."/></Field>
-      <Field label="Remarks / Action Taken"><textarea style={{...ta,minHeight:"56px"}} value={rmForm.remarks} onChange={e=>setRmForm({...rmForm,remarks:e.target.value})} placeholder="Accepted / Rejected / Returned to vendor..."/></Field>
+      <Field label="Specification — What to Test"><textarea style={ta} value={rmForm.specsToTest} onChange={e=>setRmForm({...rmForm,specsToTest:e.target.value})} placeholder="e.g. Viscosity 80-100cps, pH 6.5-7.5, Density 1.1-1.3 g/ml..."/></Field>
+      <Field label="Assign To (QC) — notifies on save">
+        <select style={sl} value={rmForm.assignedTo} onChange={e=>setRmForm({...rmForm,assignedTo:e.target.value})}>
+          <option value="">— Not assigned (no notification) —</option>
+          {qcUsersForRM.length>1&&<option value="__all_qc__">📢 All QC users</option>}
+          {qcUsersForRM.map(email=><option key={email} value={email}>{allProfiles[email]?.displayName||email}</option>)}
+        </select>
+      </Field>
+      <div style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"8px",padding:"10px 12px",margin:"4px 0 12px"}}>
+        <div style={{fontSize:"10.5px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:"6px"}}>Optional — only fill if this material has already been tested</div>
+        <Grid2>
+          <Field label="Tested By"><input style={inp} value={rmForm.testedBy} onChange={e=>setRmForm({...rmForm,testedBy:e.target.value})}/></Field>
+          <Field label="Test Result"><select style={sl} value={rmForm.testResult} onChange={e=>setRmForm({...rmForm,testResult:e.target.value})}>{TEST_RESULTS.map(r=><option key={r}>{r}</option>)}</select></Field>
+        </Grid2>
+        <Field label="Tests Performed"><textarea style={ta} value={rmForm.testsPerformed} onChange={e=>setRmForm({...rmForm,testsPerformed:e.target.value})} placeholder="Viscosity, pH, Fineness, Density..."/></Field>
+        <Field label="Observations / Results"><textarea style={ta} value={rmForm.observations} onChange={e=>setRmForm({...rmForm,observations:e.target.value})} placeholder="Values measured, deviations from spec..."/></Field>
+        <Field label="Remarks / Action Taken"><textarea style={{...ta,minHeight:"56px"}} value={rmForm.remarks} onChange={e=>setRmForm({...rmForm,remarks:e.target.value})} placeholder="Accepted / Rejected / Returned to vendor..."/></Field>
+      </div>
       <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
         <Btn label="Cancel" onClick={()=>setShowAddRM(false)} outline color="#475569"/>
         <Btn label={saving?"Saving…":"Save Entry"} onClick={saveRM} disabled={saving} color="#3b82f6"/>
@@ -7699,7 +8173,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
 
     {/* View / Retest RM */}
     <Modal wide open={!!viewRM} onClose={()=>setViewRM(null)} title="Raw Material Test Details">
-      {viewRM&&<RMDetailView entry={viewRM} showToast={showToast}/>}
+      {viewRM&&<RMDetailView entry={viewRM} showToast={showToast} allProfiles={allProfiles}/>}
     </Modal>
 
     {/* Edit RM */}
@@ -7717,6 +8191,14 @@ function MainApp({user,role,roles=[],permissions=[]}){
           <Field label="Batch / Lot No"><input style={inp} value={editRM.batchNo||""} onChange={e=>setEditRM({...editRM,batchNo:e.target.value})}/></Field>
           <Field label="Qty Received"><input style={inp} value={editRM.quantityReceived||""} onChange={e=>setEditRM({...editRM,quantityReceived:e.target.value})}/></Field>
         </Grid2>
+        <Field label="Specification — What to Test"><textarea style={ta} value={editRM.specsToTest||""} onChange={e=>setEditRM({...editRM,specsToTest:e.target.value})}/></Field>
+        <Field label="Assign To (QC)">
+          <select style={sl} value={editRM.assignedTo||""} onChange={e=>setEditRM({...editRM,assignedTo:e.target.value})}>
+            <option value="">— Not assigned —</option>
+            {qcUsersForRM.length>1&&<option value="__all_qc__">📢 All QC users</option>}
+            {qcUsersForRM.map(email=><option key={email} value={email}>{allProfiles[email]?.displayName||email}</option>)}
+          </select>
+        </Field>
         <Grid2>
           <Field label="Tested By"><input style={inp} value={editRM.testedBy||""} onChange={e=>setEditRM({...editRM,testedBy:e.target.value})}/></Field>
           <Field label="Test Result"><select style={sl} value={editRM.testResult} onChange={e=>setEditRM({...editRM,testResult:e.target.value})}>{TEST_RESULTS.map(r=><option key={r}>{r}</option>)}</select></Field>
