@@ -2421,8 +2421,8 @@ function DashboardTab({role,user,onNavigate}){
 // ══════════════════════════════════════════════════════════
 // ENQUIRIES — HO logs enquiries, assigns to salesman, salesman tracks status + call summaries
 // ══════════════════════════════════════════════════════════
-const ENQUIRY_STATUSES=["New","Samples to be Shared","Price List Shared","Approved & Form Filled","Rejected"];
-const ENQUIRY_STATUS_COLORS={"New":"#64748b","Samples to be Shared":"#3b82f6","Price List Shared":"#f59e0b","Approved & Form Filled":"#22c55e","Rejected":"#ef4444"};
+const ENQUIRY_STATUSES=["New","Samples to be Shared","Price List Shared","Already Buying from Our Customer","Approved & Form Filled","Rejected"];
+const ENQUIRY_STATUS_COLORS={"New":"#64748b","Samples to be Shared":"#3b82f6","Price List Shared":"#f59e0b","Already Buying from Our Customer":"#06b6d4","Approved & Form Filled":"#22c55e","Rejected":"#ef4444"};
 
 function EnquiryCard({e,onClick,onDelete,isAdmin,allProfiles={}}){
   const sc=ENQUIRY_STATUS_COLORS[e.status]||"#94a3b8";
@@ -2443,6 +2443,7 @@ function EnquiryCard({e,onClick,onDelete,isAdmin,allProfiles={}}){
     <div style={{display:"flex",gap:"10px",flexWrap:"wrap",alignItems:"center",marginTop:"6px"}}>
       <span style={{fontSize:"11px",color:"#475569"}}>👤 {allProfiles[e.assignedTo]?.displayName||e.assignedTo?.split("@")[0]||"Unassigned"}</span>
       {e.status==="Rejected"&&e.rejectionReason&&<span style={{fontSize:"11px",color:"#f87171"}}>· Reason: {e.rejectionReason}</span>}
+      {e.status==="Already Buying from Our Customer"&&e.existingCustomerName&&<span style={{fontSize:"11px",color:"#22d3ee"}}>· Buying from: {e.existingCustomerName} ({e.existingCustomerProducts})</span>}
       {lastCall&&<span style={{fontSize:"11px",color:"#22d3ee"}}>· 📞 Last call {lastCall.date}: {lastCall.summary.slice(0,50)}{lastCall.summary.length>50?"…":""}</span>}
     </div>
   </div>;
@@ -2452,6 +2453,8 @@ function EnquiryDetail({entry,onClose,canUpdate,isAdmin,allProfiles={},showToast
   const [live,setLive]=useState(entry);
   const [newStatus,setNewStatus]=useState(entry.status);
   const [rejReason,setRejReason]=useState(entry.rejectionReason||"");
+  const [existingCustomerName,setExistingCustomerName]=useState(entry.existingCustomerName||"");
+  const [existingCustomerProducts,setExistingCustomerProducts]=useState(entry.existingCustomerProducts||"");
   const [callForm,setCallForm]=useState({date:today(),summary:""});
   const [showCallForm,setShowCallForm]=useState(false);
   const [saving,setSaving]=useState(false);
@@ -2463,11 +2466,20 @@ function EnquiryDetail({entry,onClose,canUpdate,isAdmin,allProfiles={},showToast
 
   const updateStatus=async()=>{
     if(newStatus==="Rejected"&&!rejReason.trim())return showToast("Please give a reason for rejection","error");
+    if(newStatus==="Already Buying from Our Customer"&&(!existingCustomerName.trim()||!existingCustomerProducts.trim())){
+      return showToast("Please add which of our customer they're buying from, and which products","error");
+    }
     setSaving(true);
     try{
-      await C("enquiries").doc(entry.id).update({status:newStatus,rejectionReason:newStatus==="Rejected"?rejReason:"",updatedAt:ts()});
+      await C("enquiries").doc(entry.id).update({
+        status:newStatus,
+        rejectionReason:newStatus==="Rejected"?rejReason:"",
+        existingCustomerName:newStatus==="Already Buying from Our Customer"?existingCustomerName:"",
+        existingCustomerProducts:newStatus==="Already Buying from Our Customer"?existingCustomerProducts:"",
+        updatedAt:ts()
+      });
       showToast("Status updated ✓");
-    }catch(e){showToast("Error","error");}
+    }catch(e){showToast("Error: "+e.message,"error");}
     setSaving(false);
   };
 
@@ -2509,17 +2521,31 @@ function EnquiryDetail({entry,onClose,canUpdate,isAdmin,allProfiles={},showToast
       <div style={{fontSize:"10px",fontWeight:"700",color:"#93c5fd",textTransform:"uppercase",letterSpacing:"0.09em",marginBottom:"4px"}}>📋 Enquiry Details</div>
       <div style={{fontSize:"13px",color:"#cbd5e1",lineHeight:1.6,whiteSpace:"pre-wrap"}}>{live.enquiryDetails}</div>
     </div>}
+    {live.status==="Already Buying from Our Customer"&&live.existingCustomerName&&<div style={{background:"#0c1a2e",border:"1px solid #06b6d440",borderRadius:"10px",padding:"10px 14px",marginBottom:"14px"}}>
+      <div style={{fontSize:"10px",fontWeight:"700",color:"#22d3ee",textTransform:"uppercase",letterSpacing:"0.09em",marginBottom:"4px"}}>🔵 Already Buying From Our Customer</div>
+      <div style={{fontSize:"13px",color:"#cbd5e1",lineHeight:1.6}}><strong>{live.existingCustomerName}</strong> — {live.existingCustomerProducts}</div>
+    </div>}
 
     {/* Status update */}
     {canUpdate&&<div style={{border:"1px solid #1e293b",borderRadius:"10px",padding:"12px 14px",marginBottom:"14px",background:"#080d18"}}>
       <div style={{fontSize:"11px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.09em",marginBottom:"8px"}}>Update Status</div>
-      <div style={{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap"}}>
+      <div style={{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap",marginBottom:(newStatus==="Rejected"||newStatus==="Already Buying from Our Customer")?"10px":"0"}}>
         <select style={{...sl,flex:1,minWidth:"180px",borderColor:(ENQUIRY_STATUS_COLORS[newStatus]||"#1e293b")+"60"}} value={newStatus} onChange={e=>setNewStatus(e.target.value)}>
           {ENQUIRY_STATUSES.map(s=><option key={s}>{s}</option>)}
         </select>
         {newStatus==="Rejected"&&<input style={{...inp,flex:1,minWidth:"180px"}} value={rejReason} onChange={e=>setRejReason(e.target.value)} placeholder="Reason for rejection"/>}
-        <Btn label={saving?"Saving…":"✓ Update"} onClick={updateStatus} disabled={saving} color="#2563eb" small/>
+        {newStatus!=="Already Buying from Our Customer"&&<Btn label={saving?"Saving…":"✓ Update"} onClick={updateStatus} disabled={saving} color="#2563eb" small/>}
       </div>
+      {newStatus==="Already Buying from Our Customer"&&<div style={{background:"#0c1a2e",border:"1px solid #06b6d440",borderRadius:"8px",padding:"12px"}}>
+        <div style={{fontSize:"11px",fontWeight:"700",color:"#22d3ee",marginBottom:"10px"}}>🔵 Already buying from one of our customers — who, and what products?</div>
+        <Grid2>
+          <Field label="Our Customer's Name *"><input style={inp} value={existingCustomerName} onChange={e=>setExistingCustomerName(e.target.value)} placeholder="e.g. ABC Distributors"/></Field>
+          <Field label="Products Purchased *"><input style={inp} value={existingCustomerProducts} onChange={e=>setExistingCustomerProducts(e.target.value)} placeholder="e.g. VEEBEE Enamel, PU White Pop"/></Field>
+        </Grid2>
+        <div style={{display:"flex",justifyContent:"flex-end"}}>
+          <Btn label={saving?"Saving…":"✓ Update"} onClick={updateStatus} disabled={saving} color="#2563eb" small/>
+        </div>
+      </div>}
     </div>}
 
     {/* Call summaries */}
