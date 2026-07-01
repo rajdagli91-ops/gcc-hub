@@ -3353,7 +3353,7 @@ function ProductSearch({prods, value, onChange, disabled}){
       <input style={{...inp,paddingRight:"30px",cursor:disabled?"not-allowed":"text",opacity:disabled?0.5:1}}
         value={query} disabled={disabled}
         onChange={e=>{setQuery(e.target.value);setOpen(true);onChange(null);}}
-        onFocus={()=>!disabled&&setOpen(true)}
+        onFocus={()=>{ if(!disabled){ if(value)setQuery(""); setOpen(true); } }}
         placeholder={disabled?"← select category first":"Type to search products…"}/>
       <span onClick={()=>!disabled&&setOpen(o=>!o)}
         style={{position:"absolute",right:"10px",top:"50%",transform:"translateY(-50%)",cursor:"pointer",color:"#475569",fontSize:"12px",pointerEvents:disabled?"none":"auto"}}>
