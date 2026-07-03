@@ -2673,6 +2673,7 @@ function EnquiriesTab({role,roles,user,showToast,allProfiles={},allRoles={},isAd
   const [showCreate,setShowCreate]=useState(false);
   const [statusFilter,setStatusFilter]=useState("All");
   const [enquirySearch,setEnquirySearch]=useState("");
+  const [salesmanFilter,setSalesmanFilter]=useState("All");
   const canCreate=isAdmin||hp("enquiries_create");
   const canViewAll=isAdmin||hp("enquiries_view_all");
   const canUpdateAny=isAdmin||hp("enquiries_update");
@@ -2734,14 +2735,15 @@ function EnquiriesTab({role,roles,user,showToast,allProfiles={},allRoles={},isAd
   const visible=enquiries; // already server-restricted to assigned-only when !canViewAll
   const filtered=visible.filter(e=>{
     if(statusFilter!=="All"&&e.status!==statusFilter)return false;
+    if(salesmanFilter!=="All"&&e.assignedTo!==salesmanFilter)return false;
     if(!enquirySearch.trim())return true;
     const q=normalize(enquirySearch);
-    // Search across customer name, company, contact number, product interest — ignoring
-    // spaces, hyphens, and special characters in both the query and the stored values
+    const salesmanName=normalize(allProfiles[e.assignedTo]?.displayName||e.assignedTo?.split("@")[0]||"");
     return normalize(e.customerName||"").includes(q)
       ||normalize(e.companyName||"").includes(q)
       ||normalize(e.contact||"").includes(q)
-      ||normalize(e.productInterest||"").includes(q);
+      ||normalize(e.productInterest||"").includes(q)
+      ||salesmanName.includes(q);
   });
 
   const createEnquiry=async()=>{
@@ -2782,13 +2784,19 @@ function EnquiriesTab({role,roles,user,showToast,allProfiles={},allRoles={},isAd
         {showCreate?"▲ Cancel":"+ New Enquiry"}</button>}
     </div>
 
-    {/* Smart search */}
-    <div style={{position:"relative",marginBottom:"12px"}}>
-      <span style={{position:"absolute",left:"12px",top:"50%",transform:"translateY(-50%)",color:"#334155",fontSize:"14px",pointerEvents:"none"}}>🔍</span>
-      <input style={{...inp,paddingLeft:"36px",paddingRight:enquirySearch?"36px":"12px"}}
-        value={enquirySearch} onChange={e=>setEnquirySearch(e.target.value)}
-        placeholder="Search by customer name, company, contact number or product…"/>
-      {enquirySearch&&<button onClick={()=>setEnquirySearch("")} style={{position:"absolute",right:"10px",top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#475569",fontSize:"16px",cursor:"pointer",lineHeight:1}}>×</button>}
+    {/* Smart search + salesman filter */}
+    <div style={{display:"flex",gap:"10px",marginBottom:"12px",flexWrap:"wrap"}}>
+      <div style={{position:"relative",flex:1,minWidth:"200px"}}>
+        <span style={{position:"absolute",left:"12px",top:"50%",transform:"translateY(-50%)",color:"#334155",fontSize:"14px",pointerEvents:"none"}}>🔍</span>
+        <input style={{...inp,paddingLeft:"36px",paddingRight:enquirySearch?"36px":"12px",width:"100%"}}
+          value={enquirySearch} onChange={e=>setEnquirySearch(e.target.value)}
+          placeholder="Search customer, company, contact, salesman, product…"/>
+        {enquirySearch&&<button onClick={()=>setEnquirySearch("")} style={{position:"absolute",right:"10px",top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#475569",fontSize:"16px",cursor:"pointer",lineHeight:1}}>×</button>}
+      </div>
+      {canViewAll&&<select style={{...sl,minWidth:"180px",flex:"0 0 auto"}} value={salesmanFilter} onChange={e=>setSalesmanFilter(e.target.value)}>
+        <option value="All">All Salesmen</option>
+        {salesmen.map(email=><option key={email} value={email}>{allProfiles[email]?.displayName||email.split("@")[0]}</option>)}
+      </select>}
     </div>
 
     {/* Status summary chips */}
