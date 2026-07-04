@@ -1413,6 +1413,25 @@ function ComplaintWorkspace({complaint,role,showToast}){
   const [qcResp,setQcResp]=useState({findings:"",action:"",responseDate:today(),respondedBy:""});
   const [salesResp,setSalesResp]=useState({feedback:"",resolved:"Yes",responseDate:today(),respondedBy:""});
   const [newStatus,setNewStatus]=useState(complaint.status);
+  const [showEdit,setShowEdit]=useState(false);
+  const [editForm,setEditForm]=useState({...complaint});
+  const [editFiles,setEditFiles]=useState(complaint.attachments||[]);
+  const isAdmin=role==="admin";
+
+  const saveEdit=async()=>{
+    setSaving(true);
+    try{
+      await C("complaints").doc(complaint.id).update({
+        customerName:editForm.customerName,productName:editForm.productName,
+        batchNo:editForm.batchNo,monthYear:editForm.monthYear,invoiceNo:editForm.invoiceNo,
+        materialAvailable:editForm.materialAvailable,complaint:editForm.complaint,
+        applicationProcess:editForm.applicationProcess||"",thinnerUsed:editForm.thinnerUsed||"",
+        attachments:editFiles
+      });
+      showToast("Complaint updated ✓");setShowEdit(false);
+    }catch(e){showToast("Error: "+e.message,"error");}
+    setSaving(false);
+  };
 
   useEffect(()=>{
     const unsub=C("complaints").doc(complaint.id).onSnapshot(snap=>{
@@ -1504,8 +1523,37 @@ function ComplaintWorkspace({complaint,role,showToast}){
       <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:"4px"}}>
         <Bdg label={live.status} color={sc}/>
         {isReopened&&<span style={{fontSize:"10px",fontWeight:"700",color:"#f59e0b",background:"#f59e0b18",border:"1px solid #f59e0b30",padding:"2px 8px",borderRadius:"99px"}}>🔄 Round {currentRound}</span>}
+        {isAdmin&&<button onClick={()=>{setEditForm({...live});setEditFiles(live.attachments||[]);setShowEdit(v=>!v);}} style={{background:"#0f1d35",border:"1px solid #1e3a5f",borderRadius:"6px",color:"#93c5fd",fontSize:"12px",fontWeight:"700",padding:"5px 12px",cursor:"pointer",marginTop:"4px"}}>
+          {showEdit?"▲ Cancel Edit":"✏️ Edit"}</button>}
       </div>
     </div>
+
+    {/* Edit form — admin only */}
+    {showEdit&&<div style={{background:"#0a1520",border:"1px solid #1e3a5f",borderRadius:"10px",padding:"16px",marginBottom:"14px"}}>
+      <div style={{fontSize:"11px",fontWeight:"700",color:"#93c5fd",textTransform:"uppercase",letterSpacing:"0.09em",marginBottom:"12px"}}>✏️ Edit Complaint Details</div>
+      <Grid3>
+        <Field label="Customer Name"><input style={inp} value={editForm.customerName} onChange={e=>setEditForm({...editForm,customerName:e.target.value})}/></Field>
+        <Field label="Product Name"><input style={inp} value={editForm.productName} onChange={e=>setEditForm({...editForm,productName:e.target.value})}/></Field>
+        <Field label="Batch No"><input style={inp} value={editForm.batchNo||""} onChange={e=>setEditForm({...editForm,batchNo:e.target.value})}/></Field>
+      </Grid3>
+      <Grid3>
+        <Field label="Month/Year"><input style={inp} value={editForm.monthYear||""} onChange={e=>setEditForm({...editForm,monthYear:e.target.value})}/></Field>
+        <Field label="Invoice No"><input style={inp} value={editForm.invoiceNo||""} onChange={e=>setEditForm({...editForm,invoiceNo:e.target.value})}/></Field>
+        <Field label="Material Available"><input style={inp} value={editForm.materialAvailable||""} onChange={e=>setEditForm({...editForm,materialAvailable:e.target.value})}/></Field>
+      </Grid3>
+      <Grid2>
+        <Field label="Process of Application"><input style={inp} value={editForm.applicationProcess||""} onChange={e=>setEditForm({...editForm,applicationProcess:e.target.value})}/></Field>
+        <Field label="Thinner Used"><input style={inp} value={editForm.thinnerUsed||""} onChange={e=>setEditForm({...editForm,thinnerUsed:e.target.value})}/></Field>
+      </Grid2>
+      <Field label="Complaint Description"><textarea style={{...ta,minHeight:"80px"}} value={editForm.complaint} onChange={e=>setEditForm({...editForm,complaint:e.target.value})}/></Field>
+      <Field label="📎 Attachments (add/remove images)">
+        <FileAttachment folder={`complaints/${complaint.id}`} existingFiles={editFiles} onFilesChange={setEditFiles} maxFiles={8}/>
+      </Field>
+      <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",marginTop:"8px"}}>
+        <Btn label="Cancel" onClick={()=>setShowEdit(false)} outline color="#475569" small/>
+        <Btn label={saving?"Saving…":"💾 Save Changes"} onClick={saveEdit} disabled={saving} color="#3b82f6" small/>
+      </div>
+    </div>}
 
     {/* Complaint details with dates */}
     <div style={{background:"#0b1220",border:"1px solid #1e293b",borderLeft:"3px solid #ef4444",borderRadius:"8px",padding:"14px 16px",marginBottom:"14px"}}>
