@@ -567,7 +567,7 @@ const PERMISSION_GROUPS=[
     {k:"tasks_own",    l:"View & complete own tasks"},
     {k:"tasks_assign", l:"Assign tasks to others"},
   ]},
-  {key:"stock",    label:"🏪 RM Stock",    perms:[
+  {key:"stock",    label:"🏪 Stock",    perms:[
     {k:"stock_view",    l:"View stock levels"},
     {k:"stock_consume", l:"Record daily consumption"},
     {k:"stock_manage",  l:"Add / edit materials & import"},
@@ -5008,6 +5008,191 @@ function RMExportImport({materials,CATS,UNITS,user,showToast,onImport}){
   </div>;
 }
 
+// ══════════════════════════════════════════════════════════
+// STOCK — wrapper with RM Stock and FG Stock sub-tabs
+// ══════════════════════════════════════════════════════════
+function StockTab({role,roles,user,showToast,sysUnits,sysRmCats,onAddRmCat,onAddUnit,hp}){
+  const [sub,setSub]=useState("rm");
+  const canManage=roles.includes("admin")||roles.includes("issuer")||hp("stock_manage");
+  return <div>
+    <div style={{display:"flex",gap:"4px",marginBottom:"20px",borderBottom:"1px solid #1e293b"}}>
+      {[["rm","🧪 RM Stock"],["fg","📦 FG Stock"]].map(([k,l])=><button key={k} onClick={()=>setSub(k)} style={{background:sub===k?"#1e293b":"transparent",border:"none",borderBottom:sub===k?"2px solid #22c55e":"2px solid transparent",color:sub===k?"#f1f5f9":"#64748b",padding:"8px 18px",cursor:"pointer",fontSize:"13px",fontWeight:"600",borderRadius:"8px 8px 0 0"}}>{l}</button>)}
+    </div>
+    {sub==="rm"&&<RawMaterialStockTab role={role} user={user} showToast={showToast} sysUnits={sysUnits} sysRmCats={sysRmCats} onAddRmCat={onAddRmCat} onAddUnit={onAddUnit}/>}
+    {sub==="fg"&&<FGStockTab role={role} user={user} showToast={showToast} sysUnits={sysUnits} canManage={canManage}/>}
+  </div>;
+}
+
+// ══════════════════════════════════════════════════════════
+// FG STOCK — finished goods with multi-location rack tracking
+// ══════════════════════════════════════════════════════════
+const FG_BLANK={productName:"",unit:"L",category:"",notes:""};
+const FG_TXN_BLANK={type:"add",qty:"",rack:"",notes:"",date:today()};
+
+function FGStockCard({item,onConsume,onAddStock,isAdmin,canManage}){
+  const [open,setOpen]=useState(false);
+  const totalQty=Object.values(item.racks||{}).reduce((s,q)=>s+(parseFloat(q)||0),0);
+  const racks=Object.entries(item.racks||{}).filter(([,q])=>parseFloat(q)>0);
+  return <div style={{background:"#0f172a",border:"1px solid #1e293b",borderLeft:"3px solid #22c55e",borderRadius:"12px",marginBottom:"10px",overflow:"hidden"}}>
+    <div onClick={()=>setOpen(v=>!v)} style={{padding:"13px 16px",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+      <div>
+        <div style={{fontSize:"14px",fontWeight:"700",color:"#f1f5f9"}}>{item.productName}</div>
+        <div style={{fontSize:"11.5px",color:"#475569",marginTop:"2px"}}>{item.category&&<span>{item.category} · </span>}Total: <strong style={{color:"#22c55e"}}>{totalQty.toFixed(2)} {item.unit}</strong>{racks.length>0&&<span style={{color:"#334155"}}> across {racks.length} location{racks.length!==1?"s":""}</span>}</div>
+      </div>
+      <div style={{display:"flex",gap:"6px",alignItems:"center"}}>
+        {canManage&&<button onClick={e=>{e.stopPropagation();onAddStock(item);}} style={{background:"#052e16",border:"1px solid #166534",borderRadius:"6px",color:"#4ade80",fontSize:"12px",fontWeight:"700",padding:"5px 10px",cursor:"pointer"}}>+ Add Stock</button>}
+        {canManage&&<button onClick={e=>{e.stopPropagation();onConsume(item);}} style={{background:"#2e0a0a",border:"1px solid #7f1d1d",borderRadius:"6px",color:"#f87171",fontSize:"12px",fontWeight:"700",padding:"5px 10px",cursor:"pointer"}}>− Consume</button>}
+        <span style={{color:"#334155",fontSize:"14px"}}>{open?"▲":"▼"}</span>
+      </div>
+    </div>
+    {open&&<div style={{borderTop:"1px solid #1e293b",padding:"10px 16px",background:"#080d18"}}>
+      <div style={{fontSize:"11px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"8px"}}>📍 Stock by Location</div>
+      {racks.length===0?<div style={{fontSize:"12px",color:"#334155",fontStyle:"italic"}}>No stock in any location.</div>
+      :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:"8px",marginBottom:"10px"}}>
+        {racks.map(([rack,qty])=><div key={rack} style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"8px",padding:"8px 12px",textAlign:"center"}}>
+          <div style={{fontSize:"11px",color:"#475569",fontWeight:"600",marginBottom:"2px"}}>📦 {rack}</div>
+          <div style={{fontSize:"16px",fontWeight:"700",color:"#22c55e"}}>{parseFloat(qty).toFixed(2)}</div>
+          <div style={{fontSize:"10px",color:"#334155"}}>{item.unit}</div>
+        </div>)}
+      </div>}
+      {item.notes&&<div style={{fontSize:"12px",color:"#475569",marginTop:"6px"}}>📝 {item.notes}</div>}
+    </div>}
+  </div>;
+}
+
+function FGStockTab({role,user,showToast,sysUnits,canManage}){
+  const isAdmin=role==="admin";
+  const [items,setItems]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [search,setSearch]=useState("");
+  const [showAdd,setShowAdd]=useState(false);
+  const [form,setForm]=useState(FG_BLANK);
+  const [saving,setSaving]=useState(false);
+  // Transaction modal state
+  const [txnModal,setTxnModal]=useState(null); // {item, mode:"add"|"consume"}
+  const [txn,setTxn]=useState(FG_TXN_BLANK);
+
+  useEffect(()=>{
+    const unsub=C("fg_stock").orderBy("productName").onSnapshot(
+      snap=>{setItems(snap.docs.map(d=>({id:d.id,...d.data()})));setLoading(false);},
+      ()=>{C("fg_stock").onSnapshot(snap=>{setItems(snap.docs.map(d=>({id:d.id,...d.data()})));setLoading(false);});}
+    );
+    return unsub;
+  },[]);
+
+  const addProduct=async()=>{
+    if(!form.productName.trim())return showToast("Product name required","error");
+    setSaving(true);
+    try{
+      await C("fg_stock").add({...form,racks:{},createdBy:user?.email,_createdAt:ts()});
+      showToast("Product added to FG Stock ✓");setForm(FG_BLANK);setShowAdd(false);
+    }catch(e){showToast("Error: "+e.message,"error");}
+    setSaving(false);
+  };
+
+  const openTxn=(item,mode)=>{setTxnModal({item,mode});setTxn({...FG_TXN_BLANK,type:mode});};
+
+  const saveTxn=async()=>{
+    const {item,mode}=txnModal;
+    const qty=parseFloat(txn.qty);
+    if(!qty||qty<=0)return showToast("Enter a valid quantity","error");
+    if(!txn.rack.trim())return showToast("Specify the rack/location","error");
+    const currentRacks={...item.racks};
+    const existing=parseFloat(currentRacks[txn.rack])||0;
+    if(mode==="consume"&&qty>existing)return showToast(`Only ${existing} ${item.unit} in ${txn.rack}. Cannot consume more than available.`,"error");
+    setSaving(true);
+    try{
+      const newQty=mode==="add"?existing+qty:existing-qty;
+      const updatedRacks={...currentRacks,[txn.rack]:parseFloat(newQty.toFixed(3))};
+      // Clean out zero-qty racks to keep data tidy
+      Object.keys(updatedRacks).forEach(k=>{if(updatedRacks[k]<=0)delete updatedRacks[k];});
+      await C("fg_stock").doc(item.id).update({racks:updatedRacks});
+      await C("fg_stock_transactions").add({
+        productId:item.id,productName:item.productName,type:mode,
+        qty,unit:item.unit,rack:txn.rack,notes:txn.notes||"",
+        date:txn.date,addedBy:user?.email,_createdAt:ts()
+      });
+      showToast(mode==="add"?"Stock added ✓":"Stock consumed ✓");
+      setTxnModal(null);
+    }catch(e){showToast("Error: "+e.message,"error");}
+    setSaving(false);
+  };
+
+  const deleteItem=async(id)=>{
+    if(!isAdmin||!confirm("Delete this FG Stock item?"))return;
+    await C("fg_stock").doc(id).delete();
+    showToast("Deleted","error");
+  };
+
+  const filtered=items.filter(i=>!search.trim()||normalize(i.productName||"").includes(normalize(search))||normalize(i.category||"").includes(normalize(search)));
+
+  return <div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"16px",flexWrap:"wrap",gap:"10px"}}>
+      <div style={{position:"relative",flex:1,minWidth:"200px"}}>
+        <span style={{position:"absolute",left:"12px",top:"50%",transform:"translateY(-50%)",color:"#334155",fontSize:"14px",pointerEvents:"none"}}>🔍</span>
+        <input style={{...inp,paddingLeft:"36px"}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search product or category…"/>
+      </div>
+      {canManage&&<Btn label={showAdd?"▲ Cancel":"+ Add FG Product"} onClick={()=>setShowAdd(v=>!v)} color="#22c55e"/>}
+    </div>
+
+    {showAdd&&<div style={{background:"#060d1a",border:"1px solid #166534",borderRadius:"12px",padding:"18px",marginBottom:"16px"}}>
+      <div style={{fontSize:"13px",fontWeight:"700",color:"#4ade80",marginBottom:"12px"}}>📦 Add New FG Product</div>
+      <Grid3>
+        <Field label="Product Name *"><input style={inp} value={form.productName} onChange={e=>setForm({...form,productName:e.target.value})} placeholder="e.g. Syn Black (Popular) 20L"/></Field>
+        <Field label="Category"><input style={inp} value={form.category} onChange={e=>setForm({...form,category:e.target.value})} placeholder="e.g. Popular Enamel"/></Field>
+        <Field label="Unit">
+          <select style={sl} value={form.unit} onChange={e=>setForm({...form,unit:e.target.value})}>
+            {(sysUnits||["L","kg","g","mL","pcs"]).map(u=><option key={u}>{u}</option>)}
+          </select>
+        </Field>
+      </Grid3>
+      <Field label="Notes"><input style={inp} value={form.notes} onChange={e=>setForm({...form,notes:e.target.value})} placeholder="Optional notes…"/></Field>
+      <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
+        <Btn label="Cancel" onClick={()=>setShowAdd(false)} outline color="#475569" small/>
+        <Btn label={saving?"Saving…":"Save"} onClick={addProduct} disabled={saving} color="#22c55e" small/>
+      </div>
+    </div>}
+
+    {/* Transaction Modal */}
+    {txnModal&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <div style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"14px",padding:"22px",width:"min(460px,94vw)",maxHeight:"90vh",overflowY:"auto"}}>
+        <div style={{fontSize:"15px",fontWeight:"700",color:txnModal.mode==="add"?"#4ade80":"#f87171",marginBottom:"14px"}}>
+          {txnModal.mode==="add"?"+ Add Stock":"− Consume Stock"} — {txnModal.item.productName}
+        </div>
+        {/* Show current rack inventory to help user decide */}
+        {Object.entries(txnModal.item.racks||{}).filter(([,q])=>parseFloat(q)>0).length>0&&<div style={{background:"#080d18",border:"1px solid #1e293b",borderRadius:"8px",padding:"10px 12px",marginBottom:"14px"}}>
+          <div style={{fontSize:"10px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"6px"}}>Current Stock by Location</div>
+          <div style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>
+            {Object.entries(txnModal.item.racks||{}).filter(([,q])=>parseFloat(q)>0).map(([rack,qty])=><div key={rack} style={{background:"#0b1220",border:"1px solid #1e3a5f",borderRadius:"6px",padding:"4px 10px",fontSize:"12px",color:"#94a3b8"}}>{rack}: <strong style={{color:"#22c55e"}}>{parseFloat(qty).toFixed(2)} {txnModal.item.unit}</strong></div>)}
+          </div>
+        </div>}
+        <Grid2>
+          <Field label="Quantity *"><input style={inp} type="number" min="0.001" step="0.001" value={txn.qty} onChange={e=>setTxn({...txn,qty:e.target.value})} placeholder={`in ${txnModal.item.unit}`}/></Field>
+          <Field label={txnModal.mode==="add"?"Rack / Location *":"From Rack *"}>
+            <input style={inp} value={txn.rack} onChange={e=>setTxn({...txn,rack:e.target.value})} placeholder="e.g. Rack 1, Bay A, Shelf 3"/>
+            {/* Quick rack suggestions from existing locations */}
+            {Object.keys(txnModal.item.racks||{}).filter(r=>parseFloat(txnModal.item.racks[r])>0).length>0&&<div style={{display:"flex",gap:"4px",flexWrap:"wrap",marginTop:"5px"}}>
+              {Object.keys(txnModal.item.racks||{}).filter(r=>parseFloat(txnModal.item.racks[r])>0).map(r=><button key={r} onClick={()=>setTxn({...txn,rack:r})} style={{background:txn.rack===r?"#1e3a5f":"#0b1220",border:`1px solid ${txn.rack===r?"#3b82f6":"#1e293b"}`,borderRadius:"5px",color:txn.rack===r?"#93c5fd":"#475569",fontSize:"10.5px",padding:"2px 8px",cursor:"pointer"}}>{r}</button>)}
+            </div>}
+          </Field>
+        </Grid2>
+        <Grid2>
+          <Field label="Date"><input type="date" style={inp} value={txn.date} onChange={e=>setTxn({...txn,date:e.target.value})}/></Field>
+          <Field label="Notes"><input style={inp} value={txn.notes} onChange={e=>setTxn({...txn,notes:e.target.value})} placeholder="Optional…"/></Field>
+        </Grid2>
+        <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",marginTop:"4px"}}>
+          <Btn label="Cancel" onClick={()=>setTxnModal(null)} outline color="#475569" small/>
+          <Btn label={saving?"Saving…":(txnModal.mode==="add"?"+ Add Stock":"− Consume")} onClick={saveTxn} disabled={saving} color={txnModal.mode==="add"?"#22c55e":"#ef4444"} small/>
+        </div>
+      </div>
+    </div>}
+
+    {loading?<div style={{textAlign:"center",padding:"40px",color:"#475569"}}>Loading…</div>
+    :filtered.length===0?<div style={{textAlign:"center",padding:"50px 0"}}><div style={{fontSize:"36px",marginBottom:"10px"}}>📦</div><div style={{fontSize:"13px",color:"#475569"}}>No FG Stock items yet.{canManage?" Click + Add FG Product to start.":""}</div></div>
+    :filtered.map(item=><FGStockCard key={item.id} item={item} onConsume={i=>openTxn(i,"consume")} onAddStock={i=>openTxn(i,"add")} isAdmin={isAdmin} canManage={canManage} onDelete={deleteItem}/>)}
+  </div>;
+}
+
 function RawMaterialStockTab({role,user,showToast,sysUnits,sysRmCats,onAddRmCat,onAddUnit}){
   const isAdmin=role==="admin";
   const canStore=role==="admin"||role==="store";
@@ -7955,7 +8140,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
     {key:"rd",label:"🧪 R&D & QC"},
     {key:"bom",label:"📋 BOM"},
     {key:"tasks",label:"✅ Tasks"},
-    {key:"stock",label:"🏪 RM Stock"},
+    {key:"stock",label:"🏪 Stock"},
     {key:"testimonials",label:"⭐ Testimonials"},
     {key:"enquiries",label:"📞 Enquiries"},
     {key:"users",label:"👥 Users"},
@@ -8159,7 +8344,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
       </>}
       {tab==="bom"&&<BOMTab role={role} roles={roles} user={user} showToast={showToast} sysProducts={sysProducts} sysPackSizes={sysPackSizes} sysQcParams={sysQcParams}/>}
       {tab==="tasks"&&<TasksTab user={user} roles={roles} showToast={showToast} allRoles={allRoles} allProfiles={allProfiles}/>}
-      {tab==="stock"&&<RawMaterialStockTab role={role} user={user} showToast={showToast} sysUnits={sysUnits} sysRmCats={sysRmCats} onAddRmCat={addGlobalRmCat} onAddUnit={addGlobalUnit}/>}
+      {tab==="stock"&&<StockTab role={role} roles={roles} user={user} showToast={showToast} sysUnits={sysUnits} sysRmCats={sysRmCats} onAddRmCat={addGlobalRmCat} onAddUnit={addGlobalUnit} hp={hp}/>}
       {tab==="testimonials"&&<TestimonialsTab role={role} user={user} showToast={showToast}/>}
       {tab==="enquiries"&&<EnquiriesTab role={role} roles={roles} user={user} showToast={showToast} allProfiles={allProfiles} allRoles={allRoles} isAdmin={isAdmin} hp={hp}/>}
       {tab==="users"&&<UsersTab currentUser={user}/>}
