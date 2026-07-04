@@ -5011,6 +5011,9 @@ function RMExportImport({materials,CATS,UNITS,user,showToast,onImport}){
 // ══════════════════════════════════════════════════════════
 // STOCK — wrapper with RM Stock and FG Stock sub-tabs
 // ══════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════
+// STOCK — wrapper with RM Stock and FG Stock sub-tabs
+// ══════════════════════════════════════════════════════════
 function StockTab({role,roles,user,showToast,sysUnits,sysRmCats,onAddRmCat,onAddUnit,hp}){
   const [sub,setSub]=useState("rm");
   const canManage=roles.includes("admin")||roles.includes("issuer")||hp("stock_manage");
@@ -5024,174 +5027,289 @@ function StockTab({role,roles,user,showToast,sysUnits,sysRmCats,onAddRmCat,onAdd
 }
 
 // ══════════════════════════════════════════════════════════
-// FG STOCK — finished goods with multi-location rack tracking
+// FG STOCK — visual warehouse diagram with per-cell stock tracking
+// Notation: Rack.Level (e.g. "1.2" = Rack 1, Level 2)
+// Level 1 = bottom shelf, Level 4 = top shelf
 // ══════════════════════════════════════════════════════════
-const FG_BLANK={productName:"",unit:"L",category:"",notes:""};
-const FG_TXN_BLANK={type:"add",qty:"",rack:"",notes:"",date:today()};
-
-function FGStockCard({item,onConsume,onAddStock,isAdmin,canManage}){
-  const [open,setOpen]=useState(false);
-  const totalQty=Object.values(item.racks||{}).reduce((s,q)=>s+(parseFloat(q)||0),0);
-  const racks=Object.entries(item.racks||{}).filter(([,q])=>parseFloat(q)>0);
-  return <div style={{background:"#0f172a",border:"1px solid #1e293b",borderLeft:"3px solid #22c55e",borderRadius:"12px",marginBottom:"10px",overflow:"hidden"}}>
-    <div onClick={()=>setOpen(v=>!v)} style={{padding:"13px 16px",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-      <div>
-        <div style={{fontSize:"14px",fontWeight:"700",color:"#f1f5f9"}}>{item.productName}</div>
-        <div style={{fontSize:"11.5px",color:"#475569",marginTop:"2px"}}>{item.category&&<span>{item.category} · </span>}Total: <strong style={{color:"#22c55e"}}>{totalQty.toFixed(2)} {item.unit}</strong>{racks.length>0&&<span style={{color:"#334155"}}> across {racks.length} location{racks.length!==1?"s":""}</span>}</div>
-      </div>
-      <div style={{display:"flex",gap:"6px",alignItems:"center"}}>
-        {canManage&&<button onClick={e=>{e.stopPropagation();onAddStock(item);}} style={{background:"#052e16",border:"1px solid #166534",borderRadius:"6px",color:"#4ade80",fontSize:"12px",fontWeight:"700",padding:"5px 10px",cursor:"pointer"}}>+ Add Stock</button>}
-        {canManage&&<button onClick={e=>{e.stopPropagation();onConsume(item);}} style={{background:"#2e0a0a",border:"1px solid #7f1d1d",borderRadius:"6px",color:"#f87171",fontSize:"12px",fontWeight:"700",padding:"5px 10px",cursor:"pointer"}}>− Consume</button>}
-        <span style={{color:"#334155",fontSize:"14px"}}>{open?"▲":"▼"}</span>
-      </div>
-    </div>
-    {open&&<div style={{borderTop:"1px solid #1e293b",padding:"10px 16px",background:"#080d18"}}>
-      <div style={{fontSize:"11px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"8px"}}>📍 Stock by Location</div>
-      {racks.length===0?<div style={{fontSize:"12px",color:"#334155",fontStyle:"italic"}}>No stock in any location.</div>
-      :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:"8px",marginBottom:"10px"}}>
-        {racks.map(([rack,qty])=><div key={rack} style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"8px",padding:"8px 12px",textAlign:"center"}}>
-          <div style={{fontSize:"11px",color:"#475569",fontWeight:"600",marginBottom:"2px"}}>📦 {rack}</div>
-          <div style={{fontSize:"16px",fontWeight:"700",color:"#22c55e"}}>{parseFloat(qty).toFixed(2)}</div>
-          <div style={{fontSize:"10px",color:"#334155"}}>{item.unit}</div>
-        </div>)}
-      </div>}
-      {item.notes&&<div style={{fontSize:"12px",color:"#475569",marginTop:"6px"}}>📝 {item.notes}</div>}
-    </div>}
-  </div>;
-}
-
 function FGStockTab({role,user,showToast,sysUnits,canManage}){
   const isAdmin=role==="admin";
-  const [items,setItems]=useState([]);
-  const [loading,setLoading]=useState(true);
-  const [search,setSearch]=useState("");
-  const [showAdd,setShowAdd]=useState(false);
-  const [form,setForm]=useState(FG_BLANK);
+  // ── Rack config (persisted in fg_config doc) ──
+  const [rackConfig,setRackConfig]=useState([]); // [{id,name,levels}]
+  const [configLoaded,setConfigLoaded]=useState(false);
+  // ── Stock data: cell key -> {items:[{productName,qty,unit}]} ──
+  const [cellStock,setCellStock]=useState({}); // {"1.2": [...products...]}
+  const [stockLoaded,setStockLoaded]=useState(false);
+  // ── UI state ──
+  const [showConfigPanel,setShowConfigPanel]=useState(false);
+  const [selectedCell,setSelectedCell]=useState(null); // "1.2"
+  const [txnModal,setTxnModal]=useState(null); // {mode:"add"|"consume", cell}
+  const [txn,setTxn]=useState({productName:"",qty:"",unit:"L",notes:"",date:today()});
   const [saving,setSaving]=useState(false);
-  // Transaction modal state
-  const [txnModal,setTxnModal]=useState(null); // {item, mode:"add"|"consume"}
-  const [txn,setTxn]=useState(FG_TXN_BLANK);
+  const [newRackName,setNewRackName]=useState("");
+  const [newRackLevels,setNewRackLevels]=useState(4);
+  const MAX_LEVELS=8;
 
+  // Load rack config
   useEffect(()=>{
-    const unsub=C("fg_stock").orderBy("productName").onSnapshot(
-      snap=>{setItems(snap.docs.map(d=>({id:d.id,...d.data()})));setLoading(false);},
-      ()=>{C("fg_stock").onSnapshot(snap=>{setItems(snap.docs.map(d=>({id:d.id,...d.data()})));setLoading(false);});}
-    );
+    const unsub=C("fg_config").doc("warehouse").onSnapshot(snap=>{
+      if(snap.exists&&snap.data().racks)setRackConfig(snap.data().racks);
+      else setRackConfig([]);
+      setConfigLoaded(true);
+    },()=>setConfigLoaded(true));
     return unsub;
   },[]);
 
-  const addProduct=async()=>{
-    if(!form.productName.trim())return showToast("Product name required","error");
-    setSaving(true);
-    try{
-      await C("fg_stock").add({...form,racks:{},createdBy:user?.email,_createdAt:ts()});
-      showToast("Product added to FG Stock ✓");setForm(FG_BLANK);setShowAdd(false);
-    }catch(e){showToast("Error: "+e.message,"error");}
-    setSaving(false);
+  // Load all FG stock transactions aggregated per cell
+  useEffect(()=>{
+    const unsub=C("fg_stock_v2").onSnapshot(snap=>{
+      const map={};
+      snap.docs.forEach(d=>{
+        const dat=d.data();
+        const k=dat.cell;
+        if(!map[k])map[k]=[];
+        map[k].push({id:d.id,...dat});
+      });
+      setCellStock(map);
+      setStockLoaded(true);
+    },()=>setStockLoaded(true));
+    return unsub;
+  },[]);
+
+  // ── Rack config mutations ──
+  const saveRackConfig=async(newConfig)=>{
+    await C("fg_config").doc("warehouse").set({racks:newConfig},{merge:true});
+    setRackConfig(newConfig);
+  };
+  const addRack=async()=>{
+    if(!newRackName.trim())return showToast("Enter rack name","error");
+    if(rackConfig.find(r=>r.name.trim().toLowerCase()===newRackName.trim().toLowerCase()))return showToast("Rack with that name already exists","error");
+    const updated=[...rackConfig,{id:newId(),name:newRackName.trim(),levels:parseInt(newRackLevels)||4}];
+    await saveRackConfig(updated);
+    setNewRackName("");setNewRackLevels(4);
+    showToast("Rack added ✓");
+  };
+  const removeRack=async(rackId)=>{
+    if(!confirm("Remove this rack? Stock data for this rack is preserved but won't appear in the diagram."))return;
+    await saveRackConfig(rackConfig.filter(r=>r.id!==rackId));
+    showToast("Rack removed","error");
+  };
+  const updateRackLevels=async(rackId,levels)=>{
+    await saveRackConfig(rackConfig.map(r=>r.id===rackId?{...r,levels:parseInt(levels)||4}:r));
   };
 
-  const openTxn=(item,mode)=>{setTxnModal({item,mode});setTxn({...FG_TXN_BLANK,type:mode});};
+  // ── Cell stock helpers ──
+  const getCellProducts=(cell)=>cellStock[cell]||[];
+  const getCellTotal=(cell)=>getCellProducts(cell).reduce((s,p)=>s+(parseFloat(p.totalQty)||0),0);
 
+  // ── Transaction modal ──
+  const openTxn=(cell,mode)=>{
+    setTxnModal({cell,mode});
+    setTxn({productName:"",qty:"",unit:sysUnits?.[0]||"L",notes:"",date:today()});
+  };
   const saveTxn=async()=>{
-    const {item,mode}=txnModal;
+    const {cell,mode}=txnModal;
+    if(!txn.productName.trim())return showToast("Enter product name","error");
     const qty=parseFloat(txn.qty);
     if(!qty||qty<=0)return showToast("Enter a valid quantity","error");
-    if(!txn.rack.trim())return showToast("Specify the rack/location","error");
-    const currentRacks={...item.racks};
-    const existing=parseFloat(currentRacks[txn.rack])||0;
-    if(mode==="consume"&&qty>existing)return showToast(`Only ${existing} ${item.unit} in ${txn.rack}. Cannot consume more than available.`,"error");
     setSaving(true);
     try{
-      const newQty=mode==="add"?existing+qty:existing-qty;
-      const updatedRacks={...currentRacks,[txn.rack]:parseFloat(newQty.toFixed(3))};
-      // Clean out zero-qty racks to keep data tidy
-      Object.keys(updatedRacks).forEach(k=>{if(updatedRacks[k]<=0)delete updatedRacks[k];});
-      await C("fg_stock").doc(item.id).update({racks:updatedRacks});
-      await C("fg_stock_transactions").add({
-        productId:item.id,productName:item.productName,type:mode,
-        qty,unit:item.unit,rack:txn.rack,notes:txn.notes||"",
-        date:txn.date,addedBy:user?.email,_createdAt:ts()
-      });
-      showToast(mode==="add"?"Stock added ✓":"Stock consumed ✓");
+      // Each cell×product combo is one doc in fg_stock_v2
+      const existing=getCellProducts(cell).find(p=>normalize(p.productName)===normalize(txn.productName));
+      if(mode==="consume"){
+        if(!existing||parseFloat(existing.totalQty||0)<qty)
+          return showToast(`Only ${existing?existing.totalQty:0} ${txn.unit} of ${txn.productName} in this location`,"error");
+        const newQty=parseFloat((parseFloat(existing.totalQty)-qty).toFixed(3));
+        if(newQty<=0)await C("fg_stock_v2").doc(existing.id).delete();
+        else await C("fg_stock_v2").doc(existing.id).update({totalQty:newQty});
+      }else{
+        if(existing){
+          await C("fg_stock_v2").doc(existing.id).update({totalQty:parseFloat((parseFloat(existing.totalQty)+qty).toFixed(3))});
+        }else{
+          await C("fg_stock_v2").add({cell,productName:txn.productName.trim(),totalQty:qty,unit:txn.unit,_createdAt:ts()});
+        }
+      }
+      await C("fg_transactions").add({cell,productName:txn.productName.trim(),type:mode,qty,unit:txn.unit,notes:txn.notes,date:txn.date,by:user?.email,_createdAt:ts()});
+      showToast(mode==="add"?"Stock added ✓":"Consumed ✓");
       setTxnModal(null);
     }catch(e){showToast("Error: "+e.message,"error");}
     setSaving(false);
   };
 
-  const deleteItem=async(id)=>{
-    if(!isAdmin||!confirm("Delete this FG Stock item?"))return;
-    await C("fg_stock").doc(id).delete();
-    showToast("Deleted","error");
-  };
+  // ── Selected cell panel ──
+  const selectedProducts=selectedCell?getCellProducts(selectedCell):[];
+  const [rackIdx,levelIdx]=selectedCell?selectedCell.split(".").map(Number):[null,null];
+  const selectedRack=selectedCell?rackConfig.find(r=>{
+    const idx=rackConfig.indexOf(r);
+    return (idx+1)===rackIdx;
+  }):null;
 
-  const filtered=items.filter(i=>!search.trim()||normalize(i.productName||"").includes(normalize(search))||normalize(i.category||"").includes(normalize(search)));
+  // ── Diagram cell ──
+  const CELL_W=90,CELL_H=52,RACK_GAP=12,HEADER_H=28,LEVEL_LABEL_W=32;
+  const maxLevels=rackConfig.length>0?Math.max(...rackConfig.map(r=>r.levels)):4;
+
+  if(!configLoaded||!stockLoaded)return <div style={{textAlign:"center",padding:"40px",color:"#475569"}}>Loading warehouse layout…</div>;
 
   return <div>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"16px",flexWrap:"wrap",gap:"10px"}}>
-      <div style={{position:"relative",flex:1,minWidth:"200px"}}>
-        <span style={{position:"absolute",left:"12px",top:"50%",transform:"translateY(-50%)",color:"#334155",fontSize:"14px",pointerEvents:"none"}}>🔍</span>
-        <input style={{...inp,paddingLeft:"36px"}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search product or category…"/>
-      </div>
-      {canManage&&<Btn label={showAdd?"▲ Cancel":"+ Add FG Product"} onClick={()=>setShowAdd(v=>!v)} color="#22c55e"/>}
+    {/* Toolbar */}
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"14px",flexWrap:"wrap",gap:"8px"}}>
+      <div style={{fontSize:"13px",color:"#64748b"}}>{rackConfig.length} rack{rackConfig.length!==1?"s":""} configured · click any cell to view / update stock</div>
+      {canManage&&<button onClick={()=>setShowConfigPanel(v=>!v)} style={{background:"#0f1d35",border:"1px solid #1e3a5f",borderRadius:"8px",padding:"7px 14px",color:"#93c5fd",fontWeight:"700",fontSize:"12.5px",cursor:"pointer"}}>
+        {showConfigPanel?"▲ Close Layout Editor":"⚙️ Edit Rack Layout"}
+      </button>}
     </div>
 
-    {showAdd&&<div style={{background:"#060d1a",border:"1px solid #166534",borderRadius:"12px",padding:"18px",marginBottom:"16px"}}>
-      <div style={{fontSize:"13px",fontWeight:"700",color:"#4ade80",marginBottom:"12px"}}>📦 Add New FG Product</div>
-      <Grid3>
-        <Field label="Product Name *"><input style={inp} value={form.productName} onChange={e=>setForm({...form,productName:e.target.value})} placeholder="e.g. Syn Black (Popular) 20L"/></Field>
-        <Field label="Category"><input style={inp} value={form.category} onChange={e=>setForm({...form,category:e.target.value})} placeholder="e.g. Popular Enamel"/></Field>
-        <Field label="Unit">
-          <select style={sl} value={form.unit} onChange={e=>setForm({...form,unit:e.target.value})}>
-            {(sysUnits||["L","kg","g","mL","pcs"]).map(u=><option key={u}>{u}</option>)}
+    {/* Config panel */}
+    {showConfigPanel&&<div style={{background:"#060d1a",border:"1px solid #1e3a5f",borderRadius:"12px",padding:"16px",marginBottom:"16px"}}>
+      <div style={{fontSize:"12px",fontWeight:"700",color:"#93c5fd",marginBottom:"12px"}}>⚙️ Rack Layout Editor</div>
+      {/* Existing racks */}
+      {rackConfig.map((r,i)=><div key={r.id} style={{display:"flex",gap:"8px",alignItems:"center",marginBottom:"8px",flexWrap:"wrap"}}>
+        <div style={{fontSize:"13px",fontWeight:"600",color:"#e2e8f0",minWidth:"80px"}}>{r.name}</div>
+        <div style={{display:"flex",alignItems:"center",gap:"6px",fontSize:"12px",color:"#64748b"}}>
+          Levels:
+          <select style={{...sl,width:"70px",padding:"4px 6px",fontSize:"12px"}} value={r.levels} onChange={e=>updateRackLevels(r.id,e.target.value)}>
+            {Array.from({length:MAX_LEVELS},(_,i)=><option key={i+1} value={i+1}>{i+1}</option>)}
           </select>
-        </Field>
-      </Grid3>
-      <Field label="Notes"><input style={inp} value={form.notes} onChange={e=>setForm({...form,notes:e.target.value})} placeholder="Optional notes…"/></Field>
-      <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
-        <Btn label="Cancel" onClick={()=>setShowAdd(false)} outline color="#475569" small/>
-        <Btn label={saving?"Saving…":"Save"} onClick={addProduct} disabled={saving} color="#22c55e" small/>
+        </div>
+        <button onClick={()=>removeRack(r.id)} style={{background:"none",border:"1px solid #7f1d1d",borderRadius:"5px",color:"#f87171",fontSize:"11px",padding:"3px 8px",cursor:"pointer"}}>Remove</button>
+      </div>)}
+      {/* Add rack */}
+      <div style={{display:"flex",gap:"8px",alignItems:"center",marginTop:"10px",flexWrap:"wrap"}}>
+        <input style={{...inp,flex:1,minWidth:"130px"}} value={newRackName} onChange={e=>setNewRackName(e.target.value)} placeholder="Rack name (e.g. Rack 5)"/>
+        <div style={{display:"flex",alignItems:"center",gap:"6px",fontSize:"12px",color:"#64748b"}}>
+          Levels:
+          <select style={{...sl,width:"70px",padding:"4px 6px",fontSize:"12px"}} value={newRackLevels} onChange={e=>setNewRackLevels(e.target.value)}>
+            {Array.from({length:MAX_LEVELS},(_,i)=><option key={i+1} value={i+1}>{i+1}</option>)}
+          </select>
+        </div>
+        <button onClick={addRack} style={{background:"#0f2d1a",border:"1px solid #166534",borderRadius:"7px",color:"#4ade80",fontWeight:"700",fontSize:"12.5px",padding:"7px 14px",cursor:"pointer"}}>+ Add Rack</button>
       </div>
     </div>}
 
-    {/* Transaction Modal */}
-    {txnModal&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center"}}>
-      <div style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"14px",padding:"22px",width:"min(460px,94vw)",maxHeight:"90vh",overflowY:"auto"}}>
-        <div style={{fontSize:"15px",fontWeight:"700",color:txnModal.mode==="add"?"#4ade80":"#f87171",marginBottom:"14px"}}>
-          {txnModal.mode==="add"?"+ Add Stock":"− Consume Stock"} — {txnModal.item.productName}
+    {rackConfig.length===0?<div style={{textAlign:"center",padding:"60px 0",border:"2px dashed #1e293b",borderRadius:"12px"}}>
+      <div style={{fontSize:"40px",marginBottom:"10px"}}>🏭</div>
+      <div style={{fontSize:"13px",color:"#475569",marginBottom:"12px"}}>No racks configured yet.</div>
+      {canManage&&<button onClick={()=>setShowConfigPanel(true)} style={{background:"#1e3a5f",border:"1px solid #2563eb",borderRadius:"8px",padding:"8px 16px",color:"#93c5fd",fontWeight:"700",fontSize:"13px",cursor:"pointer"}}>⚙️ Set Up Warehouse Layout</button>}
+    </div>:<div style={{display:"flex",gap:"16px",flexWrap:"wrap"}}>
+
+      {/* ── WAREHOUSE DIAGRAM ── */}
+      <div style={{overflowX:"auto",flex:1,minWidth:"320px"}}>
+        {/* Level labels (Y axis) — drawn outside the rack blocks */}
+        <div style={{display:"flex",gap:`${RACK_GAP}px`,paddingLeft:`${LEVEL_LABEL_W+RACK_GAP}px`,marginBottom:"6px"}}>
+          {rackConfig.map(r=><div key={r.id} style={{width:CELL_W,textAlign:"center",fontSize:"11px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.07em"}}>{r.name}</div>)}
         </div>
-        {/* Show current rack inventory to help user decide */}
-        {Object.entries(txnModal.item.racks||{}).filter(([,q])=>parseFloat(q)>0).length>0&&<div style={{background:"#080d18",border:"1px solid #1e293b",borderRadius:"8px",padding:"10px 12px",marginBottom:"14px"}}>
-          <div style={{fontSize:"10px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"6px"}}>Current Stock by Location</div>
-          <div style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>
-            {Object.entries(txnModal.item.racks||{}).filter(([,q])=>parseFloat(q)>0).map(([rack,qty])=><div key={rack} style={{background:"#0b1220",border:"1px solid #1e3a5f",borderRadius:"6px",padding:"4px 10px",fontSize:"12px",color:"#94a3b8"}}>{rack}: <strong style={{color:"#22c55e"}}>{parseFloat(qty).toFixed(2)} {txnModal.item.unit}</strong></div>)}
+        <div style={{display:"flex",gap:0}}>
+          {/* Level axis */}
+          <div style={{display:"flex",flexDirection:"column",width:LEVEL_LABEL_W,gap:0}}>
+            <div style={{height:HEADER_H}}/>
+            {Array.from({length:maxLevels},(_,i)=>maxLevels-i).map(lv=><div key={lv} style={{height:CELL_H,display:"flex",alignItems:"center",justifyContent:"flex-end",paddingRight:"6px",fontSize:"11px",fontWeight:"700",color:"#334155"}}>L{lv}</div>)}
           </div>
+          {/* Racks */}
+          {rackConfig.map((rack,ri)=>{
+            const rackNumber=ri+1;
+            return <div key={rack.id} style={{marginLeft:RACK_GAP}}>
+              <div style={{height:HEADER_H}}/>
+              {/* Render levels top (maxLevels) to bottom (1), grey out levels > rack.levels */}
+              {Array.from({length:maxLevels},(_,i)=>maxLevels-i).map(lv=>{
+                const cellKey=`${rackNumber}.${lv}`;
+                const active=lv<=rack.levels;
+                const products=getCellProducts(cellKey);
+                const total=getCellTotal(cellKey);
+                const hasStock=total>0;
+                const isSelected=selectedCell===cellKey;
+                return <div key={lv} onClick={()=>active&&setSelectedCell(isSelected?null:cellKey)}
+                  style={{width:CELL_W,height:CELL_H,border:`2px solid ${isSelected?"#3b82f6":active&&hasStock?"#166534":"#1e293b"}`,borderRadius:"5px",
+                  background:!active?"#060a10":isSelected?"#0f1d35":hasStock?"#052e16":"#0b1220",
+                  cursor:active?"pointer":"default",transition:"all 0.15s",marginBottom:"2px",
+                  display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",position:"relative",overflow:"hidden"}}>
+                  {active?<>
+                    <div style={{fontSize:"10px",fontWeight:"700",color:isSelected?"#93c5fd":hasStock?"#475569":"#1e293b",lineHeight:1}}>{cellKey}</div>
+                    {hasStock?<>
+                      <div style={{fontSize:"13px",fontWeight:"700",color:"#4ade80",lineHeight:1.1,marginTop:"2px"}}>{total%1===0?total:total.toFixed(1)}</div>
+                      <div style={{fontSize:"9px",color:"#166534"}}>{products.length>1?`${products.length} products`:products[0]?.unit}</div>
+                    </>:<div style={{fontSize:"10px",color:"#1e293b",marginTop:"2px"}}>empty</div>}
+                  </>:<div style={{fontSize:"10px",color:"#0f172a"}}>—</div>}
+                </div>;
+              })}
+            </div>;
+          })}
+        </div>
+        {/* Legend */}
+        <div style={{display:"flex",gap:"16px",marginTop:"10px",flexWrap:"wrap"}}>
+          {[["#052e16","#166534","Has stock"],["#0b1220","#1e293b","Empty"],["#0f1d35","#3b82f6","Selected"],["#060a10","#1e293b","Not a level"]].map(([bg,br,label])=><div key={label} style={{display:"flex",alignItems:"center",gap:"6px"}}>
+            <div style={{width:"14px",height:"14px",background:bg,border:`2px solid ${br}`,borderRadius:"3px"}}/>
+            <span style={{fontSize:"11px",color:"#475569"}}>{label}</span>
+          </div>)}
+        </div>
+      </div>
+
+      {/* ── CELL DETAIL PANEL ── */}
+      {selectedCell&&<div style={{width:"260px",background:"#0b1220",border:"1px solid #1e293b",borderRadius:"12px",padding:"14px",alignSelf:"flex-start",flexShrink:0}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"12px"}}>
+          <div>
+            <div style={{fontSize:"16px",fontWeight:"700",color:"#f1f5f9"}}>{selectedRack?.name} · Level {levelIdx}</div>
+            <div style={{fontSize:"11px",color:"#475569"}}>Location code: <strong style={{color:"#93c5fd"}}>{selectedCell}</strong></div>
+          </div>
+          <button onClick={()=>setSelectedCell(null)} style={{background:"none",border:"none",color:"#334155",fontSize:"18px",cursor:"pointer",lineHeight:1}}>×</button>
+        </div>
+
+        {selectedProducts.length===0?<div style={{textAlign:"center",padding:"14px 0",color:"#334155",fontSize:"13px",fontStyle:"italic"}}>Empty location</div>
+        :<div style={{marginBottom:"12px"}}>
+          {selectedProducts.map(p=><div key={p.id} style={{background:"#080d18",border:"1px solid #1e293b",borderRadius:"8px",padding:"8px 10px",marginBottom:"6px"}}>
+            <div style={{fontSize:"12.5px",fontWeight:"600",color:"#e2e8f0"}}>{p.productName}</div>
+            <div style={{fontSize:"16px",fontWeight:"700",color:"#4ade80"}}>{parseFloat(p.totalQty).toFixed(2)} <span style={{fontSize:"11px",color:"#166534"}}>{p.unit}</span></div>
+          </div>)}
         </div>}
+
+        {canManage&&<div style={{display:"flex",gap:"6px"}}>
+          <button onClick={()=>openTxn(selectedCell,"add")} style={{flex:1,background:"#052e16",border:"1px solid #166534",borderRadius:"7px",color:"#4ade80",fontSize:"12px",fontWeight:"700",padding:"7px",cursor:"pointer"}}>+ Add</button>
+          {selectedProducts.length>0&&<button onClick={()=>openTxn(selectedCell,"consume")} style={{flex:1,background:"#2e0a0a",border:"1px solid #7f1d1d",borderRadius:"7px",color:"#f87171",fontSize:"12px",fontWeight:"700",padding:"7px",cursor:"pointer"}}>− Consume</button>}
+        </div>}
+      </div>}
+    </div>}
+
+    {/* ── TRANSACTION MODAL ── */}
+    {txnModal&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <div style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"14px",padding:"22px",width:"min(440px,94vw)"}}>
+        <div style={{fontSize:"15px",fontWeight:"700",color:txnModal.mode==="add"?"#4ade80":"#f87171",marginBottom:"4px"}}>
+          {txnModal.mode==="add"?"+ Add Stock to":"− Consume from"} location <span style={{color:"#93c5fd"}}>{txnModal.cell}</span>
+        </div>
+        <div style={{fontSize:"11px",color:"#475569",marginBottom:"14px"}}>
+          {rackConfig.find((_,i)=>(i+1)===parseInt(txnModal.cell.split(".")[0]))?.name} · Level {txnModal.cell.split(".")[1]}
+        </div>
+        {txnModal.mode==="consume"&&getCellProducts(txnModal.cell).length>0&&<div style={{background:"#080d18",border:"1px solid #1e293b",borderRadius:"8px",padding:"10px 12px",marginBottom:"12px"}}>
+          <div style={{fontSize:"10px",fontWeight:"700",color:"#475569",textTransform:"uppercase",marginBottom:"6px"}}>Current stock here</div>
+          {getCellProducts(txnModal.cell).map(p=><div key={p.id} style={{display:"flex",justifyContent:"space-between",fontSize:"12.5px",padding:"3px 0"}}>
+            <span style={{color:"#e2e8f0"}}>{p.productName}</span>
+            <span style={{color:"#4ade80",fontWeight:"700"}}>{parseFloat(p.totalQty).toFixed(2)} {p.unit}</span>
+          </div>)}
+        </div>}
+        <Field label="Product Name *">
+          <input style={inp} value={txn.productName} onChange={e=>setTxn({...txn,productName:e.target.value})} placeholder="e.g. Syn Black (Popular) 20L"/>
+          {txnModal.mode==="consume"&&getCellProducts(txnModal.cell).length>0&&<div style={{display:"flex",gap:"4px",flexWrap:"wrap",marginTop:"5px"}}>
+            {getCellProducts(txnModal.cell).map(p=><button key={p.id} onClick={()=>setTxn({...txn,productName:p.productName,unit:p.unit})} style={{background:txn.productName===p.productName?"#1e3a5f":"#0b1220",border:`1px solid ${txn.productName===p.productName?"#3b82f6":"#1e293b"}`,borderRadius:"5px",color:txn.productName===p.productName?"#93c5fd":"#475569",fontSize:"10.5px",padding:"2px 8px",cursor:"pointer"}}>{p.productName}</button>)}
+          </div>}
+        </Field>
         <Grid2>
-          <Field label="Quantity *"><input style={inp} type="number" min="0.001" step="0.001" value={txn.qty} onChange={e=>setTxn({...txn,qty:e.target.value})} placeholder={`in ${txnModal.item.unit}`}/></Field>
-          <Field label={txnModal.mode==="add"?"Rack / Location *":"From Rack *"}>
-            <input style={inp} value={txn.rack} onChange={e=>setTxn({...txn,rack:e.target.value})} placeholder="e.g. Rack 1, Bay A, Shelf 3"/>
-            {/* Quick rack suggestions from existing locations */}
-            {Object.keys(txnModal.item.racks||{}).filter(r=>parseFloat(txnModal.item.racks[r])>0).length>0&&<div style={{display:"flex",gap:"4px",flexWrap:"wrap",marginTop:"5px"}}>
-              {Object.keys(txnModal.item.racks||{}).filter(r=>parseFloat(txnModal.item.racks[r])>0).map(r=><button key={r} onClick={()=>setTxn({...txn,rack:r})} style={{background:txn.rack===r?"#1e3a5f":"#0b1220",border:`1px solid ${txn.rack===r?"#3b82f6":"#1e293b"}`,borderRadius:"5px",color:txn.rack===r?"#93c5fd":"#475569",fontSize:"10.5px",padding:"2px 8px",cursor:"pointer"}}>{r}</button>)}
-            </div>}
+          <Field label="Quantity *"><input style={inp} type="number" min="0.001" step="0.001" value={txn.qty} onChange={e=>setTxn({...txn,qty:e.target.value})}/></Field>
+          <Field label="Unit">
+            <select style={sl} value={txn.unit} onChange={e=>setTxn({...txn,unit:e.target.value})}>
+              {(sysUnits||["L","kg","g","mL","pcs"]).map(u=><option key={u}>{u}</option>)}
+            </select>
           </Field>
         </Grid2>
         <Grid2>
           <Field label="Date"><input type="date" style={inp} value={txn.date} onChange={e=>setTxn({...txn,date:e.target.value})}/></Field>
           <Field label="Notes"><input style={inp} value={txn.notes} onChange={e=>setTxn({...txn,notes:e.target.value})} placeholder="Optional…"/></Field>
         </Grid2>
-        <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",marginTop:"4px"}}>
+        <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",marginTop:"8px"}}>
           <Btn label="Cancel" onClick={()=>setTxnModal(null)} outline color="#475569" small/>
           <Btn label={saving?"Saving…":(txnModal.mode==="add"?"+ Add Stock":"− Consume")} onClick={saveTxn} disabled={saving} color={txnModal.mode==="add"?"#22c55e":"#ef4444"} small/>
         </div>
       </div>
     </div>}
-
-    {loading?<div style={{textAlign:"center",padding:"40px",color:"#475569"}}>Loading…</div>
-    :filtered.length===0?<div style={{textAlign:"center",padding:"50px 0"}}><div style={{fontSize:"36px",marginBottom:"10px"}}>📦</div><div style={{fontSize:"13px",color:"#475569"}}>No FG Stock items yet.{canManage?" Click + Add FG Product to start.":""}</div></div>
-    :filtered.map(item=><FGStockCard key={item.id} item={item} onConsume={i=>openTxn(i,"consume")} onAddStock={i=>openTxn(i,"add")} isAdmin={isAdmin} canManage={canManage} onDelete={deleteItem}/>)}
   </div>;
 }
+
 
 function RawMaterialStockTab({role,user,showToast,sysUnits,sysRmCats,onAddRmCat,onAddUnit}){
   const isAdmin=role==="admin";
