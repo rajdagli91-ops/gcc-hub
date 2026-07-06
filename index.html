@@ -5076,6 +5076,9 @@ function FGStockTab({role,user,showToast,sysUnits,canManage}){
   const [mode,setMode]=useState("view");
   const [selectedCell,setSelectedCell]=useState(null);
   const [selectedRack,setSelectedRack]=useState(null);
+  const [copiedRack,setCopiedRack]=useState(null);  // rack object snapshot
+  const [renamingRack,setRenamingRack]=useState(null); // rack id
+  const [renameVal,setRenameVal]=useState("");
   const [dragging,setDragging]=useState(null);
   const [txnModal,setTxnModal]=useState(null);
   const [txn,setTxn]=useState({productName:"",cartons:"",looseTins:"",notes:"",date:today()});
@@ -5319,6 +5322,39 @@ function FGStockTab({role,user,showToast,sysUnits,canManage}){
     if(mode==="addRack")return; // handled by pointer events
   };
 
+  const copyRack=(rackId)=>{
+    const rack=racks.find(r=>r.id===rackId);
+    if(!rack)return;
+    setCopiedRack(rack);
+    showToast(`Copied "${rack.name}" — press Paste to place a copy`);
+  };
+
+  const pasteRack=async()=>{
+    if(!copiedRack)return;
+    const OFFSET=40; // logical px offset so paste doesn't land exactly on top
+    const id=newId();
+    const pasted={
+      ...copiedRack,
+      id,
+      name:copiedRack.name+" (Copy)",
+      x:Math.min(FLOOR_W-(copiedRack.w||80), (copiedRack.x||0)+OFFSET),
+      y:Math.min(FLOOR_H-(copiedRack.h||RACK_CANVAS_H), (copiedRack.y||0)+OFFSET),
+    };
+    await saveRacks([...racks,pasted]);
+    setSelectedRack(id);
+    setRenamingRack(id);
+    setRenameVal(pasted.name);
+    showToast(`Pasted "${pasted.name}" — rename it now`);
+  };
+
+  const commitRename=async()=>{
+    if(!renamingRack||!renameVal.trim())return;
+    const updated=racks.map(r=>r.id===renamingRack?{...r,name:renameVal.trim()}:r);
+    await saveRacks(updated);
+    setRenamingRack(null);
+    showToast("Renamed ✓");
+  };
+
   const deleteRack=async(rackId)=>{
     if(!isAdmin||!confirm("Remove this rack from the floor plan? Stock data is preserved."))return;
     await saveRacks(racks.filter(r=>r.id!==rackId));
@@ -5505,8 +5541,19 @@ function FGStockTab({role,user,showToast,sysUnits,canManage}){
           <span style={{fontSize:"12px",color:"#22d3ee",fontWeight:"700"}}>→ click and drag on canvas to draw rack size</span>
           <button onClick={()=>setMode("view")} style={{background:"none",border:"1px solid #334155",borderRadius:"5px",color:"#64748b",fontSize:"11px",padding:"4px 8px",cursor:"pointer"}}>Cancel</button>
         </div>}
-        {selectedRack&&canManage&&mode==="view"&&<button onClick={()=>deleteRack(selectedRack)} style={{background:"#2e0a0a",border:"1px solid #7f1d1d",borderRadius:"7px",padding:"6px 12px",color:"#f87171",fontSize:"12px",fontWeight:"700",cursor:"pointer"}}>🗑 Remove rack</button>}
-        {selectedRack&&mode==="view"&&<button onClick={()=>{setSelectedRack(null);setSelectedCell(null);setExpandedRack(null);}} style={{background:"none",border:"1px solid #334155",borderRadius:"7px",padding:"6px 12px",color:"#475569",fontSize:"12px",cursor:"pointer"}}>✕ Deselect</button>}
+        {selectedRack&&canManage&&mode==="view"&&<>
+          <button onClick={()=>copyRack(selectedRack)} style={{background:"#0f1d35",border:"1px solid #1e3a5f",borderRadius:"7px",padding:"6px 12px",color:"#93c5fd",fontSize:"12px",fontWeight:"700",cursor:"pointer"}}>📋 Copy</button>
+          <button onClick={()=>{const r=racks.find(x=>x.id===selectedRack);if(r){setRenamingRack(selectedRack);setRenameVal(r.name);}}} style={{background:"#0f1d35",border:"1px solid #1e3a5f",borderRadius:"7px",padding:"6px 12px",color:"#fcd34d",fontSize:"12px",fontWeight:"700",cursor:"pointer"}}>✏️ Rename</button>
+          <button onClick={()=>deleteRack(selectedRack)} style={{background:"#2e0a0a",border:"1px solid #7f1d1d",borderRadius:"7px",padding:"6px 12px",color:"#f87171",fontSize:"12px",fontWeight:"700",cursor:"pointer"}}>🗑 Remove</button>
+          <button onClick={()=>{setSelectedRack(null);setSelectedCell(null);setExpandedRack(null);}} style={{background:"none",border:"1px solid #334155",borderRadius:"7px",padding:"6px 12px",color:"#475569",fontSize:"12px",cursor:"pointer"}}>✕</button>
+        </>}
+        {copiedRack&&canManage&&mode==="view"&&<button onClick={pasteRack} style={{background:"#0f2d1a",border:"1px solid #166534",borderRadius:"8px",padding:"7px 14px",color:"#4ade80",fontWeight:"700",fontSize:"12.5px",cursor:"pointer"}}>📌 Paste "{copiedRack.name}"</button>}
+        {/* Inline rename input */}
+        {renamingRack&&<div style={{display:"flex",gap:"6px",alignItems:"center",background:"#0a1a2e",border:"1px solid #fcd34d60",borderRadius:"10px",padding:"6px 10px"}}>
+          <input style={{...inp,width:"160px",padding:"5px 8px",fontSize:"13px",fontWeight:"700",borderColor:"#fcd34d60"}} value={renameVal} onChange={e=>setRenameVal(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")commitRename();if(e.key==="Escape"){setRenamingRack(null);}}} autoFocus/>
+          <button onClick={commitRename} style={{background:"#0f2d1a",border:"1px solid #166534",borderRadius:"5px",padding:"5px 10px",color:"#4ade80",fontSize:"12px",fontWeight:"700",cursor:"pointer"}}>✓</button>
+          <button onClick={()=>setRenamingRack(null)} style={{background:"none",border:"1px solid #334155",borderRadius:"5px",padding:"5px 8px",color:"#475569",fontSize:"11px",cursor:"pointer"}}>✕</button>
+        </div>}
         {isAdmin&&mode==="view"&&<button onClick={()=>{setMode("editPillars");setSelectedPillar(null);}} style={{background:"#1a0a1a",border:"1px solid #7c3aed",borderRadius:"8px",padding:"7px 14px",color:"#c4b5fd",fontWeight:"700",fontSize:"12.5px",cursor:"pointer"}}>🔲 Edit Pillars</button>}
         {mode==="editPillars"&&<div style={{display:"flex",gap:"8px",alignItems:"center",background:"#1a0a1a",border:"1px solid #7c3aed",borderRadius:"10px",padding:"8px 12px",flexWrap:"wrap"}}>
           <span style={{fontSize:"12px",color:"#c4b5fd",fontWeight:"700"}}>🔲 Pillar Edit Mode — click canvas to place, drag to move</span>
