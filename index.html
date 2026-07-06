@@ -5089,9 +5089,11 @@ function FGStockTab({role,user,showToast,sysUnits,canManage}){
   const [showCatalogue,setShowCatalogue]=useState(false);
   const [catSearch,setCatSearch]=useState("");
   const [importStatus,setImportStatus]=useState(null);
+  const [stockSearch,setStockSearch]=useState("");
+  const [drawing,setDrawing]=useState(null); // {startX,startY,curX,curY} — rack draw-to-create
 
   // New rack form
-  const [newRack,setNewRack]=useState({name:"",levels:4,color:"#c9956a",label:"Enamel",w:80});
+  const [newRack,setNewRack]=useState({name:"",levels:4,color:"#c9956a",label:"",w:80});
   const [expandedRack,setExpandedRack]=useState(null);
 
   // ── Default pack config (matches confirmed table) ──
@@ -5546,6 +5548,62 @@ function FGStockTab({role,user,showToast,sysUnits,canManage}){
   if(!loaded)return <div style={{textAlign:"center",padding:"40px",color:"#475569"}}>Loading warehouse layout…</div>;
 
   return <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
+    {/* ── Stock Search — find where a product is stored ── */}
+    <div style={{position:"relative"}}>
+      <span style={{position:"absolute",left:"12px",top:"50%",transform:"translateY(-50%)",color:"#334155",fontSize:"15px",pointerEvents:"none"}}>🔍</span>
+      <input style={{...inp,paddingLeft:"38px",paddingRight:stockSearch?"36px":"12px",fontSize:"13px"}}
+        value={stockSearch} onChange={e=>setStockSearch(e.target.value)}
+        placeholder="Search product to find rack & level…"/>
+      {stockSearch&&<button onClick={()=>setStockSearch("")} style={{position:"absolute",right:"10px",top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#475569",fontSize:"18px",cursor:"pointer",lineHeight:1}}>×</button>}
+    </div>
+
+    {/* Search results — show all cells containing the searched product */}
+    {stockSearch.trim().length>=2&&(()=>{
+      const q=normalize(stockSearch);
+      // Flatten all cell stock, filter by product name match, resolve rack names
+      const results=[];
+      Object.entries(cellStock).forEach(([cell,prods])=>{
+        const [rackId,lv]=cell.split(".");
+        const rack=racks.find(r=>r.id===rackId);
+        prods.forEach(p=>{
+          if(normalize(p.productName||"").includes(q)){
+            results.push({...p, cell, rackName:rack?.name||rackId, level:lv});
+          }
+        });
+      });
+      results.sort((a,b)=>a.rackName.localeCompare(b.rackName)||parseInt(b.level)-parseInt(a.level));
+      return <div style={{background:"#060d1a",border:"1px solid #1e293b",borderRadius:"12px",overflow:"hidden"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",borderBottom:"1px solid #1e293b"}}>
+          <span style={{fontSize:"12px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.07em"}}>
+            {results.length>0?`${results.length} location${results.length!==1?"s":""} found`:"No stock found for this product"}
+          </span>
+          <span style={{fontSize:"11px",color:"#334155"}}>Click a row to jump to that level</span>
+        </div>
+        {results.length===0
+          ?<div style={{padding:"16px",textAlign:"center",color:"#334155",fontSize:"12px",fontStyle:"italic"}}>
+            "{stockSearch}" is not currently in stock on any rack
+          </div>
+          :<table style={{width:"100%",borderCollapse:"collapse"}}>
+            <thead>
+              <tr style={{background:"#0b1220"}}>
+                {["Product","Rack","Level","Quantity"].map(h=><th key={h} style={{padding:"8px 14px",fontSize:"11px",fontWeight:"700",color:"#475569",textAlign:"left",textTransform:"uppercase",letterSpacing:"0.06em"}}>{h}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {results.map((r,i)=><tr key={r.id} onClick={()=>{setSelectedCell(r.cell);setExpandedRack(null);setSelectedRack(racks.find(x=>x.id===r.cell.split(".")[0])?.id||null);setStockSearch("");}}
+                style={{borderTop:"1px solid #0f172a",cursor:"pointer",background:i%2===0?"#080d18":"transparent"}}
+                onMouseEnter={e=>e.currentTarget.style.background="#0f1d35"}
+                onMouseLeave={e=>e.currentTarget.style.background=i%2===0?"#080d18":"transparent"}>
+                <td style={{padding:"10px 14px",fontSize:"13px",color:"#e2e8f0",fontWeight:"500"}}>{r.productName}</td>
+                <td style={{padding:"10px 14px",fontSize:"13px",color:"#93c5fd",fontWeight:"600"}}>{r.rackName}</td>
+                <td style={{padding:"10px 14px"}}><span style={{background:"#1e3a5f",border:"1px solid #2563eb40",borderRadius:"6px",padding:"3px 10px",fontSize:"12px",color:"#93c5fd",fontWeight:"700"}}>L{r.level}</span></td>
+                <td style={{padding:"10px 14px",fontSize:"14px",color:"#4ade80",fontWeight:"700"}}>{parseFloat(r.totalQty).toFixed(2)} <span style={{fontSize:"11px",color:"#166534"}}>{r.unit}</span></td>
+              </tr>)}
+            </tbody>
+          </table>}
+      </div>;
+    })()}
+
     {/* ── Floor plan — full width ── */}
     <div ref={containerRef}>
       {/* Catalogue panel toggle */}
@@ -5582,14 +5640,19 @@ function FGStockTab({role,user,showToast,sysUnits,canManage}){
       <div style={{display:"flex",gap:"8px",alignItems:"flex-start",marginBottom:"12px",flexWrap:"wrap"}}>
         {canManage&&mode==="view"&&<button onClick={()=>setMode("addRack")} style={{background:"#0f2d1a",border:"1px solid #166534",borderRadius:"8px",padding:"7px 14px",color:"#4ade80",fontWeight:"700",fontSize:"12.5px",cursor:"pointer"}}>+ Add Rack</button>}
         {mode==="addRack"&&<div style={{display:"flex",gap:"6px",alignItems:"center",flexWrap:"wrap",background:"#0a1a2e",border:"1px solid #1e3a5f",borderRadius:"10px",padding:"8px 12px"}}>
-          <input style={{...inp,width:"120px",padding:"5px 8px",fontSize:"12px"}} value={newRack.name} onChange={e=>setNewRack({...newRack,name:e.target.value})} placeholder="Rack name"/>
+          <input style={{...inp,width:"130px",padding:"5px 8px",fontSize:"12px"}} value={newRack.name} onChange={e=>setNewRack({...newRack,name:e.target.value})} placeholder="Rack name"/>
           <select style={{...sl,padding:"5px 6px",fontSize:"12px",width:"90px"}} value={newRack.levels} onChange={e=>setNewRack({...newRack,levels:e.target.value})}>
             {[2,3,4,5,6,7,8].map(n=><option key={n} value={n}>{n} levels</option>)}
           </select>
-          <select style={{...sl,padding:"5px 6px",fontSize:"12px",width:"100px"}} value={newRack.label} onChange={e=>{const c=RACK_COLORS.find(x=>x.label===e.target.value);setNewRack({...newRack,label:e.target.value,color:c?.color||"#94a3b8"});}}>
-            {RACK_COLORS.map(c=><option key={c.label} value={c.label}>{c.label}</option>)}
-          </select>
-          <span style={{fontSize:"12px",color:"#22d3ee",fontWeight:"700"}}>→ click and drag on canvas to draw rack size</span>
+          {/* Colour swatches — just for visual distinction, no product labelling */}
+          <div style={{display:"flex",gap:"4px",alignItems:"center"}}>
+            {["#c9956a","#0ea5e9","#eab308","#22c55e","#f97316","#a78bfa","#f43f5e","#64748b"].map(col=>
+              <div key={col} onClick={()=>setNewRack({...newRack,color:col,label:""})}
+                style={{width:"18px",height:"18px",borderRadius:"50%",background:col,cursor:"pointer",
+                  border:newRack.color===col?"3px solid #fff":"2px solid transparent",flexShrink:0}}/>
+            )}
+          </div>
+          <span style={{fontSize:"12px",color:"#22d3ee",fontWeight:"700"}}>→ drag on canvas to draw</span>
           <button onClick={()=>setMode("view")} style={{background:"none",border:"1px solid #334155",borderRadius:"5px",color:"#64748b",fontSize:"11px",padding:"4px 8px",cursor:"pointer"}}>Cancel</button>
         </div>}
         {selectedRack&&canManage&&mode==="view"&&<>
