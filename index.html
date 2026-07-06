@@ -5026,7 +5026,7 @@ function FGMovementsTab({role,user,showToast,isAdmin,canManage}){
   const [filter,setFilter]=useState("all"); // "all"|"racked"|"direct"
   const [postModal,setPostModal]=useState(null); // {item, idx}
   const [racks,setRacks]=useState([]);
-  const [postForm,setPostForm]=useState({rackId:"",level:"1"});
+  const [postForm,setPostForm]=useState({rackId:"",level:"1",isDirect:false});
   const [saving,setSaving]=useState(false);
   const [dateRange,setDateRange]=useState("");
 
@@ -5193,7 +5193,7 @@ function FGMovementsTab({role,user,showToast,isAdmin,canManage}){
                 <td style={{padding:"9px 12px",color:"#f87171"}}>{m.outward>0?`−${m.outward} ${m.unit}`:""}</td>
                 <td style={{padding:"9px 12px"}}>
                   <div style={{display:"flex",gap:"6px"}}>
-                    {m.inward>0&&!m.posted&&canManage&&<button onClick={()=>{setPostModal({item:m,idx:realIdx});setPostForm({rackId:"",level:"1"});}} style={{background:"#1e3a5f",border:"1px solid #2563eb",borderRadius:"5px",color:"#93c5fd",fontSize:"11px",fontWeight:"700",padding:"3px 8px",cursor:"pointer"}}>→ Post to Rack</button>}
+                    {m.inward>0&&!m.posted&&canManage&&<button onClick={()=>{setPostModal({item:m,idx:realIdx});setPostForm({rackId:"",level:"1",isDirect:false});}} style={{background:"#1e3a5f",border:"1px solid #2563eb",borderRadius:"5px",color:"#93c5fd",fontSize:"11px",fontWeight:"700",padding:"3px 8px",cursor:"pointer"}}>→ Assign</button>}
                     <button onClick={()=>toggleDirect(realIdx)} style={{background:"none",border:"1px solid #334155",borderRadius:"5px",color:"#475569",fontSize:"10px",padding:"3px 6px",cursor:"pointer"}}>Mark Direct</button>
                   </div>
                 </td>
@@ -5246,26 +5246,47 @@ function FGMovementsTab({role,user,showToast,isAdmin,canManage}){
 
     {/* Post to Rack modal */}
     {postModal&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center"}}>
-      <div style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"14px",padding:"22px",width:"min(400px,94vw)"}}>
-        <div style={{fontSize:"15px",fontWeight:"700",color:"#4ade80",marginBottom:"4px"}}>→ Post to Rack</div>
-        <div style={{fontSize:"12px",color:"#64748b",marginBottom:"14px"}}>{postModal.item.name}</div>
-        <div style={{background:"#052e16",border:"1px solid #166534",borderRadius:"7px",padding:"8px 12px",marginBottom:"12px",textAlign:"center"}}>
-          <span style={{fontSize:"16px",fontWeight:"700",color:"#4ade80"}}>+{postModal.item.inward} {postModal.item.unit}</span><span style={{fontSize:"11px",color:"#166534",marginLeft:"6px"}}>to be added</span>
+      <div style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"14px",padding:"22px",width:"min(420px,96vw)",maxHeight:"90vh",overflowY:"auto"}}>
+        <div style={{fontSize:"15px",fontWeight:"700",color:"#4ade80",marginBottom:"2px"}}>Assign Movement</div>
+        <div style={{fontSize:"12px",color:"#64748b",marginBottom:"12px"}}>{postModal.item.name}</div>
+        <div style={{background:"#052e16",border:"1px solid #166534",borderRadius:"7px",padding:"8px 12px",marginBottom:"14px",textAlign:"center"}}>
+          <span style={{fontSize:"16px",fontWeight:"700",color:"#4ade80"}}>+{postModal.item.inward} {postModal.item.unit}</span>
+          <span style={{fontSize:"11px",color:"#166534",marginLeft:"6px"}}>inward quantity</span>
         </div>
-        <Field label="Select Rack">
-          <select style={sl} value={postForm.rackId} onChange={e=>setPostForm({...postForm,rackId:e.target.value})}>
-            <option value="">— Select rack —</option>
-            {racks.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}
-          </select>
-        </Field>
-        {rack&&<Field label="Level">
-          <select style={sl} value={postForm.level} onChange={e=>setPostForm({...postForm,level:e.target.value})}>
-            {Array.from({length:rack.levels},(_,i)=>i+1).map(l=><option key={l} value={l}>Level {l}</option>)}
-          </select>
-        </Field>}
-        <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",marginTop:"12px"}}>
+        {/* Quick choice: rack or direct */}
+        <div style={{display:"flex",gap:"8px",marginBottom:"14px"}}>
+          <button onClick={()=>setPostForm({...postForm,isDirect:false})} style={{flex:1,background:!postForm.isDirect?"#1e3a5f":"#0b1220",border:`1px solid ${!postForm.isDirect?"#3b82f6":"#1e293b"}`,borderRadius:"8px",padding:"10px",color:!postForm.isDirect?"#93c5fd":"#475569",fontWeight:"700",fontSize:"13px",cursor:"pointer"}}>🏪 Post to Rack</button>
+          <button onClick={()=>setPostForm({...postForm,isDirect:true})} style={{flex:1,background:postForm.isDirect?"#2e1a00":"#0b1220",border:`1px solid ${postForm.isDirect?"#f59e0b":"#1e293b"}`,borderRadius:"8px",padding:"10px",color:postForm.isDirect?"#fcd34d":"#475569",fontWeight:"700",fontSize:"13px",cursor:"pointer"}}>🚚 Direct (No Rack)</button>
+        </div>
+        {!postForm.isDirect&&<>
+          <Field label="Select Rack">
+            <select style={sl} value={postForm.rackId} onChange={e=>setPostForm({...postForm,rackId:e.target.value})}>
+              <option value="">— Select rack —</option>
+              {racks.map(r=><option key={r.id} value={r.id}>{r.name} ({r.levels} levels)</option>)}
+            </select>
+          </Field>
+          {!postForm.rackId&&<div style={{fontSize:"11px",color:"#f59e0b",marginTop:"-4px",marginBottom:"8px"}}>
+            Rack not in the list? Go to FG Stock → 🗺 Edit Layout → + Add Rack, then come back here.
+          </div>}
+          {rack&&<Field label="Level (L1=bottom, L{rack.levels}=top)">
+            <select style={sl} value={postForm.level} onChange={e=>setPostForm({...postForm,level:e.target.value})}>
+              {Array.from({length:rack.levels},(_,i)=>rack.levels-i).map(l=><option key={l} value={l}>Level {l}</option>)}
+            </select>
+          </Field>}
+        </>}
+        {postForm.isDirect&&<div style={{background:"#1a0f00",border:"1px solid #92400e40",borderRadius:"8px",padding:"10px 12px",fontSize:"12px",color:"#fcd34d"}}>
+          This movement will be logged as a direct dispatch — not assigned to any rack. Visible in the Direct/Unracked section.
+        </div>}
+        <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",marginTop:"14px"}}>
           <Btn label="Cancel" onClick={()=>setPostModal(null)} outline color="#475569" small/>
-          <Btn label={saving?"Saving…":"✓ Post to Rack"} onClick={postToRack} disabled={saving||!postForm.rackId} color="#22c55e" small/>
+          <Btn label={saving?"Saving…":(postForm.isDirect?"✓ Log as Direct":"✓ Post to Rack")} onClick={async()=>{
+            if(postForm.isDirect){
+              // Log as direct movement only
+              await C("fg_transactions").add({cell:"direct",productName:postModal.item.name,type:"add",qty:postModal.item.inward,unit:postModal.item.unit,notes:"Tally import - direct dispatch"+(dateRange?" ("+dateRange+")":""),date:today(),by:user?.email,_createdAt:ts()});
+              setMovements(prev=>prev.map((m,i)=>i===postModal.idx?{...m,direct:true,posted:true}:m));
+              showToast("Logged as direct movement ✓");setPostModal(null);
+            }else{postToRack();}
+          }} disabled={saving||(!postForm.isDirect&&!postForm.rackId)} color={postForm.isDirect?"#f59e0b":"#22c55e"} small/>
         </div>
       </div>
     </div>}
@@ -5553,6 +5574,13 @@ function FGStockTab({role,user,showToast,sysUnits,canManage}){
   const onRackPointerDown=(e,rack,resizing=null)=>{
     if(!canManage)return;
     e.stopPropagation();
+    // In normal view mode: only SELECT the rack, never move/resize
+    // Moving/resizing requires explicit "Edit Layout" mode to prevent accidental repositioning on tablets
+    if(mode!=="editPillars"){
+      setSelectedRack(rack.id);setSelectedCell(null);
+      setExpandedRack(expandedRack===rack.id?null:rack.id);
+      return;
+    }
     e.currentTarget.setPointerCapture(e.pointerId);
     setDragging({rackId:rack.id,origX:rack.x,origY:rack.y,
       origW:rack.w,origH:rack.h||RACK_CANVAS_H,
@@ -5977,7 +6005,7 @@ function FGStockTab({role,user,showToast,sysUnits,canManage}){
         </div>}
         {isAdmin&&mode==="view"&&<button onClick={()=>{setMode("editPillars");setSelectedPillar(null);setSelectedStruct(null);}} style={{background:"#1a0a1a",border:"1px solid #7c3aed",borderRadius:"8px",padding:"7px 14px",color:"#c4b5fd",fontWeight:"700",fontSize:"12.5px",cursor:"pointer"}}>🗺 Edit Layout</button>}
         {mode==="editPillars"&&<div style={{display:"flex",gap:"8px",alignItems:"center",background:"#1a0a1a",border:"1px solid #7c3aed",borderRadius:"10px",padding:"8px 12px",flexWrap:"wrap"}}>
-          <span style={{fontSize:"12px",color:"#c4b5fd",fontWeight:"700"}}>🗺 Layout Edit — click canvas for pillar · drag walls to reposition · corner handle to resize</span>
+          <span style={{fontSize:"12px",color:"#c4b5fd",fontWeight:"700"}}>🗺 Layout Edit — drag racks to move · corner handle to resize · click canvas for pillar · drag walls</span>
           {selectedPillar&&<button onClick={async()=>{await savePillars(pillars.filter(p=>p.id!==selectedPillar));setSelectedPillar(null);showToast("Pillar removed","error");}} style={{background:"#2e0a0a",border:"1px solid #7f1d1d",borderRadius:"5px",padding:"4px 10px",color:"#f87171",fontSize:"11px",fontWeight:"700",cursor:"pointer"}}>🗑 Delete pillar</button>}
           {selectedStruct&&<button onClick={async()=>{await saveStructure(DEFAULT_STRUCTURE);showToast("Layout reset to defaults");setSelectedStruct(null);}} style={{background:"#2e1a00",border:"1px solid #92400e",borderRadius:"5px",padding:"4px 10px",color:"#fcd34d",fontSize:"11px",fontWeight:"700",cursor:"pointer"}}>↺ Reset all to default</button>}
           <button onClick={async()=>{setMode("view");setSelectedPillar(null);setSelectedStruct(null);await saveStructure(structure);await savePillars(pillars);showToast("Layout saved ✓");}} style={{background:"#0f2d1a",border:"1px solid #166534",borderRadius:"5px",padding:"4px 10px",color:"#4ade80",fontSize:"11px",fontWeight:"700",cursor:"pointer"}}>✓ Done & Save</button>
@@ -6178,7 +6206,7 @@ function FGStockTab({role,user,showToast,sysUnits,canManage}){
       </div>{/* end scroll wrapper */}
       <div style={{display:"flex",gap:"12px",flexWrap:"wrap",marginTop:"8px"}}>
         {[["Coloured top stripe","Product category colour"],["L4 badge","Number of levels"],["2/4 (green)","Levels with stock"],].map(([k,v])=><div key={k} style={{fontSize:"10px",color:"#334155"}}><span style={{color:"#475569",fontWeight:"600"}}>{k}</span>: {v}</div>)}
-        {canManage&&<span style={{fontSize:"10px",color:"#334155"}}>· Drag to move · Click to see levels</span>}
+        {canManage&&<span style={{fontSize:"10px",color:"#334155"}}>· Click rack to see levels · Use 🗺 Edit Layout to move/resize racks</span>}
         {isAdmin&&<span style={{fontSize:"10px",color:"#6d28d9"}}>· 🗺 Edit Layout to reposition walls/pillars</span>}
       </div>
     </div>
