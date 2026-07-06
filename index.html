@@ -5014,15 +5014,276 @@ function RMExportImport({materials,CATS,UNITS,user,showToast,onImport}){
 // ══════════════════════════════════════════════════════════
 // STOCK — wrapper with RM Stock and FG Stock sub-tabs
 // ══════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════
+// FG MOVEMENTS — Tally movement analysis import + Direct/Unracked log
+// ══════════════════════════════════════════════════════════
+function FGMovementsTab({role,user,showToast,isAdmin,canManage}){
+  const [movements,setMovements]=useState([]);    // [{name,inward,outward,unit,direct,posted}]
+  const [savedMovements,setSavedMovements]=useState([]); // from fg_movements collection
+  const [loading,setLoading]=useState(true);
+  const [parsing,setParsing]=useState(false);
+  const [search,setSearch]=useState("");
+  const [filter,setFilter]=useState("all"); // "all"|"racked"|"direct"
+  const [postModal,setPostModal]=useState(null); // {item, idx}
+  const [racks,setRacks]=useState([]);
+  const [postForm,setPostForm]=useState({rackId:"",level:"1"});
+  const [saving,setSaving]=useState(false);
+  const [dateRange,setDateRange]=useState("");
+
+  useEffect(()=>{
+    const u1=C("fg_movements").orderBy("importedAt","desc").onSnapshot(
+      s=>{setSavedMovements(s.docs.map(d=>({id:d.id,...d.data()})));setLoading(false);},
+      ()=>{C("fg_movements").onSnapshot(s=>{setSavedMovements(s.docs.map(d=>({id:d.id,...d.data()})));setLoading(false);});});
+    const u2=C("fg_config").doc("warehouse").onSnapshot(s=>{if(s.exists&&s.data().racks)setRacks(s.data().racks);},()=>{});
+    return ()=>{u1();u2();};
+  },[]);
+
+  // ── Parse Tally movement analysis Excel ──
+  const parseTally=async(file)=>{
+    setParsing(true);
+    try{
+      await loadXLSX();
+      const XLSX=window.XLSX;
+      const buf=await new Promise(r=>{const fr=new FileReader();fr.onload=e=>r(e.target.result);fr.readAsArrayBuffer(file);});
+      const wb=XLSX.read(buf,{type:"array"});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const raw=XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
+
+      // Find period from header rows
+      let period="";
+      for(let i=0;i<16;i++){
+        const r=raw[i];
+        if(r&&String(r[0]||"").match(/\d+-[A-Za-z]+-\d+\s+to\s+\d+-[A-Za-z]+-\d+/)){
+          period=String(r[0]).trim();break;
+        }
+      }
+      setDateRange(period);
+
+      // Data starts from row index 16
+      const parsed=[];
+      for(let i=16;i<raw.length;i++){
+        const row=raw[i];
+        if(!row||!row[0])continue;
+        const name=String(row[0]).trim();
+        const godown=row[1]?String(row[1]).trim():"";
+        // Skip godown sub-rows (duplicate data)
+        if(godown.includes("Gujarat"))continue;
+        // Skip company header rows
+        if(/Gujarat Colours|Factory:|Village|Office:|CIN:|Contact|E-Mail|FINAL PACKED|Movement|1-Apr|UDYAM|Laxminagar|Ghatkopar/i.test(name))continue;
+        if(!name||name==="nan")continue;
+
+        // Determine if product or group: a product row is followed by a godown row
+        let isProduct=false;
+        for(let j=i+1;j<Math.min(i+3,raw.length);j++){
+          const nr=raw[j];if(!nr)continue;
+          if(nr[1]&&String(nr[1]).includes("Gujarat")){isProduct=true;break;}
+          if(nr[0]&&String(nr[0]).trim())break;
+        }
+        if(!isProduct)continue;
+
+        const inward=parseFloat(row[2])||0;
+        const outward=parseFloat(row[5])||0;
+        if(inward===0&&outward===0)continue;
+
+        // Parse unit from name
+        const unitM=name.match(/([\d.]+)\s*(ml|l|L|kg|Kg|KG|K\b|ltr)/i);
+        let unit="L";
+        if(unitM){const u=unitM[2].toLowerCase();unit=u==="kg"||u==="k"?"Kg":"L";}
+
+        parsed.push({name,inward,outward,unit,direct:false,posted:false});
+      }
+      setMovements(parsed);
+      showToast(`Parsed ${parsed.length} products from Tally export${period?" ("+period+")":""}`);
+    }catch(e){showToast("Parse error: "+e.message,"error");}
+    setParsing(false);
+  };
+
+  // ── Save movements to Firestore (as a record/log) ──
+  const saveMovements=async()=>{
+    if(!movements.length)return;
+    setSaving(true);
+    try{
+      const batch={importedAt:ts(),importedBy:user?.email,dateRange,count:movements.length};
+      const docRef=await C("fg_movements").add({...batch,movements});
+      showToast(`Saved ${movements.length} movements ✓`);
+      setMovements([]);
+    }catch(e){showToast("Error: "+e.message,"error");}
+    setSaving(false);
+  };
+
+  // ── Post inward to a rack level ──
+  const postToRack=async()=>{
+    const {item,idx}=postModal;
+    if(!postForm.rackId||!postForm.level)return showToast("Select rack and level","error");
+    setSaving(true);
+    try{
+      const cell=`${postForm.rackId}.${postForm.level}`;
+      const existing=(await C("fg_stock_v2").where("cell","==",cell).where("productName","==",item.name).get()).docs[0];
+      if(existing){
+        await C("fg_stock_v2").doc(existing.id).update({totalQty:parseFloat((parseFloat(existing.data().totalQty)+item.inward).toFixed(3)),lastModifiedAt:ts(),lastModifiedBy:user?.email});
+      }else{
+        await C("fg_stock_v2").add({cell,productName:item.name,totalQty:item.inward,unit:item.unit,_createdAt:ts(),lastModifiedAt:ts(),lastModifiedBy:user?.email});
+      }
+      await C("fg_transactions").add({cell,productName:item.name,type:"add",qty:item.inward,unit:item.unit,notes:"Tally import"+(dateRange?" ("+dateRange+")":""),date:today(),by:user?.email,_createdAt:ts()});
+      setMovements(prev=>prev.map((m,i)=>i===idx?{...m,posted:true}:m));
+      showToast(`${item.inward} ${item.unit} of ${item.name} posted to rack ✓`);
+      setPostModal(null);
+    }catch(e){showToast("Error: "+e.message,"error");}
+    setSaving(false);
+  };
+
+  const toggleDirect=(idx)=>setMovements(prev=>prev.map((m,i)=>i===idx?{...m,direct:!m.direct}:m));
+
+  const filtered=movements.filter(m=>{
+    if(filter==="racked"&&m.direct)return false;
+    if(filter==="direct"&&!m.direct)return false;
+    if(search.trim()&&!normalize(m.name).includes(normalize(search)))return false;
+    return true;
+  });
+
+  const directItems=filtered.filter(m=>m.direct);
+  const rackedItems=filtered.filter(m=>!m.direct);
+  const rack=racks.find(r=>r.id===postForm.rackId);
+
+  return <div>
+    <div style={{fontSize:"22px",fontWeight:"400",fontFamily:"'DM Serif Display',serif",color:"#f1f5f9",marginBottom:"14px"}}>📊 FG Movements</div>
+
+    {/* Import bar */}
+    <div style={{background:"#060d1a",border:"1px solid #1e3a5f",borderRadius:"12px",padding:"14px",marginBottom:"14px"}}>
+      <div style={{fontSize:"12px",fontWeight:"700",color:"#93c5fd",marginBottom:"8px"}}>Import Tally Movement Analysis</div>
+      <div style={{fontSize:"11.5px",color:"#475569",marginBottom:"10px"}}>Export "Movement Analysis" from Tally (Stock → Reports → Movement Analysis → Export to Excel). Godown sub-rows and group subtotals are automatically filtered out.</div>
+      <div style={{display:"flex",gap:"8px",flexWrap:"wrap",alignItems:"center"}}>
+        <button onClick={()=>document.getElementById("mv-import").click()} disabled={parsing} style={{background:"#1e3a5f",border:"1px solid #2563eb",borderRadius:"7px",padding:"7px 14px",color:"#93c5fd",fontWeight:"700",fontSize:"12.5px",cursor:"pointer"}}>
+          {parsing?"Parsing…":"⬆ Import Tally Excel"}
+        </button>
+        <input id="mv-import" type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={async e=>{if(e.target.files[0]){await parseTally(e.target.files[0]);e.target.value="";}}}/>
+        {dateRange&&<span style={{fontSize:"12px",color:"#64748b"}}>Period: {dateRange}</span>}
+        {movements.length>0&&<>
+          <span style={{fontSize:"12px",color:"#22c55e"}}>{movements.length} products parsed</span>
+          <button onClick={saveMovements} disabled={saving} style={{background:"#052e16",border:"1px solid #166534",borderRadius:"7px",padding:"7px 14px",color:"#4ade80",fontWeight:"700",fontSize:"12.5px",cursor:"pointer"}}>{saving?"…":"💾 Save Movement Log"}</button>
+          <button onClick={()=>setMovements([])} style={{background:"none",border:"1px solid #334155",borderRadius:"7px",padding:"6px 12px",color:"#475569",fontSize:"12px",cursor:"pointer"}}>✕ Clear</button>
+        </>}
+      </div>
+    </div>
+
+    {/* Parsed results */}
+    {movements.length>0&&<>
+      <div style={{display:"flex",gap:"8px",marginBottom:"10px",flexWrap:"wrap",alignItems:"center"}}>
+        <div style={{position:"relative",flex:1,minWidth:"180px"}}>
+          <span style={{position:"absolute",left:"10px",top:"50%",transform:"translateY(-50%)",color:"#334155",pointerEvents:"none"}}>🔍</span>
+          <input style={{...inp,paddingLeft:"32px"}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search product…"/>
+        </div>
+        {[["all","All"],["racked","🏪 Racked"],["direct","🚚 Direct"]].map(([v,l])=><button key={v} onClick={()=>setFilter(v)} style={{background:filter===v?"#1e293b":"transparent",border:"1px solid #1e293b",borderRadius:"99px",padding:"5px 14px",color:filter===v?"#f1f5f9":"#64748b",fontSize:"12px",fontWeight:"700",cursor:"pointer"}}>{l} ({v==="all"?movements.length:v==="racked"?movements.filter(m=>!m.direct).length:movements.filter(m=>m.direct).length})</button>)}
+        <span style={{fontSize:"11px",color:"#475569"}}>Toggle "Direct" for products like thinner that bypass racks</span>
+      </div>
+
+      {/* Racked items */}
+      {filter!=="direct"&&rackedItems.length>0&&<div style={{marginBottom:"16px"}}>
+        <div style={{fontSize:"11px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"8px"}}>🏪 Racked Products ({rackedItems.length})</div>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:"12.5px"}}>
+          <thead><tr style={{background:"#0b1220"}}>
+            {["Product","Inward","Outward",""].map(h=><th key={h} style={{padding:"8px 12px",textAlign:"left",fontSize:"11px",fontWeight:"700",color:"#475569",textTransform:"uppercase",borderBottom:"1px solid #1e293b"}}>{h}</th>)}
+          </tr></thead>
+          <tbody>
+            {rackedItems.map((m,i)=>{
+              const realIdx=movements.indexOf(m);
+              return <tr key={i} style={{borderBottom:"1px solid #0f172a",background:m.posted?"#052e16":i%2===0?"#080d18":"transparent"}}>
+                <td style={{padding:"9px 12px",color:m.posted?"#4ade80":"#e2e8f0"}}>{m.name}{m.posted&&<span style={{fontSize:"10px",color:"#4ade80",marginLeft:"6px"}}>✓ Posted</span>}</td>
+                <td style={{padding:"9px 12px",color:"#22c55e",fontWeight:"600"}}>{m.inward>0?`+${m.inward} ${m.unit}`:""}</td>
+                <td style={{padding:"9px 12px",color:"#f87171"}}>{m.outward>0?`−${m.outward} ${m.unit}`:""}</td>
+                <td style={{padding:"9px 12px"}}>
+                  <div style={{display:"flex",gap:"6px"}}>
+                    {m.inward>0&&!m.posted&&canManage&&<button onClick={()=>{setPostModal({item:m,idx:realIdx});setPostForm({rackId:"",level:"1"});}} style={{background:"#1e3a5f",border:"1px solid #2563eb",borderRadius:"5px",color:"#93c5fd",fontSize:"11px",fontWeight:"700",padding:"3px 8px",cursor:"pointer"}}>→ Post to Rack</button>}
+                    <button onClick={()=>toggleDirect(realIdx)} style={{background:"none",border:"1px solid #334155",borderRadius:"5px",color:"#475569",fontSize:"10px",padding:"3px 6px",cursor:"pointer"}}>Mark Direct</button>
+                  </div>
+                </td>
+              </tr>;
+            })}
+          </tbody>
+        </table>
+      </div>}
+
+      {/* Direct/Unracked items */}
+      {filter!=="racked"&&directItems.length>0&&<div>
+        <div style={{fontSize:"11px",fontWeight:"700",color:"#f59e0b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"8px"}}>🚚 Direct / Unracked ({directItems.length}) — packed to order or dispatched without racking</div>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:"12.5px"}}>
+          <thead><tr style={{background:"#0b1220"}}>
+            {["Product","Inward","Outward",""].map(h=><th key={h} style={{padding:"8px 12px",textAlign:"left",fontSize:"11px",fontWeight:"700",color:"#475569",textTransform:"uppercase",borderBottom:"1px solid #1e293b"}}>{h}</th>)}
+          </tr></thead>
+          <tbody>
+            {directItems.map((m,i)=>{
+              const realIdx=movements.indexOf(m);
+              return <tr key={i} style={{borderBottom:"1px solid #0f172a",background:i%2===0?"#080d18":"transparent"}}>
+                <td style={{padding:"9px 12px",color:"#fcd34d"}}>{m.name}</td>
+                <td style={{padding:"9px 12px",color:"#22c55e",fontWeight:"600"}}>{m.inward>0?`+${m.inward} ${m.unit}`:""}</td>
+                <td style={{padding:"9px 12px",color:"#f87171"}}>{m.outward>0?`−${m.outward} ${m.unit}`:""}</td>
+                <td style={{padding:"9px 12px"}}><button onClick={()=>toggleDirect(realIdx)} style={{background:"none",border:"1px solid #334155",borderRadius:"5px",color:"#475569",fontSize:"10px",padding:"3px 6px",cursor:"pointer"}}>Move to Racked</button></td>
+              </tr>;
+            })}
+          </tbody>
+        </table>
+      </div>}
+    </>}
+
+    {/* Saved movement logs */}
+    {movements.length===0&&<div>
+      <div style={{fontSize:"12px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"10px"}}>Saved Movement Logs</div>
+      {loading?<div style={{color:"#475569",fontSize:"12px"}}>Loading…</div>
+      :savedMovements.length===0?<div style={{textAlign:"center",padding:"40px",border:"2px dashed #1e293b",borderRadius:"10px",color:"#334155"}}>
+        No movement logs yet. Import a Tally movement analysis above.
+      </div>
+      :<div>{savedMovements.map(log=><div key={log.id} style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"10px",padding:"12px 16px",marginBottom:"8px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div>
+          <div style={{fontSize:"13px",color:"#e2e8f0",fontWeight:"600"}}>{log.dateRange||"Movement Log"}</div>
+          <div style={{fontSize:"11px",color:"#475569",marginTop:"2px"}}>{log.count} products · Imported {log.importedAt?.toDate?.()?.toLocaleDateString("en-IN")||""} by {log.importedBy?.split("@")[0]||"?"}</div>
+        </div>
+        <div style={{display:"flex",gap:"8px"}}>
+          <button onClick={()=>{setMovements(log.movements||[]);setDateRange(log.dateRange||"");showToast("Log loaded — review and post to racks");}} style={{background:"#1e3a5f",border:"1px solid #2563eb",borderRadius:"6px",color:"#93c5fd",fontSize:"11.5px",fontWeight:"700",padding:"5px 12px",cursor:"pointer"}}>📂 Load</button>
+          {isAdmin&&<button onClick={async()=>{if(!confirm("Delete this log?"))return;await C("fg_movements").doc(log.id).delete();showToast("Deleted","error");}} style={{background:"none",border:"1px solid #334155",borderRadius:"6px",color:"#475569",fontSize:"11.5px",padding:"5px 10px",cursor:"pointer"}}>🗑</button>}
+        </div>
+      </div>)}</div>}
+    </div>}
+
+    {/* Post to Rack modal */}
+    {postModal&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <div style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"14px",padding:"22px",width:"min(400px,94vw)"}}>
+        <div style={{fontSize:"15px",fontWeight:"700",color:"#4ade80",marginBottom:"4px"}}>→ Post to Rack</div>
+        <div style={{fontSize:"12px",color:"#64748b",marginBottom:"14px"}}>{postModal.item.name}</div>
+        <div style={{background:"#052e16",border:"1px solid #166534",borderRadius:"7px",padding:"8px 12px",marginBottom:"12px",textAlign:"center"}}>
+          <span style={{fontSize:"16px",fontWeight:"700",color:"#4ade80"}}>+{postModal.item.inward} {postModal.item.unit}</span><span style={{fontSize:"11px",color:"#166534",marginLeft:"6px"}}>to be added</span>
+        </div>
+        <Field label="Select Rack">
+          <select style={sl} value={postForm.rackId} onChange={e=>setPostForm({...postForm,rackId:e.target.value})}>
+            <option value="">— Select rack —</option>
+            {racks.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}
+          </select>
+        </Field>
+        {rack&&<Field label="Level">
+          <select style={sl} value={postForm.level} onChange={e=>setPostForm({...postForm,level:e.target.value})}>
+            {Array.from({length:rack.levels},(_,i)=>i+1).map(l=><option key={l} value={l}>Level {l}</option>)}
+          </select>
+        </Field>}
+        <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",marginTop:"12px"}}>
+          <Btn label="Cancel" onClick={()=>setPostModal(null)} outline color="#475569" small/>
+          <Btn label={saving?"Saving…":"✓ Post to Rack"} onClick={postToRack} disabled={saving||!postForm.rackId} color="#22c55e" small/>
+        </div>
+      </div>
+    </div>}
+  </div>;
+}
+
+
 function StockTab({role,roles,user,showToast,sysUnits,sysRmCats,onAddRmCat,onAddUnit,hp}){
   const [sub,setSub]=useState("rm");
   const canManage=roles.includes("admin")||roles.includes("issuer")||hp("stock_manage");
+  const isAdmin=roles.includes("admin");
   return <div>
-    <div style={{display:"flex",gap:"4px",marginBottom:"20px",borderBottom:"1px solid #1e293b"}}>
-      {[["rm","🧪 RM Stock"],["fg","📦 FG Stock"]].map(([k,l])=><button key={k} onClick={()=>setSub(k)} style={{background:sub===k?"#1e293b":"transparent",border:"none",borderBottom:sub===k?"2px solid #22c55e":"2px solid transparent",color:sub===k?"#f1f5f9":"#64748b",padding:"8px 18px",cursor:"pointer",fontSize:"13px",fontWeight:"600",borderRadius:"8px 8px 0 0"}}>{l}</button>)}
+    <div style={{display:"flex",gap:"4px",marginBottom:"20px",borderBottom:"1px solid #1e293b",flexWrap:"wrap"}}>
+      {[["rm","🧪 RM Stock"],["fg","📦 FG Stock"],["mv","📊 FG Movements"]].map(([k,l])=><button key={k} onClick={()=>setSub(k)} style={{background:sub===k?"#1e293b":"transparent",border:"none",borderBottom:sub===k?"2px solid #22c55e":"2px solid transparent",color:sub===k?"#f1f5f9":"#64748b",padding:"8px 18px",cursor:"pointer",fontSize:"13px",fontWeight:"600",borderRadius:"8px 8px 0 0"}}>{l}</button>)}
     </div>
     {sub==="rm"&&<RawMaterialStockTab role={role} user={user} showToast={showToast} sysUnits={sysUnits} sysRmCats={sysRmCats} onAddRmCat={onAddRmCat} onAddUnit={onAddUnit}/>}
     {sub==="fg"&&<FGStockTab role={role} user={user} showToast={showToast} sysUnits={sysUnits} canManage={canManage}/>}
+    {sub==="mv"&&<FGMovementsTab role={role} user={user} showToast={showToast} isAdmin={isAdmin} canManage={canManage}/>}
   </div>;
 }
 
