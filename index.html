@@ -5052,6 +5052,49 @@ const RACK_COLORS=[
 ];
 
 // Structural (non-editable) floor elements — matches godown photo layout
+// ── Inline form to manually add a product with size, unit, category, tins/carton ──
+function AddProductInline({onAdd, packConfig}){
+  const [open,setOpen]=useState(false);
+  const [form,setForm]=useState({name:"",category:"Paint (Single)",size:"",unit:"L",tinsPerCarton:"",packType:"Single Pack"});
+  const [saving,setSaving]=useState(false);
+  const CATEGORIES=["Paint (Single)","Paint (Two Pack)","Thinner","KPF","Car Patch","VEE-Plast","NC Putty"];
+  const UNITS=["L","Kg","mL","g"];
+
+  const save=async()=>{
+    if(!form.name.trim())return;
+    const size=parseFloat(form.size)||0;
+    const tpc=parseInt(form.tinsPerCarton)||1;
+    setSaving(true);
+    await onAdd({name:form.name.trim(),category:form.category,size,unit:form.unit,tinsPerCarton:tpc,packType:form.packType});
+    setForm({name:"",category:"Paint (Single)",size:"",unit:"L",tinsPerCarton:"",packType:"Single Pack"});
+    setOpen(false);setSaving(false);
+  };
+
+  if(!open)return <button onClick={()=>setOpen(true)} style={{background:"#052e16",border:"1px solid #166534",borderRadius:"6px",padding:"5px 10px",color:"#4ade80",fontSize:"11.5px",fontWeight:"700",cursor:"pointer"}}>+ Add Product</button>;
+  return <div style={{background:"#0a1a2e",border:"1px solid #1e3a5f",borderRadius:"10px",padding:"10px",minWidth:"280px"}}>
+    <input style={{...inp,marginBottom:"5px",fontSize:"12px"}} value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="Product name *"/>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"4px",marginBottom:"5px"}}>
+      <select style={{...sl,fontSize:"11.5px",padding:"4px"}} value={form.category} onChange={e=>setForm({...form,category:e.target.value})}>
+        {CATEGORIES.map(c=><option key={c}>{c}</option>)}
+      </select>
+      <select style={{...sl,fontSize:"11.5px",padding:"4px"}} value={form.packType} onChange={e=>setForm({...form,packType:e.target.value})}>
+        <option>Single Pack</option><option>Two Pack</option>
+      </select>
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"4px",marginBottom:"8px"}}>
+      <input style={{...inp,fontSize:"11.5px",padding:"4px"}} type="number" min="0.001" step="0.001" value={form.size} onChange={e=>setForm({...form,size:e.target.value})} placeholder="Size *"/>
+      <select style={{...sl,fontSize:"11.5px",padding:"4px"}} value={form.unit} onChange={e=>setForm({...form,unit:e.target.value})}>
+        {UNITS.map(u=><option key={u}>{u}</option>)}
+      </select>
+      <input style={{...inp,fontSize:"11.5px",padding:"4px"}} type="number" min="1" step="1" value={form.tinsPerCarton} onChange={e=>setForm({...form,tinsPerCarton:e.target.value})} placeholder="Tins/carton"/>
+    </div>
+    <div style={{display:"flex",gap:"6px"}}>
+      <button onClick={save} disabled={saving} style={{flex:1,background:"#052e16",border:"1px solid #166534",borderRadius:"5px",color:"#4ade80",fontSize:"12px",fontWeight:"700",padding:"5px",cursor:"pointer"}}>{saving?"…":"+ Add"}</button>
+      <button onClick={()=>setOpen(false)} style={{background:"none",border:"1px solid #334155",borderRadius:"5px",color:"#475569",fontSize:"11px",padding:"5px 8px",cursor:"pointer"}}>✕</button>
+    </div>
+  </div>;
+}
+
 const DEFAULT_STRUCTURE=[
   {id:"office",        label:"Office",           x:0,   y:500, w:180, h:160, fill:"#1e293b", textColor:"#94a3b8"},
   {id:"frontoffices",  label:"Front Offices",    x:820, y:160, w:280, h:500, fill:"#1e293b", textColor:"#94a3b8"},
@@ -5165,7 +5208,10 @@ function FGStockTab({role,user,showToast,sysUnits,canManage}){
   };
 
   // Scale: fit the logical FLOOR_W into the actual container width
-  const scale=Math.min(containerW/FLOOR_W, 1);
+  const [userZoom,setUserZoom]=useState(1.0);
+  const baseScale=Math.min(containerW/FLOOR_W, 1);
+  const scale=baseScale*userZoom; // total effective scale — used everywhere for rendering
+  const MIN_ZOOM=0.4, MAX_ZOOM=3.0;
 
   // Measure container on mount
   React.useEffect(()=>{
@@ -5622,7 +5668,7 @@ function FGStockTab({role,user,showToast,sysUnits,canManage}){
       {showCatalogue&&<div style={{background:"#060d1a",border:"1px solid #1e293b",borderRadius:"12px",padding:"14px",marginBottom:"14px"}}>
         <div style={{display:"flex",gap:"8px",alignItems:"center",marginBottom:"10px",flexWrap:"wrap"}}>
           <input style={{...inp,flex:1,minWidth:"180px"}} value={catSearch} onChange={e=>setCatSearch(e.target.value)} placeholder="Search products…"/>
-          {canManage&&<Btn label="+ Add Product" onClick={async()=>{const name=prompt("Product name:");if(!name)return;const cat=prompt("FG Category (e.g. Paint (Single)):","Paint (Single)");if(!cat)return;const parsed=parseSizeFromName(name);const tpc=parsed?lookupTinsPerCarton(cat,parsed.size,parsed.unit):null;await C("fg_products").add({name:name.trim(),category:cat,size:parsed?.size||0,unit:parsed?.unit||"L",tinsPerCarton:tpc||1,packType:parsed?.is2pack?"Two Pack":"Single Pack",importedAt:today()});showToast("Product added ✓");}} color="#22c55e" small/>}
+          {canManage&&<AddProductInline onAdd={async(p)=>{await C("fg_products").add({...p,importedAt:today()});showToast("Product added ✓");}} packConfig={packConfig.length>0?packConfig:null}/>}
           {importStatus&&<div style={{fontSize:"11px",color:"#4ade80"}}>Last import: {importStatus.added} added{importStatus.duplicate>0?`, ${importStatus.duplicate} duplicates`:""}{ importStatus.skipped>0?`, ${importStatus.skipped} skipped`:""}</div>}
         </div>
         {fgProducts.length===0?<div style={{textAlign:"center",padding:"20px",color:"#334155"}}>No products yet — import from Excel to populate</div>
@@ -5678,12 +5724,29 @@ function FGStockTab({role,user,showToast,sysUnits,canManage}){
       </div>
 
       {/* Canvas */}
+      {/* Zoom controls */}
+      <div style={{display:"flex",gap:"6px",alignItems:"center",marginBottom:"8px",flexWrap:"wrap"}}>
+        <span style={{fontSize:"11px",color:"#475569",fontWeight:"600"}}>Zoom:</span>
+        <button onClick={()=>setUserZoom(z=>Math.min(MAX_ZOOM,parseFloat((z+0.2).toFixed(1))))} style={{background:"#1e293b",border:"1px solid #334155",borderRadius:"5px",color:"#94a3b8",width:"28px",height:"28px",fontSize:"16px",cursor:"pointer",lineHeight:1}}>+</button>
+        <span style={{fontSize:"12px",color:"#475569",minWidth:"36px",textAlign:"center"}}>{Math.round(userZoom*100)}%</span>
+        <button onClick={()=>setUserZoom(z=>Math.max(MIN_ZOOM,parseFloat((z-0.2).toFixed(1))))} style={{background:"#1e293b",border:"1px solid #334155",borderRadius:"5px",color:"#94a3b8",width:"28px",height:"28px",fontSize:"16px",cursor:"pointer",lineHeight:1}}>−</button>
+        <button onClick={()=>setUserZoom(1.0)} style={{background:"#1e293b",border:"1px solid #334155",borderRadius:"6px",color:"#64748b",fontSize:"11px",padding:"4px 8px",cursor:"pointer"}}>Reset</button>
+        <span style={{fontSize:"10px",color:"#334155"}}>· Pinch to zoom · Scroll/drag to pan</span>
+      </div>
+
+      {/* Scrollable canvas wrapper — native scroll = free pan on mobile/tablet */}
+      <div style={{overflowX:"auto",overflowY:"auto",WebkitOverflowScrolling:"touch",
+        borderRadius:"10px",border:"2px solid #1e3a5f",maxHeight:"70vh",cursor:"default"}}
+        onWheel={e=>{if(e.ctrlKey||e.metaKey){e.preventDefault();const delta=e.deltaY>0?-0.1:0.1;setUserZoom(z=>Math.min(MAX_ZOOM,Math.max(MIN_ZOOM,parseFloat((z+delta).toFixed(1)))));}}}
+        onTouchStart={e=>{if(e.touches.length===2){const dx=e.touches[0].clientX-e.touches[1].clientX;const dy=e.touches[0].clientY-e.touches[1].clientY;e.currentTarget._pinchDist=Math.sqrt(dx*dx+dy*dy);e.currentTarget._pinchZoom=userZoom;}}}
+        onTouchMove={e=>{if(e.touches.length===2&&e.currentTarget._pinchDist){e.preventDefault();const dx=e.touches[0].clientX-e.touches[1].clientX;const dy=e.touches[0].clientY-e.touches[1].clientY;const dist=Math.sqrt(dx*dx+dy*dy);const ratio=dist/e.currentTarget._pinchDist;const newZ=Math.min(MAX_ZOOM,Math.max(MIN_ZOOM,e.currentTarget._pinchZoom*ratio));setUserZoom(parseFloat(newZ.toFixed(2)));}}} >
+
       <div ref={canvasRef} onClick={onFloorClick}
         onPointerDown={onCanvasPointerDown}
         onPointerMove={onCanvasPointerMove}
         onPointerUp={onCanvasPointerUp}
-        style={{position:"relative",width:"100%",height:`${FLOOR_H*scale}px`,background:"#080d18",
-          border:"2px solid #1e3a5f",borderRadius:"10px",overflow:"hidden",
+        style={{position:"relative",width:`${FLOOR_W*scale}px`,height:`${FLOOR_H*scale}px`,
+          background:"#080d18",flexShrink:0,
           cursor:mode==="addRack"?"crosshair":"default",
           backgroundImage:"radial-gradient(circle,#1e293b 1px,transparent 1px)",
           backgroundSize:`${GRID*scale}px ${GRID*scale}px`}}>
@@ -5851,6 +5914,7 @@ function FGStockTab({role,user,showToast,sysUnits,canManage}){
           {racks.length} rack{racks.length!==1?"s":""}{pillars.length>0?` · ${pillars.length} pillars`:""}
         </div>
       </div>
+      </div>{/* end scroll wrapper */}
       <div style={{display:"flex",gap:"12px",flexWrap:"wrap",marginTop:"8px"}}>
         {[["Coloured top stripe","Product category colour"],["L4 badge","Number of levels"],["2/4 (green)","Levels with stock"],].map(([k,v])=><div key={k} style={{fontSize:"10px",color:"#334155"}}><span style={{color:"#475569",fontWeight:"600"}}>{k}</span>: {v}</div>)}
         {canManage&&<span style={{fontSize:"10px",color:"#334155"}}>· Drag to move · Click to see levels</span>}
@@ -5923,7 +5987,7 @@ function FGStockTab({role,user,showToast,sysUnits,canManage}){
                     <input style={{...inp,fontSize:"12px",padding:"5px 8px",flex:1}} type="number" min="0" step="0.001" value={editStockForm.totalQty} onChange={e=>setEditStockForm({...editStockForm,totalQty:e.target.value})} placeholder="Qty"/>
                     <input style={{...inp,fontSize:"12px",padding:"5px 8px",width:"50px"}} value={editStockForm.unit} onChange={e=>setEditStockForm({...editStockForm,unit:e.target.value})} placeholder="L"/>
                   </div>
-                  <div style={{fontSize:"10px",color:"#475569",marginBottom:"6px"}}>Set qty to 0 to remove entry</div>
+                  <div style={{fontSize:"10px",color:"#475569",marginBottom:"6px"}}>{isAdmin?"Admin: set any qty directly. Set 0 to delete entry. No transaction logged.":"Set qty to 0 to remove entry"}</div>
                   <div style={{display:"flex",gap:"6px"}}>
                     <button onClick={saveStockEdit} disabled={editStockSaving} style={{flex:1,background:"#0f2d1a",border:"1px solid #166534",borderRadius:"5px",color:"#4ade80",fontSize:"11px",fontWeight:"700",padding:"5px",cursor:"pointer"}}>{editStockSaving?"…":"✓ Save"}</button>
                     <button onClick={()=>setEditStockEntry(null)} style={{flex:1,background:"none",border:"1px solid #334155",borderRadius:"5px",color:"#475569",fontSize:"11px",padding:"5px",cursor:"pointer"}}>✕ Cancel</button>
