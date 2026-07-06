@@ -5052,11 +5052,11 @@ const RACK_COLORS=[
 ];
 
 // Structural (non-editable) floor elements — matches godown photo layout
-const FIXED_ELEMENTS=[
-  {label:"Office",           x:0,   y:500, w:180, h:160, fill:"#1e293b", textColor:"#94a3b8"},
-  {label:"Front Offices",    x:820, y:160, w:280, h:500, fill:"#1e293b", textColor:"#94a3b8"},
-  {label:"Staircase",        x:510, y:530, w:160, h:130, fill:"#334155", textColor:"#64748b"},
-  {label:"Printing Machine", x:740, y:0,   w:200, h:80,  fill:"#292524", textColor:"#78716c"},
+const DEFAULT_STRUCTURE=[
+  {id:"office",        label:"Office",           x:0,   y:500, w:180, h:160, fill:"#1e293b", textColor:"#94a3b8"},
+  {id:"frontoffices",  label:"Front Offices",    x:820, y:160, w:280, h:500, fill:"#1e293b", textColor:"#94a3b8"},
+  {id:"staircase",     label:"Staircase",        x:510, y:530, w:160, h:130, fill:"#334155", textColor:"#64748b"},
+  {id:"printing",      label:"Printing Machine", x:820, y:0,   w:200, h:80,  fill:"#292524", textColor:"#78716c"},
 ];
 const FLOOR_W=1100, FLOOR_H=680, GRID=20;
 
@@ -5258,12 +5258,51 @@ function FGStockTab({role,user,showToast,sysUnits,canManage}){
   };
 
   // ── Draw-to-create in addRack mode ──
-  const [drawing,setDrawing]=useState(null); // {startX,startY,curX,curY}
-  const [pillars,setPillars]=useState([]);   // [{id,x,y,w,h}] — loaded from Firestore
-  const [pillarDrag,setPillarDrag]=useState(null); // {pillarId,origX,origY,startPX,startPY}
-  const [selectedPillar,setSelectedPillar]=useState(null);
+  const [editStockEntry,setEditStockEntry]=useState(null); // {id, productName, totalQty, unit}
+  const [editStockForm,setEditStockForm]=useState({productName:"",totalQty:"",unit:""});
+  const [editStockSaving,setEditStockSaving]=useState(false);
 
-  // Load pillars from Firestore
+  const canEditStock=(p)=>{
+    if(isAdmin)return true;
+    if(!canManage)return false;
+    // Issuer: only within 24 hours of last modification
+    const ref=p.lastModifiedAt||p._createdAt;
+    if(!ref)return false;
+    const refMs=ref.toMillis?ref.toMillis():ref.seconds?ref.seconds*1000:null;
+    if(!refMs)return false;
+    return Date.now()-refMs < 24*60*60*1000;
+  };
+
+  const saveStockEdit=async()=>{
+    if(!editStockEntry||!editStockForm.productName.trim())return;
+    const qty=parseFloat(editStockForm.totalQty);
+    if(isNaN(qty)||qty<0)return showToast("Enter a valid quantity","error");
+    setEditStockSaving(true);
+    try{
+      if(qty===0){
+        await C("fg_stock_v2").doc(editStockEntry.id).delete();
+        showToast("Entry removed ✓");
+      }else{
+        await C("fg_stock_v2").doc(editStockEntry.id).update({
+          productName:editStockForm.productName.trim(),
+          totalQty:parseFloat(qty.toFixed(3)),
+          unit:editStockForm.unit,
+          lastModifiedAt:ts(),
+          lastModifiedBy:user?.email,
+        });
+        showToast("Stock entry updated ✓");
+      }
+      setEditStockEntry(null);
+    }catch(e){showToast("Error: "+e.message,"error");}
+    setEditStockSaving(false);
+  };
+  const [pillars,setPillars]=useState([]);
+  const [pillarDrag,setPillarDrag]=useState(null);
+  const [selectedPillar,setSelectedPillar]=useState(null);
+  const [structure,setStructure]=useState(DEFAULT_STRUCTURE);
+  const [structDrag,setStructDrag]=useState(null);
+  const [selectedStruct,setSelectedStruct]=useState(null);
+
   React.useEffect(()=>{
     const unsub=C("fg_config").doc("pillars").onSnapshot(snap=>{
       if(snap.exists&&snap.data().items)setPillars(snap.data().items);
@@ -5272,9 +5311,21 @@ function FGStockTab({role,user,showToast,sysUnits,canManage}){
     return unsub;
   },[]);
 
+  React.useEffect(()=>{
+    const unsub=C("fg_config").doc("structure").onSnapshot(snap=>{
+      if(snap.exists&&snap.data().items)setStructure(snap.data().items);
+    },()=>{});
+    return unsub;
+  },[]);
+
   const savePillars=async(newPillars)=>{
     await C("fg_config").doc("pillars").set({items:newPillars},{merge:true});
     setPillars(newPillars);
+  };
+
+  const saveStructure=async(s)=>{
+    await C("fg_config").doc("structure").set({items:s},{merge:true});
+    setStructure(s);
   };
   const onCanvasPointerDown=(e)=>{
     if(!canvasRef.current)return;
@@ -5397,8 +5448,8 @@ function FGStockTab({role,user,showToast,sysUnits,canManage}){
         if(newQty<=0.001)await C("fg_stock_v2").doc(existing.id).delete();
         else await C("fg_stock_v2").doc(existing.id).update({totalQty:newQty});
       }else{
-        if(existing)await C("fg_stock_v2").doc(existing.id).update({totalQty:parseFloat((parseFloat(existing.totalQty)+totalQty).toFixed(3))});
-        else await C("fg_stock_v2").add({cell,productName:txn.productName.trim(),totalQty,unit,_createdAt:ts()});
+        if(existing)await C("fg_stock_v2").doc(existing.id).update({totalQty:parseFloat((parseFloat(existing.totalQty)+totalQty).toFixed(3)),lastModifiedAt:ts(),lastModifiedBy:user?.email});
+        else await C("fg_stock_v2").add({cell,productName:txn.productName.trim(),totalQty,unit,_createdAt:ts(),lastModifiedAt:ts(),lastModifiedBy:user?.email});
       }
       await C("fg_transactions").add({
         cell,productName:txn.productName.trim(),type:mode,
@@ -5554,11 +5605,12 @@ function FGStockTab({role,user,showToast,sysUnits,canManage}){
           <button onClick={commitRename} style={{background:"#0f2d1a",border:"1px solid #166534",borderRadius:"5px",padding:"5px 10px",color:"#4ade80",fontSize:"12px",fontWeight:"700",cursor:"pointer"}}>✓</button>
           <button onClick={()=>setRenamingRack(null)} style={{background:"none",border:"1px solid #334155",borderRadius:"5px",padding:"5px 8px",color:"#475569",fontSize:"11px",cursor:"pointer"}}>✕</button>
         </div>}
-        {isAdmin&&mode==="view"&&<button onClick={()=>{setMode("editPillars");setSelectedPillar(null);}} style={{background:"#1a0a1a",border:"1px solid #7c3aed",borderRadius:"8px",padding:"7px 14px",color:"#c4b5fd",fontWeight:"700",fontSize:"12.5px",cursor:"pointer"}}>🔲 Edit Pillars</button>}
+        {isAdmin&&mode==="view"&&<button onClick={()=>{setMode("editPillars");setSelectedPillar(null);setSelectedStruct(null);}} style={{background:"#1a0a1a",border:"1px solid #7c3aed",borderRadius:"8px",padding:"7px 14px",color:"#c4b5fd",fontWeight:"700",fontSize:"12.5px",cursor:"pointer"}}>🗺 Edit Layout</button>}
         {mode==="editPillars"&&<div style={{display:"flex",gap:"8px",alignItems:"center",background:"#1a0a1a",border:"1px solid #7c3aed",borderRadius:"10px",padding:"8px 12px",flexWrap:"wrap"}}>
-          <span style={{fontSize:"12px",color:"#c4b5fd",fontWeight:"700"}}>🔲 Pillar Edit Mode — click canvas to place, drag to move</span>
-          {selectedPillar&&<button onClick={async()=>{await savePillars(pillars.filter(p=>p.id!==selectedPillar));setSelectedPillar(null);showToast("Pillar removed","error");}} style={{background:"#2e0a0a",border:"1px solid #7f1d1d",borderRadius:"5px",padding:"4px 10px",color:"#f87171",fontSize:"11px",fontWeight:"700",cursor:"pointer"}}>🗑 Delete selected</button>}
-          <button onClick={async()=>{setMode("view");setSelectedPillar(null);await savePillars(pillars);showToast("Pillar layout saved ✓");}} style={{background:"#0f2d1a",border:"1px solid #166534",borderRadius:"5px",padding:"4px 10px",color:"#4ade80",fontSize:"11px",fontWeight:"700",cursor:"pointer"}}>✓ Done</button>
+          <span style={{fontSize:"12px",color:"#c4b5fd",fontWeight:"700"}}>🗺 Layout Edit — click canvas for pillar · drag walls to reposition · corner handle to resize</span>
+          {selectedPillar&&<button onClick={async()=>{await savePillars(pillars.filter(p=>p.id!==selectedPillar));setSelectedPillar(null);showToast("Pillar removed","error");}} style={{background:"#2e0a0a",border:"1px solid #7f1d1d",borderRadius:"5px",padding:"4px 10px",color:"#f87171",fontSize:"11px",fontWeight:"700",cursor:"pointer"}}>🗑 Delete pillar</button>}
+          {selectedStruct&&<button onClick={async()=>{await saveStructure(DEFAULT_STRUCTURE);showToast("Layout reset to defaults");setSelectedStruct(null);}} style={{background:"#2e1a00",border:"1px solid #92400e",borderRadius:"5px",padding:"4px 10px",color:"#fcd34d",fontSize:"11px",fontWeight:"700",cursor:"pointer"}}>↺ Reset all to default</button>}
+          <button onClick={async()=>{setMode("view");setSelectedPillar(null);setSelectedStruct(null);await saveStructure(structure);await savePillars(pillars);showToast("Layout saved ✓");}} style={{background:"#0f2d1a",border:"1px solid #166534",borderRadius:"5px",padding:"4px 10px",color:"#4ade80",fontSize:"11px",fontWeight:"700",cursor:"pointer"}}>✓ Done & Save</button>
         </div>}
       </div>
 
@@ -5573,13 +5625,54 @@ function FGStockTab({role,user,showToast,sysUnits,canManage}){
           backgroundImage:"radial-gradient(circle,#1e293b 1px,transparent 1px)",
           backgroundSize:`${GRID*scale}px ${GRID*scale}px`}}>
 
-        {/* ── Fixed structural elements ── */}
-        {FIXED_ELEMENTS.map(el=><div key={el.label} style={{position:"absolute",
-          left:el.x*scale,top:el.y*scale,width:el.w*scale,height:el.h*scale,
-          background:el.fill,border:"1px solid #334155",borderRadius:"4px",
-          display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none"}}>
-          <span style={{fontSize:`${Math.max(9,12*scale)}px`,fontWeight:"700",color:el.textColor,textAlign:"center"}}>{el.label}</span>
-        </div>)}
+        {/* ── Structural elements — drag+resize in editPillars mode, static otherwise ── */}
+        {structure.map(el=>{
+          const isEditMode=mode==="editPillars";
+          const isSel=selectedStruct===el.id;
+          const HANDLE=Math.max(8,10*scale);
+          return <div key={el.id}
+            style={{position:"absolute",left:el.x*scale,top:el.y*scale,
+              width:el.w*scale,height:el.h*scale,
+              background:el.fill,border:`${isSel?"2px solid #fcd34d":"1px solid #334155"}`,
+              borderRadius:"4px",display:"flex",alignItems:"center",justifyContent:"center",
+              pointerEvents:isEditMode?"auto":"none",
+              cursor:isEditMode?"move":"default",zIndex:isEditMode?4:1,overflow:"visible"}}
+            onClick={e=>{if(!isEditMode)return;e.stopPropagation();setSelectedStruct(isSel?null:el.id);setSelectedPillar(null);}}
+            onPointerDown={e=>{
+              if(!isEditMode||!isAdmin)return;
+              e.stopPropagation();
+              e.currentTarget.setPointerCapture(e.pointerId);
+              setStructDrag({id:el.id,origX:el.x,origY:el.y,origW:el.w,origH:el.h,startPX:e.clientX,startPY:e.clientY,resizing:null});
+            }}
+            onPointerMove={e=>{
+              if(!structDrag||structDrag.id!==el.id)return;
+              const dx=(e.clientX-structDrag.startPX)/scale;
+              const dy=(e.clientY-structDrag.startPY)/scale;
+              if(structDrag.resizing==="se"){
+                const nw=Math.max(40,snapToGrid(structDrag.origW+dx));
+                const nh=Math.max(30,snapToGrid(structDrag.origH+dy));
+                setStructure(prev=>prev.map(s=>s.id===el.id?{...s,w:nw,h:nh}:s));
+              }else{
+                const nx=Math.max(0,Math.min(FLOOR_W-el.w,snapToGrid(structDrag.origX+dx)));
+                const ny=Math.max(0,Math.min(FLOOR_H-el.h,snapToGrid(structDrag.origY+dy)));
+                setStructure(prev=>prev.map(s=>s.id===el.id?{...s,x:nx,y:ny}:s));
+              }
+            }}
+            onPointerUp={async e=>{
+              if(!structDrag||structDrag.id!==el.id)return;
+              setStructDrag(null);
+              await saveStructure(structure);
+            }}>
+            <span style={{fontSize:`${Math.max(9,12*scale)}px`,fontWeight:"700",color:el.textColor,textAlign:"center",pointerEvents:"none"}}>{el.label}</span>
+            {/* Resize handle — bottom-right corner, only when selected in edit mode */}
+            {isEditMode&&isSel&&<div
+              onPointerDown={e=>{e.stopPropagation();e.currentTarget.parentElement.setPointerCapture(e.pointerId);setStructDrag({id:el.id,origX:el.x,origY:el.y,origW:el.w,origH:el.h,startPX:e.clientX,startPY:e.clientY,resizing:"se"});}}
+              style={{position:"absolute",right:`-${HANDLE/2}px`,bottom:`-${HANDLE/2}px`,
+                width:`${HANDLE}px`,height:`${HANDLE}px`,
+                background:"#fcd34d",borderRadius:"50%",cursor:"se-resize",zIndex:10}}>
+            </div>}
+          </div>;
+        })}
 
         {/* ── Drawing preview ── */}
         {drawing&&(()=>{
@@ -5698,7 +5791,7 @@ function FGStockTab({role,user,showToast,sysUnits,canManage}){
       <div style={{display:"flex",gap:"12px",flexWrap:"wrap",marginTop:"8px"}}>
         {[["Coloured top stripe","Product category colour"],["L4 badge","Number of levels"],["2/4 (green)","Levels with stock"],].map(([k,v])=><div key={k} style={{fontSize:"10px",color:"#334155"}}><span style={{color:"#475569",fontWeight:"600"}}>{k}</span>: {v}</div>)}
         {canManage&&<span style={{fontSize:"10px",color:"#334155"}}>· Drag to move · Click to see levels</span>}
-        {isAdmin&&<span style={{fontSize:"10px",color:"#6d28d9"}}>· 🔲 Edit Pillars to add/move structural pillars</span>}
+        {isAdmin&&<span style={{fontSize:"10px",color:"#6d28d9"}}>· 🗺 Edit Layout to reposition walls/pillars</span>}
       </div>
     </div>
 
@@ -5752,11 +5845,37 @@ function FGStockTab({role,user,showToast,sysUnits,canManage}){
         </div>
         {selCellProds.length===0
           ?<div style={{textAlign:"center",padding:"16px 0",color:"#334155",fontSize:"12.5px",fontStyle:"italic"}}>Empty — nothing stored here yet</div>
-          :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:"8px"}}>
-            {selCellProds.map(p=><div key={p.id} style={{background:"#080d18",border:"1px solid #1e293b",borderRadius:"8px",padding:"10px 12px"}}>
-              <div style={{fontSize:"12px",fontWeight:"600",color:"#e2e8f0",marginBottom:"4px"}}>{p.productName}</div>
-              <div style={{fontSize:"18px",fontWeight:"700",color:"#4ade80"}}>{parseFloat(p.totalQty).toFixed(2)} <span style={{fontSize:"11px",color:"#166534"}}>{p.unit}</span></div>
-            </div>)}
+          :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:"8px"}}>
+            {selCellProds.map(p=>{
+              const isEditing=editStockEntry?.id===p.id;
+              const canEdit=canEditStock(p);
+              const modAge=p.lastModifiedAt||p._createdAt;
+              const modAgeMs=modAge?.toMillis?modAge.toMillis():modAge?.seconds?modAge.seconds*1000:null;
+              const hoursAgo=modAgeMs?Math.floor((Date.now()-modAgeMs)/3600000):null;
+              return <div key={p.id} style={{background:"#080d18",border:`1px solid ${isEditing?"#fcd34d60":"#1e293b"}`,borderRadius:"8px",padding:"10px 12px"}}>
+                {isEditing?<>
+                  <div style={{fontSize:"10px",color:"#fcd34d",fontWeight:"700",marginBottom:"6px",textTransform:"uppercase",letterSpacing:"0.07em"}}>✏️ Edit Entry</div>
+                  <input style={{...inp,fontSize:"12px",padding:"5px 8px",marginBottom:"6px",width:"100%"}} value={editStockForm.productName} onChange={e=>setEditStockForm({...editStockForm,productName:e.target.value})} placeholder="Product name"/>
+                  <div style={{display:"flex",gap:"6px",marginBottom:"8px"}}>
+                    <input style={{...inp,fontSize:"12px",padding:"5px 8px",flex:1}} type="number" min="0" step="0.001" value={editStockForm.totalQty} onChange={e=>setEditStockForm({...editStockForm,totalQty:e.target.value})} placeholder="Qty"/>
+                    <input style={{...inp,fontSize:"12px",padding:"5px 8px",width:"50px"}} value={editStockForm.unit} onChange={e=>setEditStockForm({...editStockForm,unit:e.target.value})} placeholder="L"/>
+                  </div>
+                  <div style={{fontSize:"10px",color:"#475569",marginBottom:"6px"}}>Set qty to 0 to remove entry</div>
+                  <div style={{display:"flex",gap:"6px"}}>
+                    <button onClick={saveStockEdit} disabled={editStockSaving} style={{flex:1,background:"#0f2d1a",border:"1px solid #166534",borderRadius:"5px",color:"#4ade80",fontSize:"11px",fontWeight:"700",padding:"5px",cursor:"pointer"}}>{editStockSaving?"…":"✓ Save"}</button>
+                    <button onClick={()=>setEditStockEntry(null)} style={{flex:1,background:"none",border:"1px solid #334155",borderRadius:"5px",color:"#475569",fontSize:"11px",padding:"5px",cursor:"pointer"}}>✕ Cancel</button>
+                  </div>
+                </>:<>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"4px"}}>
+                    <div style={{fontSize:"12px",fontWeight:"600",color:"#e2e8f0",flex:1,marginRight:"6px"}}>{p.productName}</div>
+                    {canEdit&&<button onClick={()=>{setEditStockEntry(p);setEditStockForm({productName:p.productName,totalQty:String(p.totalQty),unit:p.unit||"L"});}}
+                      style={{background:"none",border:"1px solid #334155",borderRadius:"4px",color:"#64748b",fontSize:"10px",padding:"2px 6px",cursor:"pointer",flexShrink:0}}>✏️</button>}
+                  </div>
+                  <div style={{fontSize:"18px",fontWeight:"700",color:"#4ade80"}}>{parseFloat(p.totalQty).toFixed(2)} <span style={{fontSize:"11px",color:"#166534"}}>{p.unit}</span></div>
+                  {!isAdmin&&canEdit&&hoursAgo!==null&&<div style={{fontSize:"9px",color:"#334155",marginTop:"2px"}}>Editable for {23-hoursAgo}h more</div>}
+                </>}
+              </div>;
+            })}
           </div>}
       </>}
       {!selectedCell&&!expandedRack&&selRackData&&<div style={{textAlign:"center",color:"#334155",fontSize:"12px"}}>Tap the rack again to see level detail</div>}
