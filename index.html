@@ -5217,40 +5217,80 @@ function FGStockTab({role,user,showToast,sysUnits,canManage}){
   };
 
   // ── Drag (pointer events — works for mouse AND touch on tablets) ──
-  const onRackPointerDown=(e,rack)=>{
-    if(!canManage)return;
-    e.stopPropagation();
-    e.currentTarget.setPointerCapture(e.pointerId);
-    setDragging({rackId:rack.id,origX:rack.x,origY:rack.y,startPX:e.clientX,startPY:e.clientY});
-    setSelectedRack(rack.id);
-    setSelectedCell(null);
-  };
   const onRackPointerMove=(e,rack)=>{
     if(!dragging||dragging.rackId!==rack.id)return;
     const deltaX=(e.clientX-dragging.startPX)/scale;
     const deltaY=(e.clientY-dragging.startPY)/scale;
-    const newX=Math.max(0,Math.min(FLOOR_W-rack.w,snapToGrid(dragging.origX+deltaX)));
-    const newY=Math.max(0,Math.min(FLOOR_H-RACK_CANVAS_H,snapToGrid((e.clientY-rect.top)/scale)));
-    setRacks(prev=>prev.map(r=>r.id===rack.id?{...r,x:newX,y:newY}:r));
+    const rh=rack.h||RACK_CANVAS_H;
+    if(dragging.resizing==="se"){
+      // Resize: drag bottom-right corner changes w and h
+      const newW=Math.max(40,snapToGrid(dragging.origW+deltaX));
+      const newH=Math.max(36,snapToGrid(dragging.origH+deltaY));
+      setRacks(prev=>prev.map(r=>r.id===rack.id?{...r,w:newW,h:newH}:r));
+    }else if(dragging.resizing==="e"){
+      // Resize: drag right edge changes width only
+      const newW=Math.max(40,snapToGrid(dragging.origW+deltaX));
+      setRacks(prev=>prev.map(r=>r.id===rack.id?{...r,w:newW}:r));
+    }else{
+      // Move
+      const newX=Math.max(0,Math.min(FLOOR_W-rack.w,snapToGrid(dragging.origX+deltaX)));
+      const newY=Math.max(0,Math.min(FLOOR_H-rh,snapToGrid(dragging.origY+deltaY)));
+      setRacks(prev=>prev.map(r=>r.id===rack.id?{...r,x:newX,y:newY}:r));
+    }
+  };
+  const onRackPointerDown=(e,rack,resizing=null)=>{
+    if(!canManage)return;
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setDragging({rackId:rack.id,origX:rack.x,origY:rack.y,
+      origW:rack.w,origH:rack.h||RACK_CANVAS_H,
+      startPX:e.clientX,startPY:e.clientY,resizing});
+    setSelectedRack(rack.id);
+    setSelectedCell(null);
   };
   const onRackPointerUp=async(e,rack)=>{
     if(!dragging||dragging.rackId!==rack.id)return;
     setDragging(null);
-    await saveRacks(racks); // persist final position
+    await saveRacks(racks);
   };
 
-  // ── Add rack — click on canvas floor to place ──
-  const onFloorClick=(e)=>{
-    if(mode!=="addRack"||!canManage)return;
+  // ── Draw-to-create in addRack mode ──
+  const [drawing,setDrawing]=useState(null); // {startX,startY,curX,curY}
+  const onCanvasPointerDown=(e)=>{
+    if(mode!=="addRack"||!canManage||!canvasRef.current)return;
     const rect=canvasRef.current.getBoundingClientRect();
     const x=snapToGrid((e.clientX-rect.left)/scale);
     const y=snapToGrid((e.clientY-rect.top)/scale);
-    const id=newId();
-    const rack={id,name:newRack.name||"New Rack",levels:parseInt(newRack.levels)||4,
-      color:newRack.color,label:newRack.label,w:parseInt(newRack.w)||80,x,y};
-    saveRacks([...racks,rack]);
-    setMode("view");
-    showToast(`${rack.name} placed ✓ — drag to reposition`);
+    setDrawing({startX:x,startY:y,curX:x,curY:y});
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const onCanvasPointerMove=(e)=>{
+    if(!drawing||!canvasRef.current)return;
+    const rect=canvasRef.current.getBoundingClientRect();
+    const curX=Math.max(0,Math.min(FLOOR_W,snapToGrid((e.clientX-rect.left)/scale)));
+    const curY=Math.max(0,Math.min(FLOOR_H,snapToGrid((e.clientY-rect.top)/scale)));
+    setDrawing(d=>({...d,curX,curY}));
+  };
+  const onCanvasPointerUp=(e)=>{
+    if(!drawing)return;
+    const w=Math.abs(drawing.curX-drawing.startX);
+    const h=Math.abs(drawing.curY-drawing.startY);
+    const x=Math.min(drawing.startX,drawing.curX);
+    const y=Math.min(drawing.startY,drawing.curY);
+    if(w>=20&&h>=20){
+      const id=newId();
+      const rack={id,name:newRack.name||"New Rack",levels:parseInt(newRack.levels)||4,
+        color:newRack.color,label:newRack.label,w,h,x,y};
+      saveRacks([...racks,rack]);
+      showToast(`${rack.name} placed ✓ — click to select, drag edges to resize`);
+      setMode("view");
+    }
+    setDrawing(null);
+  };
+
+  // ── Click on existing rack (not drag/resize) ──
+  const onFloorClick=(e)=>{
+    if(mode==="addRack")return; // handled by pointer events
   };
 
   const deleteRack=async(rackId)=>{
@@ -5436,10 +5476,7 @@ function FGStockTab({role,user,showToast,sysUnits,canManage}){
           <select style={{...sl,padding:"5px 6px",fontSize:"12px",width:"100px"}} value={newRack.label} onChange={e=>{const c=RACK_COLORS.find(x=>x.label===e.target.value);setNewRack({...newRack,label:e.target.value,color:c?.color||"#94a3b8"});}}>
             {RACK_COLORS.map(c=><option key={c.label} value={c.label}>{c.label}</option>)}
           </select>
-          <select style={{...sl,padding:"5px 6px",fontSize:"12px",width:"80px"}} value={newRack.w} onChange={e=>setNewRack({...newRack,w:e.target.value})}>
-            {[60,80,100,120,140].map(w=><option key={w} value={w}>{w}px wide</option>)}
-          </select>
-          <span style={{fontSize:"12px",color:"#22d3ee",fontWeight:"700"}}>→ click the floor to place</span>
+          <span style={{fontSize:"12px",color:"#22d3ee",fontWeight:"700"}}>→ click and drag on canvas to draw rack size</span>
           <button onClick={()=>setMode("view")} style={{background:"none",border:"1px solid #334155",borderRadius:"5px",color:"#64748b",fontSize:"11px",padding:"4px 8px",cursor:"pointer"}}>Cancel</button>
         </div>}
         {selectedRack&&canManage&&mode==="view"&&<button onClick={()=>deleteRack(selectedRack)} style={{background:"#2e0a0a",border:"1px solid #7f1d1d",borderRadius:"7px",padding:"6px 12px",color:"#f87171",fontSize:"12px",fontWeight:"700",cursor:"pointer"}}>🗑 Remove rack</button>}
@@ -5448,6 +5485,9 @@ function FGStockTab({role,user,showToast,sysUnits,canManage}){
 
       {/* Canvas */}
       <div ref={canvasRef} onClick={onFloorClick}
+        onPointerDown={onCanvasPointerDown}
+        onPointerMove={onCanvasPointerMove}
+        onPointerUp={onCanvasPointerUp}
         style={{position:"relative",width:"100%",height:`${FLOOR_H*scale}px`,background:"#080d18",
           border:"2px solid #1e3a5f",borderRadius:"10px",overflow:"hidden",
           cursor:mode==="addRack"?"crosshair":"default",
@@ -5458,46 +5498,79 @@ function FGStockTab({role,user,showToast,sysUnits,canManage}){
         {FIXED_ELEMENTS.map(el=><div key={el.label} style={{position:"absolute",
           left:el.x*scale,top:el.y*scale,width:el.w*scale,height:el.h*scale,
           background:el.fill,border:"1px solid #334155",borderRadius:"4px",
-          display:"flex",alignItems:"center",justifyContent:"center"}}>
+          display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none"}}>
           <span style={{fontSize:`${Math.max(9,12*scale)}px`,fontWeight:"700",color:el.textColor,textAlign:"center"}}>{el.label}</span>
         </div>)}
 
-        {/* ── Draggable racks — COMPACT: fixed height, name + level badge, no per-level cells ── */}
+        {/* ── Drawing preview ── */}
+        {drawing&&(()=>{
+          const w=Math.abs(drawing.curX-drawing.startX);
+          const h=Math.abs(drawing.curY-drawing.startY);
+          const x=Math.min(drawing.startX,drawing.curX);
+          const y=Math.min(drawing.startY,drawing.curY);
+          return <div style={{position:"absolute",left:x*scale,top:y*scale,width:w*scale,height:h*scale,
+            border:`2px dashed ${newRack.color}`,background:newRack.color+"22",
+            borderRadius:"5px",pointerEvents:"none",display:"flex",alignItems:"center",justifyContent:"center"}}>
+            {w>30&&h>16&&<span style={{fontSize:"11px",color:newRack.color,fontWeight:"700"}}>{newRack.name||"New Rack"}</span>}
+          </div>;
+        })()}
+
+        {/* ── Draggable + Resizable racks ── */}
         {racks.map(rack=>{
           const isSelRack=selectedRack===rack.id||expandedRack===rack.id;
-          // Count how many levels have stock for the green dot indicator
+          const rh=(rack.h||RACK_CANVAS_H)*scale;
+          const rw=rack.w*scale;
           const levelsWithStock=Array.from({length:rack.levels},(_,i)=>i+1).filter(lv=>getCellTotal(`${rack.id}.${lv}`)>0).length;
           const hasAnyStock=levelsWithStock>0;
+          const HANDLE=Math.max(8,10*scale); // resize handle size in px
           return <div key={rack.id}
             onPointerDown={e=>onRackPointerDown(e,rack)}
             onPointerMove={e=>onRackPointerMove(e,rack)}
             onPointerUp={e=>onRackPointerUp(e,rack)}
             onClick={e=>{e.stopPropagation();if(!dragging){setExpandedRack(expandedRack===rack.id?null:rack.id);setSelectedCell(null);setSelectedRack(rack.id);}}}
             style={{position:"absolute",left:rack.x*scale,top:rack.y*scale,
-              width:rack.w*scale,height:RACK_CANVAS_H*scale,
+              width:rw,height:rh,
               border:`${isSelRack?"3px solid #3b82f6":"2px solid "+rack.color+"80"}`,
-              borderRadius:"6px",overflow:"hidden",
+              borderRadius:"6px",overflow:"visible",
               background:hasAnyStock?"#052e16":"#0b1220",
               boxShadow:isSelRack?`0 0 14px ${rack.color}50`:`0 0 4px ${rack.color}20`,
               cursor:canManage?"grab":"pointer",
-              userSelect:"none",touchAction:"none",
+              userSelect:"none",touchAction:"none"}}>
+            {/* Content */}
+            <div style={{position:"absolute",inset:0,overflow:"hidden",borderRadius:"4px",
               display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:`${1*scale}px`}}>
-            {/* Colour stripe at very top */}
-            <div style={{position:"absolute",top:0,left:0,right:0,height:`${5*scale}px`,background:rack.color}}/>
-            {/* Rack name */}
-            <div style={{fontSize:`${Math.max(8,10*scale)}px`,fontWeight:"700",color:"#f1f5f9",
-              textAlign:"center",lineHeight:1.1,padding:`${6*scale}px ${4*scale}px 0`,
-              whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",width:"100%"}}>
-              {rack.name}
+              <div style={{position:"absolute",top:0,left:0,right:0,height:`${5*scale}px`,background:rack.color,borderRadius:"4px 4px 0 0"}}/>
+              <div style={{fontSize:`${Math.max(8,10*scale)}px`,fontWeight:"700",color:"#f1f5f9",
+                textAlign:"center",lineHeight:1.1,padding:`${7*scale}px ${4*scale}px 0`,
+                whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",width:"100%"}}>
+                {rack.name}
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:`${3*scale}px`}}>
+                <span style={{fontSize:`${Math.max(7,9*scale)}px`,color:rack.color,fontWeight:"700",background:rack.color+"22",
+                  padding:`${1*scale}px ${3*scale}px`,borderRadius:"4px"}}>L{rack.levels}</span>
+                {hasAnyStock&&<span style={{fontSize:`${Math.max(7,8*scale)}px`,color:"#4ade80",fontWeight:"700"}}>
+                  {levelsWithStock}/{rack.levels}
+                </span>}
+              </div>
             </div>
-            {/* Level count badge + stock indicator */}
-            <div style={{display:"flex",alignItems:"center",gap:`${3*scale}px`}}>
-              <span style={{fontSize:`${Math.max(7,9*scale)}px`,color:rack.color,fontWeight:"700",background:rack.color+"22",
-                padding:`${1*scale}px ${3*scale}px`,borderRadius:"4px"}}>L{rack.levels}</span>
-              {hasAnyStock&&<span style={{fontSize:`${Math.max(7,8*scale)}px`,color:"#4ade80",fontWeight:"700"}}>
-                {levelsWithStock}/{rack.levels}
-              </span>}
-            </div>
+            {/* Resize handles — only shown when selected */}
+            {isSelRack&&canManage&&<>
+              {/* Right-edge handle */}
+              <div onPointerDown={e=>{e.stopPropagation();onRackPointerDown(e,rack,"e");}}
+                style={{position:"absolute",right:`-${HANDLE/2}px`,top:`${rh/2-HANDLE}px`,
+                  width:`${HANDLE}px`,height:`${HANDLE*2}px`,
+                  background:"#3b82f6",borderRadius:"3px",cursor:"ew-resize",zIndex:10,
+                  display:"flex",alignItems:"center",justifyContent:"center"}}>
+                <div style={{width:"2px",height:"60%",background:"#fff",borderRadius:"1px",margin:"0 1px"}}/>
+                <div style={{width:"2px",height:"60%",background:"#fff",borderRadius:"1px",margin:"0 1px"}}/>
+              </div>
+              {/* Bottom-right corner handle */}
+              <div onPointerDown={e=>{e.stopPropagation();onRackPointerDown(e,rack,"se");}}
+                style={{position:"absolute",right:`-${HANDLE/2}px`,bottom:`-${HANDLE/2}px`,
+                  width:`${HANDLE}px`,height:`${HANDLE}px`,
+                  background:"#3b82f6",borderRadius:"50%",cursor:"se-resize",zIndex:10}}>
+              </div>
+            </>}
           </div>;
         })}
 
