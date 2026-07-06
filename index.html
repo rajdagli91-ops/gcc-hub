@@ -5057,6 +5057,13 @@ const FIXED_ELEMENTS=[
   {label:"Front Offices",    x:820, y:160, w:280, h:500, fill:"#1e293b", textColor:"#94a3b8"},
   {label:"Staircase",        x:510, y:530, w:160, h:130, fill:"#334155", textColor:"#64748b"},
   {label:"Printing Machine", x:740, y:0,   w:200, h:80,  fill:"#292524", textColor:"#78716c"},
+  // ── Structural pillars — positions estimated from godown photo, adjust if needed ──
+  {label:"",  x:180, y:280, w:22, h:22, fill:"#4b5563", textColor:"#9ca3af"},
+  {label:"",  x:340, y:280, w:22, h:22, fill:"#4b5563", textColor:"#9ca3af"},
+  {label:"",  x:500, y:280, w:22, h:22, fill:"#4b5563", textColor:"#9ca3af"},
+  {label:"",  x:660, y:280, w:22, h:22, fill:"#4b5563", textColor:"#9ca3af"},
+  {label:"",  x:180, y:460, w:22, h:22, fill:"#4b5563", textColor:"#9ca3af"},
+  {label:"",  x:500, y:460, w:22, h:22, fill:"#4b5563", textColor:"#9ca3af"},
 ];
 const FLOOR_W=1100, FLOOR_H=680, GRID=20;
 
@@ -5352,7 +5359,7 @@ function FGStockTab({role,user,showToast,sysUnits,canManage}){
 
   // ── Import from Excel ──
   const importProducts=async(file)=>{
-    if(!window.XLSX){showToast("Loading Excel library…","error");return;}
+    try{ await loadXLSX(); }catch(e){showToast("Could not load Excel library","error");return;}
     const XLSX=window.XLSX;
     const data=await new Promise(r=>{const fr=new FileReader();fr.onload=e=>r(e.target.result);fr.readAsArrayBuffer(file);});
     try{
@@ -5432,9 +5439,9 @@ function FGStockTab({role,user,showToast,sysUnits,canManage}){
 
   if(!loaded)return <div style={{textAlign:"center",padding:"40px",color:"#475569"}}>Loading warehouse layout…</div>;
 
-  return <div style={{display:"flex",gap:"14px",flexWrap:"wrap"}}>
-    {/* ── LEFT: Floor plan ── */}
-    <div style={{flex:1,minWidth:"280px"}} ref={containerRef}>
+  return <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
+    {/* ── Floor plan — full width ── */}
+    <div ref={containerRef}>
       {/* Catalogue panel toggle */}
       <div style={{display:"flex",gap:"8px",marginBottom:"12px",borderBottom:"1px solid #1e293b",paddingBottom:"12px",flexWrap:"wrap",alignItems:"center"}}>
         <span style={{fontSize:"12px",color:"#475569"}}>{fgProducts.length} products in catalogue</span>
@@ -5587,60 +5594,64 @@ function FGStockTab({role,user,showToast,sysUnits,canManage}){
       </div>
     </div>
 
-    {/* ── RIGHT: Detail panel ── */}
-    {(selectedCell||expandedRack||selRackData)&&<div style={{width:"240px",flexShrink:0,background:"#0b1220",border:"1px solid #1e293b",borderRadius:"12px",padding:"14px",alignSelf:"flex-start"}}>
+    {/* ── DETAIL PANEL — below canvas, full width ── */}
+    {(selectedCell||expandedRack||selRackData)&&<div style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"12px",padding:"14px"}}>
       {expandedRack&&!selectedCell&&(()=>{
         const rack=racks.find(r=>r.id===expandedRack);
         if(!rack)return null;
         return <>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"12px"}}>
-            <div style={{fontSize:"15px",fontWeight:"700",color:"#f1f5f9"}}>{rack.name}</div>
+            <div style={{fontSize:"15px",fontWeight:"700",color:"#f1f5f9"}}>{rack.name} <span style={{fontSize:"12px",fontWeight:"400",color:"#475569"}}>— tap a level to view or update stock</span></div>
             <button onClick={()=>{setExpandedRack(null);setSelectedRack(null);}} style={{background:"none",border:"none",color:"#334155",fontSize:"18px",cursor:"pointer",lineHeight:1}}>×</button>
           </div>
-          <div style={{fontSize:"11px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"8px"}}>Level-wise stock</div>
-          {Array.from({length:rack.levels},(_,i)=>rack.levels-i).map(lv=>{
-            const cellKey=`${rack.id}.${lv}`;
-            const prods=getCellProds(cellKey);
-            const total=getCellTotal(cellKey);
-            return <div key={lv} onClick={()=>{setSelectedCell(cellKey);setExpandedRack(null);}}
-              style={{background:total>0?"#052e16":"#080d18",border:`1px solid ${total>0?"#166534":"#1e293b"}`,
-              borderRadius:"8px",padding:"8px 10px",marginBottom:"6px",cursor:"pointer",transition:"background 0.1s"}}
-              onMouseEnter={e=>e.currentTarget.style.background=total>0?"#064d20":"#0b1220"}
-              onMouseLeave={e=>e.currentTarget.style.background=total>0?"#052e16":"#080d18"}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:prods.length>0?"4px":"0"}}>
-                <span style={{fontSize:"12px",fontWeight:"700",color:total>0?"#4ade80":"#334155"}}>Level {lv}</span>
-                <span style={{fontSize:"11px",color:"#475569"}}>{total>0?`${total.toFixed(2)} total`:"empty"}</span>
-              </div>
-              {prods.map(p=><div key={p.id} style={{fontSize:"11px",color:"#94a3b8",display:"flex",justifyContent:"space-between"}}>
-                <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"130px"}}>{p.productName}</span>
-                <span style={{color:"#4ade80",fontWeight:"600",flexShrink:0,marginLeft:"6px"}}>{parseFloat(p.totalQty).toFixed(2)} {p.unit}</span>
-              </div>)}
-            </div>;
-          })}
-          {canManage&&<div style={{marginTop:"10px",fontSize:"11px",color:"#475569",textAlign:"center"}}>Click a level to add/consume stock</div>}
+          {/* Horizontal row of level cards — works well on tablet */}
+          <div style={{display:"grid",gridTemplateColumns:`repeat(${rack.levels},1fr)`,gap:"8px"}}>
+            {Array.from({length:rack.levels},(_,i)=>rack.levels-i).map(lv=>{
+              const cellKey=`${rack.id}.${lv}`;
+              const prods=getCellProds(cellKey);
+              const total=getCellTotal(cellKey);
+              return <div key={lv} onClick={()=>{setSelectedCell(cellKey);setExpandedRack(null);}}
+                style={{background:total>0?"#052e16":"#080d18",border:`1px solid ${total>0?"#166534":"#1e293b"}`,
+                borderRadius:"10px",padding:"10px 12px",cursor:"pointer",transition:"background 0.1s",minWidth:0}}
+                onMouseEnter={e=>e.currentTarget.style.background=total>0?"#064d20":"#0b1220"}
+                onMouseLeave={e=>e.currentTarget.style.background=total>0?"#052e16":"#080d18"}>
+                <div style={{fontSize:"13px",fontWeight:"700",color:total>0?"#4ade80":"#475569",marginBottom:"4px"}}>Level {lv}</div>
+                {total>0
+                  ?<><div style={{fontSize:"15px",fontWeight:"700",color:"#22c55e"}}>{total.toFixed(2)}</div>
+                    {prods.slice(0,2).map(p=><div key={p.id} style={{fontSize:"10px",color:"#64748b",marginTop:"2px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.productName}</div>)}
+                    {prods.length>2&&<div style={{fontSize:"10px",color:"#475569"}}>+{prods.length-2} more</div>}
+                  </>
+                  :<div style={{fontSize:"11px",color:"#334155",fontStyle:"italic"}}>empty</div>}
+              </div>;
+            })}
+          </div>
+          {canManage&&<div style={{marginTop:"10px",fontSize:"11px",color:"#475569",textAlign:"center"}}>Tap any level card above to add or consume stock</div>}
         </>;
       })()}
       {selectedCell&&<>
-        <div style={{marginBottom:"12px"}}>
-          <div style={{fontSize:"11px",color:"#475569",fontWeight:"600",textTransform:"uppercase",letterSpacing:"0.08em"}}>Location</div>
-          <div style={{fontSize:"18px",fontWeight:"700",color:"#f1f5f9",marginTop:"2px"}}>
-            {selRackData?.name||"—"} · Level {selectedCell.split(".")[1]}
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"12px"}}>
+          <div>
+            <div style={{fontSize:"11px",color:"#475569",fontWeight:"600",textTransform:"uppercase",letterSpacing:"0.08em"}}>Location</div>
+            <div style={{fontSize:"18px",fontWeight:"700",color:"#f1f5f9",marginTop:"2px"}}>
+              {selRackData?.name||"—"} · Level {selectedCell.split(".")[1]}
+            </div>
+            <button onClick={()=>{setSelectedCell(null);setExpandedRack(selRackData?.id);}} style={{background:"none",border:"none",color:"#3b82f6",fontSize:"11px",cursor:"pointer",padding:0,marginTop:"2px"}}>← Back to all levels</button>
           </div>
-          <button onClick={()=>{setSelectedCell(null);setExpandedRack(selRackData?.id);}} style={{background:"none",border:"none",color:"#3b82f6",fontSize:"11px",cursor:"pointer",padding:0,marginTop:"2px"}}>← Back to all levels</button>
+          {canManage&&<div style={{display:"flex",gap:"6px"}}>
+            <button onClick={()=>openTxn(selectedCell,"add")} style={{background:"#052e16",border:"1px solid #166534",borderRadius:"7px",color:"#4ade80",fontSize:"13px",fontWeight:"700",padding:"8px 16px",cursor:"pointer"}}>+ Add Stock</button>
+            {selCellProds.length>0&&<button onClick={()=>openTxn(selectedCell,"consume")} style={{background:"#2e0a0a",border:"1px solid #7f1d1d",borderRadius:"7px",color:"#f87171",fontSize:"13px",fontWeight:"700",padding:"8px 16px",cursor:"pointer"}}>− Consume</button>}
+          </div>}
         </div>
-        {selCellProds.length===0?<div style={{textAlign:"center",padding:"16px 0",color:"#334155",fontSize:"12.5px",fontStyle:"italic"}}>Empty — nothing here</div>
-        :<div style={{marginBottom:"12px"}}>
-          {selCellProds.map(p=><div key={p.id} style={{background:"#080d18",border:"1px solid #1e293b",borderRadius:"8px",padding:"8px 10px",marginBottom:"6px"}}>
-            <div style={{fontSize:"12.5px",fontWeight:"600",color:"#e2e8f0"}}>{p.productName}</div>
-            <div style={{fontSize:"17px",fontWeight:"700",color:"#4ade80"}}>{parseFloat(p.totalQty).toFixed(2)} <span style={{fontSize:"11px",color:"#166534"}}>{p.unit}</span></div>
-          </div>)}
-        </div>}
-        {canManage&&<div style={{display:"flex",gap:"6px"}}>
-          <button onClick={()=>openTxn(selectedCell,"add")} style={{flex:1,background:"#052e16",border:"1px solid #166534",borderRadius:"7px",color:"#4ade80",fontSize:"12px",fontWeight:"700",padding:"8px",cursor:"pointer"}}>+ Add</button>
-          {selCellProds.length>0&&<button onClick={()=>openTxn(selectedCell,"consume")} style={{flex:1,background:"#2e0a0a",border:"1px solid #7f1d1d",borderRadius:"7px",color:"#f87171",fontSize:"12px",fontWeight:"700",padding:"8px",cursor:"pointer"}}>− Use</button>}
-        </div>}
+        {selCellProds.length===0
+          ?<div style={{textAlign:"center",padding:"16px 0",color:"#334155",fontSize:"12.5px",fontStyle:"italic"}}>Empty — nothing stored here yet</div>
+          :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:"8px"}}>
+            {selCellProds.map(p=><div key={p.id} style={{background:"#080d18",border:"1px solid #1e293b",borderRadius:"8px",padding:"10px 12px"}}>
+              <div style={{fontSize:"12px",fontWeight:"600",color:"#e2e8f0",marginBottom:"4px"}}>{p.productName}</div>
+              <div style={{fontSize:"18px",fontWeight:"700",color:"#4ade80"}}>{parseFloat(p.totalQty).toFixed(2)} <span style={{fontSize:"11px",color:"#166534"}}>{p.unit}</span></div>
+            </div>)}
+          </div>}
       </>}
-      {!selectedCell&&!expandedRack&&selRackData&&<div style={{textAlign:"center",color:"#334155",fontSize:"12px",marginTop:"6px"}}>Click the rack name to see all levels</div>}
+      {!selectedCell&&!expandedRack&&selRackData&&<div style={{textAlign:"center",color:"#334155",fontSize:"12px"}}>Tap the rack again to see level detail</div>}
     </div>}
 
     {/* ── TRANSACTION MODAL ── */}
@@ -6435,6 +6446,16 @@ function PrintDialog({bom,packSizes,sysQcParams,onClose}){
   </div>;
 }
 
+// ── Global XLSX loader — available to any component (BOMTab, FGStockTab, etc.) ──
+const loadXLSX=()=>new Promise((resolve,reject)=>{
+  if(window.XLSX)return resolve();
+  const s=document.createElement("script");
+  s.src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+  s.onload=()=>resolve();
+  s.onerror=()=>reject(new Error("Failed to load Excel library"));
+  document.head.appendChild(s);
+});
+
 function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes,sysQcParams}){
   const isAdmin=roles.includes("admin");
   const canEdit=roles.some(r=>["admin","qc","issuer"].includes(r));
@@ -6531,15 +6552,6 @@ function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes,sysQcParams}
   };
 
   const [exportingExcel,setExportingExcel]=useState(false);
-  const loadXLSX=()=>new Promise((resolve,reject)=>{
-    if(window.XLSX)return resolve();
-    const s=document.createElement("script");
-    s.src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
-    s.onload=()=>resolve();
-    s.onerror=()=>reject(new Error("Failed to load Excel library"));
-    document.head.appendChild(s);
-  });
-
   // Export BOMs to Excel — one sheet per product, with LIVE FORMULAS so changing the
   // Batch Size cell automatically recalculates every ingredient quantity.
   const exportBOMsExcel=async()=>{
