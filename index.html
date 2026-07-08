@@ -6245,7 +6245,7 @@ function FGStockTab({role,user,showToast,sysUnits,canManage}){
             onPointerDown={e=>onRackPointerDown(e,rack)}
             onPointerMove={e=>onRackPointerMove(e,rack)}
             onPointerUp={e=>onRackPointerUp(e,rack)}
-            onClick={e=>{e.stopPropagation();if(!dragging){setExpandedRack(expandedRack===rack.id?null:rack.id);setSelectedCell(null);setSelectedRack(rack.id);}}}
+            onClick={e=>{e.stopPropagation();if(!dragging){setExpandedRack(rack.id);setSelectedCell(null);setSelectedRack(rack.id);}}}
             style={{position:"absolute",left:rack.x*scale,top:rack.y*scale,
               width:rw,height:rh,
               border:`${isSelRack?"3px solid #3b82f6":"2px solid "+rack.color+"80"}`,
