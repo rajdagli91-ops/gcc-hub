@@ -5873,48 +5873,74 @@ function FGStockTab({role,user,showToast,sysUnits,canManage}){
   // ── Stock transactions ──
   const openTxn=(cell,mode)=>{
     setTxnModal({cell,mode});
-    setTxn({productName:"",cartons:"",looseTins:"",notes:"",date:today()});
+    setTxn({productName:"",cartons:"",looseTins:"",consumeTins:"",notes:"",date:today()});
   };
   const saveTxn=async()=>{
     const {cell,mode}=txnModal;
     if(!txn.productName.trim())return showToast("Select or enter product name","error");
-    // Resolve product config
     const prod=fgProducts.find(p=>normalize(p.name)===normalize(txn.productName));
-    const cartons=parseInt(txn.cartons)||0;
-    const looseTins=parseInt(txn.looseTins)||0;
-    if(cartons===0&&looseTins===0)return showToast("Enter cartons or loose tins (at least one)","error");
-    // Calculate total quantity
-    let totalQty;
-    if(prod?.tinsPerCarton&&prod?.size){
-      const totalTins=cartons*prod.tinsPerCarton+looseTins;
-      totalQty=parseFloat((totalTins*prod.size).toFixed(3));
-    }else{
-      // No product catalogue match — store tins as qty for manual products
-      totalQty=cartons*12+looseTins; // fallback: assume 12/carton
-      showToast("Product not in catalogue — stored as approximate qty. Add to catalogue for accurate calculation.","error");
-    }
+    const tpc=prod?.tinsPerCarton||null;
+    const sizePerTin=prod?.size||null;
     const unit=prod?.unit||"L";
     setSaving(true);
     try{
       const cellProds=cellStock[cell]||[];
       const existing=cellProds.find(p=>normalize(p.productName)===normalize(txn.productName));
+
       if(mode==="consume"){
-        const avail=parseFloat(existing?.totalQty||0);
-        if(totalQty>avail+0.001)return showToast(`Only ${avail} ${unit} of ${txn.productName} here. Requested: ${totalQty} ${unit}`,"error");
-        const newQty=parseFloat((avail-totalQty).toFixed(3));
-        if(newQty<=0.001)await C("fg_stock_v2").doc(existing.id).delete();
-        else await C("fg_stock_v2").doc(existing.id).update({totalQty:newQty});
+        // Consume in TINS — apply open-carton algorithm
+        const consumeTins=parseInt(txn.consumeTins)||0;
+        if(consumeTins<=0)return showToast("Enter number of tins to consume","error");
+        if(!existing)return showToast("No stock of this product here","error");
+        const curCartons=parseInt(existing.cartons)||0;
+        const curLoose=parseInt(existing.looseTins)||0;
+        const availTins=tpc?(curCartons*tpc+curLoose):Math.round(parseFloat(existing.totalQty||0)/(sizePerTin||1));
+        if(consumeTins>availTins)return showToast(`Only ${availTins} tins of ${txn.productName} here. Cannot consume ${consumeTins}.`,"error");
+        let newCartons=curCartons, newLoose=curLoose;
+        if(tpc){
+          // Step 1: consume from loose tins first
+          const fromLoose=Math.min(consumeTins,curLoose);
+          const stillNeeded=consumeTins-fromLoose;
+          newLoose=curLoose-fromLoose;
+          // Step 2: if still need more, break open cartons
+          if(stillNeeded>0){
+            const cartonsToBreak=Math.ceil(stillNeeded/tpc);
+            const leftoverLoose=cartonsToBreak*tpc-stillNeeded;
+            newCartons=curCartons-cartonsToBreak;
+            newLoose=newLoose+leftoverLoose;
+          }
+        }
+        const newTotalQty=tpc&&sizePerTin?parseFloat(((newCartons*tpc+newLoose)*sizePerTin).toFixed(3)):parseFloat((parseFloat(existing.totalQty||0)-(consumeTins*(sizePerTin||1))).toFixed(3));
+        const consumedQty=parseFloat((consumeTins*(sizePerTin||1)).toFixed(3));
+        if(newTotalQty<=0.001) await C("fg_stock_v2").doc(existing.id).delete();
+        else await C("fg_stock_v2").doc(existing.id).update({cartons:newCartons,looseTins:newLoose,totalQty:newTotalQty,tinsPerCarton:tpc,sizePerTin,lastModifiedAt:ts(),lastModifiedBy:user?.email});
+        await C("fg_transactions").add({cell,productName:txn.productName.trim(),type:"consume",consumeTins,cartons:newCartons,looseTins:newLoose,totalQty:consumedQty,unit,tinsPerCarton:tpc,sizePerTin,notes:txn.notes,date:txn.date,by:user?.email,_createdAt:ts()});
+        const msg=tpc?`Consumed ${consumeTins} tins → ${newCartons} cartons + ${newLoose} loose tins remaining ✓`:`Consumed ${consumeTins} tins ✓`;
+        showToast(msg);
+
       }else{
-        if(existing)await C("fg_stock_v2").doc(existing.id).update({totalQty:parseFloat((parseFloat(existing.totalQty)+totalQty).toFixed(3)),lastModifiedAt:ts(),lastModifiedBy:user?.email});
-        else await C("fg_stock_v2").add({cell,productName:txn.productName.trim(),totalQty,unit,_createdAt:ts(),lastModifiedAt:ts(),lastModifiedBy:user?.email});
+        // ADD — store cartons + loose tins explicitly
+        const cartons=parseInt(txn.cartons)||0;
+        const looseTins=parseInt(txn.looseTins)||0;
+        if(cartons===0&&looseTins===0)return showToast("Enter cartons or loose tins","error");
+        let totalQty;
+        if(tpc&&sizePerTin){
+          totalQty=parseFloat(((cartons*tpc+looseTins)*sizePerTin).toFixed(3));
+        }else{
+          totalQty=cartons*12+looseTins;
+          showToast("Product not in catalogue — qty is approximate","error");
+        }
+        if(existing){
+          const newCartons=(parseInt(existing.cartons)||0)+cartons;
+          const newLoose=(parseInt(existing.looseTins)||0)+looseTins;
+          const newQty=parseFloat((parseFloat(existing.totalQty||0)+totalQty).toFixed(3));
+          await C("fg_stock_v2").doc(existing.id).update({cartons:newCartons,looseTins:newLoose,totalQty:newQty,tinsPerCarton:tpc,sizePerTin,lastModifiedAt:ts(),lastModifiedBy:user?.email});
+        }else{
+          await C("fg_stock_v2").add({cell,productName:txn.productName.trim(),cartons,looseTins,totalQty,unit,tinsPerCarton:tpc,sizePerTin,_createdAt:ts(),lastModifiedAt:ts(),lastModifiedBy:user?.email});
+        }
+        await C("fg_transactions").add({cell,productName:txn.productName.trim(),type:"add",cartons,looseTins,totalQty,unit,tinsPerCarton:tpc,sizePerTin,notes:txn.notes,date:txn.date,by:user?.email,_createdAt:ts()});
+        showToast(`Added ${cartons>0?cartons+" cartons":""}${cartons>0&&looseTins>0?" + ":""}${looseTins>0?looseTins+" loose tins":""} = ${totalQty} ${unit} ✓`);
       }
-      await C("fg_transactions").add({
-        cell,productName:txn.productName.trim(),type:mode,
-        cartons,looseTins,totalQty,unit,
-        tinsPerCarton:prod?.tinsPerCarton||null,sizePerTin:prod?.size||null,
-        notes:txn.notes,date:txn.date,by:user?.email,_createdAt:ts()
-      });
-      showToast(mode==="add"?`Added ${cartons>0?cartons+" cartons":""}${cartons>0&&looseTins>0?" + ":""}${looseTins>0?looseTins+" loose tins":""} = ${totalQty} ${unit} ✓`:`Consumed ${totalQty} ${unit} ✓`);
       setTxnModal(null);
     }catch(err){showToast("Error: "+err.message,"error");}
     setSaving(false);
@@ -6365,9 +6391,16 @@ function FGStockTab({role,user,showToast,sysUnits,canManage}){
                 onMouseLeave={e=>e.currentTarget.style.background=total>0?"#052e16":"#080d18"}>
                 <div style={{fontSize:"13px",fontWeight:"700",color:total>0?"#4ade80":"#475569",marginBottom:"4px"}}>Level {lv}</div>
                 {total>0
-                  ?<><div style={{fontSize:"15px",fontWeight:"700",color:"#22c55e"}}>{total.toFixed(2)}</div>
-                    {prods.slice(0,2).map(p=><div key={p.id} style={{fontSize:"10px",color:"#64748b",marginTop:"2px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.productName}</div>)}
-                    {prods.length>2&&<div style={{fontSize:"10px",color:"#475569"}}>+{prods.length-2} more</div>}
+                  ?<>{prods.slice(0,2).map(p=>{
+                    const hasCartons=p.cartons!=null;
+                    return <div key={p.id} style={{marginTop:"3px"}}>
+                      <div style={{fontSize:"10px",color:"#64748b",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.productName}</div>
+                      {hasCartons
+                        ?<div style={{fontSize:"12px",fontWeight:"700",color:"#4ade80"}}>{parseInt(p.cartons)||0}C{(parseInt(p.looseTins)||0)>0?` + ${parseInt(p.looseTins)}T`:""}</div>
+                        :<div style={{fontSize:"12px",fontWeight:"700",color:"#4ade80"}}>{parseFloat(p.totalQty).toFixed(1)} {p.unit}</div>}
+                    </div>;
+                  })}
+                  {prods.length>2&&<div style={{fontSize:"10px",color:"#475569"}}>+{prods.length-2} more</div>}
                   </>
                   :<div style={{fontSize:"11px",color:"#334155",fontStyle:"italic"}}>empty</div>}
               </div>;
@@ -6418,7 +6451,12 @@ function FGStockTab({role,user,showToast,sysUnits,canManage}){
                     {canEdit&&<button onClick={()=>{setEditStockEntry(p);setEditStockForm({productName:p.productName,totalQty:String(p.totalQty),unit:p.unit||"L"});}}
                       style={{background:"none",border:"1px solid #334155",borderRadius:"4px",color:"#64748b",fontSize:"10px",padding:"2px 6px",cursor:"pointer",flexShrink:0}}>✏️</button>}
                   </div>
-                  <div style={{fontSize:"18px",fontWeight:"700",color:"#4ade80"}}>{parseFloat(p.totalQty).toFixed(2)} <span style={{fontSize:"11px",color:"#166534"}}>{p.unit}</span></div>
+                  <div style={{fontSize:"18px",fontWeight:"700",color:"#4ade80"}}>
+                    {p.cartons!=null
+                      ?<>{parseInt(p.cartons)||0}<span style={{fontSize:"11px",color:"#166534",marginLeft:"3px"}}>cartons</span>{(parseInt(p.looseTins)||0)>0&&<> + {parseInt(p.looseTins)}<span style={{fontSize:"11px",color:"#166534",marginLeft:"3px"}}>loose tins</span></>}</>
+                      :<>{parseFloat(p.totalQty).toFixed(2)}<span style={{fontSize:"11px",color:"#166534",marginLeft:"3px"}}>{p.unit}</span></>}
+                  </div>
+                  {p.cartons!=null&&p.tinsPerCarton&&p.sizePerTin&&<div style={{fontSize:"11px",color:"#475569",marginTop:"2px"}}>= {((parseInt(p.cartons||0)*p.tinsPerCarton+(parseInt(p.looseTins)||0))*p.sizePerTin).toFixed(2)} {p.unit} total</div>}
                   {!isAdmin&&canEdit&&hoursAgo!==null&&<div style={{fontSize:"9px",color:"#334155",marginTop:"2px"}}>Editable for {23-hoursAgo}h more</div>}
                 </>}
               </div>;
@@ -6462,29 +6500,58 @@ function FGStockTab({role,user,showToast,sysUnits,canManage}){
           </Field>
           {/* Carton config info */}
           {selProd&&<div style={{background:"#052e16",border:"1px solid #166534",borderRadius:"7px",padding:"7px 12px",marginBottom:"10px",fontSize:"12px"}}>
-            <span style={{color:"#4ade80"}}>📦 {selProd.tinsPerCarton} tins/carton · {selProd.size}{selProd.unit} per tin · Category: {selProd.category}</span>
+            <span style={{color:"#4ade80"}}>📦 {selProd.tinsPerCarton} tins/carton · {selProd.size}{selProd.unit} per tin</span>
           </div>}
           {txn.productName&&!selProd&&<div style={{background:"#1a0a00",border:"1px solid #92400e",borderRadius:"7px",padding:"7px 12px",marginBottom:"10px",fontSize:"12px",color:"#f59e0b"}}>
-            ⚠ Not in product catalogue — add it under Catalogue tab for accurate litre calculation
+            ⚠ Not in product catalogue — litre calculation will be approximate
           </div>}
-          <Grid2>
-            <Field label="Cartons">
-              <input style={inp} type="number" min="0" step="1" value={txn.cartons} onChange={e=>setTxn({...txn,cartons:e.target.value})} placeholder="0"/>
-            </Field>
-            <Field label="Loose Tins">
-              <input style={inp} type="number" min="0" step="1" value={txn.looseTins} onChange={e=>setTxn({...txn,looseTins:e.target.value})} placeholder="0"/>
-            </Field>
-          </Grid2>
-          {/* Live calculation display */}
-          {display&&(parseInt(txn.cartons)||0)+(parseInt(txn.looseTins)||0)>0&&<div style={{background:"#0a1a2e",border:"1px solid #1e3a5f",borderRadius:"8px",padding:"10px 14px",marginBottom:"12px",textAlign:"center"}}>
-            <div style={{fontSize:"13px",color:"#64748b"}}>
-              {parseInt(txn.cartons)||0} carton{(parseInt(txn.cartons)||0)!==1?"s":""} × {display.tpc} + {parseInt(txn.looseTins)||0} loose tin{(parseInt(txn.looseTins)||0)!==1?"s":""}
-              {" = "}<strong style={{color:"#f1f5f9"}}>{display.totalTins}</strong> tins
-            </div>
-            <div style={{fontSize:"20px",fontWeight:"700",color:"#22c55e",marginTop:"4px"}}>
-              = {display.totalQty.toFixed(2)} {display.unit}
-            </div>
-          </div>}
+
+          {txnModal.mode==="add"&&<>
+            <Grid2>
+              <Field label="Cartons">
+                <input style={inp} type="number" min="0" step="1" value={txn.cartons} onChange={e=>setTxn({...txn,cartons:e.target.value})} placeholder="0"/>
+              </Field>
+              <Field label="Loose Tins">
+                <input style={inp} type="number" min="0" step="1" value={txn.looseTins} onChange={e=>setTxn({...txn,looseTins:e.target.value})} placeholder="0"/>
+              </Field>
+            </Grid2>
+            {display&&(parseInt(txn.cartons)||0)+(parseInt(txn.looseTins)||0)>0&&<div style={{background:"#0a1a2e",border:"1px solid #1e3a5f",borderRadius:"8px",padding:"10px 14px",marginBottom:"12px",textAlign:"center"}}>
+              <div style={{fontSize:"13px",color:"#64748b"}}>{parseInt(txn.cartons)||0} cartons × {display.tpc} + {parseInt(txn.looseTins)||0} loose tins = <strong style={{color:"#f1f5f9"}}>{display.totalTins}</strong> tins</div>
+              <div style={{fontSize:"20px",fontWeight:"700",color:"#22c55e",marginTop:"4px"}}>= {display.totalQty.toFixed(2)} {display.unit}</div>
+            </div>}
+          </>}
+
+          {txnModal.mode==="consume"&&(()=>{
+            const consumeTins=parseInt(txn.consumeTins)||0;
+            // Preview the open-carton result
+            const curProd=getCellProds(txnModal.cell).find(p=>normalize(p.productName)===normalize(txn.productName));
+            const curCartons=parseInt(curProd?.cartons)||0;
+            const curLoose=parseInt(curProd?.looseTins)||0;
+            const tpc=selProd?.tinsPerCarton||parseInt(curProd?.tinsPerCarton)||0;
+            const availTins=tpc?(curCartons*tpc+curLoose):0;
+            let previewCartons=curCartons,previewLoose=curLoose;
+            let previewValid=false;
+            if(consumeTins>0&&tpc&&consumeTins<=availTins){
+              const fromLoose=Math.min(consumeTins,curLoose);
+              const stillNeeded=consumeTins-fromLoose;
+              previewLoose=curLoose-fromLoose;
+              if(stillNeeded>0){const ctb=Math.ceil(stillNeeded/tpc);previewCartons=curCartons-ctb;previewLoose+=ctb*tpc-stillNeeded;}
+              previewValid=true;
+            }
+            return <>
+              <Field label="Tins to consume *">
+                <input style={inp} type="number" min="1" step="1" value={txn.consumeTins} onChange={e=>setTxn({...txn,consumeTins:e.target.value})} placeholder={`max ${availTins} tins`}/>
+              </Field>
+              {tpc>0&&<div style={{fontSize:"11px",color:"#475569",marginBottom:"8px"}}>Available: {curCartons} cartons + {curLoose} loose tins = {availTins} tins</div>}
+              {previewValid&&<div style={{background:"#0a1a2e",border:"1px solid #1e3a5f",borderRadius:"8px",padding:"10px 14px",marginBottom:"12px"}}>
+                <div style={{fontSize:"11px",color:"#64748b",marginBottom:"4px"}}>After consuming {consumeTins} tins:</div>
+                <div style={{fontSize:"15px",fontWeight:"700",color:"#4ade80"}}>{previewCartons} cartons + {previewLoose} loose tins</div>
+                {selProd?.size&&<div style={{fontSize:"11px",color:"#166534",marginTop:"2px"}}>= {((previewCartons*tpc+previewLoose)*selProd.size).toFixed(2)} {selProd.unit} remaining</div>}
+              </div>}
+              {consumeTins>availTins&&availTins>0&&<div style={{fontSize:"11.5px",color:"#f87171",marginBottom:"8px"}}>⚠ Only {availTins} tins available</div>}
+            </>;
+          })()}
+
           <Grid2>
             <Field label="Date"><input type="date" style={inp} value={txn.date} onChange={e=>setTxn({...txn,date:e.target.value})}/></Field>
             <Field label="Notes"><input style={inp} value={txn.notes} onChange={e=>setTxn({...txn,notes:e.target.value})} placeholder="Optional…"/></Field>
