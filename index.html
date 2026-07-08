@@ -5027,15 +5027,17 @@ function FGMovementsTab({role,user,showToast,isAdmin,canManage}){
   const [postModal,setPostModal]=useState(null);
   const [racks,setRacks]=useState([]);
   const [fgProducts,setFgProducts]=useState([]);
-  const [postForm,setPostForm]=useState({rackId:"",level:"1",isDirect:false});
+  const [postForm,setPostForm]=useState({rackId:"",level:"1",isDirect:false,cartons:"",looseTins:""});
   const [saving,setSaving]=useState(false);
   const [dateRange,setDateRange]=useState("");
   // Closing balance state
-  const [cbItems,setCbItems]=useState([]);   // [{name,qty,unit,negative,posted,direct}]
+  const [cbItems,setCbItems]=useState([]);
   const [cbNegative,setCbNegative]=useState([]);
   const [cbParsing,setCbParsing]=useState(false);
   const [cbDate,setCbDate]=useState("");
-  const [cbView,setCbView]=useState("cb"); // "cb"|"movements"
+  const [cbView,setCbView]=useState("cb");
+  const [showAssigned,setShowAssigned]=useState(false); // hide completed items by default
+  const [packingMode,setPackingMode]=useState("cartons"); // "cartons"|"loose"|"custom" — per assign modal
 
   useEffect(()=>{
     const u1=C("fg_movements").orderBy("importedAt","desc").onSnapshot(
@@ -5043,8 +5045,36 @@ function FGMovementsTab({role,user,showToast,isAdmin,canManage}){
       ()=>{C("fg_movements").onSnapshot(s=>{setSavedMovements(s.docs.map(d=>({id:d.id,...d.data()})));setLoading(false);});});
     const u2=C("fg_config").doc("warehouse").onSnapshot(s=>{if(s.exists&&s.data().racks)setRacks(s.data().racks);},()=>{});
     const u3=C("fg_products").onSnapshot(s=>{setFgProducts(s.docs.map(d=>({id:d.id,...d.data()})));},()=>{});
-    return ()=>{u1();u2();u3();};
+    // ── Load persisted import sessions (survive browser close) ──
+    const u4=C("fg_config").doc("cb_session").onSnapshot(s=>{
+      if(s.exists&&s.data().items?.length>0){
+        setCbItems(s.data().items);setCbDate(s.data().date||"");
+      }
+    },()=>{});
+    const u5=C("fg_config").doc("mv_session").onSnapshot(s=>{
+      if(s.exists&&s.data().items?.length>0){
+        setMovements(s.data().items);setDateRange(s.data().dateRange||"");
+      }
+    },()=>{});
+    return ()=>{u1();u2();u3();u4();u5();};
   },[]);
+
+  const persistCBSession=async(items,date)=>{
+    try{await C("fg_config").doc("cb_session").set({items,date,savedAt:ts()},{merge:false});}catch(e){}
+  };
+  const deleteCBSession=async()=>{
+    await C("fg_config").doc("cb_session").delete();
+    setCbItems([]);setCbDate("");setCbNegative([]);
+    showToast("Closing balance session cleared");
+  };
+  const persistMVSession=async(items,range)=>{
+    try{await C("fg_config").doc("mv_session").set({items,dateRange:range,savedAt:ts()},{merge:false});}catch(e){}
+  };
+  const deleteMVSession=async()=>{
+    await C("fg_config").doc("mv_session").delete();
+    setMovements([]);setDateRange("");
+    showToast("Movement session cleared");
+  };
 
   // ── Parse Tally closing balance (Stock Group Summary) ──
   const parseClosingBalance=async(file)=>{
@@ -5117,7 +5147,8 @@ function FGMovementsTab({role,user,showToast,isAdmin,canManage}){
 
       setCbItems(parsed);
       setCbNegative(negatives);
-      showToast(`Parsed ${parsed.length} products with closing balance${negatives.length>0?` · ${negatives.length} negative (flagged)`:""}${period?" ("+period+")":`"`}`);
+      await persistCBSession(parsed,period);
+      showToast(`Parsed ${parsed.length} products · session saved, resume anytime${negatives.length>0?` · ${negatives.length} negative flagged`:""}`);
     }catch(e){showToast("Parse error: "+e.message,"error");}
     setCbParsing(false);
   };
@@ -5177,7 +5208,8 @@ function FGMovementsTab({role,user,showToast,isAdmin,canManage}){
         parsed.push({name,inward,outward,unit,direct:false,posted:false});
       }
       setMovements(parsed);
-      showToast(`Parsed ${parsed.length} products from Tally export${period?" ("+period+")":""}`);
+      await persistMVSession(parsed,period);
+      showToast(`Parsed ${parsed.length} products · session saved, resume anytime`);
     }catch(e){showToast("Parse error: "+e.message,"error");}
     setParsing(false);
   };
@@ -5197,21 +5229,50 @@ function FGMovementsTab({role,user,showToast,isAdmin,canManage}){
 
   // ── Post inward to a rack level ──
   const postToRack=async()=>{
-    const {item,idx}=postModal;
+    const {item,idx,isCB}=postModal;
     if(!postForm.rackId||!postForm.level)return showToast("Select rack and level","error");
+    // Resolve product config for carton maths
+    const prod=fgProducts.find(p=>normalize(p.name)===normalize(item.name));
+    const tpc=prod?.tinsPerCarton||null;
+    const sizePerTin=prod?.size||null;
+    const cartons=parseInt(postForm.cartons)||0;
+    const looseTins=parseInt(postForm.looseTins)||0;
+    if(cartons===0&&looseTins===0)return showToast("Enter cartons or loose tins to assign","error");
+    // Calculate qty being posted
+    let postQty;
+    if(tpc&&sizePerTin) postQty=parseFloat(((cartons*tpc+looseTins)*sizePerTin).toFixed(3));
+    else postQty=parseFloat((item.remaining||item.inward||item.qty)).toFixed(3);
+    const remaining=parseFloat(item.remaining||item.inward||item.qty||0);
+    if(postQty>remaining+0.001)return showToast(`Only ${remaining} ${item.unit} remaining to assign. Cannot post ${postQty}.`,"error");
     setSaving(true);
     try{
       const cell=`${postForm.rackId}.${postForm.level}`;
       const existing=(await C("fg_stock_v2").where("cell","==",cell).where("productName","==",item.name).get()).docs[0];
       if(existing){
-        await C("fg_stock_v2").doc(existing.id).update({totalQty:parseFloat((parseFloat(existing.data().totalQty)+item.inward).toFixed(3)),lastModifiedAt:ts(),lastModifiedBy:user?.email});
+        await C("fg_stock_v2").doc(existing.id).update({
+          cartons:(parseInt(existing.data().cartons)||0)+cartons,
+          looseTins:(parseInt(existing.data().looseTins)||0)+looseTins,
+          totalQty:parseFloat((parseFloat(existing.data().totalQty||0)+postQty).toFixed(3)),
+          tinsPerCarton:tpc,sizePerTin,lastModifiedAt:ts(),lastModifiedBy:user?.email
+        });
       }else{
-        await C("fg_stock_v2").add({cell,productName:item.name,totalQty:item.inward,unit:item.unit,_createdAt:ts(),lastModifiedAt:ts(),lastModifiedBy:user?.email});
+        await C("fg_stock_v2").add({cell,productName:item.name,cartons,looseTins,totalQty:postQty,unit:item.unit,tinsPerCarton:tpc,sizePerTin,_createdAt:ts(),lastModifiedAt:ts(),lastModifiedBy:user?.email});
       }
-      await C("fg_transactions").add({cell,productName:item.name,type:"add",qty:item.inward,unit:item.unit,notes:"Tally import"+(dateRange?" ("+dateRange+")":""),date:today(),by:user?.email,_createdAt:ts()});
-      setMovements(prev=>prev.map((m,i)=>i===idx?{...m,posted:true}:m));
-      showToast(`${item.inward} ${item.unit} of ${item.name} posted to rack ✓`);
-      setPostModal(null);
+      await C("fg_transactions").add({cell,productName:item.name,type:"add",cartons,looseTins,totalQty:postQty,unit:item.unit,tinsPerCarton:tpc,sizePerTin,notes:"Tally import"+(dateRange?" ("+dateRange+")":""),date:today(),by:user?.email,_createdAt:ts()});
+      const newRemaining=parseFloat((remaining-postQty).toFixed(3));
+      const fullyAssigned=newRemaining<=0.001;
+      const updater=isCB?setCbItems:setMovements;
+      updater(prev=>{
+        const updated=prev.map((m,i)=>i===idx?{...m,remaining:newRemaining,posted:fullyAssigned}:m);
+        // Persist progress to Firestore so work survives browser close
+        if(isCB)persistCBSession(updated,cbDate);
+        else persistMVSession(updated,dateRange);
+        return updated;
+      });
+      const rack=racks.find(r=>r.id===postForm.rackId);
+      showToast(`${cartons>0?cartons+" cartons":""}${cartons>0&&looseTins>0?" + ":""}${looseTins>0?looseTins+" loose tins":""} → ${rack?.name} L${postForm.level} ✓${fullyAssigned?" — fully assigned":""}`);
+      if(fullyAssigned)setPostModal(null);
+      else{setPostForm(f=>({...f,cartons:"",looseTins:""}));setPostModal(prev=>({...prev,item:{...prev.item,remaining:newRemaining}}));}
     }catch(e){showToast("Error: "+e.message,"error");}
     setSaving(false);
   };
@@ -5228,7 +5289,7 @@ function FGMovementsTab({role,user,showToast,isAdmin,canManage}){
   const directItems=filtered.filter(m=>m.direct);
   const rackedItems=filtered.filter(m=>!m.direct);
   const rack=racks.find(r=>r.id===postForm.rackId);
-  const cbFiltered=cbItems.filter(p=>!search.trim()||normalize(p.name).includes(normalize(search)));
+  const cbFiltered=cbItems.filter(p=>(showAssigned||!p.posted)&&(!search.trim()||normalize(p.name).includes(normalize(search))));
   const getCatFromCatalogue=(name)=>fgProducts.find(p=>normalize(p.name)===normalize(name))?.category||"";
 
   return <div>
@@ -5252,8 +5313,8 @@ function FGMovementsTab({role,user,showToast,isAdmin,canManage}){
           </button>
           <input id="cb-import" type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={async e=>{if(e.target.files[0]){await parseClosingBalance(e.target.files[0]);e.target.value="";}}}/>
           {cbDate&&<span style={{fontSize:"12px",color:"#64748b"}}>As at: {cbDate}</span>}
-          {cbItems.length>0&&<><span style={{fontSize:"12px",color:"#22c55e"}}>{cbItems.length} products</span>
-            <button onClick={()=>setCbItems([])} style={{background:"none",border:"1px solid #334155",borderRadius:"6px",padding:"5px 10px",color:"#475569",fontSize:"11px",cursor:"pointer"}}>✕ Clear</button>
+          {cbItems.length>0&&<><span style={{fontSize:"12px",color:"#22c55e"}}>{cbItems.filter(p=>!p.posted).length} remaining of {cbItems.length}</span>
+            <button onClick={deleteCBSession} style={{background:"none",border:"1px solid #7f1d1d",borderRadius:"6px",padding:"5px 10px",color:"#f87171",fontSize:"11px",cursor:"pointer"}}>🗑 Delete session</button>
           </>}
         </div>
       </div>
@@ -5265,6 +5326,8 @@ function FGMovementsTab({role,user,showToast,isAdmin,canManage}){
             <input style={{...inp,paddingLeft:"32px"}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search product…"/>
           </div>
           <span style={{fontSize:"11px",color:"#475569"}}>{cbItems.filter(p=>p.posted).length}/{cbItems.length} assigned</span>
+          <button onClick={()=>setShowAssigned(v=>!v)} style={{background:"none",border:"1px solid #334155",borderRadius:"6px",padding:"4px 10px",color:"#475569",fontSize:"11px",cursor:"pointer"}}>{showAssigned?"Hide assigned":"Show assigned"}</button>
+          <button onClick={deleteCBSession} style={{background:"none",border:"1px solid #7f1d1d",borderRadius:"6px",padding:"4px 10px",color:"#f87171",fontSize:"11px",cursor:"pointer"}}>🗑 Delete session</button>
           {cbItems.some(p=>p.negative&&!p.posted)&&<span style={{fontSize:"11px",color:"#f87171"}}>⚠ {cbItems.filter(p=>p.negative&&!p.posted).length} negative balance items — investigate in Tally or Skip</span>}
         </div>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:"12.5px"}}>
@@ -5370,52 +5433,90 @@ function FGMovementsTab({role,user,showToast,isAdmin,canManage}){
     </>}
 
     {/* Post to Rack modal */}
-    {/* Post to Rack modal */}
-    {postModal&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center"}}>
-      <div style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"14px",padding:"22px",width:"min(420px,96vw)",maxHeight:"90vh",overflowY:"auto"}}>
-        <div style={{fontSize:"15px",fontWeight:"700",color:"#4ade80",marginBottom:"2px"}}>Assign Movement</div>
-        <div style={{fontSize:"12px",color:"#64748b",marginBottom:"12px"}}>{postModal.item.name}</div>
-        <div style={{background:"#052e16",border:"1px solid #166534",borderRadius:"7px",padding:"8px 12px",marginBottom:"14px",textAlign:"center"}}>
-          <span style={{fontSize:"16px",fontWeight:"700",color:"#4ade80"}}>+{postModal.item.inward} {postModal.item.unit}</span>
-          <span style={{fontSize:"11px",color:"#166534",marginLeft:"6px"}}>inward quantity</span>
-        </div>
-        {/* Quick choice: rack or direct */}
-        <div style={{display:"flex",gap:"8px",marginBottom:"14px"}}>
-          <button onClick={()=>setPostForm({...postForm,isDirect:false})} style={{flex:1,background:!postForm.isDirect?"#1e3a5f":"#0b1220",border:`1px solid ${!postForm.isDirect?"#3b82f6":"#1e293b"}`,borderRadius:"8px",padding:"10px",color:!postForm.isDirect?"#93c5fd":"#475569",fontWeight:"700",fontSize:"13px",cursor:"pointer"}}>🏪 Post to Rack</button>
-          <button onClick={()=>setPostForm({...postForm,isDirect:true})} style={{flex:1,background:postForm.isDirect?"#2e1a00":"#0b1220",border:`1px solid ${postForm.isDirect?"#f59e0b":"#1e293b"}`,borderRadius:"8px",padding:"10px",color:postForm.isDirect?"#fcd34d":"#475569",fontWeight:"700",fontSize:"13px",cursor:"pointer"}}>🚚 Direct (No Rack)</button>
-        </div>
-        {!postForm.isDirect&&<>
-          <Field label="Select Rack">
-            <select style={sl} value={postForm.rackId} onChange={e=>setPostForm({...postForm,rackId:e.target.value})}>
-              <option value="">— Select rack —</option>
-              {racks.map(r=><option key={r.id} value={r.id}>{r.name} ({r.levels} levels)</option>)}
-            </select>
-          </Field>
-          {!postForm.rackId&&<div style={{fontSize:"11px",color:"#f59e0b",marginTop:"-4px",marginBottom:"8px"}}>
-            Rack not in the list? Go to FG Stock → 🗺 Edit Layout → + Add Rack, then come back here.
+    {postModal&&(()=>{
+      const item=postModal.item;
+      const remaining=parseFloat(item.remaining!=null?item.remaining:(item.inward||item.qty||0));
+      const prod=fgProducts.find(p=>normalize(p.name)===normalize(item.name));
+      const tpc=prod?.tinsPerCarton;
+      const sizePerTin=prod?.size;
+      const moveC=parseInt(postForm.cartons)||0;
+      const moveL=parseInt(postForm.looseTins)||0;
+      const assignQty=tpc&&sizePerTin?parseFloat(((moveC*tpc+moveL)*sizePerTin).toFixed(3)):(moveC+moveL);
+      const afterRemaining=parseFloat((remaining-assignQty).toFixed(3));
+      const rack=racks.find(r=>r.id===postForm.rackId);
+      return <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center"}}>
+        <div style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"14px",padding:"22px",width:"min(440px,96vw)",maxHeight:"90vh",overflowY:"auto"}}>
+          <div style={{fontSize:"15px",fontWeight:"700",color:"#4ade80",marginBottom:"2px"}}>Assign to Rack</div>
+          <div style={{fontSize:"12px",color:"#64748b",marginBottom:"10px"}}>{item.name}</div>
+          {/* Remaining balance */}
+          <div style={{background:"#052e16",border:"1px solid #166534",borderRadius:"7px",padding:"8px 12px",marginBottom:"12px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span style={{fontSize:"12px",color:"#64748b"}}>Still to assign:</span>
+            <span style={{fontSize:"16px",fontWeight:"700",color:"#4ade80"}}>{remaining} {item.unit}</span>
+          </div>
+          {/* Rack or Direct */}
+          <div style={{display:"flex",gap:"8px",marginBottom:"14px"}}>
+            <button onClick={()=>setPostForm({...postForm,isDirect:false})} style={{flex:1,background:!postForm.isDirect?"#1e3a5f":"#0b1220",border:`1px solid ${!postForm.isDirect?"#3b82f6":"#1e293b"}`,borderRadius:"8px",padding:"9px",color:!postForm.isDirect?"#93c5fd":"#475569",fontWeight:"700",fontSize:"13px",cursor:"pointer"}}>🏪 Post to Rack</button>
+            <button onClick={()=>setPostForm({...postForm,isDirect:true})} style={{flex:1,background:postForm.isDirect?"#2e1a00":"#0b1220",border:`1px solid ${postForm.isDirect?"#f59e0b":"#1e293b"}`,borderRadius:"8px",padding:"9px",color:postForm.isDirect?"#fcd34d":"#475569",fontWeight:"700",fontSize:"13px",cursor:"pointer"}}>🚚 Direct</button>
+          </div>
+          {!postForm.isDirect&&<>
+            {/* Tally qty is in TINS — let user specify how it's physically packed */}
+            {tpc&&sizePerTin&&<>
+              <div style={{fontSize:"11px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:"6px"}}>How is it physically packed?</div>
+              <div style={{display:"flex",gap:"6px",marginBottom:"10px"}}>
+                {[["cartons","📦 In Cartons"],["loose","🔓 Loose Tins"],["custom","✏️ Custom"]].map(([v,l])=><button key={v} onClick={()=>{
+                  setPackingMode(v);
+                  const totalTins=Math.round(remaining/sizePerTin);
+                  if(v==="cartons"){const c=Math.floor(totalTins/tpc),lt=totalTins%tpc;setPostForm(f=>({...f,cartons:String(c),looseTins:String(lt)}));}
+                  else if(v==="loose"){setPostForm(f=>({...f,cartons:"0",looseTins:String(totalTins)}));}
+                  else{setPostForm(f=>({...f,cartons:"",looseTins:""}));}
+                }} style={{flex:1,background:packingMode===v?"#1e3a5f":"#0b1220",border:`1px solid ${packingMode===v?"#3b82f6":"#1e293b"}`,borderRadius:"7px",padding:"7px",color:packingMode===v?"#93c5fd":"#475569",fontWeight:"600",fontSize:"11.5px",cursor:"pointer"}}>{l}</button>)}
+              </div>
+              <Grid2>
+                <Field label="Cartons"><input style={inp} type="number" min="0" step="1" value={postForm.cartons} onChange={e=>{setPackingMode("custom");setPostForm({...postForm,cartons:e.target.value});}} placeholder="0"/></Field>
+                <Field label="Loose Tins"><input style={inp} type="number" min="0" step="1" value={postForm.looseTins} onChange={e=>{setPackingMode("custom");setPostForm({...postForm,looseTins:e.target.value});}} placeholder="0"/></Field>
+              </Grid2>
+              {tpc&&<div style={{fontSize:"11px",color:"#334155",marginTop:"-4px",marginBottom:"8px"}}>{tpc} tins per carton · {sizePerTin}{item.unit} per tin</div>}
+              {moveC+moveL>0&&<div style={{background:"#0a1a2e",border:"1px solid #1e3a5f",borderRadius:"7px",padding:"7px 12px",marginBottom:"10px",fontSize:"12px",display:"flex",justifyContent:"space-between"}}>
+                <span style={{color:"#64748b"}}>{moveC>0?`${moveC} cartons`:""}{moveC>0&&moveL>0?" + ":""}{moveL>0?`${moveL} tins`:""} = {assignQty} {item.unit}</span>
+                <span style={{color:afterRemaining<-0.001?"#f87171":afterRemaining<0.001?"#4ade80":"#fcd34d",fontWeight:"700"}}>{afterRemaining<0.001?"✓ Fully assigned":`${afterRemaining} ${item.unit} left`}</span>
+              </div>}
+            </>}
+            <Field label="Rack">
+              <select style={sl} value={postForm.rackId} onChange={e=>setPostForm({...postForm,rackId:e.target.value})}>
+                <option value="">— Select rack —</option>
+                {racks.map(r=><option key={r.id} value={r.id}>{r.name} ({r.levels} levels)</option>)}
+              </select>
+            </Field>
+            {!postForm.rackId&&<div style={{fontSize:"11px",color:"#f59e0b",marginTop:"-6px",marginBottom:"8px"}}>Rack missing? Go to FG Stock → 🗺 Edit Layout → + Add Rack</div>}
+            {rack&&<Field label={`Level (L1=bottom, L${rack.levels}=top)`}>
+              <select style={sl} value={postForm.level} onChange={e=>setPostForm({...postForm,level:e.target.value})}>
+                {Array.from({length:rack.levels},(_,i)=>rack.levels-i).map(l=><option key={l} value={l}>Level {l}</option>)}
+              </select>
+            </Field>}
+          </>}
+          {postForm.isDirect&&<div style={{background:"#1a0f00",border:"1px solid #92400e40",borderRadius:"8px",padding:"10px 12px",fontSize:"12px",color:"#fcd34d"}}>
+            Logs the full remaining {remaining} {item.unit} as direct dispatch — not assigned to any rack.
           </div>}
-          {rack&&<Field label="Level (L1=bottom, L{rack.levels}=top)">
-            <select style={sl} value={postForm.level} onChange={e=>setPostForm({...postForm,level:e.target.value})}>
-              {Array.from({length:rack.levels},(_,i)=>rack.levels-i).map(l=><option key={l} value={l}>Level {l}</option>)}
-            </select>
-          </Field>}
-        </>}
-        {postForm.isDirect&&<div style={{background:"#1a0f00",border:"1px solid #92400e40",borderRadius:"8px",padding:"10px 12px",fontSize:"12px",color:"#fcd34d"}}>
-          This movement will be logged as a direct dispatch — not assigned to any rack. Visible in the Direct/Unracked section.
-        </div>}
-        <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",marginTop:"14px"}}>
-          <Btn label="Cancel" onClick={()=>setPostModal(null)} outline color="#475569" small/>
-          <Btn label={saving?"Saving…":(postForm.isDirect?"✓ Log as Direct":"✓ Post to Rack")} onClick={async()=>{
-            if(postForm.isDirect){
-              // Log as direct movement only
-              await C("fg_transactions").add({cell:"direct",productName:postModal.item.name,type:"add",qty:postModal.item.inward,unit:postModal.item.unit,notes:"Tally import - direct dispatch"+(dateRange?" ("+dateRange+")":""),date:today(),by:user?.email,_createdAt:ts()});
-              setMovements(prev=>prev.map((m,i)=>i===postModal.idx?{...m,direct:true,posted:true}:m));
-              showToast("Logged as direct movement ✓");setPostModal(null);
-            }else{postToRack();}
-          }} disabled={saving||(!postForm.isDirect&&!postForm.rackId)} color={postForm.isDirect?"#f59e0b":"#22c55e"} small/>
+          <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",marginTop:"14px",flexWrap:"wrap"}}>
+            <Btn label="Cancel" onClick={()=>setPostModal(null)} outline color="#475569" small/>
+            {/* Skip remainder option */}
+            {remaining>0&&(postModal.item.remaining!=null)&&<Btn label="✓ Mark rest as done" onClick={()=>{
+              const updater=postModal.isCB?setCbItems:setMovements;
+              updater(prev=>prev.map((m,i)=>i===postModal.idx?{...m,posted:true}:m));
+              setPostModal(null);showToast("Marked as fully assigned ✓");
+            }} outline color="#475569" small/>}
+            <Btn label={saving?"Saving…":(postForm.isDirect?"✓ Log as Direct":"✓ Assign to Rack")} onClick={async()=>{
+              if(postForm.isDirect){
+                await C("fg_transactions").add({cell:"direct",productName:item.name,type:"add",qty:remaining,unit:item.unit,notes:"Tally import - direct"+(dateRange?" ("+dateRange+")":""),date:today(),by:user?.email,_createdAt:ts()});
+                const updater=postModal.isCB?setCbItems:setMovements;
+                updater(prev=>prev.map((m,i)=>i===postModal.idx?{...m,direct:true,posted:true}:m));
+                showToast("Logged as direct ✓");setPostModal(null);
+              }else postToRack();
+            }} disabled={saving||(!postForm.isDirect&&(!postForm.rackId||(tpc&&moveC+moveL===0)))} color={postForm.isDirect?"#f59e0b":"#22c55e"} small/>
+          </div>
         </div>
-      </div>
-    </div>}
+      </div>;
+    })()}
   </div>;
 }
 
@@ -5534,6 +5635,8 @@ function FGStockTab({role,user,showToast,sysUnits,canManage}){
   const [dragging,setDragging]=useState(null);
   const [txnModal,setTxnModal]=useState(null);
   const [txn,setTxn]=useState({productName:"",cartons:"",looseTins:"",notes:"",date:today()});
+  const [transferModal,setTransferModal]=useState(null); // {cell, product}
+  const [transferForm,setTransferForm]=useState({cartons:"",looseTins:"",destRackId:"",destLevel:"1"});
   const [saving,setSaving]=useState(false);
   const [containerW,setContainerW]=useState(1100);
   const containerRef=React.useRef(null);
@@ -5942,6 +6045,54 @@ function FGStockTab({role,user,showToast,sysUnits,canManage}){
         showToast(`Added ${cartons>0?cartons+" cartons":""}${cartons>0&&looseTins>0?" + ":""}${looseTins>0?looseTins+" loose tins":""} = ${totalQty} ${unit} ✓`);
       }
       setTxnModal(null);
+    }catch(err){showToast("Error: "+err.message,"error");}
+    setSaving(false);
+  };
+
+  // ── Transfer stock between rack locations ──
+  const saveTransfer=async()=>{
+    const {cell,product}=transferModal;
+    const moveCartons=parseInt(transferForm.cartons)||0;
+    const moveLoose=parseInt(transferForm.looseTins)||0;
+    if(moveCartons===0&&moveLoose===0)return showToast("Enter cartons or loose tins to transfer","error");
+    if(!transferForm.destRackId)return showToast("Select destination rack","error");
+    const destCell=`${transferForm.destRackId}.${transferForm.destLevel}`;
+    if(destCell===cell)return showToast("Source and destination are the same","error");
+    const tpc=product.tinsPerCarton||parseInt(fgProducts.find(p=>normalize(p.name)===normalize(product.productName))?.tinsPerCarton)||0;
+    const sizePerTin=product.sizePerTin||fgProducts.find(p=>normalize(p.name)===normalize(product.productName))?.size||0;
+    const totalMoveQty=tpc&&sizePerTin?parseFloat(((moveCartons*tpc+moveLoose)*sizePerTin).toFixed(3)):moveCartons+moveLoose;
+    // Validate source has enough
+    const srcCartons=parseInt(product.cartons)||0;
+    const srcLoose=parseInt(product.looseTins)||0;
+    const availTins=tpc?(srcCartons*tpc+srcLoose):Math.round(parseFloat(product.totalQty||0)/(sizePerTin||1));
+    const needTins=tpc?(moveCartons*tpc+moveLoose):(moveCartons+moveLoose);
+    if(needTins>availTins)return showToast(`Only ${availTins} tins available at source. Cannot transfer ${needTins}.`,"error");
+    setSaving(true);
+    try{
+      // 1. Remove from source
+      const newSrcCartons=srcCartons-moveCartons;
+      const newSrcLoose=srcLoose-moveLoose;
+      const newSrcQty=parseFloat((parseFloat(product.totalQty||0)-totalMoveQty).toFixed(3));
+      if(newSrcQty<=0.001) await C("fg_stock_v2").doc(product.id).delete();
+      else await C("fg_stock_v2").doc(product.id).update({cartons:newSrcCartons,looseTins:newSrcLoose,totalQty:newSrcQty,lastModifiedAt:ts(),lastModifiedBy:user?.email});
+      // 2. Add to destination
+      const destProds=cellStock[destCell]||[];
+      const destExisting=destProds.find(p=>normalize(p.productName)===normalize(product.productName));
+      if(destExisting){
+        await C("fg_stock_v2").doc(destExisting.id).update({
+          cartons:(parseInt(destExisting.cartons)||0)+moveCartons,
+          looseTins:(parseInt(destExisting.looseTins)||0)+moveLoose,
+          totalQty:parseFloat((parseFloat(destExisting.totalQty||0)+totalMoveQty).toFixed(3)),
+          tinsPerCarton:tpc,sizePerTin,lastModifiedAt:ts(),lastModifiedBy:user?.email
+        });
+      }else{
+        await C("fg_stock_v2").add({cell:destCell,productName:product.productName,cartons:moveCartons,looseTins:moveLoose,totalQty:totalMoveQty,unit:product.unit,tinsPerCarton:tpc,sizePerTin,_createdAt:ts(),lastModifiedAt:ts(),lastModifiedBy:user?.email});
+      }
+      // 3. Log transaction
+      const destRack=racks.find(r=>r.id===transferForm.destRackId);
+      await C("fg_transactions").add({type:"transfer",productName:product.productName,fromCell:cell,toCell:destCell,cartons:moveCartons,looseTins:moveLoose,totalQty:totalMoveQty,unit:product.unit,tinsPerCarton:tpc,sizePerTin,date:today(),by:user?.email,_createdAt:ts()});
+      showToast(`Transferred ${moveCartons>0?moveCartons+" cartons":""}${moveCartons>0&&moveLoose>0?" + ":""}${moveLoose>0?moveLoose+" loose tins":""} → ${destRack?.name||"?"} Level ${transferForm.destLevel} ✓`);
+      setTransferModal(null);
     }catch(err){showToast("Error: "+err.message,"error");}
     setSaving(false);
   };
@@ -6418,9 +6569,10 @@ function FGStockTab({role,user,showToast,sysUnits,canManage}){
             </div>
             <button onClick={()=>{setSelectedCell(null);setExpandedRack(selRackData?.id);}} style={{background:"none",border:"none",color:"#3b82f6",fontSize:"11px",cursor:"pointer",padding:0,marginTop:"2px"}}>← Back to all levels</button>
           </div>
-          {canManage&&<div style={{display:"flex",gap:"6px"}}>
+          {canManage&&<div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
             <button onClick={()=>openTxn(selectedCell,"add")} style={{background:"#052e16",border:"1px solid #166534",borderRadius:"7px",color:"#4ade80",fontSize:"13px",fontWeight:"700",padding:"8px 16px",cursor:"pointer"}}>+ Add Stock</button>
             {selCellProds.length>0&&<button onClick={()=>openTxn(selectedCell,"consume")} style={{background:"#2e0a0a",border:"1px solid #7f1d1d",borderRadius:"7px",color:"#f87171",fontSize:"13px",fontWeight:"700",padding:"8px 16px",cursor:"pointer"}}>− Consume</button>}
+            {selCellProds.length>0&&<button onClick={()=>{setTransferModal({cell:selectedCell,product:selCellProds[0]});setTransferForm({cartons:"",looseTins:"",destRackId:"",destLevel:"1"});}} style={{background:"#0a1a2e",border:"1px solid #2563eb",borderRadius:"7px",color:"#93c5fd",fontSize:"13px",fontWeight:"700",padding:"8px 16px",cursor:"pointer"}}>↔ Transfer</button>}
           </div>}
         </div>
         {selCellProds.length===0
@@ -6448,6 +6600,8 @@ function FGStockTab({role,user,showToast,sysUnits,canManage}){
                 </>:<>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"4px"}}>
                     <div style={{fontSize:"12px",fontWeight:"600",color:"#e2e8f0",flex:1,marginRight:"6px"}}>{p.productName}</div>
+                    {canManage&&selCellProds.length>1&&<button onClick={()=>{setTransferModal({cell:selectedCell,product:p});setTransferForm({cartons:"",looseTins:"",destRackId:"",destLevel:"1"});}}
+                      style={{background:"none",border:"1px solid #1e3a5f",borderRadius:"4px",color:"#93c5fd",fontSize:"10px",padding:"2px 6px",cursor:"pointer",flexShrink:0}}>↔</button>}
                     {canEdit&&<button onClick={()=>{setEditStockEntry(p);setEditStockForm({productName:p.productName,totalQty:String(p.totalQty),unit:p.unit||"L"});}}
                       style={{background:"none",border:"1px solid #334155",borderRadius:"4px",color:"#64748b",fontSize:"10px",padding:"2px 6px",cursor:"pointer",flexShrink:0}}>✏️</button>}
                   </div>
@@ -6465,6 +6619,71 @@ function FGStockTab({role,user,showToast,sysUnits,canManage}){
       </>}
       {!selectedCell&&!expandedRack&&selRackData&&<div style={{textAlign:"center",color:"#334155",fontSize:"12px"}}>Tap the rack again to see level detail</div>}
     </div>}
+
+    {/* ── TRANSFER MODAL ── */}
+    {transferModal&&(()=>{
+      const {cell,product}=transferModal;
+      const srcRackId=cell.split(".")[0];
+      const srcLevel=cell.split(".")[1];
+      const srcRack=racks.find(r=>r.id===srcRackId);
+      const destRack=racks.find(r=>r.id===transferForm.destRackId);
+      const tpc=product.tinsPerCarton||0;
+      const sizePerTin=product.sizePerTin||0;
+      const moveC=parseInt(transferForm.cartons)||0;
+      const moveL=parseInt(transferForm.looseTins)||0;
+      const srcC=parseInt(product.cartons)||0;
+      const srcL=parseInt(product.looseTins)||0;
+      const remainC=srcC-moveC;
+      const remainL=srcL-moveL;
+      const validMove=moveC+moveL>0&&remainC>=0&&remainL>=0;
+      return <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center"}}>
+        <div style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"14px",padding:"22px",width:"min(460px,96vw)",maxHeight:"90vh",overflowY:"auto"}}>
+          <div style={{fontSize:"15px",fontWeight:"700",color:"#93c5fd",marginBottom:"4px"}}>↔ Transfer Stock</div>
+          <div style={{fontSize:"12px",color:"#64748b",marginBottom:"14px"}}>{product.productName}</div>
+          {/* Source → Destination visual */}
+          <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"14px",flexWrap:"wrap"}}>
+            <div style={{background:"#080d18",border:"1px solid #1e293b",borderRadius:"8px",padding:"8px 12px",flex:1,textAlign:"center"}}>
+              <div style={{fontSize:"10px",color:"#475569",marginBottom:"2px"}}>FROM</div>
+              <div style={{fontSize:"13px",fontWeight:"700",color:"#f1f5f9"}}>{srcRack?.name||srcRackId} · L{srcLevel}</div>
+              <div style={{fontSize:"12px",color:"#4ade80"}}>{srcC}C + {srcL}T</div>
+            </div>
+            <div style={{fontSize:"20px",color:"#3b82f6"}}>→</div>
+            <div style={{background:"#080d18",border:`1px solid ${transferForm.destRackId?"#2563eb":"#1e293b"}`,borderRadius:"8px",padding:"8px 12px",flex:1,textAlign:"center"}}>
+              <div style={{fontSize:"10px",color:"#475569",marginBottom:"2px"}}>TO</div>
+              <div style={{fontSize:"13px",fontWeight:"700",color:transferForm.destRackId?"#93c5fd":"#334155"}}>{destRack?`${destRack.name} · L${transferForm.destLevel}`:"Select below →"}</div>
+            </div>
+          </div>
+          <div style={{fontSize:"11px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:"8px"}}>How much to move?</div>
+          <Grid2>
+            <Field label={`Cartons (max ${srcC})`}>
+              <input style={inp} type="number" min="0" max={srcC} step="1" value={transferForm.cartons} onChange={e=>setTransferForm({...transferForm,cartons:e.target.value})} placeholder="0"/>
+            </Field>
+            <Field label={`Loose Tins (max ${srcL})`}>
+              <input style={inp} type="number" min="0" max={srcL} step="1" value={transferForm.looseTins} onChange={e=>setTransferForm({...transferForm,looseTins:e.target.value})} placeholder="0"/>
+            </Field>
+          </Grid2>
+          {validMove&&<div style={{background:"#060d1a",border:"1px solid #1e293b",borderRadius:"7px",padding:"8px 12px",marginBottom:"12px",fontSize:"12px"}}>
+            <div style={{color:"#f87171"}}>Source remaining: {remainC} cartons + {remainL} loose tins</div>
+            <div style={{color:"#4ade80"}}>Destination gets: +{moveC} cartons + {moveL} loose tins</div>
+          </div>}
+          <Field label="Destination Rack">
+            <select style={sl} value={transferForm.destRackId} onChange={e=>setTransferForm({...transferForm,destRackId:e.target.value,destLevel:"1"})}>
+              <option value="">— Select rack —</option>
+              {racks.filter(r=>r.id!==srcRackId).map(r=><option key={r.id} value={r.id}>{r.name} ({r.levels} levels)</option>)}
+            </select>
+          </Field>
+          {destRack&&<Field label="Destination Level">
+            <select style={sl} value={transferForm.destLevel} onChange={e=>setTransferForm({...transferForm,destLevel:e.target.value})}>
+              {Array.from({length:destRack.levels},(_,i)=>destRack.levels-i).map(l=><option key={l} value={l}>Level {l}{getCellTotal(`${destRack.id}.${l}`)>0?" (has stock)":""}</option>)}
+            </select>
+          </Field>}
+          <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",marginTop:"12px"}}>
+            <Btn label="Cancel" onClick={()=>setTransferModal(null)} outline color="#475569" small/>
+            <Btn label={saving?"Saving…":"↔ Confirm Transfer"} onClick={saveTransfer} disabled={saving||!validMove||!transferForm.destRackId} color="#3b82f6" small/>
+          </div>
+        </div>
+      </div>;
+    })()}
 
     {/* ── TRANSACTION MODAL ── */}
     {txnModal&&(()=>{
