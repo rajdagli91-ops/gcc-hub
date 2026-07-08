@@ -5018,25 +5018,109 @@ function RMExportImport({materials,CATS,UNITS,user,showToast,onImport}){
 // FG MOVEMENTS — Tally movement analysis import + Direct/Unracked log
 // ══════════════════════════════════════════════════════════
 function FGMovementsTab({role,user,showToast,isAdmin,canManage}){
-  const [movements,setMovements]=useState([]);    // [{name,inward,outward,unit,direct,posted}]
-  const [savedMovements,setSavedMovements]=useState([]); // from fg_movements collection
+  const [movements,setMovements]=useState([]);
+  const [savedMovements,setSavedMovements]=useState([]);
   const [loading,setLoading]=useState(true);
   const [parsing,setParsing]=useState(false);
   const [search,setSearch]=useState("");
-  const [filter,setFilter]=useState("all"); // "all"|"racked"|"direct"
-  const [postModal,setPostModal]=useState(null); // {item, idx}
+  const [filter,setFilter]=useState("all");
+  const [postModal,setPostModal]=useState(null);
   const [racks,setRacks]=useState([]);
+  const [fgProducts,setFgProducts]=useState([]);
   const [postForm,setPostForm]=useState({rackId:"",level:"1",isDirect:false});
   const [saving,setSaving]=useState(false);
   const [dateRange,setDateRange]=useState("");
+  // Closing balance state
+  const [cbItems,setCbItems]=useState([]);   // [{name,qty,unit,negative,posted,direct}]
+  const [cbNegative,setCbNegative]=useState([]);
+  const [cbParsing,setCbParsing]=useState(false);
+  const [cbDate,setCbDate]=useState("");
+  const [cbView,setCbView]=useState("cb"); // "cb"|"movements"
 
   useEffect(()=>{
     const u1=C("fg_movements").orderBy("importedAt","desc").onSnapshot(
       s=>{setSavedMovements(s.docs.map(d=>({id:d.id,...d.data()})));setLoading(false);},
       ()=>{C("fg_movements").onSnapshot(s=>{setSavedMovements(s.docs.map(d=>({id:d.id,...d.data()})));setLoading(false);});});
     const u2=C("fg_config").doc("warehouse").onSnapshot(s=>{if(s.exists&&s.data().racks)setRacks(s.data().racks);},()=>{});
-    return ()=>{u1();u2();};
+    const u3=C("fg_products").onSnapshot(s=>{setFgProducts(s.docs.map(d=>({id:d.id,...d.data()})));},()=>{});
+    return ()=>{u1();u2();u3();};
   },[]);
+
+  // ── Parse Tally closing balance (Stock Group Summary) ──
+  const parseClosingBalance=async(file)=>{
+    setCbParsing(true);
+    try{
+      await loadXLSX();
+      const XLSX=window.XLSX;
+      const buf=await new Promise(r=>{const fr=new FileReader();fr.onload=e=>r(e.target.result);fr.readAsArrayBuffer(file);});
+      const wb=XLSX.read(buf,{type:"array"});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const raw=XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
+
+      // Extract date period
+      let period="";
+      for(let i=0;i<16;i++){
+        const cell=String(raw[i]?.[0]||"");
+        if(/\d+-[A-Za-z]+-\d+/.test(cell)){period=cell.trim();break;}
+      }
+      setCbDate(period);
+
+      const SKIP=/Gujarat Colours|Factory:|Village|Office:|CIN:|Contact|E-Mail|UDYAM|Laxminagar|Ghatkopar|FINAL PACKED|Stock Group|1-Apr|Gcc Erp|Particulars|Closing|Movement Analysis/i;
+
+      // Walk rows, collect products with their GCC godown qty
+      const parsed=[], negatives=[];
+      let i=16;
+      while(i<raw.length){
+        const row=raw[i];
+        if(!row){i++;continue;}
+        const name=String(row[0]||"").trim();
+        const godownCol=String(row[1]||"").trim();
+
+        // Skip godown sub-rows (col1 has godown name, col0 blank)
+        if(!name&&godownCol){i++;continue;}
+        if(!name){i++;continue;}
+        // Skip pure numbers (Tally total rows)
+        if(/^\d+(\.\d+)?$/.test(name)){i++;continue;}
+        // Skip header/company rows
+        if(SKIP.test(name)){i++;continue;}
+
+        // Collect godown breakdown from following rows
+        let gccQty=null, totalQty=null;
+        const rowQty=parseFloat(row[2])||null;
+        if(rowQty!==null)totalQty=rowQty;
+        let j=i+1;
+        while(j<raw.length){
+          const sub=raw[j];
+          if(!sub){j++;continue;}
+          const subName=String(sub[0]||"").trim();
+          const subGodown=String(sub[1]||"").trim();
+          if(subName)break; // next product
+          if(subGodown){
+            const q=parseFloat(sub[2])||0;
+            if(/Gujarat Colours/i.test(subGodown))gccQty=q;
+          }
+          j++;
+        }
+
+        // Only use GCC godown qty — never fall back to product-row total
+        // (total would include Inspection Godown which we intentionally ignore)
+        const useQty=gccQty;
+        i=j;
+        if(useQty===null||useQty===0)continue; // no GCC sub-row found → skip
+        // Parse unit from name
+        const um=name.match(/([\d.]+)\s*(ml|l|L|kg|Kg|KG|K\b|ltr)/i);
+        let unit="L";
+        if(um){const u=um[2].toLowerCase();unit=(u==="kg"||u==="k")?"Kg":"L";}
+        // Include negatives in main list flagged — user decides whether to investigate or skip
+        parsed.push({name,qty:useQty,unit,negative:useQty<0,direct:false,posted:false});
+      }
+
+      setCbItems(parsed);
+      setCbNegative(negatives);
+      showToast(`Parsed ${parsed.length} products with closing balance${negatives.length>0?` · ${negatives.length} negative (flagged)`:""}${period?" ("+period+")":`"`}`);
+    }catch(e){showToast("Parse error: "+e.message,"error");}
+    setCbParsing(false);
+  };
 
   // ── Parse Tally movement analysis Excel ──
   const parseTally=async(file)=>{
@@ -5144,106 +5228,148 @@ function FGMovementsTab({role,user,showToast,isAdmin,canManage}){
   const directItems=filtered.filter(m=>m.direct);
   const rackedItems=filtered.filter(m=>!m.direct);
   const rack=racks.find(r=>r.id===postForm.rackId);
+  const cbFiltered=cbItems.filter(p=>!search.trim()||normalize(p.name).includes(normalize(search)));
+  const getCatFromCatalogue=(name)=>fgProducts.find(p=>normalize(p.name)===normalize(name))?.category||"";
 
   return <div>
     <div style={{fontSize:"22px",fontWeight:"400",fontFamily:"'DM Serif Display',serif",color:"#f1f5f9",marginBottom:"14px"}}>📊 FG Movements</div>
 
-    {/* Import bar */}
-    <div style={{background:"#060d1a",border:"1px solid #1e3a5f",borderRadius:"12px",padding:"14px",marginBottom:"14px"}}>
-      <div style={{fontSize:"12px",fontWeight:"700",color:"#93c5fd",marginBottom:"8px"}}>Import Tally Movement Analysis</div>
-      <div style={{fontSize:"11.5px",color:"#475569",marginBottom:"10px"}}>Export "Movement Analysis" from Tally (Stock → Reports → Movement Analysis → Export to Excel). Godown sub-rows and group subtotals are automatically filtered out.</div>
-      <div style={{display:"flex",gap:"8px",flexWrap:"wrap",alignItems:"center"}}>
-        <button onClick={()=>document.getElementById("mv-import").click()} disabled={parsing} style={{background:"#1e3a5f",border:"1px solid #2563eb",borderRadius:"7px",padding:"7px 14px",color:"#93c5fd",fontWeight:"700",fontSize:"12.5px",cursor:"pointer"}}>
-          {parsing?"Parsing…":"⬆ Import Tally Excel"}
-        </button>
-        <input id="mv-import" type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={async e=>{if(e.target.files[0]){await parseTally(e.target.files[0]);e.target.value="";}}}/>
-        {dateRange&&<span style={{fontSize:"12px",color:"#64748b"}}>Period: {dateRange}</span>}
-        {movements.length>0&&<>
-          <span style={{fontSize:"12px",color:"#22c55e"}}>{movements.length} products parsed</span>
-          <button onClick={saveMovements} disabled={saving} style={{background:"#052e16",border:"1px solid #166534",borderRadius:"7px",padding:"7px 14px",color:"#4ade80",fontWeight:"700",fontSize:"12.5px",cursor:"pointer"}}>{saving?"…":"💾 Save Movement Log"}</button>
-          <button onClick={()=>setMovements([])} style={{background:"none",border:"1px solid #334155",borderRadius:"7px",padding:"6px 12px",color:"#475569",fontSize:"12px",cursor:"pointer"}}>✕ Clear</button>
-        </>}
-      </div>
+    {/* Top toggle: Closing Balance vs Movement Analysis */}
+    <div style={{display:"flex",gap:"4px",marginBottom:"16px",borderBottom:"1px solid #1e293b"}}>
+      {[["cb","📦 Closing Balance"],["movements","📊 Movement Analysis"]].map(([k,l])=><button key={k} onClick={()=>setCbView(k)} style={{background:cbView===k?"#1e293b":"transparent",border:"none",borderBottom:cbView===k?"2px solid #3b82f6":"2px solid transparent",color:cbView===k?"#f1f5f9":"#64748b",padding:"8px 18px",cursor:"pointer",fontSize:"13px",fontWeight:"600",borderRadius:"8px 8px 0 0"}}>{l}</button>)}
     </div>
 
-    {/* Parsed results */}
-    {movements.length>0&&<>
-      <div style={{display:"flex",gap:"8px",marginBottom:"10px",flexWrap:"wrap",alignItems:"center"}}>
-        <div style={{position:"relative",flex:1,minWidth:"180px"}}>
-          <span style={{position:"absolute",left:"10px",top:"50%",transform:"translateY(-50%)",color:"#334155",pointerEvents:"none"}}>🔍</span>
-          <input style={{...inp,paddingLeft:"32px"}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search product…"/>
+    {/* ── CLOSING BALANCE VIEW ── */}
+    {cbView==="cb"&&<>
+      <div style={{background:"#060d1a",border:"1px solid #1e3a5f",borderRadius:"12px",padding:"14px",marginBottom:"14px"}}>
+        <div style={{fontSize:"12px",fontWeight:"700",color:"#93c5fd",marginBottom:"6px"}}>Import Closing Balance (Stock Group Summary from Tally)</div>
+        <div style={{fontSize:"11.5px",color:"#475569",marginBottom:"10px"}}>
+          Export from Tally: <strong style={{color:"#64748b"}}>Display → Inventory Books → Stock Summary</strong> → set date to last day of month → Export to Excel. Only GCC godown quantities are imported. Negative stock quantities are flagged separately.
         </div>
-        {[["all","All"],["racked","🏪 Racked"],["direct","🚚 Direct"]].map(([v,l])=><button key={v} onClick={()=>setFilter(v)} style={{background:filter===v?"#1e293b":"transparent",border:"1px solid #1e293b",borderRadius:"99px",padding:"5px 14px",color:filter===v?"#f1f5f9":"#64748b",fontSize:"12px",fontWeight:"700",cursor:"pointer"}}>{l} ({v==="all"?movements.length:v==="racked"?movements.filter(m=>!m.direct).length:movements.filter(m=>m.direct).length})</button>)}
-        <span style={{fontSize:"11px",color:"#475569"}}>Toggle "Direct" for products like thinner that bypass racks</span>
+        <div style={{display:"flex",gap:"8px",flexWrap:"wrap",alignItems:"center"}}>
+          <button onClick={()=>document.getElementById("cb-import").click()} disabled={cbParsing} style={{background:"#1e3a5f",border:"1px solid #2563eb",borderRadius:"7px",padding:"7px 14px",color:"#93c5fd",fontWeight:"700",fontSize:"12.5px",cursor:"pointer"}}>
+            {cbParsing?"Parsing…":"⬆ Import Closing Balance Excel"}
+          </button>
+          <input id="cb-import" type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={async e=>{if(e.target.files[0]){await parseClosingBalance(e.target.files[0]);e.target.value="";}}}/>
+          {cbDate&&<span style={{fontSize:"12px",color:"#64748b"}}>As at: {cbDate}</span>}
+          {cbItems.length>0&&<><span style={{fontSize:"12px",color:"#22c55e"}}>{cbItems.length} products</span>
+            <button onClick={()=>setCbItems([])} style={{background:"none",border:"1px solid #334155",borderRadius:"6px",padding:"5px 10px",color:"#475569",fontSize:"11px",cursor:"pointer"}}>✕ Clear</button>
+          </>}
+        </div>
       </div>
 
-      {/* Racked items */}
-      {filter!=="direct"&&rackedItems.length>0&&<div style={{marginBottom:"16px"}}>
-        <div style={{fontSize:"11px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"8px"}}>🏪 Racked Products ({rackedItems.length})</div>
+      {cbItems.length>0&&<>
+        <div style={{display:"flex",gap:"8px",marginBottom:"10px",flexWrap:"wrap",alignItems:"center"}}>
+          <div style={{position:"relative",flex:1,minWidth:"180px"}}>
+            <span style={{position:"absolute",left:"10px",top:"50%",transform:"translateY(-50%)",color:"#334155",pointerEvents:"none"}}>🔍</span>
+            <input style={{...inp,paddingLeft:"32px"}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search product…"/>
+          </div>
+          <span style={{fontSize:"11px",color:"#475569"}}>{cbItems.filter(p=>p.posted).length}/{cbItems.length} assigned</span>
+          {cbItems.some(p=>p.negative&&!p.posted)&&<span style={{fontSize:"11px",color:"#f87171"}}>⚠ {cbItems.filter(p=>p.negative&&!p.posted).length} negative balance items — investigate in Tally or Skip</span>}
+        </div>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:"12.5px"}}>
           <thead><tr style={{background:"#0b1220"}}>
-            {["Product","Inward","Outward",""].map(h=><th key={h} style={{padding:"8px 12px",textAlign:"left",fontSize:"11px",fontWeight:"700",color:"#475569",textTransform:"uppercase",borderBottom:"1px solid #1e293b"}}>{h}</th>)}
+            {["Product","Category","Closing Qty",""].map(h=><th key={h} style={{padding:"8px 12px",textAlign:"left",fontSize:"11px",fontWeight:"700",color:"#475569",textTransform:"uppercase",borderBottom:"1px solid #1e293b"}}>{h}</th>)}
           </tr></thead>
           <tbody>
-            {rackedItems.map((m,i)=>{
-              const realIdx=movements.indexOf(m);
-              return <tr key={i} style={{borderBottom:"1px solid #0f172a",background:m.posted?"#052e16":i%2===0?"#080d18":"transparent"}}>
-                <td style={{padding:"9px 12px",color:m.posted?"#4ade80":"#e2e8f0"}}>{m.name}{m.posted&&<span style={{fontSize:"10px",color:"#4ade80",marginLeft:"6px"}}>✓ Posted</span>}</td>
-                <td style={{padding:"9px 12px",color:"#22c55e",fontWeight:"600"}}>{m.inward>0?`+${m.inward} ${m.unit}`:""}</td>
-                <td style={{padding:"9px 12px",color:"#f87171"}}>{m.outward>0?`−${m.outward} ${m.unit}`:""}</td>
+            {cbFiltered.map((p,i)=>{
+              const cat=getCatFromCatalogue(p.name);
+              const realIdx=cbItems.indexOf(p);
+              return <tr key={i} style={{borderBottom:"1px solid #0f172a",background:p.posted?"#052e16":p.negative?"#1a0a00":p.direct?"#1a0f00":i%2===0?"#080d18":"transparent"}}>
+                <td style={{padding:"9px 12px",color:p.posted?"#4ade80":p.negative?"#f87171":p.direct?"#fcd34d":"#e2e8f0"}}>
+                  {p.name}
+                  {p.posted&&<span style={{fontSize:"10px",color:"#4ade80",marginLeft:"6px"}}>✓</span>}
+                  {p.negative&&!p.posted&&<span style={{fontSize:"10px",color:"#f87171",marginLeft:"6px"}}>⚠ Negative — investigate in Tally</span>}
+                  {p.direct&&!p.negative&&<span style={{fontSize:"10px",color:"#f59e0b",marginLeft:"6px"}}>🚚 Direct</span>}
+                </td>
+                <td style={{padding:"9px 12px",color:p.negative?"#f87171":"#22c55e",fontWeight:"700"}}>{p.qty} {p.unit}</td>
+                <td style={{padding:"9px 12px",color:"#475569",fontSize:"11.5px"}}>{cat||"—"}</td>
                 <td style={{padding:"9px 12px"}}>
-                  <div style={{display:"flex",gap:"6px"}}>
-                    {m.inward>0&&!m.posted&&canManage&&<button onClick={()=>{setPostModal({item:m,idx:realIdx});setPostForm({rackId:"",level:"1",isDirect:false});}} style={{background:"#1e3a5f",border:"1px solid #2563eb",borderRadius:"5px",color:"#93c5fd",fontSize:"11px",fontWeight:"700",padding:"3px 8px",cursor:"pointer"}}>→ Assign</button>}
-                    <button onClick={()=>toggleDirect(realIdx)} style={{background:"none",border:"1px solid #334155",borderRadius:"5px",color:"#475569",fontSize:"10px",padding:"3px 6px",cursor:"pointer"}}>Mark Direct</button>
-                  </div>
+                  {!p.posted&&<div style={{display:"flex",gap:"5px"}}>
+                    {!p.negative&&<button onClick={()=>{setPostModal({item:{...p,inward:p.qty},idx:realIdx,isCB:true});setPostForm({rackId:"",level:"1",isDirect:p.direct});}}
+                      style={{background:"#1e3a5f",border:"1px solid #2563eb",borderRadius:"5px",color:"#93c5fd",fontSize:"11px",fontWeight:"700",padding:"3px 8px",cursor:"pointer"}}>→ Assign</button>}
+                    {p.negative&&<button onClick={()=>setCbItems(prev=>prev.map((x,xi)=>xi===realIdx?{...x,posted:true}:x))}
+                      style={{background:"#2e0a0a",border:"1px solid #7f1d1d",borderRadius:"5px",color:"#f87171",fontSize:"11px",fontWeight:"700",padding:"3px 8px",cursor:"pointer"}}>Skip</button>}
+                  </div>}
                 </td>
               </tr>;
             })}
           </tbody>
         </table>
-      </div>}
-
-      {/* Direct/Unracked items */}
-      {filter!=="racked"&&directItems.length>0&&<div>
-        <div style={{fontSize:"11px",fontWeight:"700",color:"#f59e0b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"8px"}}>🚚 Direct / Unracked ({directItems.length}) — packed to order or dispatched without racking</div>
-        <table style={{width:"100%",borderCollapse:"collapse",fontSize:"12.5px"}}>
-          <thead><tr style={{background:"#0b1220"}}>
-            {["Product","Inward","Outward",""].map(h=><th key={h} style={{padding:"8px 12px",textAlign:"left",fontSize:"11px",fontWeight:"700",color:"#475569",textTransform:"uppercase",borderBottom:"1px solid #1e293b"}}>{h}</th>)}
-          </tr></thead>
-          <tbody>
-            {directItems.map((m,i)=>{
-              const realIdx=movements.indexOf(m);
-              return <tr key={i} style={{borderBottom:"1px solid #0f172a",background:i%2===0?"#080d18":"transparent"}}>
-                <td style={{padding:"9px 12px",color:"#fcd34d"}}>{m.name}</td>
-                <td style={{padding:"9px 12px",color:"#22c55e",fontWeight:"600"}}>{m.inward>0?`+${m.inward} ${m.unit}`:""}</td>
-                <td style={{padding:"9px 12px",color:"#f87171"}}>{m.outward>0?`−${m.outward} ${m.unit}`:""}</td>
-                <td style={{padding:"9px 12px"}}><button onClick={()=>toggleDirect(realIdx)} style={{background:"none",border:"1px solid #334155",borderRadius:"5px",color:"#475569",fontSize:"10px",padding:"3px 6px",cursor:"pointer"}}>Move to Racked</button></td>
-              </tr>;
-            })}
-          </tbody>
-        </table>
+      </>}
+      {cbItems.length===0&&<div style={{textAlign:"center",padding:"50px",border:"2px dashed #1e293b",borderRadius:"10px",color:"#334155"}}>
+        Import a closing balance Excel above to start assigning stock to rack locations.
       </div>}
     </>}
 
-    {/* Saved movement logs */}
-    {movements.length===0&&<div>
-      <div style={{fontSize:"12px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"10px"}}>Saved Movement Logs</div>
-      {loading?<div style={{color:"#475569",fontSize:"12px"}}>Loading…</div>
-      :savedMovements.length===0?<div style={{textAlign:"center",padding:"40px",border:"2px dashed #1e293b",borderRadius:"10px",color:"#334155"}}>
-        No movement logs yet. Import a Tally movement analysis above.
+    {/* ── MOVEMENT ANALYSIS VIEW ── */}
+    {cbView==="movements"&&<>
+      <div style={{background:"#060d1a",border:"1px solid #1e3a5f",borderRadius:"12px",padding:"14px",marginBottom:"14px"}}>
+        <div style={{fontSize:"12px",fontWeight:"700",color:"#93c5fd",marginBottom:"8px"}}>Import Tally Movement Analysis</div>
+        <div style={{fontSize:"11.5px",color:"#475569",marginBottom:"10px"}}>Export from Tally: <strong style={{color:"#64748b"}}>Display → Inventory Books → Movement Analysis</strong> → set date range → Export to Excel.</div>
+        <div style={{display:"flex",gap:"8px",flexWrap:"wrap",alignItems:"center"}}>
+          <button onClick={()=>document.getElementById("mv-import").click()} disabled={parsing} style={{background:"#1e3a5f",border:"1px solid #2563eb",borderRadius:"7px",padding:"7px 14px",color:"#93c5fd",fontWeight:"700",fontSize:"12.5px",cursor:"pointer"}}>{parsing?"Parsing…":"⬆ Import Tally Excel"}</button>
+          <input id="mv-import" type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={async e=>{if(e.target.files[0]){await parseTally(e.target.files[0]);e.target.value="";}}}/>
+          {dateRange&&<span style={{fontSize:"12px",color:"#64748b"}}>Period: {dateRange}</span>}
+          {movements.length>0&&<>
+            <span style={{fontSize:"12px",color:"#22c55e"}}>{movements.length} products parsed</span>
+            <button onClick={saveMovements} disabled={saving} style={{background:"#052e16",border:"1px solid #166534",borderRadius:"7px",padding:"7px 14px",color:"#4ade80",fontWeight:"700",fontSize:"12.5px",cursor:"pointer"}}>{saving?"…":"💾 Save Log"}</button>
+            <button onClick={()=>setMovements([])} style={{background:"none",border:"1px solid #334155",borderRadius:"7px",padding:"6px 12px",color:"#475569",fontSize:"12px",cursor:"pointer"}}>✕ Clear</button>
+          </>}
+        </div>
       </div>
-      :<div>{savedMovements.map(log=><div key={log.id} style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"10px",padding:"12px 16px",marginBottom:"8px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-        <div>
-          <div style={{fontSize:"13px",color:"#e2e8f0",fontWeight:"600"}}>{log.dateRange||"Movement Log"}</div>
-          <div style={{fontSize:"11px",color:"#475569",marginTop:"2px"}}>{log.count} products · Imported {log.importedAt?.toDate?.()?.toLocaleDateString("en-IN")||""} by {log.importedBy?.split("@")[0]||"?"}</div>
+      {movements.length>0&&<>
+        <div style={{display:"flex",gap:"8px",marginBottom:"10px",flexWrap:"wrap",alignItems:"center"}}>
+          <div style={{position:"relative",flex:1,minWidth:"180px"}}>
+            <span style={{position:"absolute",left:"10px",top:"50%",transform:"translateY(-50%)",color:"#334155",pointerEvents:"none"}}>🔍</span>
+            <input style={{...inp,paddingLeft:"32px"}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search product…"/>
+          </div>
+          {[["all","All"],["racked","🏪 Racked"],["direct","🚚 Direct"]].map(([v,l])=><button key={v} onClick={()=>setFilter(v)} style={{background:filter===v?"#1e293b":"transparent",border:"1px solid #1e293b",borderRadius:"99px",padding:"5px 14px",color:filter===v?"#f1f5f9":"#64748b",fontSize:"12px",fontWeight:"700",cursor:"pointer"}}>{l} ({v==="all"?movements.length:v==="racked"?movements.filter(m=>!m.direct).length:movements.filter(m=>m.direct).length})</button>)}
         </div>
-        <div style={{display:"flex",gap:"8px"}}>
-          <button onClick={()=>{setMovements(log.movements||[]);setDateRange(log.dateRange||"");showToast("Log loaded — review and post to racks");}} style={{background:"#1e3a5f",border:"1px solid #2563eb",borderRadius:"6px",color:"#93c5fd",fontSize:"11.5px",fontWeight:"700",padding:"5px 12px",cursor:"pointer"}}>📂 Load</button>
-          {isAdmin&&<button onClick={async()=>{if(!confirm("Delete this log?"))return;await C("fg_movements").doc(log.id).delete();showToast("Deleted","error");}} style={{background:"none",border:"1px solid #334155",borderRadius:"6px",color:"#475569",fontSize:"11.5px",padding:"5px 10px",cursor:"pointer"}}>🗑</button>}
-        </div>
-      </div>)}</div>}
-    </div>}
+        {filter!=="direct"&&rackedItems.length>0&&<div style={{marginBottom:"16px"}}>
+          <div style={{fontSize:"11px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"8px"}}>🏪 Racked ({rackedItems.length})</div>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:"12.5px"}}><thead><tr style={{background:"#0b1220"}}>{["Product","Inward","Outward",""].map(h=><th key={h} style={{padding:"8px 12px",textAlign:"left",fontSize:"11px",fontWeight:"700",color:"#475569",textTransform:"uppercase",borderBottom:"1px solid #1e293b"}}>{h}</th>)}</tr></thead>
+            <tbody>{rackedItems.map((m,i)=>{const realIdx=movements.indexOf(m);return <tr key={i} style={{borderBottom:"1px solid #0f172a",background:m.posted?"#052e16":i%2===0?"#080d18":"transparent"}}>
+              <td style={{padding:"9px 12px",color:m.posted?"#4ade80":"#e2e8f0"}}>{m.name}{m.posted&&<span style={{fontSize:"10px",color:"#4ade80",marginLeft:"6px"}}>✓</span>}</td>
+              <td style={{padding:"9px 12px",color:"#22c55e",fontWeight:"600"}}>{m.inward>0?`+${m.inward} ${m.unit}`:""}</td>
+              <td style={{padding:"9px 12px",color:"#f87171"}}>{m.outward>0?`−${m.outward} ${m.unit}`:""}</td>
+              <td style={{padding:"9px 12px"}}><div style={{display:"flex",gap:"5px"}}>
+                {m.inward>0&&!m.posted&&canManage&&<button onClick={()=>{setPostModal({item:m,idx:realIdx});setPostForm({rackId:"",level:"1",isDirect:false});}} style={{background:"#1e3a5f",border:"1px solid #2563eb",borderRadius:"5px",color:"#93c5fd",fontSize:"11px",fontWeight:"700",padding:"3px 8px",cursor:"pointer"}}>→ Assign</button>}
+                <button onClick={()=>toggleDirect(realIdx)} style={{background:"none",border:"1px solid #334155",borderRadius:"5px",color:"#475569",fontSize:"10px",padding:"3px 6px",cursor:"pointer"}}>Direct</button>
+              </div></td>
+            </tr>;})}
+          </tbody></table>
+        </div>}
+        {filter!=="racked"&&directItems.length>0&&<div>
+          <div style={{fontSize:"11px",fontWeight:"700",color:"#f59e0b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"8px"}}>🚚 Direct / Unracked ({directItems.length})</div>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:"12.5px"}}><thead><tr style={{background:"#0b1220"}}>{["Product","Inward","Outward",""].map(h=><th key={h} style={{padding:"8px 12px",textAlign:"left",fontSize:"11px",fontWeight:"700",color:"#475569",textTransform:"uppercase",borderBottom:"1px solid #1e293b"}}>{h}</th>)}</tr></thead>
+            <tbody>{directItems.map((m,i)=>{const realIdx=movements.indexOf(m);return <tr key={i} style={{borderBottom:"1px solid #0f172a",background:i%2===0?"#080d18":"transparent"}}>
+              <td style={{padding:"9px 12px",color:"#fcd34d"}}>{m.name}</td>
+              <td style={{padding:"9px 12px",color:"#22c55e",fontWeight:"600"}}>{m.inward>0?`+${m.inward} ${m.unit}`:""}</td>
+              <td style={{padding:"9px 12px",color:"#f87171"}}>{m.outward>0?`−${m.outward} ${m.unit}`:""}</td>
+              <td style={{padding:"9px 12px"}}><button onClick={()=>toggleDirect(realIdx)} style={{background:"none",border:"1px solid #334155",borderRadius:"5px",color:"#475569",fontSize:"10px",padding:"3px 6px",cursor:"pointer"}}>→ Racked</button></td>
+            </tr>;})}
+          </tbody></table>
+        </div>}
+      </>}
+      {movements.length===0&&<div>
+        <div style={{fontSize:"12px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"10px"}}>Saved Movement Logs</div>
+        {loading?<div style={{color:"#475569",fontSize:"12px"}}>Loading…</div>
+        :savedMovements.length===0?<div style={{textAlign:"center",padding:"40px",border:"2px dashed #1e293b",borderRadius:"10px",color:"#334155"}}>No movement logs yet.</div>
+        :<div>{savedMovements.map(log=><div key={log.id} style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"10px",padding:"12px 16px",marginBottom:"8px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div>
+            <div style={{fontSize:"13px",color:"#e2e8f0",fontWeight:"600"}}>{log.dateRange||"Movement Log"}</div>
+            <div style={{fontSize:"11px",color:"#475569",marginTop:"2px"}}>{log.count} products · {log.importedAt?.toDate?.()?.toLocaleDateString("en-IN")||""}</div>
+          </div>
+          <div style={{display:"flex",gap:"8px"}}>
+            <button onClick={()=>{setMovements(log.movements||[]);setDateRange(log.dateRange||"");showToast("Log loaded");}} style={{background:"#1e3a5f",border:"1px solid #2563eb",borderRadius:"6px",color:"#93c5fd",fontSize:"11.5px",fontWeight:"700",padding:"5px 12px",cursor:"pointer"}}>📂 Load</button>
+            {isAdmin&&<button onClick={async()=>{if(!confirm("Delete?"))return;await C("fg_movements").doc(log.id).delete();}} style={{background:"none",border:"1px solid #334155",borderRadius:"6px",color:"#475569",fontSize:"11.5px",padding:"5px 10px",cursor:"pointer"}}>🗑</button>}
+          </div>
+        </div>)}</div>}
+      </div>}
+    </>}
 
+    {/* Post to Rack modal */}
     {/* Post to Rack modal */}
     {postModal&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center"}}>
       <div style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"14px",padding:"22px",width:"min(420px,96vw)",maxHeight:"90vh",overflowY:"auto"}}>
@@ -5402,8 +5528,9 @@ function FGStockTab({role,user,showToast,sysUnits,canManage}){
   const [selectedCell,setSelectedCell]=useState(null);
   const [selectedRack,setSelectedRack]=useState(null);
   const [copiedRack,setCopiedRack]=useState(null);  // rack object snapshot
-  const [renamingRack,setRenamingRack]=useState(null); // rack id
+  const [renamingRack,setRenamingRack]=useState(null);
   const [renameVal,setRenameVal]=useState("");
+  const [editingRackColour,setEditingRackColour]=useState(null); // rack id
   const [dragging,setDragging]=useState(null);
   const [txnModal,setTxnModal]=useState(null);
   const [txn,setTxn]=useState({productName:"",cartons:"",looseTins:"",notes:"",date:today()});
@@ -5572,15 +5699,8 @@ function FGStockTab({role,user,showToast,sysUnits,canManage}){
     }
   };
   const onRackPointerDown=(e,rack,resizing=null)=>{
-    if(!canManage)return;
+    if(!canManage||mode!=="editPillars")return; // only capture pointer in layout edit mode
     e.stopPropagation();
-    // In normal view mode: only SELECT the rack, never move/resize
-    // Moving/resizing requires explicit "Edit Layout" mode to prevent accidental repositioning on tablets
-    if(mode!=="editPillars"){
-      setSelectedRack(rack.id);setSelectedCell(null);
-      setExpandedRack(expandedRack===rack.id?null:rack.id);
-      return;
-    }
     e.currentTarget.setPointerCapture(e.pointerId);
     setDragging({rackId:rack.id,origX:rack.x,origY:rack.y,
       origW:rack.w,origH:rack.h||RACK_CANVAS_H,
@@ -5993,6 +6113,7 @@ function FGStockTab({role,user,showToast,sysUnits,canManage}){
         {selectedRack&&canManage&&mode==="view"&&<>
           <button onClick={()=>copyRack(selectedRack)} style={{background:"#0f1d35",border:"1px solid #1e3a5f",borderRadius:"7px",padding:"6px 12px",color:"#93c5fd",fontSize:"12px",fontWeight:"700",cursor:"pointer"}}>📋 Copy</button>
           <button onClick={()=>{const r=racks.find(x=>x.id===selectedRack);if(r){setRenamingRack(selectedRack);setRenameVal(r.name);}}} style={{background:"#0f1d35",border:"1px solid #1e3a5f",borderRadius:"7px",padding:"6px 12px",color:"#fcd34d",fontSize:"12px",fontWeight:"700",cursor:"pointer"}}>✏️ Rename</button>
+          <button onClick={()=>setEditingRackColour(editingRackColour===selectedRack?null:selectedRack)} style={{background:"#0f1d35",border:"1px solid #1e3a5f",borderRadius:"7px",padding:"6px 12px",color:"#a78bfa",fontSize:"12px",fontWeight:"700",cursor:"pointer"}}>🎨 Colour</button>
           <button onClick={()=>deleteRack(selectedRack)} style={{background:"#2e0a0a",border:"1px solid #7f1d1d",borderRadius:"7px",padding:"6px 12px",color:"#f87171",fontSize:"12px",fontWeight:"700",cursor:"pointer"}}>🗑 Remove</button>
           <button onClick={()=>{setSelectedRack(null);setSelectedCell(null);setExpandedRack(null);}} style={{background:"none",border:"1px solid #334155",borderRadius:"7px",padding:"6px 12px",color:"#475569",fontSize:"12px",cursor:"pointer"}}>✕</button>
         </>}
@@ -6002,6 +6123,16 @@ function FGStockTab({role,user,showToast,sysUnits,canManage}){
           <input style={{...inp,width:"160px",padding:"5px 8px",fontSize:"13px",fontWeight:"700",borderColor:"#fcd34d60"}} value={renameVal} onChange={e=>setRenameVal(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")commitRename();if(e.key==="Escape"){setRenamingRack(null);}}} autoFocus/>
           <button onClick={commitRename} style={{background:"#0f2d1a",border:"1px solid #166534",borderRadius:"5px",padding:"5px 10px",color:"#4ade80",fontSize:"12px",fontWeight:"700",cursor:"pointer"}}>✓</button>
           <button onClick={()=>setRenamingRack(null)} style={{background:"none",border:"1px solid #334155",borderRadius:"5px",padding:"5px 8px",color:"#475569",fontSize:"11px",cursor:"pointer"}}>✕</button>
+        </div>}
+        {/* Inline colour picker */}
+        {editingRackColour&&<div style={{display:"flex",gap:"6px",alignItems:"center",background:"#1a0a2e",border:"1px solid #a78bfa60",borderRadius:"10px",padding:"6px 12px",flexWrap:"wrap"}}>
+          <span style={{fontSize:"11.5px",color:"#a78bfa",fontWeight:"700"}}>🎨 Colour:</span>
+          {["#c9956a","#0ea5e9","#eab308","#22c55e","#f97316","#a78bfa","#f43f5e","#64748b","#06b6d4","#ec4899","#fcd34d","#94a3b8"].map(col=>{
+            const isActive=racks.find(r=>r.id===editingRackColour)?.color===col;
+            return <div key={col} onClick={async()=>{const updated=racks.map(r=>r.id===editingRackColour?{...r,color:col}:r);await saveRacks(updated);}}
+              style={{width:"22px",height:"22px",borderRadius:"50%",background:col,cursor:"pointer",border:isActive?"3px solid #fff":"2px solid transparent",flexShrink:0}}/>;
+          })}
+          <button onClick={()=>setEditingRackColour(null)} style={{background:"none",border:"none",color:"#475569",fontSize:"14px",cursor:"pointer",marginLeft:"4px"}}>✕</button>
         </div>}
         {isAdmin&&mode==="view"&&<button onClick={()=>{setMode("editPillars");setSelectedPillar(null);setSelectedStruct(null);}} style={{background:"#1a0a1a",border:"1px solid #7c3aed",borderRadius:"8px",padding:"7px 14px",color:"#c4b5fd",fontWeight:"700",fontSize:"12.5px",cursor:"pointer"}}>🗺 Edit Layout</button>}
         {mode==="editPillars"&&<div style={{display:"flex",gap:"8px",alignItems:"center",background:"#1a0a1a",border:"1px solid #7c3aed",borderRadius:"10px",padding:"8px 12px",flexWrap:"wrap"}}>
