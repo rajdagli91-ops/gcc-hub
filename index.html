@@ -352,11 +352,11 @@ function printTrialComparison(trials,project,qcParams){
   var leg=s.map(function(t,i){return '<td style="border:1px solid #000;padding:2pt 5pt;font-size:8pt"><b>S'+(i+1)+'</b>: '+(t.trialName||'Trial '+(i+1))+'</td>';}).join('');
   var shd=s.map(function(_,i){return '<th style="border:1px solid #000;padding:4pt;background:#e8e8e8;text-align:center">S'+(i+1)+'</th>';}).join('');
   var dt=(s[0]&&s[0].date)||(new Date().toISOString().slice(0,10));
-  var pn=(project&&(project.name||project.productName))||'R&D';
+  var pn=(project&&(project.projectName||project.name||project.productName))||'R&D';
   var css='*{box-sizing:border-box}body{font-family:Arial,sans-serif;margin:0;padding:3pt 5pt;font-size:9pt}@page{size:297mm 210mm landscape;margin:5mm}table{border-collapse:collapse;width:100%}.sh{border-bottom:2px solid #000;font-weight:700;padding:3pt 6pt;font-size:9pt;text-transform:uppercase}tr{page-break-inside:avoid}';
   var h='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Trial Comparison<'+'/title><style>'+css+'<'+'/style><'+'/head><body>';
   h+='<table style="margin-bottom:2pt"><tr><td><b style="font-size:13pt">VEEBEE<'+'/b><'+'/td><td style="text-align:right;font-size:10pt;font-weight:700">R&amp;D TRIAL COMPARISON SHEET<'+'/td><'+'/tr><'+'/table>';
-  h+='<div style="border:1.5px solid #000;padding:4pt 10pt;margin-bottom:3pt"><span style="font-size:7.5pt">PROJECT:</span> <b style="font-size:14pt">'+pn+'<'+'/b><'+'/div>';
+  h+='<div style="border:2px solid #000;padding:5pt 10pt;margin-bottom:3pt"><span style="font-size:7.5pt;font-weight:normal">PROJECT</span><br><b style="font-size:15pt;letter-spacing:0.01em">'+pn+'</b></div>';
   h+='<table style="border:1px solid #000;margin-bottom:3pt"><tr>';
   h+='<td style="padding:3pt 7pt;border-right:1px solid #000;width:35%"><span style="font-size:7pt">DATE:<'+'/span> <b>'+dt+'<'+'/b><'+'/td>';
   h+='<td style="padding:3pt 7pt"><span style="font-size:7pt">SAMPLES:<'+'/span> <b>'+n+'<'+'/b><'+'/td><'+'/tr><'+'/table>';
@@ -368,6 +368,63 @@ function printTrialComparison(trials,project,qcParams){
   h+='<div style="margin-top:4pt;font-size:7.5pt;display:flex;justify-content:space-between"><span>GCC Operations Hub<'+'/span><span>Tested by: ___________________ &nbsp; Date: ___________________<'+'/span><'+'/div><'+'/body><'+'/html>';
   var w=window.open('','_blank');w.document.write(h);w.document.close();setTimeout(function(){w.print();},400);
 }
+
+function printTrialSheet(trial,project,index){
+  var pn=(project&&(project.projectName||project.name||project.productName))||'R&D Project';
+  var pc=project&&project.projectCode?'#'+project.projectCode:'';
+  var tn=trial.trialName||('Trial '+(index+1));
+  var ings=(trial.ingredients||[]).filter(function(r){return r.material&&r.material.trim();});
+  var steps=(trial.processSteps||[]).filter(function(s){return s.text&&s.text.trim();});
+  var qcParams=(trial.qcParameters||[]);
+  var ingRows=ings.map(function(r,i){
+    return '<tr style="background:'+(i%2===0?'#fff':'#f8f8f8')+'"><td style="border:1px solid #000;padding:4pt 6pt">'+(i+1)+'. '+r.material+'</td><td style="border:1px solid #000;padding:4pt 6pt;text-align:center">'+r.quantity+(r.unit?' '+r.unit:'')+'</td><td style="border:1px solid #000;padding:4pt 6pt;color:#555">'+( r.notes||'')+'</td></tr>';
+  }).join('');
+  var stepRows=steps.map(function(s,i){
+    return '<tr><td style="width:24pt;padding:3pt 6pt;border:1px solid #000;text-align:center;font-weight:700">'+(i+1)+'</td><td style="border:1px solid #000;padding:3pt 8pt">'+s.text+'</td></tr>';
+  }).join('');
+  var qcRows=qcParams.map(function(p,i){
+    return '<tr style="background:'+(i%2===0?'#fff':'#f8f8f8')+'"><td style="border:1px solid #000;padding:4pt 6pt">'+(i+1)+'. '+p+'</td><td style="border:1px solid #000;padding:4pt 6pt;width:120pt"> </td><td style="border:1px solid #000;padding:4pt 6pt;width:60pt;text-align:center"> </td></tr>';
+  }).join('');
+  var css='*{box-sizing:border-box}body{font-family:Arial,sans-serif;margin:0;padding:5pt 8pt;font-size:9.5pt}@page{size:A4 portrait;margin:8mm}table{border-collapse:collapse;width:100%}h2{margin:0 0 4pt;font-size:12pt}.sec{font-weight:700;font-size:9pt;text-transform:uppercase;letter-spacing:0.05em;border-bottom:1.5px solid #000;padding-bottom:2pt;margin:8pt 0 4pt}tr{page-break-inside:avoid}';
+  var h='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Trial Sheet</title><style>'+css+'</style></head><body>';
+  h+='<table style="margin-bottom:5pt"><tr><td><b style="font-size:14pt">VEEBEE</b></td><td style="text-align:right;font-size:10pt;font-weight:700">R&amp;D TRIAL SHEET</td></tr></table>';
+  h+='<table style="border:2px solid #000;margin-bottom:8pt"><tr>';
+  h+='<td style="padding:4pt 8pt;width:50%;border-right:1px solid #000"><div style="font-size:7pt">PROJECT</div><b style="font-size:12pt">'+pn+'</b>'+(pc?' <span style="font-size:9pt;color:#666">'+pc+'</span>':'')+'</td>';
+  h+='<td style="padding:4pt 8pt"><div style="font-size:7pt">TRIAL</div><b style="font-size:12pt">'+tn+'</b></td></tr>';
+  h+='<tr>';
+  h+='<td style="padding:3pt 8pt;border-right:1px solid #000;border-top:1px solid #000"><span style="font-size:7pt">DATE</span> <b>'+( trial.date||'—')+'</b> &nbsp;&nbsp; <span style="font-size:7pt">BY</span> <b>'+(trial.triedBy||'—')+'</b></td>';
+  h+='<td style="padding:3pt 8pt;border-top:1px solid #000"><span style="font-size:7pt">OUTCOME</span> <b>'+(trial.outcome||'Under Evaluation')+'</b>';
+  if(trial.assignedTo)h+=' &nbsp;&nbsp; <span style="font-size:7pt">ASSIGNED TO</span> <b>'+trial.assignedTo+'</b>';
+  h+='</td></tr></table>';
+  if(ings.length){
+    h+='<div class="sec">Formulation</div>';
+    h+='<table><tr><th style="border:1px solid #000;padding:4pt 6pt;background:#e8e8e8;text-align:left;width:50%">Material</th><th style="border:1px solid #000;padding:4pt 6pt;background:#e8e8e8;text-align:center;width:25%">Quantity</th><th style="border:1px solid #000;padding:4pt 6pt;background:#e8e8e8;text-align:left">Notes</th></tr>'+ingRows;
+    var tot=ings.reduce(function(a,r){return a+(parseFloat(r.quantity)||0);},0);
+    if(tot>0)h+='<tr style="background:#f0f0f0"><td style="border:1px solid #000;padding:4pt 6pt;font-weight:700">TOTAL</td><td style="border:1px solid #000;padding:4pt 6pt;text-align:center;font-weight:700">'+tot.toFixed(2)+'</td><td style="border:1px solid #000;padding:4pt 6pt"> </td></tr>';
+    h+='</table>';
+  }
+  if(steps.length){
+    h+='<div class="sec">Process Steps</div>';
+    h+='<table>'+stepRows+'</table>';
+  }
+  if(trial.process){
+    h+='<div class="sec">Process / Mixing Method</div><div style="border:1px solid #000;padding:5pt 8pt;white-space:pre-wrap;font-size:9pt">'+trial.process+'</div>';
+  }
+  if(trial.observations){
+    h+='<div class="sec">Test Instructions for QC</div><div style="border:1px solid #000;padding:5pt 8pt;white-space:pre-wrap;font-size:9pt">'+trial.observations+'</div>';
+  }
+  if(qcParams.length){
+    h+='<div class="sec">QC Parameters — Record Results</div>';
+    h+='<table><tr><th style="border:1px solid #000;padding:4pt 6pt;background:#e8e8e8;text-align:left">Parameter</th><th style="border:1px solid #000;padding:4pt 6pt;background:#e8e8e8;text-align:left;width:120pt">Result</th><th style="border:1px solid #000;padding:4pt 6pt;background:#e8e8e8;text-align:center;width:60pt">Pass/Fail</th></tr>'+qcRows+'</table>';
+  }
+  if(trial.nextSteps){
+    h+='<div class="sec">Next Steps</div><div style="border:1px solid #000;padding:5pt 8pt;white-space:pre-wrap;font-size:9pt">'+trial.nextSteps+'</div>';
+  }
+  h+='<div style="margin-top:10pt;font-size:7.5pt;display:flex;justify-content:space-between;border-top:1px solid #ccc;padding-top:4pt"><span>GCC Operations Hub</span><span>Tested by: ___________________ &nbsp; Date: ___________________</span></div>';
+  h+='</body></html>';
+  var w=window.open('','_blank');w.document.write(h);w.document.close();setTimeout(function(){w.print();},400);
+}
+
 
 function printRMTestSheet(entry){
   const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>RM Test Sheet — ${entry.materialName}</title>
