@@ -1658,56 +1658,45 @@ function TestReportCard({report,num,onDelete}){
 }
 
 // ── Comparison sheet modal — select trials + QC params, then print ──
-function CompareTrialsModal({trials,project}){
+function CompareTrialsModal({trials,project,onCopyTrial}){
   const [open,setOpen]=useState(false);
-  const [selected,setSelected]=useState(trials.map(t=>t.id)); // all selected by default
-  const [qcParams,setQcParams]=useState([
-    "Viscosity (KU/cP)","Fineness (μm)","Specific Gravity","pH Value",
-    "Non-Volatile (%)","Drying Time (min)","Gloss (60°)","Adhesion",
-    "Flexibility","General Appearance"
-  ]);
-  const [newParam,setNewParam]=useState("");
+  const [selected,setSelected]=useState(trials.map(t=>t.id));
   const toggleTrial=(id)=>setSelected(s=>s.includes(id)?s.filter(x=>x!==id):[...s,id]);
-  const addParam=()=>{if(newParam.trim()){setQcParams(p=>[...p,newParam.trim()]);setNewParam("");}};
-  const removeParam=(i)=>setQcParams(p=>p.filter((_,idx)=>idx!==i));
   const selectedTrials=trials.filter(t=>selected.includes(t.id));
+  // Collect QC parameters from selected trials (union, preserving order)
+  const qcParams=(()=>{const seen=new Set(),out=[];selectedTrials.forEach(t=>(t.qcParameters||[]).forEach(p=>{if(!seen.has(p)){seen.add(p);out.push(p);}}));return out.length?out:["Viscosity","Fineness","Specific Gravity","pH","Non-Volatile %","Drying Time (min)","Gloss (60°)","Adhesion","Flexibility","Appearance"];})();
   if(!open) return <button onClick={()=>setOpen(true)} style={{background:"#0a1a2e",border:"1px solid #2563eb",borderRadius:"7px",padding:"6px 14px",color:"#93c5fd",fontWeight:"700",fontSize:"12px",cursor:"pointer",marginBottom:"12px"}}>📊 Print Comparison Sheet ({trials.length} trials)</button>;
   return <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center"}}>
-    <div style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"14px",padding:"22px",width:"min(560px,96vw)",maxHeight:"90vh",overflowY:"auto"}}>
+    <div style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"14px",padding:"22px",width:"min(520px,96vw)",maxHeight:"90vh",overflowY:"auto"}}>
       <div style={{fontSize:"15px",fontWeight:"700",color:"#93c5fd",marginBottom:"14px"}}>📊 Print Trial Comparison Sheet</div>
-      {/* Select trials */}
       <div style={{fontSize:"11px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:"8px"}}>Select Trials to Compare</div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px",marginBottom:"14px"}}>
         {trials.map((t,i)=><label key={t.id} style={{display:"flex",alignItems:"center",gap:"8px",background:selected.includes(t.id)?"#0f1d35":"#080d18",border:`1px solid ${selected.includes(t.id)?"#3b82f6":"#1e293b"}`,borderRadius:"7px",padding:"8px 12px",cursor:"pointer"}}>
           <input type="checkbox" checked={selected.includes(t.id)} onChange={()=>toggleTrial(t.id)} style={{accentColor:"#3b82f6"}}/>
           <div>
             <div style={{fontSize:"12.5px",fontWeight:"700",color:selected.includes(t.id)?"#93c5fd":"#e2e8f0"}}>S{i+1} — {t.trialName||`Trial ${i+1}`}</div>
-            <div style={{fontSize:"10px",color:"#475569"}}>{(t.ingredients||[]).filter(r=>r.material?.trim()).length} ingredients</div>
+            <div style={{fontSize:"10px",color:"#475569"}}>{(t.ingredients||[]).filter(r=>r.material?.trim()).length} ingredients · {(t.qcParameters||[]).length} QC params</div>
           </div>
         </label>)}
       </div>
-      {/* QC parameters */}
-      <div style={{fontSize:"11px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:"8px"}}>QC Parameters to Test</div>
-      <div style={{background:"#060d1a",border:"1px solid #1e293b",borderRadius:"10px",padding:"10px",marginBottom:"10px",maxHeight:"180px",overflowY:"auto"}}>
-        {qcParams.map((p,i)=><div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 6px",borderBottom:"1px solid #0f172a",fontSize:"12px",color:"#e2e8f0"}}>
-          <span>{i+1}. {p}</span>
-          <button onClick={()=>removeParam(i)} style={{background:"none",border:"none",color:"#475569",cursor:"pointer",fontSize:"14px",padding:"0 4px"}}>×</button>
-        </div>)}
-      </div>
-      <div style={{display:"flex",gap:"6px",marginBottom:"14px"}}>
-        <input style={{...inp,flex:1,fontSize:"12px"}} value={newParam} onChange={e=>setNewParam(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addParam()} placeholder="Add QC parameter (e.g. Impact Resistance)…"/>
-        <button onClick={addParam} style={{background:"#1e3a5f",border:"1px solid #2563eb",borderRadius:"6px",padding:"6px 12px",color:"#93c5fd",fontSize:"12px",fontWeight:"700",cursor:"pointer"}}>+ Add</button>
+      {/* Show QC params that will be printed — read-only summary */}
+      <div style={{background:"#060d1a",border:"1px solid #1e293b",borderRadius:"8px",padding:"10px 12px",marginBottom:"14px"}}>
+        <div style={{fontSize:"11px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:"6px"}}>QC Parameters in print ({qcParams.length}) — set on each trial</div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:"4px"}}>
+          {qcParams.map((p,i)=><span key={i} style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"5px",padding:"2px 8px",fontSize:"11px",color:"#94a3b8"}}>{p}</span>)}
+        </div>
+        <div style={{fontSize:"10px",color:"#334155",marginTop:"6px"}}>To change these, edit the individual trial and update its QC Parameters list</div>
       </div>
       {selectedTrials.length<2&&<div style={{fontSize:"11.5px",color:"#f59e0b",marginBottom:"10px"}}>⚠ Select at least 2 trials to compare</div>}
       <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
         <Btn label="Cancel" onClick={()=>setOpen(false)} outline color="#475569" small/>
-        <Btn label={`🖨 Print Comparison (${selectedTrials.length} samples)`} onClick={()=>{printTrialComparison(selectedTrials,project,qcParams);setOpen(false);}} disabled={selectedTrials.length<2} color="#3b82f6" small/>
+        <Btn label={`🖨 Print (${selectedTrials.length} samples)`} onClick={()=>{printTrialComparison(selectedTrials,project,qcParams);setOpen(false);}} disabled={selectedTrials.length<2} color="#3b82f6" small/>
       </div>
     </div>
   </div>;
 }
 
-function TrialCard({trial,index,onDelete,onUpdate,isAdmin,sysUnits,onAddUnit,project,allProfiles={},showToast}){
+function TrialCard({trial,index,onDelete,onUpdate,onCopy,isAdmin,sysUnits,onAddUnit,project,allProfiles={},showToast}){
   const ING_UNITS_EFF=sysUnits&&sysUnits.length?sysUnits:[...ING_UNITS,...BATCH_UNITS.filter(u=>!ING_UNITS.includes(u))];
   const [open,setOpen]=useState(false);
   const [editing,setEditing]=useState(false);
@@ -1727,7 +1716,8 @@ function TrialCard({trial,index,onDelete,onUpdate,isAdmin,sysUnits,onAddUnit,pro
     process:trial.process||"",propertiesTested:trial.propertiesTested||"",
     observations:trial.observations||"",nextSteps:trial.nextSteps||"",
     processSteps:trial.processSteps?.length?trial.processSteps:[{id:newId(),text:""}],
-    assignedTo:trial.assignedTo||""
+    assignedTo:trial.assignedTo||"",
+    qcParameters:trial.qcParameters?.length?trial.qcParameters:["Viscosity","Fineness","Specific Gravity","pH","Non-Volatile %","Drying Time (min)","Gloss (60°)","Adhesion","Flexibility","Appearance"]
   });
 
   const reports=trial.testReports||[];
@@ -1778,6 +1768,7 @@ function TrialCard({trial,index,onDelete,onUpdate,isAdmin,sysUnits,onAddUnit,pro
         {isEval&&!editing&&<span style={{fontSize:"10px",fontWeight:"700",color:"#a855f7",background:"#a855f718",border:"1px solid #a855f730",padding:"2px 8px",borderRadius:"99px",whiteSpace:"nowrap"}}>⏳ Evaluating</span>}
         <Bdg label={displayOutcome} color={oc}/>
         {!editing&&<button onClick={e=>{e.stopPropagation();printTrialSheet(trial,project,index);}} style={{background:"#052e16",border:"1px solid #16653440",borderRadius:"6px",color:"#4ade80",cursor:"pointer",fontSize:"11.5px",fontWeight:"600",padding:"3px 10px"}}>🖨 Print</button>}
+        {!editing&&onCopy&&<button onClick={e=>{e.stopPropagation();onCopy(trial);}} style={{background:"#0a1a2e",border:"1px solid #1e3a5f",borderRadius:"6px",color:"#93c5fd",cursor:"pointer",fontSize:"11.5px",fontWeight:"600",padding:"3px 10px"}}>📋 Copy</button>}
         {onDelete&&!editing&&<button onClick={e=>{e.stopPropagation();setOpen(true);setEditing(true);}} style={{background:"#1e3a5f",border:"1px solid #2563eb40",borderRadius:"6px",color:"#93c5fd",cursor:"pointer",fontSize:"11.5px",fontWeight:"600",padding:"3px 10px"}}>✏️ Edit</button>}
         {onDelete&&!editing&&<button onClick={e=>{e.stopPropagation();onDelete(trial.id)}} style={{background:"none",border:"none",color:"#334155",fontSize:"14px",padding:"2px 4px"}}>🗑</button>}
         {!editing&&<span style={{color:"#334155",fontSize:"12px"}}>{open?"▲":"▼"}</span>}
@@ -1838,12 +1829,25 @@ function TrialCard({trial,index,onDelete,onUpdate,isAdmin,sysUnits,onAddUnit,pro
       <Field label="Assign To (QC)"><input style={inp} value={editForm.assignedTo} onChange={e=>setEditForm({...editForm,assignedTo:e.target.value})} placeholder="email or leave blank"/></Field>
       <Grid2>
         <Field label="Process / Mixing Method"><textarea style={{...ta,minHeight:"72px"}} value={editForm.process} onChange={e=>setEditForm({...editForm,process:e.target.value})}/></Field>
-        <Field label="Properties Tested"><textarea style={{...ta,minHeight:"72px"}} value={editForm.propertiesTested} onChange={e=>setEditForm({...editForm,propertiesTested:e.target.value})}/></Field>
+        <Field label="Test Instructions (notes)"><textarea style={{...ta,minHeight:"72px"}} value={editForm.observations} onChange={e=>setEditForm({...editForm,observations:e.target.value})} placeholder="Any notes for QC..."/></Field>
       </Grid2>
-      <Grid2>
-        <Field label="Test to be Performed"><textarea style={{...ta,minHeight:"72px"}} value={editForm.observations} onChange={e=>setEditForm({...editForm,observations:e.target.value})} placeholder="What tests/properties should QC check? e.g. Adhesion, drying time, gloss..."/></Field>
-        <Field label="Next Steps"><textarea style={{...ta,minHeight:"72px"}} value={editForm.nextSteps} onChange={e=>setEditForm({...editForm,nextSteps:e.target.value})}/></Field>
-      </Grid2>
+      {/* QC Parameters — structured list */}
+      <div style={{marginBottom:"10px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"5px"}}>
+          <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em"}}>QC Parameters to Test</div>
+        </div>
+        <div style={{background:"#080d18",border:"1px solid #1e293b",borderRadius:"7px",padding:"6px",marginBottom:"5px",maxHeight:"120px",overflowY:"auto"}}>
+          {(editForm.qcParameters||[]).map((p,i)=><div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"2px 5px",fontSize:"11.5px",color:"#e2e8f0",borderBottom:"1px solid #0f172a"}}>
+            <span>{i+1}. {p}</span>
+            <button onClick={()=>setEditForm(f=>({...f,qcParameters:f.qcParameters.filter((_,xi)=>xi!==i)}))} style={{background:"none",border:"none",color:"#475569",cursor:"pointer",fontSize:"14px",padding:"0 3px",lineHeight:1}}>×</button>
+          </div>)}
+        </div>
+        <div style={{display:"flex",gap:"5px"}}>
+          <input id="qc-param-edit" style={{...inp,flex:1,fontSize:"11.5px"}} placeholder="Add QC parameter…" onKeyDown={e=>{if(e.key==="Enter"){const v=e.target.value.trim();if(v){setEditForm(f=>({...f,qcParameters:[...(f.qcParameters||[]),v]}));e.target.value="";}}}}/>
+          <button onClick={()=>{const el=document.getElementById("qc-param-edit");const v=el.value.trim();if(v){setEditForm(f=>({...f,qcParameters:[...(f.qcParameters||[]),v]}));el.value="";}}} style={{background:"#1e3a5f",border:"1px solid #2563eb",borderRadius:"5px",padding:"5px 10px",color:"#93c5fd",fontSize:"11px",fontWeight:"700",cursor:"pointer"}}>+ Add</button>
+        </div>
+      </div>
+      <Field label="Next Steps"><textarea style={{...ta,minHeight:"55px"}} value={editForm.nextSteps} onChange={e=>setEditForm({...editForm,nextSteps:e.target.value})}/></Field>
       <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",marginTop:"4px"}}>
         <Btn label="Cancel" onClick={()=>{setEditing(false);setEditForm({trialName:trial.trialName||"",date:trial.date||today(),triedBy:trial.triedBy||"",outcome:trial.outcome||"Under Evaluation",ingredients:trial.ingredients?.length?trial.ingredients:[blankIng()],process:trial.process||"",propertiesTested:trial.propertiesTested||"",observations:trial.observations||"",nextSteps:trial.nextSteps||"",processSteps:trial.processSteps?.length?trial.processSteps:[{id:newId(),text:""}],assignedTo:trial.assignedTo||""});}} outline color="#475569" small/>
         <Btn label={saving?"Saving…":"💾 Save Changes"} onClick={saveEdit} disabled={saving} color="#2563eb" small/>
@@ -1937,7 +1941,7 @@ function ProjectWorkspace({project,isAdmin,showToast,sysUnits,sysRmCats,onAddRmC
   const [editObj,setEditObj]=useState(false);
   const [draft,setDraft]=useState({objective:project.objective||"",formulationBase:project.formulationBase||"",notes:project.notes||""});
   const [savingN,setSavingN]=useState(false);
-  const blank={trialName:"",date:today(),triedBy:"",outcome:"Under Evaluation",ingredients:[{id:"1",material:"",quantity:"",unit:"g",notes:""}],process:"",processSteps:[{id:newId(),text:""}],propertiesTested:"",observations:"",nextSteps:"",testReports:[],assignedTo:""};
+  const blank={trialName:"",date:today(),triedBy:"",outcome:"Under Evaluation",ingredients:[{id:"1",material:"",quantity:"",unit:"g",notes:""}],process:"",processSteps:[{id:newId(),text:""}],propertiesTested:"",observations:"",nextSteps:"",testReports:[],assignedTo:"",qcParameters:["Viscosity","Fineness","Specific Gravity","pH","Non-Volatile %","Drying Time (min)","Gloss (60°)","Adhesion","Flexibility","Appearance"]};
   const [form,setForm]=useState(blank);
   const accent=PAINT_ACCENT[live.paintType]||"#cbd5e1";
   const sc=STATUS_COLORS[live.status]||"#94a3b8";
@@ -1956,6 +1960,12 @@ function ProjectWorkspace({project,isAdmin,showToast,sysUnits,sysRmCats,onAddRmC
     setSavingN(true);
     try{await C("rd_projects").doc(project.id).update({objective:draft.objective,formulationBase:draft.formulationBase,notes:draft.notes});setEditNotes(false);setEditObj(false);showToast("Updated ✓");}catch(e){showToast("Error","error");}
     setSavingN(false);
+  };
+
+  const copyTrial=async(trial)=>{
+    const copy={...trial,id:newId(),trialName:(trial.trialName||"Trial")+" (Copy)",date:today(),testReports:[]};
+    await C("rd_projects").doc(project.id).update({trials:[...trials,copy]});
+    showToast(`Copied "${trial.trialName||"trial"}" — rename and edit the copy ✓`);
   };
 
   const saveTrial=async()=>{
@@ -2063,9 +2073,26 @@ function ProjectWorkspace({project,isAdmin,showToast,sysUnits,sysRmCats,onAddRmC
       </div>
       <Grid2>
         <Field label="Process / Mixing Method"><textarea style={{...ta,minHeight:"70px"}} value={form.process} onChange={e=>setForm({...form,process:e.target.value})} placeholder="Mixing sequence, temperature, RPM..."/></Field>
-        <Field label="Properties Tested"><textarea style={{...ta,minHeight:"70px"}} value={form.propertiesTested} onChange={e=>setForm({...form,propertiesTested:e.target.value})} placeholder="Viscosity, pH, Gloss..."/></Field>
+        <Field label="Test to be Performed (notes)"><textarea style={{...ta,minHeight:"70px"}} value={form.observations} onChange={e=>setForm({...form,observations:e.target.value})} placeholder="Any additional test instructions for QC..."/></Field>
       </Grid2>
-      <Field label="Test to be Performed *"><textarea style={{...ta,minHeight:"70px"}} value={form.observations} onChange={e=>setForm({...form,observations:e.target.value})} placeholder="What tests/properties should QC check before reporting results? e.g. Check adhesion, viscosity, gloss, drying time..."/></Field>
+      {/* QC Parameters — structured list, used in comparison print */}
+      <div style={{marginBottom:"12px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"6px"}}>
+          <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em"}}>QC Parameters to Test</div>
+          <span style={{fontSize:"10px",color:"#334155"}}>These appear in the comparison print sheet</span>
+        </div>
+        <div style={{background:"#080d18",border:"1px solid #1e293b",borderRadius:"8px",padding:"8px",marginBottom:"6px",maxHeight:"150px",overflowY:"auto"}}>
+          {(form.qcParameters||[]).map((p,i)=><div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"3px 6px",borderBottom:"1px solid #0f172a",fontSize:"12px",color:"#e2e8f0"}}>
+            <span>{i+1}. {p}</span>
+            <button onClick={()=>setForm(f=>({...f,qcParameters:f.qcParameters.filter((_,xi)=>xi!==i)}))} style={{background:"none",border:"none",color:"#475569",cursor:"pointer",fontSize:"14px",padding:"0 4px",lineHeight:1}}>×</button>
+          </div>)}
+          {(form.qcParameters||[]).length===0&&<div style={{color:"#334155",fontSize:"11px",fontStyle:"italic",padding:"4px 6px"}}>No parameters yet</div>}
+        </div>
+        <div style={{display:"flex",gap:"6px"}}>
+          <input id="qc-param-add" style={{...inp,flex:1,fontSize:"12px"}} placeholder="e.g. Impact Resistance, Colour match..." onKeyDown={e=>{if(e.key==="Enter"){const v=e.target.value.trim();if(v){setForm(f=>({...f,qcParameters:[...(f.qcParameters||[]),v]}));e.target.value="";}}}}/>
+          <button onClick={()=>{const el=document.getElementById("qc-param-add");const v=el.value.trim();if(v){setForm(f=>({...f,qcParameters:[...(f.qcParameters||[]),v]}));el.value="";}}} style={{background:"#1e3a5f",border:"1px solid #2563eb",borderRadius:"6px",padding:"6px 12px",color:"#93c5fd",fontSize:"12px",fontWeight:"700",cursor:"pointer"}}>+ Add</button>
+        </div>
+      </div>
       <Field label="Next Steps"><textarea style={{...ta,minHeight:"50px"}} value={form.nextSteps} onChange={e=>setForm({...form,nextSteps:e.target.value})}/></Field>
       <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
         <Btn label="Cancel" onClick={()=>setShowForm(false)} outline color="#475569" small/>
@@ -2077,7 +2104,7 @@ function ProjectWorkspace({project,isAdmin,showToast,sysUnits,sysRmCats,onAddRmC
       <div style={{fontSize:"13px",color:"#475569"}}>No trials yet.</div>
     </div>:<>
       {trials.length>=2&&<CompareTrialsModal trials={trials} project={live}/>}
-      {trials.map((t,i)=><TrialCard key={t.id} trial={t} index={i} isAdmin={isAdmin} onDelete={isAdmin?deleteTrial:null} onUpdate={updateTrial} sysUnits={sysUnits} onAddUnit={onAddUnit} project={live} allProfiles={allProfiles} showToast={showToast}/>)}
+      {trials.map((t,i)=><TrialCard key={t.id} trial={t} index={i} isAdmin={isAdmin} onDelete={isAdmin?deleteTrial:null} onUpdate={updateTrial} onCopy={copyTrial} sysUnits={sysUnits} onAddUnit={onAddUnit} project={live} allProfiles={allProfiles} showToast={showToast}/>)}
     </>}
     {/* Notes section */}
     <div style={{marginTop:"20px"}}>
