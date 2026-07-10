@@ -329,7 +329,110 @@ ${viewOnly?`<div class="no-print" style="position:fixed;bottom:20px;right:20px;z
 // PRINT TRIAL SHEET — gives QC a clear printable formula + step-by-step
 // instructions to follow, with blank space to record actual results.
 // ══════════════════════════════════════════════════════════
-function printTrialSheet(trial,project,index){
+function printTrialComparison(trials, project, qcParams){
+  if(!trials||trials.length===0)return;
+  const samples=trials.slice(0,8); // max 8 columns fits A4 landscape
+  const n=samples.length;
+
+  // Build union of all ingredient material names (preserving first-appearance order)
+  const seen=new Set();
+  const allMaterials=[];
+  samples.forEach(t=>(t.ingredients||[]).forEach(r=>{
+    if(r.material&&r.material.trim()&&!seen.has(r.material.trim())){
+      seen.add(r.material.trim()); allMaterials.push(r.material.trim());
+    }
+  }));
+
+  // For each material, find quantity in each sample
+  const thW=`${Math.max(8,Math.floor(60/n))}%`;
+  const sampleHeaders=samples.map((t,i)=>`<th style="border:1px solid #999;padding:5pt 4pt;background:#0D3569;color:#fff;font-size:9.5pt;text-align:center;white-space:nowrap">S${i+1}${t.trialName&&t.trialName!==`Trial ${i+1}`?"<br><span style='font-weight:400;font-size:8pt'>"+t.trialName+"</span>":""}</th>`).join("");
+  const ingRows=allMaterials.map((mat,ri)=>{
+    const cells=samples.map(t=>{
+      const ing=(t.ingredients||[]).find(r=>r.material&&r.material.trim()===mat);
+      return `<td style="border:1px solid #999;padding:4pt 5pt;text-align:center;font-size:9.5pt">${ing?`${ing.quantity||""}${ing.unit?" "+ing.unit:""}`:""}</td>`;
+    }).join("");
+    const bg=ri%2===0?"background:#fff":"background:#f9f9f9";
+    return `<tr style="${bg}"><td style="border:1px solid #999;padding:5pt 6pt;font-size:10pt">${ri+1}. ${mat}</td>${cells}</tr>`;
+  }).join("");
+
+  // QC parameters table — empty cells for QC to fill in after testing
+  const params=qcParams&&qcParams.length>0?qcParams:["Viscosity (KU/cP)","Fineness (μm)","Specific Gravity","pH Value","Non-Volatile (%)","Drying Time (min)","Gloss (60°)","Adhesion","Flexibility","General Appearance"];
+  const qcRows=params.map((param,ri)=>{
+    const cells=`<td style="border:1px solid #999;padding:10pt 5pt" colspan="${n}"><table style="width:100%;border-collapse:collapse">`
+      +`<tr>${samples.map(()=>`<td style="border-left:1px solid #ddd;padding:10pt 4pt;min-width:${Math.floor(100/n)}%;text-align:center"> </td>`).join("")}</tr></table></td>`;
+    const bg=ri%2===0?"background:#fff":"background:#f9f9f9";
+    return `<tr style="${bg}"><td style="border:1px solid #999;padding:5pt 6pt;font-size:10pt;white-space:nowrap">${ri+1}. ${param}</td>${samples.map(()=>`<td style="border:1px solid #999;padding:8pt 4pt"> </td>`).join("")}</tr>`;
+  }).join("");
+
+  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8">
+<title>Trial Comparison — ${project?.name||project?.productName||"R&D"}</title>
+<style>
+*{box-sizing:border-box}
+body{font-family:Arial,sans-serif;margin:0;padding:6pt 10pt;font-size:10.5pt}
+@page{size:297mm 210mm landscape;margin:8mm}
+table{border-collapse:collapse;width:100%}
+.co{font-size:17pt;font-weight:800;letter-spacing:1px}
+.ttl{font-size:13pt;font-weight:700}
+.sh{background:#0D3569;color:#fff;font-weight:700;padding:4pt 7pt;font-size:10pt;text-transform:uppercase;letter-spacing:.04em}
+</style></head>
+<body>
+<table style="margin-bottom:5pt">
+  <tr>
+    <td style="width:50%"><span class="co">VEEBEE</span></td>
+    <td style="text-align:right"><span class="ttl">R&amp;D TRIAL COMPARISON SHEET</span></td>
+  </tr>
+</table>
+<table style="border:2px solid #000;margin-bottom:6pt">
+  <tr>
+    <td style="padding:4pt 8pt;border-right:1px solid #999;width:35%"><div style="font-size:8pt;color:#666">PROJECT</div><div style="font-size:12pt;font-weight:700">${project?.name||project?.productName||"—"}</div></td>
+    <td style="padding:4pt 8pt;border-right:1px solid #999;width:20%"><div style="font-size:8pt;color:#666">SAMPLES</div><div style="font-size:12pt;font-weight:700">${n} trials</div></td>
+    <td style="padding:4pt 8pt;width:25%"><div style="font-size:8pt;color:#666">DATE</div><div style="font-size:12pt;font-weight:700">${samples[0]?.date||today()}</div></td>
+    <td style="padding:4pt 8pt;border-left:1px solid #999;width:20%;text-align:right"><div style="font-size:8pt;color:#666">ASSIGNED TO</div><div style="font-size:10pt;font-weight:700">${samples[0]?.assignedTo?samples[0].assignedTo.split("@")[0]:"QC Team"}</div></td>
+  </tr>
+</table>
+
+<!-- Sample legend -->
+<table style="margin-bottom:6pt"><tr>
+  ${samples.map((t,i)=>`<td style="border:1px solid #999;padding:3pt 8pt;font-size:9pt;background:#f0f4ff"><b>S${i+1}</b>: ${t.trialName||"Trial "+(i+1)}</td>`).join("")}
+</tr></table>
+
+<!-- Formulation comparison -->
+<table style="margin-bottom:8pt">
+  <tr><td colspan="${n+1}" class="sh">Formulation Comparison — Follow Exact Quantities</td></tr>
+  <tr>
+    <th style="border:1px solid #999;padding:5pt;background:#d0d0d0;font-size:9.5pt;width:30%;text-align:left">Material / Ingredient</th>
+    ${sampleHeaders}
+  </tr>
+  ${ingRows}
+  <tr style="background:#f5f5f5">
+    <td style="border:1px solid #999;padding:5pt 6pt;font-size:9pt;font-weight:700">TOTAL BATCH SIZE</td>
+    ${samples.map(t=>{
+      const total=(t.ingredients||[]).filter(r=>r.quantity).reduce((s,r)=>s+(parseFloat(r.quantity)||0),0);
+      return `<td style="border:1px solid #999;padding:5pt;text-align:center;font-size:9.5pt;font-weight:700">${total>0?total.toFixed(2):""}</td>`;
+    }).join("")}
+  </tr>
+</table>
+
+<!-- QC parameters -->
+<table>
+  <tr><td colspan="${n+1}" class="sh">QC Parameters to Test — Record Results Below</td></tr>
+  <tr>
+    <th style="border:1px solid #999;padding:5pt;background:#d0d0d0;font-size:9.5pt;width:30%;text-align:left">Parameter</th>
+    ${samples.map((_,i)=>`<th style="border:1px solid #999;padding:5pt;background:#d0d0d0;font-size:9.5pt;text-align:center">S${i+1}</th>`).join("")}
+  </tr>
+  ${qcRows}
+</table>
+
+<div style="margin-top:10pt;font-size:8.5pt;color:#777;display:flex;justify-content:space-between">
+  <span>Generated by GCC Operations Hub · ${new Date().toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"})}</span>
+  <span>Tested by: ___________________  Date: ___________________</span>
+</div>
+</body></html>`;
+
+  const w=window.open("","_blank");w.document.write(html);w.document.close();
+  setTimeout(()=>w.print(),400);
+}
+
   const ingRows=(trial.ingredients||[]).filter(r=>r.material&&r.material.trim()).map(function(r,i){
     return '<tr><td style="border:1px solid #999;padding:6pt 5pt;text-align:center;font-size:10pt">'+(i+1)+'</td>'
       +'<td style="border:1px solid #999;padding:6pt 5pt;font-size:10pt">'+r.material+'</td>'
@@ -1723,6 +1826,56 @@ function TestReportCard({report,num,onDelete}){
   </div>;
 }
 
+// ── Comparison sheet modal — select trials + QC params, then print ──
+function CompareTrialsModal({trials,project}){
+  const [open,setOpen]=useState(false);
+  const [selected,setSelected]=useState(trials.map(t=>t.id)); // all selected by default
+  const [qcParams,setQcParams]=useState([
+    "Viscosity (KU/cP)","Fineness (μm)","Specific Gravity","pH Value",
+    "Non-Volatile (%)","Drying Time (min)","Gloss (60°)","Adhesion",
+    "Flexibility","General Appearance"
+  ]);
+  const [newParam,setNewParam]=useState("");
+  const toggleTrial=(id)=>setSelected(s=>s.includes(id)?s.filter(x=>x!==id):[...s,id]);
+  const addParam=()=>{if(newParam.trim()){setQcParams(p=>[...p,newParam.trim()]);setNewParam("");}};
+  const removeParam=(i)=>setQcParams(p=>p.filter((_,idx)=>idx!==i));
+  const selectedTrials=trials.filter(t=>selected.includes(t.id));
+  if(!open) return <button onClick={()=>setOpen(true)} style={{background:"#0a1a2e",border:"1px solid #2563eb",borderRadius:"7px",padding:"6px 14px",color:"#93c5fd",fontWeight:"700",fontSize:"12px",cursor:"pointer",marginBottom:"12px"}}>📊 Print Comparison Sheet ({trials.length} trials)</button>;
+  return <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center"}}>
+    <div style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"14px",padding:"22px",width:"min(560px,96vw)",maxHeight:"90vh",overflowY:"auto"}}>
+      <div style={{fontSize:"15px",fontWeight:"700",color:"#93c5fd",marginBottom:"14px"}}>📊 Print Trial Comparison Sheet</div>
+      {/* Select trials */}
+      <div style={{fontSize:"11px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:"8px"}}>Select Trials to Compare</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px",marginBottom:"14px"}}>
+        {trials.map((t,i)=><label key={t.id} style={{display:"flex",alignItems:"center",gap:"8px",background:selected.includes(t.id)?"#0f1d35":"#080d18",border:`1px solid ${selected.includes(t.id)?"#3b82f6":"#1e293b"}`,borderRadius:"7px",padding:"8px 12px",cursor:"pointer"}}>
+          <input type="checkbox" checked={selected.includes(t.id)} onChange={()=>toggleTrial(t.id)} style={{accentColor:"#3b82f6"}}/>
+          <div>
+            <div style={{fontSize:"12.5px",fontWeight:"700",color:selected.includes(t.id)?"#93c5fd":"#e2e8f0"}}>S{i+1} — {t.trialName||`Trial ${i+1}`}</div>
+            <div style={{fontSize:"10px",color:"#475569"}}>{(t.ingredients||[]).filter(r=>r.material?.trim()).length} ingredients</div>
+          </div>
+        </label>)}
+      </div>
+      {/* QC parameters */}
+      <div style={{fontSize:"11px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:"8px"}}>QC Parameters to Test</div>
+      <div style={{background:"#060d1a",border:"1px solid #1e293b",borderRadius:"10px",padding:"10px",marginBottom:"10px",maxHeight:"180px",overflowY:"auto"}}>
+        {qcParams.map((p,i)=><div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 6px",borderBottom:"1px solid #0f172a",fontSize:"12px",color:"#e2e8f0"}}>
+          <span>{i+1}. {p}</span>
+          <button onClick={()=>removeParam(i)} style={{background:"none",border:"none",color:"#475569",cursor:"pointer",fontSize:"14px",padding:"0 4px"}}>×</button>
+        </div>)}
+      </div>
+      <div style={{display:"flex",gap:"6px",marginBottom:"14px"}}>
+        <input style={{...inp,flex:1,fontSize:"12px"}} value={newParam} onChange={e=>setNewParam(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addParam()} placeholder="Add QC parameter (e.g. Impact Resistance)…"/>
+        <button onClick={addParam} style={{background:"#1e3a5f",border:"1px solid #2563eb",borderRadius:"6px",padding:"6px 12px",color:"#93c5fd",fontSize:"12px",fontWeight:"700",cursor:"pointer"}}>+ Add</button>
+      </div>
+      {selectedTrials.length<2&&<div style={{fontSize:"11.5px",color:"#f59e0b",marginBottom:"10px"}}>⚠ Select at least 2 trials to compare</div>}
+      <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
+        <Btn label="Cancel" onClick={()=>setOpen(false)} outline color="#475569" small/>
+        <Btn label={`🖨 Print Comparison (${selectedTrials.length} samples)`} onClick={()=>{printTrialComparison(selectedTrials,project,qcParams);setOpen(false);}} disabled={selectedTrials.length<2} color="#3b82f6" small/>
+      </div>
+    </div>
+  </div>;
+}
+
 function TrialCard({trial,index,onDelete,onUpdate,isAdmin,sysUnits,onAddUnit,project,allProfiles={},showToast}){
   const ING_UNITS_EFF=sysUnits&&sysUnits.length?sysUnits:[...ING_UNITS,...BATCH_UNITS.filter(u=>!ING_UNITS.includes(u))];
   const [open,setOpen]=useState(false);
@@ -2091,7 +2244,10 @@ function ProjectWorkspace({project,isAdmin,showToast,sysUnits,sysRmCats,onAddRmC
     {trials.length===0&&!showForm?<div style={{textAlign:"center",padding:"24px",border:"1px dashed #1e293b",borderRadius:"10px",marginBottom:"14px"}}>
       <div style={{fontSize:"26px",marginBottom:"6px"}}>⚗️</div>
       <div style={{fontSize:"13px",color:"#475569"}}>No trials yet.</div>
-    </div>:trials.map((t,i)=><TrialCard key={t.id} trial={t} index={i} isAdmin={isAdmin} onDelete={isAdmin?deleteTrial:null} onUpdate={updateTrial} sysUnits={sysUnits} onAddUnit={onAddUnit} project={live} allProfiles={allProfiles} showToast={showToast}/>)}
+    </div>:<>
+      {trials.length>=2&&<CompareTrialsModal trials={trials} project={live}/>}
+      {trials.map((t,i)=><TrialCard key={t.id} trial={t} index={i} isAdmin={isAdmin} onDelete={isAdmin?deleteTrial:null} onUpdate={updateTrial} sysUnits={sysUnits} onAddUnit={onAddUnit} project={live} allProfiles={allProfiles} showToast={showToast}/>)}
+    </>}
     {/* Notes section */}
     <div style={{marginTop:"20px"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"10px",paddingBottom:"10px",borderBottom:"1px solid #1e293b"}}>
@@ -5141,8 +5297,8 @@ function FGMovementsTab({role,user,showToast,isAdmin,canManage}){
         const um=name.match(/([\d.]+)\s*(ml|l|L|kg|Kg|KG|K\b|ltr)/i);
         let unit="L";
         if(um){const u=um[2].toLowerCase();unit=(u==="kg"||u==="k")?"Kg":"L";}
-        // Include negatives in main list flagged — user decides whether to investigate or skip
-        parsed.push({name,qty:useQty,unit,negative:useQty<0,direct:false,posted:false});
+        // useQty from Tally is in TINS. Store as tallyTins — litres computed at assign time via catalogue.
+        parsed.push({name,tallyTins:useQty,qty:useQty,unit:"Tins",negative:useQty<0,direct:false,posted:false});
       }
 
       setCbItems(parsed);
@@ -5205,7 +5361,8 @@ function FGMovementsTab({role,user,showToast,isAdmin,canManage}){
         let unit="L";
         if(unitM){const u=unitM[2].toLowerCase();unit=u==="kg"||u==="k"?"Kg":"L";}
 
-        parsed.push({name,inward,outward,unit,direct:false,posted:false});
+        // inward/outward from Tally are in TINS (physical container count)
+        parsed.push({name,inward,outward,inwardTins:inward,outwardTins:outward,unit:"Tins",direct:false,posted:false});
       }
       setMovements(parsed);
       await persistMVSession(parsed,period);
@@ -5291,6 +5448,15 @@ function FGMovementsTab({role,user,showToast,isAdmin,canManage}){
   const rack=racks.find(r=>r.id===postForm.rackId);
   const cbFiltered=cbItems.filter(p=>(showAssigned||!p.posted)&&(!search.trim()||normalize(p.name).includes(normalize(search))));
   const getCatFromCatalogue=(name)=>fgProducts.find(p=>normalize(p.name)===normalize(name))?.category||"";
+  const getCartonBreakdown=(name,tallyTins)=>{
+    const prod=fgProducts.find(p=>normalize(p.name)===normalize(name));
+    if(!prod||!prod.tinsPerCarton||!tallyTins)return null;
+    const tins=Math.round(tallyTins);
+    const cartons=Math.floor(tins/prod.tinsPerCarton);
+    const loose=tins%prod.tinsPerCarton;
+    const totalQty=parseFloat((tins*prod.size).toFixed(3));
+    return {cartons,loose,totalQty,unit:prod.unit,tpc:prod.tinsPerCarton,sizePerTin:prod.size};
+  };
 
   return <div>
     <div style={{fontSize:"22px",fontWeight:"400",fontFamily:"'DM Serif Display',serif",color:"#f1f5f9",marginBottom:"14px"}}>📊 FG Movements</div>
@@ -5332,25 +5498,38 @@ function FGMovementsTab({role,user,showToast,isAdmin,canManage}){
         </div>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:"12.5px"}}>
           <thead><tr style={{background:"#0b1220"}}>
-            {["Product","Category","Closing Qty",""].map(h=><th key={h} style={{padding:"8px 12px",textAlign:"left",fontSize:"11px",fontWeight:"700",color:"#475569",textTransform:"uppercase",borderBottom:"1px solid #1e293b"}}>{h}</th>)}
+            {["Product","Tally (Tins)","Cartons / Loose",""].map(h=><th key={h} style={{padding:"8px 12px",textAlign:"left",fontSize:"11px",fontWeight:"700",color:"#475569",textTransform:"uppercase",borderBottom:"1px solid #1e293b"}}>{h}</th>)}
           </tr></thead>
           <tbody>
             {cbFiltered.map((p,i)=>{
-              const cat=getCatFromCatalogue(p.name);
               const realIdx=cbItems.indexOf(p);
+              const tallyTins=p.tallyTins||p.qty||0;
+              const breakdown=getCartonBreakdown(p.name,tallyTins);
               return <tr key={i} style={{borderBottom:"1px solid #0f172a",background:p.posted?"#052e16":p.negative?"#1a0a00":p.direct?"#1a0f00":i%2===0?"#080d18":"transparent"}}>
                 <td style={{padding:"9px 12px",color:p.posted?"#4ade80":p.negative?"#f87171":p.direct?"#fcd34d":"#e2e8f0"}}>
                   {p.name}
                   {p.posted&&<span style={{fontSize:"10px",color:"#4ade80",marginLeft:"6px"}}>✓</span>}
-                  {p.negative&&!p.posted&&<span style={{fontSize:"10px",color:"#f87171",marginLeft:"6px"}}>⚠ Negative — investigate in Tally</span>}
+                  {p.negative&&!p.posted&&<span style={{fontSize:"10px",color:"#f87171",marginLeft:"6px"}}>⚠ Negative</span>}
                   {p.direct&&!p.negative&&<span style={{fontSize:"10px",color:"#f59e0b",marginLeft:"6px"}}>🚚 Direct</span>}
                 </td>
-                <td style={{padding:"9px 12px",color:p.negative?"#f87171":"#22c55e",fontWeight:"700"}}>{p.qty} {p.unit}</td>
-                <td style={{padding:"9px 12px",color:"#475569",fontSize:"11.5px"}}>{cat||"—"}</td>
+                <td style={{padding:"9px 12px",color:p.negative?"#f87171":"#94a3b8",fontWeight:"600"}}>{Math.abs(tallyTins)} tins</td>
+                <td style={{padding:"9px 12px"}}>
+                  {breakdown
+                    ?<><div style={{fontSize:"13px",fontWeight:"700",color:"#4ade80"}}>{breakdown.cartons} cartons{breakdown.loose>0?` + ${breakdown.loose} loose`:""}</div>
+                      <div style={{fontSize:"10.5px",color:"#475569"}}>{breakdown.totalQty} {breakdown.unit} · {breakdown.tpc} tins/carton</div>
+                    </>
+                    :<span style={{fontSize:"11px",color:"#334155"}}>Not in catalogue</span>}
+                </td>
                 <td style={{padding:"9px 12px"}}>
                   {!p.posted&&<div style={{display:"flex",gap:"5px"}}>
-                    {!p.negative&&<button onClick={()=>{setPostModal({item:{...p,inward:p.qty},idx:realIdx,isCB:true});setPostForm({rackId:"",level:"1",isDirect:p.direct});}}
-                      style={{background:"#1e3a5f",border:"1px solid #2563eb",borderRadius:"5px",color:"#93c5fd",fontSize:"11px",fontWeight:"700",padding:"3px 8px",cursor:"pointer"}}>→ Assign</button>}
+                    {!p.negative&&<button onClick={()=>{
+                      const item={...p,tallyTins,inward:tallyTins,qty:tallyTins,unit:"Tins",remaining:p.remaining!=null?p.remaining:tallyTins};
+                      setPostModal({item,idx:realIdx,isCB:true});
+                      setPackingMode("cartons");
+                      // Auto-fill cartons from tally tins
+                      if(breakdown){setPostForm({rackId:"",level:"1",isDirect:p.direct,cartons:String(breakdown.cartons),looseTins:String(breakdown.loose)});}
+                      else{setPostForm({rackId:"",level:"1",isDirect:p.direct,cartons:"",looseTins:""});}
+                    }} style={{background:"#1e3a5f",border:"1px solid #2563eb",borderRadius:"5px",color:"#93c5fd",fontSize:"11px",fontWeight:"700",padding:"3px 8px",cursor:"pointer"}}>→ Assign</button>}
                     {p.negative&&<button onClick={()=>setCbItems(prev=>prev.map((x,xi)=>xi===realIdx?{...x,posted:true}:x))}
                       style={{background:"#2e0a0a",border:"1px solid #7f1d1d",borderRadius:"5px",color:"#f87171",fontSize:"11px",fontWeight:"700",padding:"3px 8px",cursor:"pointer"}}>Skip</button>}
                   </div>}
@@ -5435,7 +5614,8 @@ function FGMovementsTab({role,user,showToast,isAdmin,canManage}){
     {/* Post to Rack modal */}
     {postModal&&(()=>{
       const item=postModal.item;
-      const remaining=parseFloat(item.remaining!=null?item.remaining:(item.inward||item.qty||0));
+      // remaining is in TINS (Tally's unit). tallyTins is the authoritative source.
+      const remaining=parseFloat(item.remaining!=null?item.remaining:(item.tallyTins||item.inward||item.qty||0));
       const prod=fgProducts.find(p=>normalize(p.name)===normalize(item.name));
       const tpc=prod?.tinsPerCarton;
       const sizePerTin=prod?.size;
@@ -5465,8 +5645,8 @@ function FGMovementsTab({role,user,showToast,isAdmin,canManage}){
               <div style={{display:"flex",gap:"6px",marginBottom:"10px"}}>
                 {[["cartons","📦 In Cartons"],["loose","🔓 Loose Tins"],["custom","✏️ Custom"]].map(([v,l])=><button key={v} onClick={()=>{
                   setPackingMode(v);
-                  const totalTins=Math.round(remaining/sizePerTin);
-                  if(v==="cartons"){const c=Math.floor(totalTins/tpc),lt=totalTins%tpc;setPostForm(f=>({...f,cartons:String(c),looseTins:String(lt)}));}
+                  const totalTins=Math.round(item.tallyTins||item.remaining||0); // Tally qty IS the tin count
+                  if(v==="cartons"&&tpc){const c=Math.floor(totalTins/tpc),lt=totalTins%tpc;setPostForm(f=>({...f,cartons:String(c),looseTins:String(lt)}));}
                   else if(v==="loose"){setPostForm(f=>({...f,cartons:"0",looseTins:String(totalTins)}));}
                   else{setPostForm(f=>({...f,cartons:"",looseTins:""}));}
                 }} style={{flex:1,background:packingMode===v?"#1e3a5f":"#0b1220",border:`1px solid ${packingMode===v?"#3b82f6":"#1e293b"}`,borderRadius:"7px",padding:"7px",color:packingMode===v?"#93c5fd":"#475569",fontWeight:"600",fontSize:"11.5px",cursor:"pointer"}}>{l}</button>)}
