@@ -329,213 +329,44 @@ ${viewOnly?`<div class="no-print" style="position:fixed;bottom:20px;right:20px;z
 // PRINT TRIAL SHEET — gives QC a clear printable formula + step-by-step
 // instructions to follow, with blank space to record actual results.
 // ══════════════════════════════════════════════════════════
-function printTrialComparison(trials, project, qcParams){
+function printTrialComparison(trials,project,qcParams){
   if(!trials||trials.length===0)return;
-  const samples=trials.slice(0,8); // max 8 columns fits A4 landscape
-  const n=samples.length;
-
-  // Build union of all ingredient material names (preserving first-appearance order)
-  const seen=new Set();
-  const allMaterials=[];
-  samples.forEach(t=>(t.ingredients||[]).forEach(r=>{
-    if(r.material&&r.material.trim()&&!seen.has(r.material.trim())){
-      seen.add(r.material.trim()); allMaterials.push(r.material.trim());
-    }
-  }));
-
-  // For each material, find quantity in each sample
-  const thW=`${Math.max(8,Math.floor(60/n))}%`;
-  const sampleHeaders=samples.map((t,i)=>`<th style="border:1px solid #999;padding:5pt 4pt;background:#0D3569;color:#fff;font-size:9.5pt;text-align:center;white-space:nowrap">S${i+1}${t.trialName&&t.trialName!==`Trial ${i+1}`?"<br><span style='font-weight:400;font-size:8pt'>"+t.trialName+"</span>":""}</th>`).join("");
-  const ingRows=allMaterials.map((mat,ri)=>{
-    const cells=samples.map(t=>{
-      const ing=(t.ingredients||[]).find(r=>r.material&&r.material.trim()===mat);
-      return `<td style="border:1px solid #999;padding:4pt 5pt;text-align:center;font-size:9.5pt">${ing?`${ing.quantity||""}${ing.unit?" "+ing.unit:""}`:""}</td>`;
-    }).join("");
-    const bg=ri%2===0?"background:#fff":"background:#f9f9f9";
-    return `<tr style="${bg}"><td style="border:1px solid #999;padding:5pt 6pt;font-size:10pt">${ri+1}. ${mat}</td>${cells}</tr>`;
-  }).join("");
-
-  // QC parameters table — empty cells for QC to fill in after testing
-  const params=qcParams&&qcParams.length>0?qcParams:["Viscosity (KU/cP)","Fineness (μm)","Specific Gravity","pH Value","Non-Volatile (%)","Drying Time (min)","Gloss (60°)","Adhesion","Flexibility","General Appearance"];
-  const qcRows=params.map((param,ri)=>{
-    const cells=`<td style="border:1px solid #999;padding:10pt 5pt" colspan="${n}"><table style="width:100%;border-collapse:collapse">`
-      +`<tr>${samples.map(()=>`<td style="border-left:1px solid #ddd;padding:10pt 4pt;min-width:${Math.floor(100/n)}%;text-align:center"> </td>`).join("")}</tr></table></td>`;
-    const bg=ri%2===0?"background:#fff":"background:#f9f9f9";
-    return `<tr style="${bg}"><td style="border:1px solid #999;padding:5pt 6pt;font-size:10pt;white-space:nowrap">${ri+1}. ${param}</td>${samples.map(()=>`<td style="border:1px solid #999;padding:8pt 4pt"> </td>`).join("")}</tr>`;
-  }).join("");
-
-  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8">
-<title>Trial Comparison — ${project?.name||project?.productName||"R&D"}</title>
-<style>
-*{box-sizing:border-box}
-body{font-family:Arial,sans-serif;margin:0;padding:6pt 10pt;font-size:10.5pt}
-@page{size:297mm 210mm landscape;margin:8mm}
-table{border-collapse:collapse;width:100%}
-.co{font-size:17pt;font-weight:800;letter-spacing:1px}
-.ttl{font-size:13pt;font-weight:700}
-.sh{background:#0D3569;color:#fff;font-weight:700;padding:4pt 7pt;font-size:10pt;text-transform:uppercase;letter-spacing:.04em}
-</style></head>
-<body>
-<table style="margin-bottom:5pt">
-  <tr>
-    <td style="width:50%"><span class="co">VEEBEE</span></td>
-    <td style="text-align:right"><span class="ttl">R&amp;D TRIAL COMPARISON SHEET</span></td>
-  </tr>
-</table>
-<table style="border:2px solid #000;margin-bottom:6pt">
-  <tr>
-    <td style="padding:4pt 8pt;border-right:1px solid #999;width:35%"><div style="font-size:8pt;color:#666">PROJECT</div><div style="font-size:12pt;font-weight:700">${project?.name||project?.productName||"—"}</div></td>
-    <td style="padding:4pt 8pt;border-right:1px solid #999;width:20%"><div style="font-size:8pt;color:#666">SAMPLES</div><div style="font-size:12pt;font-weight:700">${n} trials</div></td>
-    <td style="padding:4pt 8pt;width:25%"><div style="font-size:8pt;color:#666">DATE</div><div style="font-size:12pt;font-weight:700">${samples[0]?.date||today()}</div></td>
-    <td style="padding:4pt 8pt;border-left:1px solid #999;width:20%;text-align:right"><div style="font-size:8pt;color:#666">ASSIGNED TO</div><div style="font-size:10pt;font-weight:700">${samples[0]?.assignedTo?samples[0].assignedTo.split("@")[0]:"QC Team"}</div></td>
-  </tr>
-</table>
-
-<!-- Sample legend -->
-<table style="margin-bottom:6pt"><tr>
-  ${samples.map((t,i)=>`<td style="border:1px solid #999;padding:3pt 8pt;font-size:9pt;background:#f0f4ff"><b>S${i+1}</b>: ${t.trialName||"Trial "+(i+1)}</td>`).join("")}
-</tr></table>
-
-<!-- Formulation comparison -->
-<table style="margin-bottom:8pt">
-  <tr><td colspan="${n+1}" class="sh">Formulation Comparison — Follow Exact Quantities</td></tr>
-  <tr>
-    <th style="border:1px solid #999;padding:5pt;background:#d0d0d0;font-size:9.5pt;width:30%;text-align:left">Material / Ingredient</th>
-    ${sampleHeaders}
-  </tr>
-  ${ingRows}
-  <tr style="background:#f5f5f5">
-    <td style="border:1px solid #999;padding:5pt 6pt;font-size:9pt;font-weight:700">TOTAL BATCH SIZE</td>
-    ${samples.map(t=>{
-      const total=(t.ingredients||[]).filter(r=>r.quantity).reduce((s,r)=>s+(parseFloat(r.quantity)||0),0);
-      return `<td style="border:1px solid #999;padding:5pt;text-align:center;font-size:9.5pt;font-weight:700">${total>0?total.toFixed(2):""}</td>`;
-    }).join("")}
-  </tr>
-</table>
-
-<!-- QC parameters -->
-<table>
-  <tr><td colspan="${n+1}" class="sh">QC Parameters to Test — Record Results Below</td></tr>
-  <tr>
-    <th style="border:1px solid #999;padding:5pt;background:#d0d0d0;font-size:9.5pt;width:30%;text-align:left">Parameter</th>
-    ${samples.map((_,i)=>`<th style="border:1px solid #999;padding:5pt;background:#d0d0d0;font-size:9.5pt;text-align:center">S${i+1}</th>`).join("")}
-  </tr>
-  ${qcRows}
-</table>
-
-<div style="margin-top:10pt;font-size:8.5pt;color:#777;display:flex;justify-content:space-between">
-  <span>Generated by GCC Operations Hub · ${new Date().toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"})}</span>
-  <span>Tested by: ___________________  Date: ___________________</span>
-</div>
-</body></html>`;
-
-  const w=window.open("","_blank");w.document.write(html);w.document.close();
-  setTimeout(()=>w.print(),400);
-}
-
-  const ingRows=(trial.ingredients||[]).filter(r=>r.material&&r.material.trim()).map(function(r,i){
-    return '<tr><td style="border:1px solid #999;padding:6pt 5pt;text-align:center;font-size:10pt">'+(i+1)+'</td>'
-      +'<td style="border:1px solid #999;padding:6pt 5pt;font-size:10pt">'+r.material+'</td>'
-      +'<td style="border:1px solid #999;padding:6pt 5pt;text-align:center;font-size:10pt">'+(r.quantity||"")+'</td>'
-      +'<td style="border:1px solid #999;padding:6pt 5pt;text-align:center;font-size:10pt">'+(r.unit||"")+'</td>'
-      +'<td style="border:1px solid #999;padding:6pt 5pt;font-size:9pt;font-style:italic;color:#555">'+(r.notes||"")+'</td></tr>';
-  }).join("");
-
-  const stepRows=(trial.processSteps||[]).filter(s=>s.text&&s.text.trim()).map(function(s,i){
-    return '<tr><td style="border:1px solid #999;padding:7pt 6pt;text-align:center;font-size:11pt;font-weight:700;background:#f5f5f5;width:6%">'+(i+1)+'</td>'
-      +'<td style="border:1px solid #999;padding:7pt 6pt;font-size:10.5pt;line-height:1.5">'+s.text.replace(/\n/g,"<br>")+'</td></tr>';
-  }).join("");
-
-  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Trial Sheet — ${trial.trialName||"Trial "+(index+1)}</title>
-<style>
-  *{box-sizing:border-box}
-  body{font-family:Arial,sans-serif;margin:0;padding:8pt 10pt;font-size:11pt;}
-  @page{size:210mm 297mm portrait;margin:8mm;}
-  table{border-collapse:collapse;width:100%}
-  .co-name{font-size:20pt;font-weight:800;letter-spacing:1px}
-  .sheet-title{font-size:15pt;font-weight:700}
-  .section-head{background:#0D3569;color:#fff;font-weight:700;padding:5pt 8pt;font-size:10.5pt;text-transform:uppercase;letter-spacing:0.04em}
-</style></head>
-<body>
-<table>
-  <tr>
-    <td style="width:50%"><span class="co-name">VEEBEE</span></td>
-    <td style="width:50%;text-align:right"><span class="sheet-title">R&amp;D TRIAL SHEET</span></td>
-  </tr>
-</table>
-<table style="border:2px solid #000;margin:6pt 0">
-  <tr>
-    <td style="width:60%;padding:6pt 10pt;border-right:1px solid #999">
-      <div style="font-size:9pt;color:#666">PROJECT</div>
-      <div style="font-size:13pt;font-weight:700">${project?.name||project?.productName||"—"}</div>
-    </td>
-    <td style="width:40%;padding:6pt 10pt">
-      <div style="font-size:9pt;color:#666">TRIAL</div>
-      <div style="font-size:13pt;font-weight:700">${trial.trialName||"Trial "+(index+1)}</div>
-    </td>
-  </tr>
-</table>
-<table style="margin-bottom:6pt">
-  <tr>
-    <td style="border:1px solid #999;padding:5pt 8pt;font-size:10pt"><b>Date:</b> ${trial.date||"_______"}</td>
-    <td style="border:1px solid #999;padding:5pt 8pt;font-size:10pt"><b>Assigned To:</b> ${trial.assignedTo?trial.assignedTo.split("@")[0]:"_______"}</td>
-    <td style="border:1px solid #999;padding:5pt 8pt;font-size:10pt"><b>Trial No:</b> ${index+1}</td>
-  </tr>
-</table>
-
-<table style="margin-bottom:8pt">
-  <tr><td colspan="5" class="section-head">Formulation — Follow Exact Quantities</td></tr>
-  <tr>
-    <th style="border:1px solid #999;padding:5pt;background:#d0d0d0;font-size:9.5pt;width:6%">No</th>
-    <th style="border:1px solid #999;padding:5pt;background:#d0d0d0;font-size:9.5pt">Material</th>
-    <th style="border:1px solid #999;padding:5pt;background:#d0d0d0;font-size:9.5pt;width:14%">Qty</th>
-    <th style="border:1px solid #999;padding:5pt;background:#d0d0d0;font-size:9.5pt;width:12%">Unit</th>
-    <th style="border:1px solid #999;padding:5pt;background:#d0d0d0;font-size:9.5pt;width:22%">Notes</th>
-  </tr>
-  ${ingRows||'<tr><td colspan="5" style="border:1px solid #999;padding:8pt;text-align:center;color:#999;font-style:italic">No ingredients listed</td></tr>'}
-</table>
-
-${stepRows?`<table style="margin-bottom:8pt">
-  <tr><td colspan="2" class="section-head">⚙ Process Steps — Follow In Order</td></tr>
-  ${stepRows}
-</table>`:""}
-
-<table style="margin-bottom:8pt">
-  <tr><td class="section-head">Process / Mixing Method (summary)</td></tr>
-  <tr><td style="border:1px solid #999;padding:10pt;font-size:10.5pt;min-height:40pt">${(trial.process||"").replace(/\n/g,"<br>")||"&nbsp;"}</td></tr>
-</table>
-
-<table style="margin-bottom:8pt">
-  <tr><td colspan="2" class="section-head">Test to be Performed</td></tr>
-  <tr>
-    <td style="border:1px solid #999;padding:8pt;font-size:10.5pt;width:50%">${(trial.observations||"").replace(/\n/g,"<br>")||"<span style='color:#999'>—</span>"}</td>
-    <td style="border:1px solid #999;padding:8pt;font-size:9pt;color:#666;width:50%">Properties: ${(trial.propertiesTested||"—")}</td>
-  </tr>
-</table>
-
-<table style="margin-bottom:8pt">
-  <tr><td class="section-head">QC — Actual Results / Observations <span style="font-weight:400;text-transform:none;font-size:8.5pt">(to be filled after trial)</span></td></tr>
-  <tr><td style="border:1px solid #999;padding:10pt;height:90pt"></td></tr>
-</table>
-
-<table style="margin-bottom:10pt">
-  <tr><td class="section-head">Recommendation</td></tr>
-  <tr><td style="border:1px solid #999;padding:8pt">
-    ${["Approved as Final","Needs Modification","Rejected","Promising — Continue Testing"].map(o=>'☐ '+o).join('&nbsp;&nbsp;&nbsp;&nbsp;')}
-  </td></tr>
-</table>
-
-<table style="margin-top:20pt">
-  <tr>
-    <td style="width:50%;border-top:1px solid #000;padding-top:4pt;font-size:10pt">Tested By &amp; Date</td>
-    <td style="width:50%;border-top:1px solid #000;padding-top:4pt;font-size:10pt">Checked / Approved By</td>
-  </tr>
-</table>
-<div style="margin-top:10pt;font-size:8.5pt;color:#888">Printed: ${today()}</div>
-<script>window.onload=()=>{setTimeout(()=>{window.focus();window.print();},400);}<\/script>
-</body></html>`;
-  const w=window.open("","_blank");
-  w.document.write(html);w.document.close();
+  var s=trials.slice(0,8),n=s.length;
+  var seen={},allMats=[];
+  s.forEach(function(t){(t.ingredients||[]).forEach(function(r){
+    if(r.material&&r.material.trim()&&!seen[r.material.trim()]){seen[r.material.trim()]=true;allMats.push(r.material.trim());}
+  });});
+  function mkth(txt){return '<th style="border:1px solid #999;padding:4pt 3pt;background:#0D3569;color:#fff;font-size:8.5pt;text-align:center">'+txt+'</th>';}
+  function mktd(txt){return '<td style="border:1px solid #999;padding:3pt 4pt;text-align:center;font-size:9pt">'+txt+'</td>';}
+  var hdrs=s.map(function(t,i){return mkth('S'+(i+1)+(t.trialName&&t.trialName!==('Trial '+(i+1))?'<br><small>'+t.trialName+'</small>':''));}).join('');
+  var ingRows=allMats.map(function(mat,ri){
+    var cells=s.map(function(t){
+      var ing=(t.ingredients||[]).filter(function(r){return r.material&&r.material.trim()===mat;})[0];
+      return mktd(ing?(ing.quantity||'')+(ing.unit?' '+ing.unit:''):'');
+    }).join('');
+    return '<tr style="background:'+(ri%2===0?'#fff':'#f9f9f9')+'"><td style="border:1px solid #999;padding:3pt 5pt;font-size:9pt">'+(ri+1)+'. '+mat+'</td>'+cells+'</tr>';
+  }).join('');
+  var totRow='<tr style="background:#eef"><td style="border:1px solid #999;padding:4pt 5pt;font-weight:700">TOTAL BATCH</td>'+s.map(function(t){var tot=(t.ingredients||[]).reduce(function(a,r){return a+(parseFloat(r.quantity)||0);},0);return mktd(tot>0?tot.toFixed(2):'');}).join('')+'</tr>';
+  var params=qcParams&&qcParams.length?qcParams:['Viscosity','Fineness','Sp. Gravity','pH','Non-Volatile %','Drying Time','Gloss','Adhesion','Flexibility','Appearance'];
+  var qcRows=params.map(function(p,ri){return '<tr style="background:'+(ri%2===0?'#fff':'#f9f9f9')+'"><td style="border:1px solid #999;padding:4pt 5pt;white-space:nowrap">'+(ri+1)+'. '+p+'</td>'+s.map(function(){return '<td style="border:1px solid #999;padding:12pt 4pt"> </td>';}).join('')+'</tr>';}).join('');
+  var leg=s.map(function(t,i){return '<td style="border:1px solid #999;padding:2pt 5pt;font-size:8pt;background:#f0f4ff"><b>S'+(i+1)+'</b>: '+(t.trialName||'Trial '+(i+1))+'</td>';}).join('');
+  var shd=s.map(function(_,i){return '<th style="border:1px solid #999;padding:4pt;background:#d0d0d0;text-align:center">S'+(i+1)+'</th>';}).join('');
+  var dt=(s[0]&&s[0].date)||(new Date().toISOString().slice(0,10));
+  var pn=(project&&(project.name||project.productName))||'R&D';
+  var css='*{box-sizing:border-box}body{font-family:Arial,sans-serif;margin:0;padding:3pt 5pt;font-size:9pt}@page{size:297mm 210mm landscape;margin:5mm}table{border-collapse:collapse;width:100%}.sh{background:#0D3569;color:#fff;font-weight:700;padding:3pt 6pt;font-size:9pt;text-transform:uppercase}tr{page-break-inside:avoid}';
+  var h='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Trial Comparison<'+'/title><style>'+css+'<'+'/style><'+'/head><body>';
+  h+='<table style="margin-bottom:3pt"><tr><td><b style="font-size:13pt">VEEBEE<'+'/b><'+'/td><td style="text-align:right;font-size:10pt;font-weight:700">R&amp;D TRIAL COMPARISON SHEET<'+'/td><'+'/tr><'+'/table>';
+  h+='<table style="border:1.5px solid #000;margin-bottom:3pt"><tr>';
+  h+='<td style="padding:3pt 7pt;border-right:1px solid #999;width:35%"><div style="font-size:7pt;color:#666">PROJECT<'+'/div><b>'+pn+'<'+'/b><'+'/td>';
+  h+='<td style="padding:3pt 7pt;border-right:1px solid #999"><div style="font-size:7pt;color:#666">SAMPLES<'+'/div><b>'+n+'<'+'/b><'+'/td>';
+  h+='<td style="padding:3pt 7pt"><div style="font-size:7pt;color:#666">DATE<'+'/div><b>'+dt+'<'+'/b><'+'/td><'+'/tr><'+'/table>';
+  h+='<table style="margin-bottom:3pt"><tr>'+leg+'<'+'/tr><'+'/table>';
+  h+='<table style="margin-bottom:4pt"><tr><td colspan="'+(n+1)+'" class="sh">Formulation Comparison<'+'/td><'+'/tr>';
+  h+='<tr><th style="border:1px solid #999;padding:4pt;background:#d0d0d0;width:28%;text-align:left">Material<'+'/th>'+hdrs+'<'+'/tr>'+ingRows+totRow+'<'+'/table>';
+  h+='<table><tr><td colspan="'+(n+1)+'" class="sh">QC Parameters - Record Results Below<'+'/td><'+'/tr>';
+  h+='<tr><th style="border:1px solid #999;padding:4pt;background:#d0d0d0;width:28%;text-align:left">Parameter<'+'/th>'+shd+'<'+'/tr>'+qcRows+'<'+'/table>';
+  h+='<div style="margin-top:4pt;font-size:7.5pt;color:#888;display:flex;justify-content:space-between"><span>GCC Ops Hub<'+'/span><span>Tested by: ___________________ Date: ___________________<'+'/span><'+'/div><'+'/body><'+'/html>';
+  var w=window.open('','_blank');w.document.write(h);w.document.close();setTimeout(function(){w.print();},400);
 }
 
 function printRMTestSheet(entry){
