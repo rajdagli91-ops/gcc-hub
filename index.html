@@ -622,6 +622,7 @@ const CAN_SEE = {
   tasks:    ["admin","issuer","qc","sales","store","ho"],
   testimonials:["admin","sales"],
   stock:    ["admin","store","qc","issuer"],
+  orders:   ["admin","issuer","ho","sales"],
   users:    ["admin"],
   settings: ["admin","issuer","qc"],
   enquiries:["admin","sales","ho","issuer"]
@@ -10197,8 +10198,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
     // Salesman: reminded until they mark customer visited
     // QC: reminded until they add a response
     const checkComplaintReminders=async(userEmail,userRoles)=>{
-      const now=Date.now();
-      const INTERVAL=23*60*60*1000; // 23h so daily users always get reminded
+      const todayStr=new Date().toISOString().slice(0,10); // "2026-07-15"
       try{
         const isSales=userRoles.includes("sales");
         const isQC=userRoles.includes("qc")||userRoles.includes("admin");
@@ -10206,15 +10206,15 @@ function MainApp({user,role,roles=[],permissions=[]}){
         const snap=await C("complaints").where("status","in",["Open","Assigned to Salesman","Under Review"]).get();
         for(const doc of snap.docs){
           const d=doc.data();
-          const lastR=d.lastReminderAt?.[userEmail];
-          const lastRMs=lastR?.seconds?lastR.seconds*1000:0;
-          if(now-lastRMs<INTERVAL)continue; // already reminded recently
+          // Use date string — prevents duplicate reminders no matter how many times app opens
+          const lastReminderDate=d.lastReminderDate?.[userEmail]||"";
+          if(lastReminderDate===todayStr)continue; // already sent today
           let msg=null;
-          // Salesman reminder: assigned and not visited
+          // Salesman: assigned and not yet visited
           if(isSales&&d.assignedSalesman===userEmail&&d.visitedCustomer!=="yes"){
             msg=`⚠ Reminder: Please visit customer "${d.customerName}" and update complaint status`;
           }
-          // QC reminder: complaint needs QC response (no response for current round)
+          // QC: complaint needs a response for the current round
           if(isQC&&!msg){
             const roundDone=(d.qcResponses||[]).some(r=>(r.round||1)===(d.currentRound||1));
             if(!roundDone&&["Open","Under Review"].includes(d.status)){
@@ -10222,9 +10222,9 @@ function MainApp({user,role,roles=[],permissions=[]}){
             }
           }
           if(!msg)continue;
-          // Create notification and stamp last reminder time
-          await C("notifications").add({type:"reminder",complaintId:doc.id,customer:d.customerName,msg,assignedTo:userEmail,date:today(),read:false,_createdAt:ts()});
-          await C("complaints").doc(doc.id).update({[`lastReminderAt.${userEmail}`]:ts()});
+          // Send notification and stamp today's date — no more reminders until tomorrow
+          await C("notifications").add({type:"reminder",complaintId:doc.id,customer:d.customerName,msg,assignedTo:userEmail,date:todayStr,read:false,_createdAt:ts()});
+          await C("complaints").doc(doc.id).update({[`lastReminderDate.${userEmail}`]:todayStr});
         }
       }catch(e){/* reminders are best-effort */}
     };
@@ -10477,6 +10477,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
       testimonials:hp("testimonials"),
       enquiries:hp("enquiries_create")||hp("enquiries_view_all")||hp("enquiries_update")||hp("enquiries_dispatch"),
       stock:hp("stock_view"),
+      orders:hp("orders_view")||hp("orders_dispatch")||hp("orders_import"),
       users:isAdmin,
       settings:hp("settings_products")||hp("settings_advanced"),
     };
