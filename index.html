@@ -622,7 +622,7 @@ const CAN_SEE = {
   tasks:    ["admin","issuer","qc","sales","store","ho"],
   testimonials:["admin","sales"],
   stock:    ["admin","store","qc","issuer"],
-  orders:   ["admin","issuer","ho","sales"],
+  orders:   ["admin","issuer","ho"],
   users:    ["admin"],
   settings: ["admin","issuer","qc"],
   enquiries:["admin","sales","ho","issuer"]
@@ -10461,6 +10461,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
     {key:"bom",label:"📋 BOM"},
     {key:"tasks",label:"✅ Tasks"},
     {key:"stock",label:"🏪 Stock"},
+    {key:"orders",label:"🛒 Orders"},
     {key:"testimonials",label:"⭐ Testimonials"},
     {key:"enquiries",label:"📞 Enquiries"},
     {key:"users",label:"👥 Users"},
