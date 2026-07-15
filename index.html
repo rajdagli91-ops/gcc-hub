@@ -688,7 +688,7 @@ const CATEGORY_UNITS={"Emulsion":"L","Enamel":"L","Primer":"L","Distemper":"kg",
 
 const BATCH_STATUS=["Issued","In Production","QC Pending","QC Pass","QC Fail","Packed"];
 const BS_COL={Issued:"#3b82f6","In Production":"#f59e0b","QC Pending":"#a855f7","QC Pass":"#22c55e","QC Fail":"#ef4444",Packed:"#38bdf8"};
-const COMPLAINT_STATUS=["Open","Under Review","QC Responded","Resolved","Closed"];
+const COMPLAINT_STATUS=["Open","Assigned to Salesman","Under Review","QC Responded","Resolved","Closed"];
 const CS_COL={Open:"#ef4444","Under Review":"#f59e0b","QC Responded":"#3b82f6",Resolved:"#22c55e",Closed:"#64748b"};
 
 const STATUS_COLORS={"Ongoing":"#3b82f6","Completed":"#22c55e","On Hold":"#f59e0b","Cancelled":"#ef4444","Pending Approval":"#a855f7"};
@@ -1373,6 +1373,64 @@ function FileAttachment({folder,existingFiles=[],onFilesChange,readOnly=false,ma
 }
 
 // ══════════════════════════════════════════════════════════
+// ── Field Visit Form — salesman adds visit details after customer visit ──
+function FieldVisitForm({complaint,user,showToast,allProfiles}){
+  const [open,setOpen]=useState(false);
+  const [form,setForm]=useState({
+    notes:complaint.fieldVisit?.notes||"",
+    visitedCustomer:complaint.fieldVisit?complaint.visitedCustomer||"yes":(complaint.visitedCustomer||""),
+    visitDate:complaint.fieldVisit?.date||complaint.visitDate||today(),
+    photos:complaint.fieldVisit?.photos||[]
+  });
+  const [saving,setSaving]=useState(false);
+
+  const save=async()=>{
+    if(!form.notes.trim())return showToast("Add visit notes before saving","error");
+    setSaving(true);
+    try{
+      await C("complaints").doc(complaint.id).update({
+        fieldVisit:{notes:form.notes,date:form.visitDate,by:user.email,photos:form.photos,updatedAt:new Date().toISOString()},
+        visitedCustomer:form.visitedCustomer,
+        visitDate:form.visitDate,
+        status:complaint.status==="Assigned to Salesman"?"Under Review":complaint.status,
+      });
+      // Notify QC that salesman has visited and updated
+      await C("notifications").add({type:"field_visit_done",complaintId:complaint.id,customer:complaint.customerName,msg:`Field visit completed for ${complaint.customerName} complaint — by ${user.email.split("@")[0]}`,for:"qc",date:today(),read:false,_createdAt:ts()});
+      showToast("Field visit details saved — QC notified ✓");
+      setOpen(false);
+    }catch(e){showToast("Error: "+e.message,"error");}
+    setSaving(false);
+  };
+
+  if(!open)return <button onClick={()=>setOpen(true)} style={{background:"#1e3a5f",border:"1px solid #2563eb",borderRadius:"7px",padding:"6px 14px",color:"#93c5fd",fontWeight:"700",fontSize:"12px",cursor:"pointer",marginTop:"4px"}}>
+    {complaint.fieldVisit?"✏️ Update Field Visit":"📍 Add Field Visit Details"}
+  </button>;
+  return <div style={{background:"#060d1a",border:"1px solid #2563eb40",borderRadius:"8px",padding:"12px",marginTop:"8px"}}>
+    <div style={{fontSize:"12px",fontWeight:"700",color:"#93c5fd",marginBottom:"10px"}}>📍 Field Visit Details</div>
+    <Grid2>
+      <Field label="Visited Customer?">
+        <select style={sl} value={form.visitedCustomer} onChange={e=>setForm({...form,visitedCustomer:e.target.value})}>
+          <option value="yes">✓ Yes, visited</option>
+          <option value="no">✗ Not yet visited</option>
+          <option value="scheduled">📅 Visit scheduled</option>
+        </select>
+      </Field>
+      {form.visitedCustomer==="yes"&&<Field label="Date of Visit"><input type="date" style={inp} value={form.visitDate} onChange={e=>setForm({...form,visitDate:e.target.value})}/></Field>}
+    </Grid2>
+    <Field label="Visit Notes / Observations *">
+      <textarea style={{...ta,minHeight:"90px"}} value={form.notes} onChange={e=>setForm({...form,notes:e.target.value})} placeholder="What did you observe at customer site? What was the actual issue? What did customer say?..."/>
+    </Field>
+    <div style={{marginBottom:"10px"}}>
+      <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"6px"}}>📎 Photos from Site Visit</div>
+      <FileAttachment folder={`complaints/visit_${complaint.id}`} existingFiles={form.photos} onFilesChange={photos=>setForm({...form,photos})} maxFiles={8}/>
+    </div>
+    <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
+      <Btn label="Cancel" onClick={()=>setOpen(false)} outline color="#475569" small/>
+      <Btn label={saving?"Saving…":"Save & Notify QC"} onClick={save} disabled={saving} color="#22c55e" small/>
+    </div>
+  </div>;
+}
+
 function ComplaintCard({c,onClick,onDelete,role}){
   const sc=CS_COL[c.status]||"#94a3b8";
   return <div onClick={onClick} onMouseEnter={e=>e.currentTarget.style.background="#0f1f35"} onMouseLeave={e=>e.currentTarget.style.background="#0f172a"}
@@ -1584,6 +1642,22 @@ function ComplaintWorkspace({complaint,role,showToast}){
           </div>)}
         </div>;
       })}
+    </div>}
+
+    {/* Assigned salesman + field visit section */}
+    {(live.assignedSalesman||live.visitedCustomer||live.fieldVisit)&&<div style={{background:"#0b1220",border:"1px solid #2563eb30",borderRadius:"10px",padding:"12px 16px",marginBottom:"12px"}}>
+      <div style={{fontSize:"11px",fontWeight:"700",color:"#93c5fd",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"10px"}}>👤 Salesman Assignment & Field Visit</div>
+      {live.assignedSalesman&&<div style={{display:"flex",gap:"16px",flexWrap:"wrap",marginBottom:"8px",fontSize:"12.5px",color:"#94a3b8"}}>
+        <span><strong style={{color:"#e2e8f0"}}>Assigned to:</strong> {allProfiles?.[live.assignedSalesman]?.displayName||live.assignedSalesman.split("@")[0]}</span>
+        {live.visitedCustomer&&<span><strong style={{color:"#e2e8f0"}}>Visit status:</strong> {live.visitedCustomer==="yes"?"✓ Visited"+(live.visitDate?" on "+live.visitDate:""):live.visitedCustomer==="scheduled"?"📅 Scheduled":live.visitedCustomer==="no"?"⏳ Not yet visited":live.visitedCustomer}</span>}
+      </div>}
+      {live.fieldVisit&&<div style={{background:"#080d18",border:"1px solid #1e293b",borderRadius:"8px",padding:"10px 12px",marginBottom:"8px"}}>
+        <div style={{fontSize:"10px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:"5px"}}>Field Visit Notes — {live.fieldVisit.by?.split("@")[0]} · {live.fieldVisit.date}</div>
+        <div style={{fontSize:"13px",color:"#cbd5e1",lineHeight:1.6,whiteSpace:"pre-wrap",marginBottom:"8px"}}>{live.fieldVisit.notes}</div>
+        {(live.fieldVisit.photos||[]).length>0&&<FileAttachment folder="" existingFiles={live.fieldVisit.photos} onFilesChange={()=>{}} readOnly={true}/>}
+      </div>}
+      {/* Salesman can add/update field visit details */}
+      {(roles.includes("sales")||roles.includes("admin"))&&live.assignedSalesman===user?.email&&<FieldVisitForm complaint={live} user={user} showToast={showToast} allProfiles={allProfiles}/>}
     </div>}
 
     {/* Current round QC Response */}
@@ -4668,7 +4742,7 @@ function NoAccessScreen(){
 const EP={projectName:"",projectCode:"",paintType:"Emulsion",application:"",status:"Ongoing",objective:"",formulationBase:"",assignedTo:"",targetDate:"",notes:""};
 const ER={materialName:"",vendorName:"",category:"Resin / Binder",batchNo:"",lotNo:"",quantityReceived:"",dateReceived:"",specsToTest:"",assignedTo:"",testedBy:"",testResult:"Pending",testsPerformed:"",observations:"",remarks:""};
 const EB={category:"",productName:"",shade:"",batchSize:"",unit:"kg",dateIssued:today(),issuedBy:"",oldStockUsed:"",issueNotes:""};
-const EC={customerName:"",productName:"",batchNo:"",monthYear:"",invoiceNo:"",materialAvailable:"",complaint:"",applicationProcess:"",thinnerUsed:""};
+const EC={customerName:"",productName:"",batchNo:"",monthYear:"",invoiceNo:"",materialAvailable:"",complaint:"",applicationProcess:"",thinnerUsed:"",source:"salesman",assignedSalesman:"",visitedCustomer:"",visitDate:""};
 
 // ══════════════════════════════════════════════════════════
 // SAMPLE TESTING TAB — Customer / Competitor Samples
@@ -9790,7 +9864,22 @@ function MainApp({user,role,roles=[],permissions=[]}){
     if(!complaintForm.customerName.trim()||!complaintForm.complaint.trim())return showToast("Customer name and complaint required","error");
     if(saving)return;setSaving(true);
     try{
-      await C("complaints").add({...complaintForm,attachments:complaintFiles,status:"Open",addedBy:user.email,dateCreated:today(),currentRound:1,_createdAt:ts()});
+      const isHO=complaintForm.source==="ho";
+      const doc={
+        ...complaintForm,attachments:complaintFiles,
+        status:isHO&&complaintForm.assignedSalesman?"Assigned to Salesman":"Open",
+        addedBy:user.email,dateCreated:today(),currentRound:1,_createdAt:ts(),
+        fieldVisit:null, // filled by salesman after visiting customer
+      };
+      const ref=await C("complaints").add(doc);
+      // Notify QC if salesman submitted directly
+      if(!isHO){
+        await C("notifications").add({type:"complaint_new",complaintId:ref.id,customer:complaintForm.customerName,msg:`New complaint from ${complaintForm.customerName} — by ${user.email.split("@")[0]}`,for:"qc",date:today(),read:false,_createdAt:ts()});
+      }
+      // Notify salesman if HO assigned
+      if(isHO&&complaintForm.assignedSalesman){
+        await C("notifications").add({type:"complaint_assigned",complaintId:ref.id,customer:complaintForm.customerName,msg:`Complaint from ${complaintForm.customerName} assigned to you — please visit and update`,for:complaintForm.assignedSalesman,date:today(),read:false,_createdAt:ts()});
+      }
       setComplaintFiles([]);
       setComplaintForm(EC);setShowAddComplaint(false);showToast("Complaint added ✓");
     }catch(e){showToast("Error saving","error");}
@@ -10226,6 +10315,22 @@ function MainApp({user,role,roles=[],permissions=[]}){
 
     {/* Add Complaint */}
     <Modal open={showAddComplaint} onClose={()=>setShowAddComplaint(false)} title="Add New Complaint">
+      {/* Source: did complaint come via salesman or HO? */}
+      <div style={{marginBottom:"14px"}}>
+        <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"8px"}}>Where was this complaint received?</div>
+        <div style={{display:"flex",gap:"8px"}}>
+          {[["salesman","👤 Received by Salesman"],["ho","🏢 Received at HO"]].map(([v,l])=><button key={v} onClick={()=>setComplaintForm({...complaintForm,source:v})} style={{flex:1,padding:"9px",background:complaintForm.source===v?"#1e3a5f":"#080d18",border:`1px solid ${complaintForm.source===v?"#3b82f6":"#1e293b"}`,borderRadius:"8px",color:complaintForm.source===v?"#93c5fd":"#475569",fontWeight:"700",fontSize:"12.5px",cursor:"pointer"}}>{l}</button>)}
+        </div>
+      </div>
+      {/* HO: assign to salesman */}
+      {complaintForm.source==="ho"&&<div style={{background:"#0a1a2e",border:"1px solid #1e3a5f",borderRadius:"8px",padding:"10px 12px",marginBottom:"12px"}}>
+        <Field label="Assign to Salesman (they will be notified to visit customer)">
+          <select style={sl} value={complaintForm.assignedSalesman} onChange={e=>setComplaintForm({...complaintForm,assignedSalesman:e.target.value})}>
+            <option value="">— Assign later —</option>
+            {Object.keys(allRoles).filter(e=>(allRoles[e]||[]).includes("sales")).map(e=><option key={e} value={e}>{allProfiles[e]?.displayName||e.split("@")[0]}</option>)}
+          </select>
+        </Field>
+      </div>}
       <Grid2>
         <Field label="Customer Name *"><input style={inp} value={complaintForm.customerName} onChange={e=>setComplaintForm({...complaintForm,customerName:e.target.value})} placeholder="Customer / party name"/></Field>
         <Field label="Product *"><input style={inp} value={complaintForm.productName} onChange={e=>setComplaintForm({...complaintForm,productName:e.target.value})} placeholder="Product name"/></Field>
@@ -10237,14 +10342,28 @@ function MainApp({user,role,roles=[],permissions=[]}){
       </Grid3>
       <Field label="Material Available with Customer"><input style={inp} value={complaintForm.materialAvailable} onChange={e=>setComplaintForm({...complaintForm,materialAvailable:e.target.value})} placeholder="e.g. 15 L, 2 tins, approx half drum"/></Field>
       <Grid2>
-        <Field label="Process of Application (if paint)"><input style={inp} value={complaintForm.applicationProcess} onChange={e=>setComplaintForm({...complaintForm,applicationProcess:e.target.value})} placeholder="e.g. Spray, brush, roller, dip..."/></Field>
-        <Field label="Thinner Used (if paint)"><input style={inp} value={complaintForm.thinnerUsed} onChange={e=>setComplaintForm({...complaintForm,thinnerUsed:e.target.value})} placeholder="e.g. PU Thinner, NC Thinner, ratio used..."/></Field>
+        <Field label="Process of Application"><input style={inp} value={complaintForm.applicationProcess} onChange={e=>setComplaintForm({...complaintForm,applicationProcess:e.target.value})} placeholder="Spray, brush, roller, dip..."/></Field>
+        <Field label="Thinner Used"><input style={inp} value={complaintForm.thinnerUsed} onChange={e=>setComplaintForm({...complaintForm,thinnerUsed:e.target.value})} placeholder="PU Thinner, NC Thinner, ratio..."/></Field>
       </Grid2>
-      <Field label="Complaint Description *"><textarea style={{...ta,minHeight:"100px"}} value={complaintForm.complaint} onChange={e=>setComplaintForm({...complaintForm,complaint:e.target.value})} placeholder="Describe the complaint in detail — what is the issue, when was it noticed, what conditions..."/></Field>
+      <Field label="Complaint Description *"><textarea style={{...ta,minHeight:"100px"}} value={complaintForm.complaint} onChange={e=>setComplaintForm({...complaintForm,complaint:e.target.value})} placeholder="Describe the complaint in detail..."/></Field>
+      {/* Visited customer */}
+      <div style={{background:"#080d18",border:"1px solid #1e293b",borderRadius:"8px",padding:"10px 12px",marginBottom:"12px"}}>
+        <div style={{fontSize:"11.5px",fontWeight:"700",color:"#e2e8f0",marginBottom:"8px"}}>Customer Visit</div>
+        <Grid2>
+          <Field label="Visited Customer?">
+            <select style={sl} value={complaintForm.visitedCustomer} onChange={e=>setComplaintForm({...complaintForm,visitedCustomer:e.target.value})}>
+              <option value="">— Not yet —</option>
+              <option value="yes">✓ Yes, visited</option>
+              <option value="no">✗ Not yet visited</option>
+              <option value="scheduled">📅 Visit scheduled</option>
+            </select>
+          </Field>
+          {complaintForm.visitedCustomer==="yes"&&<Field label="Date of Visit"><input type="date" style={inp} value={complaintForm.visitDate} onChange={e=>setComplaintForm({...complaintForm,visitDate:e.target.value})}/></Field>}
+        </Grid2>
+      </div>
       <div style={{marginBottom:"14px"}}>
         <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"6px"}}>📎 Attach Photos / Videos (optional)</div>
         <FileAttachment folder={`complaints/${user?.email?.split("@")[0]||"user"}`} existingFiles={complaintFiles} onFilesChange={setComplaintFiles} maxFiles={5}/>
-        <div style={{fontSize:"10.5px",color:"#334155",marginTop:"4px"}}>Attach photos or short videos showing the issue (max 5 files)</div>
       </div>
       <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
         <Btn label="Cancel" onClick={()=>setShowAddComplaint(false)} outline color="#475569"/>
