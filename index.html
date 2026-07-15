@@ -556,6 +556,11 @@ const PERMISSION_GROUPS=[
     {k:"tasks_own",    l:"View & complete own tasks"},
     {k:"tasks_assign", l:"Assign tasks to others"},
   ]},
+  {key:"orders",    label:"🛒 Orders",      perms:[
+    {k:"orders_view",   l:"View orders"},
+    {k:"orders_dispatch",l:"Mark items for dispatch"},
+    {k:"orders_import", l:"Import orders from Tally"},
+  ]},
   {key:"stock",    label:"🏪 Stock",    perms:[
     {k:"stock_view",    l:"View stock levels"},
     {k:"stock_consume", l:"Record daily consumption"},
@@ -5769,6 +5774,423 @@ function FGMovementsTab({role,user,showToast,isAdmin,canManage}){
 }
 
 
+// ══════════════════════════════════════════════════════════════════════
+// ORDER MANAGEMENT — Tally Sales Orders + Transport/Route dispatch system
+// ══════════════════════════════════════════════════════════════════════
+function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
+  const canImport=isAdmin||roles.includes("issuer")||hp("orders_import");
+  const canDispatch=isAdmin||roles.includes("issuer")||hp("orders_dispatch");
+
+  const [orders,setOrders]=useState([]);
+  const [customerMap,setCustomerMap]=useState({}); // normalised_name -> {transport,route}
+  const [routes,setRoutes]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [parsing,setParsing]=useState(false);
+  const [transportParsing,setTransportParsing]=useState(false);
+  const [customerSearch,setCustomerSearch]=useState("");
+  const [editingCustomer,setEditingCustomer]=useState(null); // key of customer being edited
+  const [custForm,setCustForm]=useState({customer:"",transport:"",route:"",isDirect:false});
+  const [custSaving,setCustSaving]=useState(false);
+  const [search,setSearch]=useState("");
+  const [routeFilter,setRouteFilter]=useState("All");
+  const [deliveryFilter,setDeliveryFilter]=useState("All"); // All|Direct|Transport
+  const [expanded,setExpanded]=useState(null);
+  const [dispatchForm,setDispatchForm]=useState({});
+  const [saving,setSaving]=useState(false);
+  const [activeTab,setActiveTab]=useState("orders"); // "orders"|"dispatch"|"setup"
+
+  useEffect(()=>{
+    const u1=C("orders").orderBy("orderDate","desc").onSnapshot(
+      s=>{setOrders(s.docs.map(d=>({id:d.id,...d.data()})));setLoading(false);},
+      ()=>{C("orders").onSnapshot(s=>{setOrders(s.docs.map(d=>({id:d.id,...d.data()})));setLoading(false);});});
+    const u2=C("settings").doc("customerTransport").onSnapshot(snap=>{
+      if(snap.exists){
+        const data=snap.data();
+        setCustomerMap(data.map||{});
+        setRoutes(data.routes||[]);
+      }
+    },()=>{});
+    return ()=>{u1();u2();};
+  },[]);
+
+  // ── Import Transport/Customer list (one-time setup) ──
+  const importTransportList=async(file)=>{
+    setTransportParsing(true);
+    try{
+      await loadXLSX();
+      const XLSX=window.XLSX;
+      const buf=await new Promise(r=>{const fr=new FileReader();fr.onload=e=>r(e.target.result);fr.readAsArrayBuffer(file);});
+      const wb=XLSX.read(buf,{type:"array"});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const raw=XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
+      // Row 0 = headers: Particulars | Transport | Route
+      const map={};
+      const routeSet=new Set();
+      for(let i=1;i<raw.length;i++){
+        const row=raw[i];if(!row||!row[0])continue;
+        const customer=String(row[0]).trim();
+        const transport=String(row[1]||"").trim();
+        const route=String(row[2]||"").trim();
+        if(!customer||!route)continue;
+        const isDirect=transport.toLowerCase().includes("direct");
+        map[normalize(customer)]={customer,transport,route,isDirect};
+        if(route)routeSet.add(route);
+      }
+      const routeArr=Array.from(routeSet).sort();
+      await C("settings").doc("customerTransport").set({map,routes:routeArr,importedAt:ts(),importedBy:user.email});
+      showToast(`Transport list saved — ${Object.keys(map).length} customers, ${routeArr.length} routes ✓`);
+    }catch(e){showToast("Error: "+e.message,"error");}
+    setTransportParsing(false);
+  };
+
+  // ── Import Tally Sales Orders (balance qty only, smart dedup) ──
+  const saveCustomer=async()=>{
+    if(!custForm.customer.trim()||!custForm.route.trim())return showToast("Customer name and route are required","error");
+    setCustSaving(true);
+    try{
+      const isDirect=custForm.isDirect||custForm.transport.toLowerCase().includes("direct");
+      const key=normalize(custForm.customer.trim());
+      const newEntry={customer:custForm.customer.trim(),transport:custForm.transport.trim()||"Direct",route:custForm.route.trim(),isDirect};
+      const newMap={...customerMap,[key]:newEntry};
+      // Recompute routes
+      const routeSet=new Set(Object.values(newMap).map(c=>c.route).filter(Boolean));
+      const newRoutes=Array.from(routeSet).sort();
+      await C("settings").doc("customerTransport").set({map:newMap,routes:newRoutes,updatedAt:ts()},{merge:true});
+      setCustForm({customer:"",transport:"",route:"",isDirect:false});
+      setEditingCustomer(null);
+      showToast(editingCustomer?"Customer updated ✓":"Customer added ✓");
+    }catch(e){showToast("Error: "+e.message,"error");}
+    setCustSaving(false);
+  };
+
+  const deleteCustomer=async(key)=>{
+    if(!confirm("Remove this customer from the transport list?"))return;
+    const newMap={...customerMap};
+    delete newMap[key];
+    const routeSet=new Set(Object.values(newMap).map(c=>c.route).filter(Boolean));
+    await C("settings").doc("customerTransport").set({map:newMap,routes:Array.from(routeSet).sort()},{merge:true});
+    showToast("Customer removed","error");
+  };
+
+  const startEdit=(key,entry)=>{
+    setEditingCustomer(key);
+    setCustForm({customer:entry.customer,transport:entry.transport,route:entry.route,isDirect:entry.isDirect||false});
+  };
+
+  const importOrders=async(file)=>{
+    setParsing(true);
+    try{
+      await loadXLSX();
+      const XLSX=window.XLSX;
+      const buf=await new Promise(r=>{const fr=new FileReader();fr.onload=e=>r(e.target.result);fr.readAsArrayBuffer(file);});
+      const wb=XLSX.read(buf,{type:"array"});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const raw=XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
+
+      // Headers at row 11, data from row 14
+      // Col: 0=Date 1=OrderNo 2=PartyName 3=ItemName 4=OrderedQty 5=BalanceQty 6=Rate 7=Disc 8=Value 9=DueOn 10=Overdue
+
+      const orderMap={}; // orderNo -> order object
+      for(let i=14;i<raw.length;i++){
+        const row=raw[i];if(!row)continue;
+        const dateRaw=row[0];
+        const orderNo=String(row[1]||"").trim();
+        const party=String(row[2]||"").trim();
+        const item=String(row[3]||"").trim();
+        const balanceQty=parseFloat(row[5])||0;
+        const rate=parseFloat(row[6])||0;
+        const discount=parseFloat(row[7])||0;
+        const value=parseFloat(row[8])||0;
+        const dueOn=row[9]?String(row[9]).trim():"";
+
+        if(!orderNo||!party||!item)continue;
+        if(balanceQty<=0)continue; // skip fully dispatched items
+        if(party.toLowerCase().includes("total"))continue;
+
+        // Format date
+        let dateStr="";
+        if(dateRaw instanceof Date)dateStr=dateRaw.toISOString().slice(0,10);
+        else if(dateRaw&&String(dateRaw).includes("-"))dateStr=String(dateRaw).slice(0,10);
+        else if(typeof dateRaw==="number"){try{const d=new Date((dateRaw-25569)*86400000);dateStr=d.toISOString().slice(0,10);}catch(e){}}
+
+        // Look up customer transport/route
+        const cInfo=customerMap[normalize(party)]||null;
+
+        if(!orderMap[orderNo]){
+          orderMap[orderNo]={
+            voucherNo:orderNo,partyName:party,orderDate:dateStr,
+            route:cInfo?.route||"Unknown",transport:cInfo?.transport||"Unknown",
+            isDirect:cInfo?.isDirect||false,
+            items:[],status:"Pending",
+          };
+        }
+        orderMap[orderNo].items.push({
+          name:item,balanceQty,rate,discount,value,dueOn,
+          dispatchedQty:0,status:"Pending"
+        });
+      }
+
+      const incomingKeys=new Set(Object.keys(orderMap));
+
+      // Smart dedup: auto-close pending orders not in new file
+      const pendingInDB=orders.filter(o=>o.status==="Pending"||o.status==="Partial");
+      let closedCount=0;
+      for(const dbOrder of pendingInDB){
+        if(!incomingKeys.has(dbOrder.id)){
+          await C("orders").doc(dbOrder.id).update({status:"Pre-closed",preClosedAt:ts(),preClosedNote:"Not found in latest Tally export — likely pre-closed by HO"});
+          closedCount++;
+        }
+      }
+
+      // Upsert incoming orders
+      let newCount=0,updCount=0;
+      for(const [key,order] of Object.entries(orderMap)){
+        const docRef=C("orders").doc(key);
+        const existing=orders.find(o=>o.id===key);
+        if(existing){
+          // Preserve dispatch progress per item
+          const mergedItems=order.items.map(newItem=>{
+            const prev=(existing.items||[]).find(p=>normalize(p.name)===normalize(newItem.name));
+            return prev?{...newItem,dispatchedQty:prev.dispatchedQty||0,status:prev.status||"Pending"}:newItem;
+          });
+          const allDone=mergedItems.every(i=>i.status==="Dispatched");
+          const anyDone=mergedItems.some(i=>i.status==="Dispatched"||i.status==="Partial");
+          await docRef.update({...order,items:mergedItems,status:allDone?"Dispatched":anyDone?"Partial":"Pending",lastImportedAt:ts()});
+          updCount++;
+        }else{
+          await docRef.set({...order,importedBy:user.email,importedAt:ts(),lastImportedAt:ts()});
+          newCount++;
+        }
+      }
+      showToast(`Import done: ${newCount} new · ${updCount} updated · ${closedCount} auto-closed ✓`);
+    }catch(e){showToast("Parse error: "+e.message,"error");}
+    setParsing(false);
+  };
+
+  // ── Mark items for dispatch ──
+  const confirmDispatch=async(order)=>{
+    if(!Object.keys(dispatchForm).length)return showToast("Select items to dispatch","error");
+    setSaving(true);
+    try{
+      const updatedItems=(order.items||[]).map((item,idx)=>{
+        const df=dispatchForm[idx];
+        if(!df)return item;
+        const dispQty=df.type==="full"?item.balanceQty:(parseFloat(df.qty)||0);
+        const newDispatched=Math.min(item.balanceQty,(item.dispatchedQty||0)+dispQty);
+        const newBalance=Math.max(0,item.balanceQty-dispQty);
+        const status=newBalance<=0?"Dispatched":"Partial";
+        return {...item,dispatchedQty:newDispatched,balanceQty:newBalance,status,lastDispatchedAt:new Date().toISOString(),lastDispatchedBy:user.email};
+      });
+      const allDone=updatedItems.every(i=>i.status==="Dispatched");
+      const anyDone=updatedItems.some(i=>i.status==="Dispatched"||i.status==="Partial");
+      await C("orders").doc(order.id).update({items:updatedItems,status:allDone?"Dispatched":anyDone?"Partial":"Pending",updatedAt:ts()});
+      setDispatchForm({});setExpanded(null);
+      showToast("Dispatch recorded ✓");
+    }catch(e){showToast("Error: "+e.message,"error");}
+    setSaving(false);
+  };
+
+  const STATUS_COLOR={Pending:"#f59e0b",Partial:"#3b82f6",Dispatched:"#22c55e","Pre-closed":"#ef4444"};
+  const statusFilters=["All","Pending","Partial","Dispatched","Pre-closed"];
+
+  const filtered=orders.filter(o=>{
+    if(routeFilter!=="All"&&o.route!==routeFilter)return false;
+    if(deliveryFilter==="Direct"&&!o.isDirect)return false;
+    if(deliveryFilter==="Transport"&&o.isDirect)return false;
+    if(search.trim()&&!normalize(o.partyName||"").includes(normalize(search))&&!normalize(o.voucherNo||"").includes(normalize(search)))return false;
+    if(activeTab==="orders"){/* show all statuses */}
+    if(activeTab==="dispatch"&&!["Pending","Partial"].includes(o.status))return false;
+    return true;
+  });
+
+  const todayOrders=orders.filter(o=>["Pending","Partial"].includes(o.status));
+  const counts={Pending:orders.filter(o=>o.status==="Pending").length,Partial:orders.filter(o=>o.status==="Partial").length};
+
+  return <div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"14px",flexWrap:"wrap",gap:"8px"}}>
+      <div style={{fontSize:"22px",fontWeight:"400",fontFamily:"'DM Serif Display',serif",color:"#f1f5f9"}}>🛒 Order Management</div>
+      <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
+        {canImport&&<>
+          <button onClick={()=>document.getElementById("orders-import").click()} disabled={parsing}
+            style={{background:"#052e16",border:"1px solid #166534",borderRadius:"7px",padding:"6px 12px",color:"#4ade80",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>
+            {parsing?"Importing…":"⬆ Import Orders (Tally)"}
+          </button>
+          <input id="orders-import" type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={async e=>{if(e.target.files[0]){await importOrders(e.target.files[0]);e.target.value="";}}}/>
+        </>}
+        <button onClick={()=>setActiveTab(t=>t==="setup"?"orders":"setup")} style={{background:"#1a0a2e",border:"1px solid #7c3aed",borderRadius:"7px",padding:"6px 12px",color:"#c4b5fd",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>⚙️ Setup Routes</button>
+      </div>
+    </div>
+
+    {/* Setup panel */}
+    {activeTab==="setup"&&<div style={{background:"#060d1a",border:"1px solid #7c3aed40",borderRadius:"12px",padding:"16px",marginBottom:"14px"}}>
+      <div style={{fontSize:"13px",fontWeight:"700",color:"#c4b5fd",marginBottom:"12px"}}>⚙️ Customer Transport & Route Management</div>
+
+      {/* Bulk import */}
+      <div style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"8px",padding:"10px 12px",marginBottom:"14px"}}>
+        <div style={{fontSize:"11.5px",fontWeight:"700",color:"#94a3b8",marginBottom:"6px"}}>Bulk Import from Excel</div>
+        <div style={{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap"}}>
+          <button onClick={()=>document.getElementById("transport-import").click()} disabled={transportParsing}
+            style={{background:"#1a0a2e",border:"1px solid #7c3aed",borderRadius:"6px",padding:"6px 12px",color:"#c4b5fd",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>
+            {transportParsing?"Importing…":"⬆ Upload Transport List Excel"}
+          </button>
+          <input id="transport-import" type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={async e=>{if(e.target.files[0]){await importTransportList(e.target.files[0]);e.target.value="";}}}/>
+          {Object.keys(customerMap).length>0&&<span style={{fontSize:"11.5px",color:"#22c55e"}}>{Object.keys(customerMap).length} customers · {routes.length} routes</span>}
+        </div>
+      </div>
+
+      {/* Add / Edit customer form */}
+      <div style={{background:"#0b1220",border:"1px solid #1e3a5f",borderRadius:"8px",padding:"12px",marginBottom:"14px"}}>
+        <div style={{fontSize:"11.5px",fontWeight:"700",color:"#93c5fd",marginBottom:"8px"}}>{editingCustomer?"✏️ Edit Customer":"+ Add Customer Manually"}</div>
+        <Grid2>
+          <Field label="Customer Name *">
+            <input style={inp} value={custForm.customer} onChange={e=>setCustForm({...custForm,customer:e.target.value})} placeholder="Exact name as in Tally"/>
+          </Field>
+          <Field label="Route / Area *">
+            <div style={{position:"relative"}}>
+              <input style={inp} list="route-options" value={custForm.route} onChange={e=>setCustForm({...custForm,route:e.target.value})} placeholder="e.g. BHIWANDI, AHMEDNAGAR"/>
+              <datalist id="route-options">{routes.map(r=><option key={r} value={r}/>)}</datalist>
+            </div>
+          </Field>
+        </Grid2>
+        <Grid2>
+          <Field label="Transport Company">
+            <input style={inp} value={custForm.transport} onChange={e=>setCustForm({...custForm,transport:e.target.value,isDirect:e.target.value.toLowerCase().includes("direct")})} placeholder="e.g. JANSEVA TRANSPORT or DIRECT"/>
+          </Field>
+          <Field label="Delivery Type">
+            <div style={{display:"flex",gap:"6px"}}>
+              <button onClick={()=>setCustForm({...custForm,isDirect:true,transport:custForm.transport||"DIRECT"})} style={{flex:1,background:custForm.isDirect?"#052e16":"#080d18",border:`1px solid ${custForm.isDirect?"#166534":"#1e293b"}`,borderRadius:"6px",padding:"7px",color:custForm.isDirect?"#4ade80":"#475569",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>🚚 Direct</button>
+              <button onClick={()=>setCustForm({...custForm,isDirect:false})} style={{flex:1,background:!custForm.isDirect?"#0a1a2e":"#080d18",border:`1px solid ${!custForm.isDirect?"#2563eb":"#1e293b"}`,borderRadius:"6px",padding:"7px",color:!custForm.isDirect?"#93c5fd":"#475569",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>🏢 Transport</button>
+            </div>
+          </Field>
+        </Grid2>
+        <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",marginTop:"8px"}}>
+          {editingCustomer&&<button onClick={()=>{setEditingCustomer(null);setCustForm({customer:"",transport:"",route:"",isDirect:false});}} style={{background:"none",border:"1px solid #334155",borderRadius:"6px",padding:"6px 12px",color:"#475569",fontSize:"12px",cursor:"pointer"}}>✕ Cancel</button>}
+          <button onClick={saveCustomer} disabled={custSaving} style={{background:"#052e16",border:"1px solid #166534",borderRadius:"6px",padding:"6px 14px",color:"#4ade80",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>{custSaving?"Saving…":editingCustomer?"✓ Update":"+ Add"}</button>
+        </div>
+      </div>
+
+      {/* Customer list */}
+      {Object.keys(customerMap).length>0&&<>
+        <div style={{position:"relative",marginBottom:"8px"}}>
+          <span style={{position:"absolute",left:"10px",top:"50%",transform:"translateY(-50%)",color:"#334155",pointerEvents:"none"}}>🔍</span>
+          <input style={{...inp,paddingLeft:"32px"}} value={customerSearch} onChange={e=>setCustomerSearch(e.target.value)} placeholder={`Search ${Object.keys(customerMap).length} customers…`}/>
+        </div>
+        <div style={{maxHeight:"350px",overflowY:"auto",border:"1px solid #1e293b",borderRadius:"8px"}}>
+          <div style={{display:"grid",gridTemplateColumns:"2fr 1.2fr 1.2fr 70px",gap:"6px",background:"#0b1220",padding:"6px 12px",fontSize:"10px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.06em",position:"sticky",top:0,zIndex:1}}>
+            <span>Customer</span><span>Transport</span><span>Route</span><span></span>
+          </div>
+          {Object.entries(customerMap)
+            .filter(([k,v])=>!customerSearch.trim()||normalize(v.customer).includes(normalize(customerSearch))||normalize(v.route).includes(normalize(customerSearch)))
+            .map(([key,entry],i)=><div key={key} style={{display:"grid",gridTemplateColumns:"2fr 1.2fr 1.2fr 70px",gap:"6px",padding:"7px 12px",borderTop:"1px solid #0f172a",alignItems:"center",background:i%2===0?"transparent":"#060d1a"}}>
+              <div style={{fontSize:"12px",color:"#e2e8f0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={entry.customer}>{entry.customer}</div>
+              <div style={{fontSize:"11px",color:entry.isDirect?"#4ade80":"#93c5fd"}}>{entry.isDirect?"🚚 Direct":entry.transport}</div>
+              <div style={{fontSize:"11px",color:"#64748b"}}>{entry.route}</div>
+              <div style={{display:"flex",gap:"4px"}}>
+                <button onClick={()=>startEdit(key,entry)} style={{background:"none",border:"1px solid #1e293b",borderRadius:"4px",color:"#fcd34d",fontSize:"10px",padding:"2px 5px",cursor:"pointer"}}>✏️</button>
+                <button onClick={()=>deleteCustomer(key)} style={{background:"none",border:"1px solid #1e293b",borderRadius:"4px",color:"#f87171",fontSize:"10px",padding:"2px 5px",cursor:"pointer"}}>🗑</button>
+              </div>
+            </div>)}
+        </div>
+      </>}
+    </div>}
+
+    {/* Summary tiles */}
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:"8px",marginBottom:"14px"}}>
+      {[["📋 Pending",counts.Pending,"#f59e0b"],["⅓ Partial",counts.Partial,"#3b82f6"],["📦 Dispatch Today",todayOrders.length,"#22c55e"]].map(([l,v,c])=><div key={l} style={{background:"#0b1220",border:`1px solid ${c}30`,borderRadius:"10px",padding:"12px 14px",textAlign:"center"}}>
+        <div style={{fontSize:"22px",fontWeight:"700",color:c}}>{v}</div>
+        <div style={{fontSize:"11px",color:"#475569",marginTop:"2px"}}>{l}</div>
+      </div>)}
+    </div>
+
+    {/* Filters */}
+    <div style={{display:"flex",gap:"8px",marginBottom:"10px",flexWrap:"wrap",alignItems:"center"}}>
+      <div style={{position:"relative",flex:"1 1 180px",minWidth:"160px"}}>
+        <span style={{position:"absolute",left:"10px",top:"50%",transform:"translateY(-50%)",color:"#334155",pointerEvents:"none"}}>🔍</span>
+        <input style={{...inp,paddingLeft:"32px"}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search party or order no…"/>
+      </div>
+    </div>
+    <div style={{display:"flex",gap:"6px",marginBottom:"10px",flexWrap:"wrap"}}>
+      <span style={{fontSize:"11px",color:"#475569",fontWeight:"600",alignSelf:"center"}}>Route:</span>
+      {["All",...routes].map(r=><button key={r} onClick={()=>setRouteFilter(r)} style={{background:routeFilter===r?"#1e3a5f":"#080d18",border:`1px solid ${routeFilter===r?"#3b82f6":"#1e293b"}`,borderRadius:"6px",padding:"4px 10px",color:routeFilter===r?"#93c5fd":"#475569",fontSize:"11.5px",fontWeight:"600",cursor:"pointer",whiteSpace:"nowrap"}}>{r}</button>)}
+    </div>
+    <div style={{display:"flex",gap:"6px",marginBottom:"14px",flexWrap:"wrap"}}>
+      <span style={{fontSize:"11px",color:"#475569",fontWeight:"600",alignSelf:"center"}}>Delivery:</span>
+      {[["All","All"],["Direct","🚚 Our Vehicle (Direct)"],["Transport","🏢 Via Transporter"]].map(([v,l])=><button key={v} onClick={()=>setDeliveryFilter(v)} style={{background:deliveryFilter===v?"#1e293b":"#080d18",border:`1px solid ${deliveryFilter===v?"#475569":"#1e293b"}`,borderRadius:"6px",padding:"4px 10px",color:deliveryFilter===v?"#f1f5f9":"#475569",fontSize:"11.5px",fontWeight:"600",cursor:"pointer"}}>{l}</button>)}
+    </div>
+
+    {loading?<div style={{textAlign:"center",padding:"40px",color:"#334155"}}>Loading orders…</div>
+    :filtered.length===0?<div style={{textAlign:"center",padding:"50px",border:"2px dashed #1e293b",borderRadius:"10px",color:"#334155"}}>
+      {orders.length===0?"No orders yet — import from Tally to get started":"No orders match this filter"}
+    </div>
+    :<div>
+      <div style={{fontSize:"11.5px",color:"#475569",marginBottom:"8px"}}>{filtered.length} order{filtered.length!==1?"s":""}{routeFilter!=="All"?` · ${routeFilter}`:""}{deliveryFilter!=="All"?` · ${deliveryFilter}`:""}</div>
+      {filtered.map(order=>{
+        const isExp=expanded===order.id;
+        const sc=STATUS_COLOR[order.status]||"#94a3b8";
+        const pendingItems=(order.items||[]).filter(i=>i.status!=="Dispatched"&&i.balanceQty>0);
+        return <div key={order.id} style={{background:"#0b1220",border:`1px solid ${isExp?"#2563eb60":"#1e293b"}`,borderLeft:`3px solid ${sc}`,borderRadius:"10px",marginBottom:"8px",overflow:"hidden"}}>
+          <div onClick={()=>{setExpanded(isExp?null:order.id);setDispatchForm({});}}
+            style={{padding:"11px 14px",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",gap:"8px",flexWrap:"wrap"}}>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:"13.5px",fontWeight:"700",color:"#f1f5f9",marginBottom:"2px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{order.partyName}</div>
+              <div style={{fontSize:"11px",color:"#475569",display:"flex",gap:"10px",flexWrap:"wrap"}}>
+                <span>📄 {order.voucherNo}</span>
+                <span>📅 {order.orderDate}</span>
+                <span style={{color:order.isDirect?"#22c55e":"#93c5fd"}}>{order.isDirect?"🚚 Direct":"🏢 "+order.transport}</span>
+                <span style={{color:"#64748b"}}>{order.route}</span>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:"6px",alignItems:"center",flexShrink:0}}>
+              {pendingItems.length>0&&<span style={{fontSize:"10px",color:"#f59e0b"}}>{pendingItems.length} pending</span>}
+              <span style={{background:sc+"22",border:`1px solid ${sc}50`,borderRadius:"99px",color:sc,fontSize:"10px",fontWeight:"700",padding:"2px 9px"}}>{order.status}</span>
+              <span style={{color:"#334155",fontSize:"11px"}}>{isExp?"▲":"▼"}</span>
+            </div>
+          </div>
+
+          {isExp&&<div style={{padding:"0 14px 14px",borderTop:"1px solid #0f172a"}}>
+            {/* Item table */}
+            <div style={{background:"#060d1a",border:"1px solid #1e293b",borderRadius:"8px",overflow:"auto",marginTop:"10px",marginBottom:"10px"}}>
+              <div style={{display:"grid",gridTemplateColumns:"2.5fr 90px 90px 80px auto",gap:"6px",background:"#0b1220",padding:"6px 12px",fontSize:"10px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.06em",minWidth:"500px"}}>
+                <span>Product</span><span style={{textAlign:"center"}}>Balance Qty</span><span style={{textAlign:"center"}}>Dispatched</span><span style={{textAlign:"center"}}>Status</span><span style={{textAlign:"center"}}>{canDispatch?"Dispatch":"" }</span>
+              </div>
+              {(order.items||[]).map((item,idx)=>{
+                const ic=STATUS_COLOR[item.status]||"#94a3b8";
+                const df=dispatchForm[idx]||{};
+                const bal=item.balanceQty||0;
+                return <div key={idx} style={{display:"grid",gridTemplateColumns:"2.5fr 90px 90px 80px auto",gap:"6px",padding:"7px 12px",borderTop:"1px solid #0f172a",alignItems:"center",background:item.status==="Dispatched"?"#052e1620":"transparent",minWidth:"500px"}}>
+                  <div style={{fontSize:"12.5px",color:item.status==="Dispatched"?"#4ade80":"#e2e8f0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={item.name}>{item.name}</div>
+                  <div style={{textAlign:"center",fontSize:"12.5px",color:"#fcd34d",fontWeight:"700"}}>{bal}</div>
+                  <div style={{textAlign:"center",fontSize:"12px",color:"#4ade80"}}>{item.dispatchedQty||0}</div>
+                  <div style={{textAlign:"center"}}><span style={{background:ic+"20",border:`1px solid ${ic}40`,borderRadius:"99px",color:ic,fontSize:"9.5px",fontWeight:"700",padding:"2px 7px"}}>{item.status}</span></div>
+                  <div style={{display:"flex",flexDirection:"column",gap:"3px",alignItems:"center"}}>
+                    {canDispatch&&item.status!=="Dispatched"&&bal>0&&<>
+                      <div style={{display:"flex",gap:"3px"}}>
+                        <button onClick={()=>setDispatchForm(f=>({...f,[idx]:{type:"full",qty:String(bal)}}))}
+                          style={{background:df.type==="full"?"#052e16":"#0a0f1e",border:`1px solid ${df.type==="full"?"#166534":"#1e293b"}`,borderRadius:"4px",color:df.type==="full"?"#4ade80":"#475569",fontSize:"10px",fontWeight:"700",padding:"2px 7px",cursor:"pointer"}}>Full</button>
+                        <button onClick={()=>setDispatchForm(f=>({...f,[idx]:{type:"partial",qty:""}}))}
+                          style={{background:df.type==="partial"?"#0a1a2e":"#0a0f1e",border:`1px solid ${df.type==="partial"?"#2563eb":"#1e293b"}`,borderRadius:"4px",color:df.type==="partial"?"#93c5fd":"#475569",fontSize:"10px",fontWeight:"700",padding:"2px 7px",cursor:"pointer"}}>Part</button>
+                      </div>
+                      {df.type==="partial"&&<input type="number" min="0.001" max={bal} step="0.001" value={df.qty||""} onChange={e=>setDispatchForm(f=>({...f,[idx]:{...f[idx],qty:e.target.value}}))}
+                        style={{...inp,width:"70px",padding:"3px 5px",fontSize:"11px",textAlign:"center"}} placeholder={`≤${bal}`}/>}
+                      {df.type&&<button onClick={()=>setDispatchForm(f=>{const n={...f};delete n[idx];return n;})} style={{background:"none",border:"none",color:"#334155",fontSize:"10px",cursor:"pointer"}}>✕</button>}
+                    </>}
+                  </div>
+                </div>;
+              })}
+            </div>
+            {canDispatch&&Object.keys(dispatchForm).length>0&&<div style={{display:"flex",gap:"8px",justifyContent:"flex-end",alignItems:"center"}}>
+              <span style={{fontSize:"11.5px",color:"#475569"}}>{Object.keys(dispatchForm).length} item{Object.keys(dispatchForm).length!==1?"s":""} selected</span>
+              <button onClick={()=>confirmDispatch(order)} disabled={saving} style={{background:"#052e16",border:"1px solid #166534",borderRadius:"7px",padding:"7px 16px",color:"#4ade80",fontWeight:"700",fontSize:"12.5px",cursor:"pointer"}}>{saving?"Saving…":"🚚 Confirm Dispatch"}</button>
+            </div>}
+            {order.preClosedNote&&<div style={{fontSize:"11px",color:"#f87171",marginTop:"6px"}}>ℹ️ {order.preClosedNote}</div>}
+          </div>}
+        </div>;
+      })}
+    </div>}
+  </div>;
+}
+
+
 function StockTab({role,roles,user,showToast,sysUnits,sysRmCats,onAddRmCat,onAddUnit,hp}){
   const [sub,setSub]=useState("rm");
   const canManage=roles.includes("admin")||roles.includes("issuer")||hp("stock_manage");
@@ -10242,6 +10664,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
       </>}
       {tab==="bom"&&<BOMTab role={role} roles={roles} user={user} showToast={showToast} sysProducts={sysProducts} sysPackSizes={sysPackSizes} sysQcParams={sysQcParams}/>}
       {tab==="tasks"&&<TasksTab user={user} roles={roles} showToast={showToast} allRoles={allRoles} allProfiles={allProfiles}/>}
+      {tab==="orders"&&<OrdersTab role={role} roles={roles} user={user} showToast={showToast} isAdmin={isAdmin} hp={hp}/>}
       {tab==="stock"&&<StockTab role={role} roles={roles} user={user} showToast={showToast} sysUnits={sysUnits} sysRmCats={sysRmCats} onAddRmCat={addGlobalRmCat} onAddUnit={addGlobalUnit} hp={hp}/>}
       {tab==="testimonials"&&<TestimonialsTab role={role} user={user} showToast={showToast}/>}
       {tab==="enquiries"&&<EnquiriesTab role={role} roles={roles} user={user} showToast={showToast} allProfiles={allProfiles} allRoles={allRoles} isAdmin={isAdmin} hp={hp}/>}
