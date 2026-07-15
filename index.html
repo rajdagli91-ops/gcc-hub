@@ -5833,6 +5833,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
   const [parsing,setParsing]=useState(false);
   const [transportParsing,setTransportParsing]=useState(false);
   const [subTab,setSubTab]=useState("pending"); // "pending"|"dispatch"|"setup"
+  const [viewMode,setViewMode]=useState("customer"); // "customer"|"product"
   const [search,setSearch]=useState("");
   const [routeFilter,setRouteFilter]=useState("All");
   const [deliveryFilter,setDeliveryFilter]=useState("All");
@@ -5845,7 +5846,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
   const [custSaving,setCustSaving]=useState(false);
 
   useEffect(()=>{
-    const u1=C("orders").orderBy("orderDate","desc").onSnapshot(
+    const u1=C("orders").orderBy("orderDate","asc").onSnapshot(
       s=>{setOrders(s.docs.map(d=>({id:d.id,...d.data()})));setLoading(false);},
       ()=>{C("orders").onSnapshot(s=>{setOrders(s.docs.map(d=>({id:d.id,...d.data()})));setLoading(false);});});
     const u2=C("settings").doc("customerTransport").onSnapshot(snap=>{
@@ -6020,7 +6021,11 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
       if(!map[k])map[k]={partyName:o.partyName,route:o.route,transport:o.transport,isDirect:o.isDirect,orders:[]};
       map[k].orders.push(o);
     });
-    return Object.values(map).sort((a,b)=>a.partyName.localeCompare(b.partyName));
+    return Object.values(map).sort((a,b)=>{
+      const aMin=a.orders.map(o=>o.orderDate||'9999').sort()[0];
+      const bMin=b.orders.map(o=>o.orderDate||'9999').sort()[0];
+      return aMin.localeCompare(bMin); // oldest order date first
+    });
   })();
 
   // ── Today's dispatch data ──
@@ -6048,9 +6053,30 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
   const counts={Pending:orders.filter(o=>o.status==="Pending").length,Partial:orders.filter(o=>o.status==="Partial").length};
   const totalTodayItems=filteredToday.reduce((a,g)=>a+g.items.length,0);
 
+  // ── Product-wise grouping (for material preparation view) ──
+  const productGroups=(()=>{
+    const map={};
+    customerGroups.forEach(cg=>{
+      cg.orders.forEach(order=>{
+        (order.items||[]).filter(i=>i.status!=="Dispatched"&&i.balanceQty>0).forEach(item=>{
+          const k=item.name;
+          if(!map[k])map[k]={name:item.name,totalQty:0,customers:[]};
+          map[k].totalQty+=item.balanceQty;
+          const existing=map[k].customers.find(c=>normalize(c.partyName)===normalize(cg.partyName));
+          if(existing)existing.qty+=item.balanceQty;
+          else map[k].customers.push({partyName:cg.partyName,qty:item.balanceQty,voucherNo:order.voucherNo,isDirect:cg.isDirect,transport:cg.transport});
+        });
+      });
+    });
+    return Object.values(map).sort((a,b)=>b.totalQty-a.totalQty);
+  })();
+
   const [reverting,setReverting]=useState(null);
-  const revertDispatch=async(orderId,itemName,dispatchedQty)=>{
+  const [revertForm,setRevertForm]=useState({}); // rKey -> qty string
+  const revertDispatch=async(orderId,itemName,revertQty,totalDispatched)=>{
     const key=orderId+"__"+itemName;
+    const qty=parseFloat(revertQty)||0;
+    if(qty<=0||qty>totalDispatched)return showToast(`Enter a valid quantity between 0.001 and ${totalDispatched}`,"error");
     setReverting(key);
     try{
       const orderDoc=await C("orders").doc(orderId).get();
@@ -6058,13 +6084,16 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
       const data=orderDoc.data();
       const updatedItems=(data.items||[]).map(item=>{
         if(normalize(item.name)!==normalize(itemName))return item;
-        const restoredBalance=(item.balanceQty||0)+dispatchedQty;
-        const restoredDispatched=Math.max(0,(item.dispatchedQty||0)-dispatchedQty);
-        return {...item,balanceQty:restoredBalance,dispatchedQty:restoredDispatched,status:restoredDispatched<=0?"Pending":"Partial",lastDispatchedAt:null,lastDispatchedBy:null};
+        const restoredBalance=(item.balanceQty||0)+qty;
+        const restoredDispatched=Math.max(0,(item.dispatchedQty||0)-qty);
+        const newStatus=restoredDispatched<=0?"Pending":restoredBalance<=0?"Dispatched":"Partial";
+        const newLastDispatched=restoredDispatched<=0?null:item.lastDispatchedAt;
+        return {...item,balanceQty:restoredBalance,dispatchedQty:restoredDispatched,status:newStatus,lastDispatchedAt:newLastDispatched,lastDispatchedBy:restoredDispatched<=0?null:item.lastDispatchedBy};
       });
       const anyDispatched=updatedItems.some(i=>i.status==="Dispatched"||i.status==="Partial");
       await C("orders").doc(orderId).update({items:updatedItems,status:anyDispatched?"Partial":"Pending",updatedAt:ts()});
-      showToast(`"${itemName}" moved back to Pending ✓`);
+      showToast(`${qty} of "${itemName}" moved back to Pending ✓`);
+      setRevertForm(f=>{const n={...f};delete n[key];return n;});
     }catch(e){showToast("Error: "+e.message,"error");}
     setReverting(null);
   };
@@ -6175,7 +6204,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
       </div>
     </>}
 
-    {/* ── PENDING ORDERS — grouped by customer ── */}
+    {/* ── PENDING ORDERS — grouped by customer or product ── */}
     {subTab==="pending"&&(loading
       ?<div style={{textAlign:"center",padding:"40px",color:"#334155"}}>Loading orders…</div>
       :customerGroups.length===0
@@ -6183,7 +6212,60 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
           {orders.length===0?"No orders yet — import from Tally":"No pending orders match this filter"}
         </div>
         :<div>
-          <div style={{fontSize:"11.5px",color:"#475569",marginBottom:"8px"}}>{customerGroups.length} customer{customerGroups.length!==1?"s":""} · {pendingOrders.length} orders pending{routeFilter!=="All"?` · ${routeFilter}`:""}</div>
+          {/* View mode toggle + summary */}
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"10px",flexWrap:"wrap",gap:"8px"}}>
+            <div style={{fontSize:"11.5px",color:"#475569"}}>
+              {viewMode==="customer"
+                ?`${customerGroups.length} customer${customerGroups.length!==1?"s":""} · ${pendingOrders.length} orders${routeFilter!=="All"?` · ${routeFilter}`:""}`
+                :`${productGroups.length} product${productGroups.length!==1?"s":""} · ${customerGroups.length} customers${routeFilter!=="All"?` · ${routeFilter}`:""}`}
+            </div>
+            <div style={{display:"flex",gap:"4px",background:"#080d18",border:"1px solid #1e293b",borderRadius:"7px",padding:"3px"}}>
+              {[["customer","👥 By Customer"],["product","📦 By Product"]].map(([v,l])=><button key={v} onClick={()=>setViewMode(v)}
+                style={{background:viewMode===v?"#1e3a5f":"transparent",border:"none",borderRadius:"5px",padding:"5px 12px",color:viewMode===v?"#93c5fd":"#475569",fontWeight:"700",fontSize:"11.5px",cursor:"pointer",transition:"all 0.15s"}}>{l}</button>)}
+            </div>
+          </div>
+
+          {/* ── PRODUCT VIEW — for material preparation ── */}
+          {viewMode==="product"&&<div>
+            <div style={{background:"#0b1220",border:"1px solid #1e3a5f",borderRadius:"8px",padding:"8px 12px",marginBottom:"10px",fontSize:"11.5px",color:"#64748b"}}>
+              📋 <strong style={{color:"#93c5fd"}}>Material Preparation View</strong> — shows total qty needed per product across all customers in this filter. Switch to Customer view to mark dispatch.
+            </div>
+            {productGroups.map((pg,pi)=>{
+              const [open,setOpen_]=useState(false); // local state per row
+              return <div key={pg.name} style={{background:"#0b1220",border:"1px solid #1e293b",borderLeft:"3px solid #3b82f6",borderRadius:"10px",marginBottom:"7px",overflow:"hidden"}}>
+                <div onClick={()=>setOpen_(!open)} style={{padding:"10px 14px",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",gap:"8px"}}>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:"13px",fontWeight:"700",color:"#f1f5f9",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{pg.name}</div>
+                    <div style={{fontSize:"11px",color:"#475569",marginTop:"2px"}}>{pg.customers.length} customer{pg.customers.length!==1?"s":""}</div>
+                  </div>
+                  <div style={{display:"flex",gap:"8px",alignItems:"center",flexShrink:0}}>
+                    <div style={{textAlign:"right"}}>
+                      <div style={{fontSize:"18px",fontWeight:"700",color:"#fcd34d",lineHeight:1}}>{pg.totalQty}</div>
+                      <div style={{fontSize:"9.5px",color:"#475569"}}>total units</div>
+                    </div>
+                    <span style={{color:"#334155",fontSize:"11px"}}>{open?"▲":"▼"}</span>
+                  </div>
+                </div>
+                {open&&<div style={{borderTop:"1px solid #0f172a"}}>
+                  <div style={{display:"grid",gridTemplateColumns:"2fr 80px 1fr",gap:"6px",background:"#060d1a",padding:"5px 14px",fontSize:"10px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.06em"}}>
+                    <span>Customer</span><span style={{textAlign:"center"}}>Qty</span><span>Transport</span>
+                  </div>
+                  {pg.customers.map((c,ci)=><div key={ci} style={{display:"grid",gridTemplateColumns:"2fr 80px 1fr",gap:"6px",padding:"7px 14px",borderTop:"1px solid #0f172a",alignItems:"center",background:ci%2===0?"transparent":"#060d1a"}}>
+                    <div style={{fontSize:"12.5px",color:"#e2e8f0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.partyName}</div>
+                    <div style={{textAlign:"center",fontSize:"13px",fontWeight:"700",color:"#fcd34d"}}>{c.qty}</div>
+                    <div style={{fontSize:"11px",color:c.isDirect?"#4ade80":"#93c5fd"}}>{c.isDirect?"🚚 Direct":"🏢 "+c.transport}</div>
+                  </div>)}
+                  <div style={{padding:"7px 14px",background:"#0b1220",borderTop:"1px solid #0f172a",display:"flex",justifyContent:"flex-end",alignItems:"center",gap:"8px"}}>
+                    <span style={{fontSize:"11px",color:"#475569"}}>Total for {pg.name}:</span>
+                    <span style={{fontSize:"14px",fontWeight:"700",color:"#fcd34d"}}>{pg.totalQty}</span>
+                  </div>
+                </div>}
+              </div>;
+            })}
+          </div>}
+
+          {/* ── CUSTOMER VIEW (existing) ── */}
+          {viewMode==="customer"&&<div>
           {customerGroups.map(group=>{
             const isExp=expandedCustomer===group.partyName;
             const groupKey=k=>Object.keys(dispatchForm).some(dk=>dk.startsWith(group.orders.map(o=>o.id).join("|")+"|")||group.orders.some(o=>dk.startsWith(o.id+"__")));
@@ -6260,6 +6342,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
               </div>}
             </div>;
           })}
+          </div>}   {/* end customer view */}
         </div>
     )}
 
@@ -6290,16 +6373,30 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
             </div>
             <div style={{background:"#060d1a",borderTop:"1px solid #0f172a"}}>
               {group.items.map((item,ii)=>{
-                const rKey=item.orderId+"__"+item.name;
-                const isReverting=reverting===rKey;
                 return <div key={ii} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 14px",borderTop:ii===0?"none":"1px solid #0f172a",gap:"8px"}}>
                   <div style={{fontSize:"12.5px",color:"#e2e8f0",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.name}</div>
                   <div style={{fontSize:"13px",fontWeight:"700",color:"#4ade80",flexShrink:0}}>{item.qty}</div>
                   <div style={{fontSize:"10px",color:"#334155",flexShrink:0}}>{item.voucherNo}</div>
-                  {canDispatch&&<button onClick={()=>revertDispatch(item.orderId,item.name,item.qty)} disabled={isReverting}
-                    style={{background:"#1a0a00",border:"1px solid #92400e",borderRadius:"5px",color:"#fcd34d",fontSize:"10.5px",fontWeight:"700",padding:"3px 8px",cursor:"pointer",flexShrink:0,whiteSpace:"nowrap"}}>
-                    {isReverting?"…":"↩ Pending"}
-                  </button>}
+                  {canDispatch&&(()=>{
+                    const rKey=item.orderId+"__"+item.name;
+                    const isReverting=reverting===rKey;
+                    const showInput=revertForm[rKey]!==undefined;
+                    return showInput
+                      ?<div style={{display:"flex",gap:"4px",alignItems:"center",flexShrink:0}}>
+                          <input type="number" min="0.001" max={item.qty} step="0.001" value={revertForm[rKey]} onChange={e=>setRevertForm(f=>({...f,[rKey]:e.target.value}))}
+                            style={{...inp,width:"65px",padding:"3px 5px",fontSize:"11px",textAlign:"center"}} placeholder={`max ${item.qty}`} autoFocus/>
+                          <button onClick={()=>revertDispatch(item.orderId,item.name,revertForm[rKey],item.qty)} disabled={isReverting}
+                            style={{background:"#052e16",border:"1px solid #166534",borderRadius:"4px",color:"#4ade80",fontSize:"10.5px",fontWeight:"700",padding:"3px 8px",cursor:"pointer",whiteSpace:"nowrap"}}>
+                            {isReverting?"…":"↩ Move"}
+                          </button>
+                          <button onClick={()=>setRevertForm(f=>{const n={...f};delete n[rKey];return n;})}
+                            style={{background:"none",border:"1px solid #334155",borderRadius:"4px",color:"#475569",fontSize:"10.5px",padding:"3px 6px",cursor:"pointer"}}>✕</button>
+                        </div>
+                      :<button onClick={()=>setRevertForm(f=>({...f,[rKey]:String(item.qty)}))}
+                          style={{background:"#1a0a00",border:"1px solid #92400e",borderRadius:"5px",color:"#fcd34d",fontSize:"10.5px",fontWeight:"700",padding:"3px 8px",cursor:"pointer",flexShrink:0,whiteSpace:"nowrap"}}>
+                          ↩ Pending
+                        </button>;
+                  })()}
                 </div>;
               })}
             </div>
