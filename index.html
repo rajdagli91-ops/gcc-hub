@@ -1461,7 +1461,7 @@ function ComplaintCard({c,onClick,onDelete,role}){
   </div>;
 }
 
-function ComplaintWorkspace({complaint,role,showToast}){
+function ComplaintWorkspace({complaint,role,roles,showToast,user,allProfiles,allRoles,isAdmin}){
   const [live,setLive]=useState(complaint);
   const [editStage,setEditStage]=useState(null);
   const [saving,setSaving]=useState(false);
@@ -1471,7 +1471,6 @@ function ComplaintWorkspace({complaint,role,showToast}){
   const [showEdit,setShowEdit]=useState(false);
   const [editForm,setEditForm]=useState({...complaint});
   const [editFiles,setEditFiles]=useState(complaint.attachments||[]);
-  const isAdmin=role==="admin";
 
   const saveEdit=async()=>{
     setSaving(true);
@@ -10266,11 +10265,12 @@ function MainApp({user,role,roles=[],permissions=[]}){
       subs.push(C("batches").orderBy("_createdAt","desc").onSnapshot(s=>setBatches(s.docs.map(d=>({id:d.id,...d.data()}))),()=>C("batches").onSnapshot(s=>setBatches(s.docs.map(d=>({id:d.id,...d.data()}))))));
     }
     if(CAN_SEE.complaints.some(r=>roles.includes(r))){
-      const cQuery=roles.includes("sales")&&!roles.includes("admin")&&!roles.includes("qc")&&!roles.includes("issuer")
-        ?C("complaints").where("addedBy","==",user.email).orderBy("_createdAt","desc")
-        :C("complaints").orderBy("_createdAt","desc");
-      subs.push(cQuery.onSnapshot(s=>setComplaints(s.docs.map(d=>({id:d.id,...d.data()}))),
-        ()=>C("complaints").onSnapshot(s=>setComplaints(s.docs.map(d=>({id:d.id,...d.data()})).filter(c=>!roles.includes("sales")||roles.includes("admin")||c.addedBy===user.email)))));
+      const isSalesOnly=roles.includes("sales")&&!roles.includes("admin")&&!roles.includes("qc")&&!roles.includes("issuer");
+      subs.push(C("complaints").orderBy("_createdAt","desc").onSnapshot(
+        s=>{const all=s.docs.map(d=>({id:d.id,...d.data()}));
+          setComplaints(isSalesOnly?all.filter(c=>c.addedBy===user.email||c.assignedSalesman===user.email):all);},
+        ()=>C("complaints").onSnapshot(s=>{const all=s.docs.map(d=>({id:d.id,...d.data()}));
+          setComplaints(isSalesOnly?all.filter(c=>c.addedBy===user.email||c.assignedSalesman===user.email):all);})));
     }
     if(CAN_SEE.rd.some(r=>roles.includes(r))){
       subs.push(C("rd_projects").orderBy("_createdAt","desc").onSnapshot(s=>setProjects(s.docs.map(d=>({id:d.id,...d.data()}))),()=>C("rd_projects").onSnapshot(s=>setProjects(s.docs.map(d=>({id:d.id,...d.data()}))))));
@@ -10520,15 +10520,22 @@ function MainApp({user,role,roles=[],permissions=[]}){
                       {notifications.length>0&&<button onClick={async()=>{await Promise.all(notifications.map(n=>C("notifications").doc(n.id).update({read:true})));setShowNotifs(false);}} style={{background:"none",border:"none",color:"#64748b",cursor:"pointer",fontSize:"11px"}}>Mark all read</button>}
                     </div>
                     {notifications.length===0?<div style={{padding:"20px",textAlign:"center",color:"#334155",fontSize:"12px"}}>No new notifications</div>
-                    :notifications.map(n=><div key={n.id} style={{padding:"10px 14px",borderBottom:"1px solid #1e293b",display:"flex",gap:"8px",alignItems:"flex-start"}}>
-                      <span style={{fontSize:"16px"}}>📋</span>
-                      <div style={{flex:1}}>
-                        <div style={{fontSize:"12px",fontWeight:"600",color:"#e2e8f0"}}>{n.title}</div>
-                        <div style={{fontSize:"11px",color:"#64748b"}}>{n.message}</div>
-                        <div style={{fontSize:"10px",color:"#334155",marginTop:"2px"}}>{n._createdAt?.toDate?.()?.toLocaleDateString("en-IN")||""}</div>
-                      </div>
-                      <button onClick={()=>C("notifications").doc(n.id).update({read:true})} style={{background:"none",border:"none",color:"#334155",cursor:"pointer",fontSize:"13px"}}>×</button>
-                    </div>)}
+                    :notifications.map(n=>{
+                      // Support both old format (title/message) and new format (msg)
+                      const heading=n.title||n.msg||(n.type==="reminder"?"⚠ Reminder":n.type==="complaint_assigned"?"📋 Complaint Assigned":n.type==="complaint_new"?"⚠ New Complaint":n.type==="field_visit_done"?"✅ Field Visit Done":"Notification");
+                      const sub=n.message||(n.title&&n.msg?n.msg:null)||(n.customer?`Customer: ${n.customer}`:"");
+                      const icon=n.type==="reminder"?"⏰":n.type==="complaint_assigned"?"📋":n.type==="complaint_new"?"⚠️":n.type==="field_visit_done"?"✅":n.type==="task_assigned"?"✅":"📋";
+                      const when=n._createdAt?.toDate?.()?.toLocaleDateString("en-IN",{day:"2-digit",month:"short"})||n.date||"";
+                      return <div key={n.id} style={{padding:"10px 14px",borderBottom:"1px solid #1e293b",display:"flex",gap:"8px",alignItems:"flex-start"}}>
+                        <span style={{fontSize:"16px",flexShrink:0}}>{icon}</span>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontSize:"12px",fontWeight:"600",color:"#e2e8f0",lineHeight:1.4}}>{heading}</div>
+                          {sub&&<div style={{fontSize:"11px",color:"#64748b",marginTop:"2px",lineHeight:1.4}}>{sub}</div>}
+                          {when&&<div style={{fontSize:"10px",color:"#334155",marginTop:"3px"}}>{when}</div>}
+                        </div>
+                        <button onClick={()=>C("notifications").doc(n.id).update({read:true})} style={{background:"none",border:"none",color:"#334155",cursor:"pointer",fontSize:"13px",flexShrink:0}}>×</button>
+                      </div>;
+                    })}
                   </div>}
                 </div>
                 {/* 📖 Guide button */}
@@ -10840,7 +10847,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
 
     {/* Complaint Workspace */}
     <Modal wide open={!!activeComplaint} onClose={()=>setActiveComplaint(null)} title="Complaint Details">
-      {activeComplaint&&<ComplaintWorkspace complaint={activeComplaint} role={role} showToast={showToast}/>}
+      {activeComplaint&&<ComplaintWorkspace complaint={activeComplaint} role={role} roles={roles} showToast={showToast} user={user} allProfiles={allProfiles} allRoles={allRoles} isAdmin={isAdmin}/>}
     </Modal>
 
     {/* Project Workspace */}
