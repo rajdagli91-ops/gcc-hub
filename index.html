@@ -5935,8 +5935,9 @@ function ProductGroupRow({pg}){
 }
 
 function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
-  const canImport=isAdmin||roles.includes("issuer")||hp("orders_import");
-  const canDispatch=isAdmin||roles.includes("issuer")||hp("orders_dispatch");
+  const canImport=isAdmin||roles.includes("issuer")||roles.includes("ho")||hp("orders_import");
+  const canDispatch=isAdmin||roles.includes("issuer")||hp("orders_dispatch"); // HO excluded
+  const canSetup=isAdmin||roles.includes("issuer")||hp("orders_import");
 
   const [orders,setOrders]=useState([]);
   const [customerMap,setCustomerMap]=useState({});
@@ -5956,8 +5957,46 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
   const [editingCustomer,setEditingCustomer]=useState(null);
   const [custForm,setCustForm]=useState({customer:"",transport:"",route:"",isDirect:false});
   const [custSaving,setCustSaving]=useState(false);
+  const [unknownCusts,setUnknownCusts]=useState(null);
+  const [pendingImport,setPendingImport]=useState(null);
+  const [savingUnknown,setSavingUnknown]=useState(false);
+
+  // Normalise transporter name — ignore dots, extra spaces, case
+  const normT=s=>String(s||"").toLowerCase().replace(/[.\s]+/g," ").trim();
+
+  // Core import save logic — separated so it can be called after unknown-customer modal
+  const _doImport=async(sanitisedMap)=>{
+    const incomingSet=new Set(Object.keys(sanitisedMap));
+    const pendingInDB=orders.filter(o=>o.status==="Pending"||o.status==="Partial");
+    let closedCount=0;
+    for(const dbOrder of pendingInDB){
+      if(!incomingSet.has(dbOrder.id)){
+        await C("orders").doc(dbOrder.id).update({status:"Pre-closed",preClosedAt:ts(),preClosedNote:"Not found in latest Tally export — likely pre-closed by HO"});
+        closedCount++;
+      }
+    }
+    let newCount=0,updCount=0;
+    for(const [key,order] of Object.entries(sanitisedMap)){
+      const docRef=C("orders").doc(key);
+      const existing=orders.find(o=>o.id===key);
+      if(existing){
+        const mergedItems=order.items.map(ni=>{
+          const prev=(existing.items||[]).find(p=>normalize(p.name)===normalize(ni.name));
+          return prev?{...ni,dispatchedQty:prev.dispatchedQty||0,status:prev.status||"Pending"}:ni;
+        });
+        const allDone=mergedItems.every(i=>i.status==="Dispatched");
+        const anyDone=mergedItems.some(i=>i.status==="Dispatched"||i.status==="Partial");
+        await docRef.update({...order,items:mergedItems,status:allDone?"Dispatched":anyDone?"Partial":"Pending",lastImportedAt:ts()});
+        updCount++;
+      }else{
+        await docRef.set({...order,importedBy:user.email,importedAt:ts(),lastImportedAt:ts()});
+        newCount++;
+      }
+    }
+    showToast(`Import done: ${newCount} new · ${updCount} updated · ${closedCount} auto-closed ✓`);
+  };
   const [fgProducts,setFgProducts]=useState([]);
-  const [confirmingDispatch,setConfirmingDispatch]=useState(null); // partyName being confirmed
+  const [quickAddCustomer,setQuickAddCustomer]=useState(null); // partyName being quick-added
 
   useEffect(()=>{
     const u1=C("orders").orderBy("orderDate","asc").onSnapshot(
@@ -5971,6 +6010,23 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
   },[]);
 
   // ── Import Transport List ──
+  const downloadTransportFormat=async()=>{
+    await loadXLSX();
+    const XLSX=window.XLSX;
+    const rows=[
+      ["Particulars","Transport","Route"],
+      ["ABC TRADERS","JANSEVA TRANSPORT","BHIWANDI"],
+      ["XYZ PAINTS","DIRECT","AHMEDNAGAR"],
+      ["HARSHIT AGENCIES","VIJAY TRANSPORT","PUNE"],
+      ["SAMPLE CUSTOMER","DIRECT","NASHIK"],
+    ];
+    const ws=XLSX.utils.aoa_to_sheet(rows);
+    const ck="!cols";ws[ck]=[{wch:35},{wch:25},{wch:20}];
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,"Customer Transport List");
+    XLSX.writeFile(wb,"VEEBEE_Transport_List_Format.xlsx");
+  };
+
   const importTransportList=async(file)=>{
     setTransportParsing(true);
     try{
@@ -6004,11 +6060,24 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
     try{
       const isDirect=custForm.isDirect||custForm.transport.toLowerCase().includes("direct");
       const key=normalize(custForm.customer.trim());
-      const newMap={...customerMap,[key]:{customer:custForm.customer.trim(),transport:custForm.transport.trim()||"Direct",route:custForm.route.trim(),isDirect}};
+      const newEntry={customer:custForm.customer.trim(),transport:custForm.transport.trim()||"Direct",route:custForm.route.trim(),isDirect};
+      const newMap={...customerMap,[key]:newEntry};
       const routeSet=new Set(Object.values(newMap).map(c=>c.route).filter(Boolean));
       await C("settings").doc("customerTransport").set({map:newMap,routes:Array.from(routeSet).sort(),updatedAt:ts()},{merge:true});
+      // Backfill any pending orders for this customer that still show Unknown
+      const snap=await C("orders").where("status","in",["Pending","Partial"]).get();
+      const batch=firebase.firestore().batch();
+      let backfilled=0;
+      snap.docs.forEach(doc=>{
+        const d=doc.data();
+        if(normalize(d.partyName)===key&&(d.route==="Unknown"||d.transport==="Unknown"||!d.route)){
+          batch.update(doc.ref,{route:newEntry.route,transport:newEntry.transport,isDirect:newEntry.isDirect});
+          backfilled++;
+        }
+      });
+      if(backfilled>0){await batch.commit();showToast(`${editingCustomer?"Updated":"Added"} customer + ${backfilled} pending order${backfilled!==1?"s":""} updated ✓`);}
+      else showToast(editingCustomer?"Customer updated ✓":"Customer added ✓");
       setCustForm({customer:"",transport:"",route:"",isDirect:false});setEditingCustomer(null);
-      showToast(editingCustomer?"Customer updated ✓":"Customer added ✓");
     }catch(e){showToast("Error: "+e.message,"error");}
     setCustSaving(false);
   };
@@ -6058,35 +6127,22 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
         const safeKey=sanitise(rawKey)||("order_"+Date.now()+"_"+Math.random().toString(36).slice(2));
         sanitisedMap[safeKey]={...order,voucherNo:order.voucherNo||rawKey};
       }
-      const incomingSet=new Set(Object.keys(sanitisedMap));
-      // Auto-close stale pending orders
-      const pendingInDB=orders.filter(o=>o.status==="Pending"||o.status==="Partial");
-      let closedCount=0;
-      for(const dbOrder of pendingInDB){
-        if(!incomingSet.has(dbOrder.id)){
-          await C("orders").doc(dbOrder.id).update({status:"Pre-closed",preClosedAt:ts(),preClosedNote:"Not found in latest Tally export — likely pre-closed by HO"});
-          closedCount++;
+
+      // Detect customers not in transport list — collect unique unknowns
+      const unknownMap={};
+      Object.values(sanitisedMap).forEach(o=>{
+        if((o.route==="Unknown"||!o.route)&&!unknownMap[normalize(o.partyName)]){
+          unknownMap[normalize(o.partyName)]={partyName:o.partyName,route:"",transport:"",isDirect:false};
         }
+      });
+      if(Object.keys(unknownMap).length>0){
+        // Pause import — show modal to fill in routes for new customers
+        setPendingImport({sanitisedMap});
+        setUnknownCusts(Object.values(unknownMap));
+        setParsing(false);
+        return;
       }
-      let newCount=0,updCount=0;
-      for(const [key,order] of Object.entries(sanitisedMap)){
-        const docRef=C("orders").doc(key);
-        const existing=orders.find(o=>o.id===key);
-        if(existing){
-          const mergedItems=order.items.map(ni=>{
-            const prev=(existing.items||[]).find(p=>normalize(p.name)===normalize(ni.name));
-            return prev?{...ni,dispatchedQty:prev.dispatchedQty||0,status:prev.status||"Pending"}:ni;
-          });
-          const allDone=mergedItems.every(i=>i.status==="Dispatched");
-          const anyDone=mergedItems.some(i=>i.status==="Dispatched"||i.status==="Partial");
-          await docRef.update({...order,items:mergedItems,status:allDone?"Dispatched":anyDone?"Partial":"Pending",lastImportedAt:ts()});
-          updCount++;
-        }else{
-          await docRef.set({...order,importedBy:user.email,importedAt:ts(),lastImportedAt:ts()});
-          newCount++;
-        }
-      }
-      showToast(`Import done: ${newCount} new · ${updCount} updated · ${closedCount} auto-closed ✓`);
+      await _doImport(sanitisedMap);
     }catch(e){showToast("Parse error: "+e.message,"error");}
     setParsing(false);
   };
@@ -6232,7 +6288,8 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
   const customerGroups=(()=>{
     const map={};
     const filtered=pendingOrders.filter(o=>{
-      if(routeFilter!=="All"&&o.route!==routeFilter)return false;
+      if(routeFilter==="Unknown"){if(o.route!=="Unknown"&&o.route)return false;}
+      else if(routeFilter!=="All"&&o.route!==routeFilter)return false;
       if(deliveryFilter==="Direct"&&!o.isDirect)return false;
       if(deliveryFilter==="Transport"&&o.isDirect)return false;
       if(search.trim()&&!normalize(o.partyName||"").includes(normalize(search))&&!normalize(o.voucherNo||"").includes(normalize(search)))return false;
@@ -6280,8 +6337,10 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
   const transporterGroups=(()=>{
     const map={};
     customerGroups.forEach(cg=>{
-      const tKey=cg.isDirect?"🚚 DIRECT DELIVERY":cg.transport||"Unknown";
-      if(!map[tKey])map[tKey]={transport:tKey,isDirect:cg.isDirect,customers:[]};
+      // Use normT to merge transporters that differ only by dots/spaces
+      const rawT=cg.isDirect?"🚚 DIRECT DELIVERY":cg.transport||"Unknown";
+      const tKey=cg.isDirect?"DIRECT":normT(rawT);
+      if(!map[tKey])map[tKey]={transport:rawT,isDirect:cg.isDirect,customers:[]};
       const totalItems=(cg.orders||[]).reduce((a,o)=>(o.items||[]).filter(i=>i.status!=="Dispatched"&&i.balanceQty>0).length+a,0);
       const totalQty=(cg.orders||[]).reduce((a,o)=>(o.items||[]).reduce((b,i)=>i.status!=="Dispatched"&&i.balanceQty>0?b+i.balanceQty:b,0)+a,0);
       map[tKey].customers.push({partyName:cg.partyName,route:cg.route,orders:cg.orders,totalItems,totalQty});
@@ -6360,7 +6419,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
           await Promise.all(batches.map(b=>b.commit()));
           showToast(`All ${orders.length} orders cleared ✓`);
         }} style={{background:"#2e0a0a",border:"1px solid #7f1d1d",borderRadius:"7px",padding:"6px 12px",color:"#f87171",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>🗑 Clear All Orders</button>}
-        <button onClick={()=>setSubTab(t=>t==="setup"?"pending":"setup")} style={{background:"#1a0a2e",border:"1px solid #7c3aed",borderRadius:"7px",padding:"6px 12px",color:"#c4b5fd",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>⚙️ Setup Routes</button>
+        {(isAdmin||roles.includes("issuer"))&&<button onClick={()=>setSubTab(t=>t==="setup"?"pending":"setup")} style={{background:"#1a0a2e",border:"1px solid #7c3aed",borderRadius:"7px",padding:"6px 12px",color:"#c4b5fd",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>⚙️ Setup Routes</button>}
       </div>
     </div>
 
@@ -6371,6 +6430,63 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
         {l}{k==="dispatch"&&filteredToday.length>0?<span style={{marginLeft:"6px",background:c+"40",border:`1px solid ${c}60`,borderRadius:"99px",padding:"0px 7px",fontSize:"10px"}}>{filteredToday.length}</span>:null}
         {k==="reports"&&dispatchReports.length>0?<span style={{marginLeft:"6px",background:c+"40",border:`1px solid ${c}60`,borderRadius:"99px",padding:"0px 7px",fontSize:"10px"}}>{dispatchReports.length}</span>:null}
       </button>)}
+    </div>}
+
+    {/* ── UNKNOWN CUSTOMERS MODAL — appears after import detects new customers ── */}
+    {unknownCusts&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.82)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <div style={{background:"#0b1220",border:"1px solid #f59e0b60",borderRadius:"14px",padding:"20px",width:"min(540px,96vw)",maxHeight:"90vh",overflowY:"auto"}}>
+        <div style={{fontSize:"14px",fontWeight:"700",color:"#fcd34d",marginBottom:"4px"}}>⚠ New Customers Found</div>
+        <div style={{fontSize:"11.5px",color:"#64748b",marginBottom:"14px"}}>{unknownCusts.length} customer{unknownCusts.length!==1?"s":""} in this file are not in the transport list. Add their route and transporter now — or skip and add later from ⚙️ Setup Routes.</div>
+        {unknownCusts.map((c,i)=><div key={i} style={{background:"#060d1a",border:"1px solid #1e293b",borderRadius:"8px",padding:"10px 12px",marginBottom:"8px"}}>
+          <div style={{fontSize:"12.5px",fontWeight:"700",color:"#f1f5f9",marginBottom:"8px"}}>{c.partyName}</div>
+          <Grid2>
+            <Field label="Route / Area *">
+              <input style={inp} list={`route-uc-${i}`} value={c.route} onChange={e=>setUnknownCusts(u=>u.map((x,xi)=>xi===i?{...x,route:e.target.value}:x))} placeholder="e.g. BHIWANDI"/>
+              <datalist id={`route-uc-${i}`}>{routes.map(r=><option key={r} value={r}/>)}</datalist>
+            </Field>
+            <Field label="Transport / Delivery">
+              <input style={inp} value={c.transport} onChange={e=>setUnknownCusts(u=>u.map((x,xi)=>xi===i?{...x,transport:e.target.value,isDirect:e.target.value.toLowerCase().includes("direct")}:x))} placeholder="e.g. JANSEVA TRANSPORT or DIRECT"/>
+            </Field>
+          </Grid2>
+          <div style={{display:"flex",gap:"6px",marginTop:"4px"}}>
+            <button onClick={()=>setUnknownCusts(u=>u.map((x,xi)=>xi===i?{...x,isDirect:true,transport:"DIRECT"}:x))} style={{flex:1,background:c.isDirect?"#052e16":"#080d18",border:`1px solid ${c.isDirect?"#166534":"#1e293b"}`,borderRadius:"5px",color:c.isDirect?"#4ade80":"#475569",fontWeight:"700",fontSize:"11px",padding:"4px",cursor:"pointer"}}>🚚 Direct</button>
+            <button onClick={()=>setUnknownCusts(u=>u.map((x,xi)=>xi===i?{...x,isDirect:false}:x))} style={{flex:1,background:!c.isDirect?"#0a1a2e":"#080d18",border:`1px solid ${!c.isDirect?"#2563eb":"#1e293b"}`,borderRadius:"5px",color:!c.isDirect?"#93c5fd":"#475569",fontWeight:"700",fontSize:"11px",padding:"4px",cursor:"pointer"}}>🏢 Transporter</button>
+          </div>
+        </div>)}
+        <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",marginTop:"14px"}}>
+          <button onClick={async()=>{
+            // Skip — import as-is with Unknown routes
+            setUnknownCusts(null);
+            if(pendingImport){await _doImport(pendingImport.sanitisedMap);setPendingImport(null);}
+          }} style={{background:"none",border:"1px solid #334155",borderRadius:"6px",padding:"7px 14px",color:"#475569",fontSize:"12px",cursor:"pointer"}}>Skip — Import Anyway</button>
+          <button onClick={async()=>{
+            // Save new customers to transport list, then patch sanitisedMap routes, then import
+            setSavingUnknown(true);
+            try{
+              const newMap={...customerMap};
+              const routeSet=new Set(routes);
+              for(const c of unknownCusts){
+                if(!c.route.trim())continue;
+                const key=normalize(c.partyName);
+                const isDirect=c.isDirect||c.transport.toLowerCase().includes("direct");
+                newMap[key]={customer:c.partyName,transport:c.transport||"DIRECT",route:c.route.trim(),isDirect};
+                routeSet.add(c.route.trim());
+              }
+              await C("settings").doc("customerTransport").set({map:newMap,routes:Array.from(routeSet).sort(),updatedAt:ts()},{merge:true});
+              // Patch sanitisedMap with new routes
+              const patched={...pendingImport.sanitisedMap};
+              Object.keys(patched).forEach(k=>{
+                const o=patched[k];
+                const cInfo=newMap[normalize(o.partyName)];
+                if(cInfo)patched[k]={...o,route:cInfo.route,transport:cInfo.transport,isDirect:cInfo.isDirect};
+              });
+              await _doImport(patched);
+              setUnknownCusts(null);setPendingImport(null);
+            }catch(e){showToast("Error: "+e.message,"error");}
+            setSavingUnknown(false);
+          }} disabled={savingUnknown} style={{background:"#052e16",border:"1px solid #166534",borderRadius:"6px",padding:"7px 16px",color:"#4ade80",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>{savingUnknown?"Saving…":"Save & Import"}</button>
+        </div>
+      </div>
     </div>}
 
     {/* Setup panel */}
@@ -6384,6 +6500,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
             {transportParsing?"Importing…":"⬆ Upload Transport List Excel"}
           </button>
           <input id="transport-import" type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={async e=>{if(e.target.files[0]){await importTransportList(e.target.files[0]);e.target.value="";}}}/>
+          <button onClick={downloadTransportFormat} style={{background:"#060d1a",border:"1px solid #334155",borderRadius:"6px",padding:"6px 12px",color:"#64748b",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>⬇ Download Format</button>
           {Object.keys(customerMap).length>0&&<span style={{fontSize:"11.5px",color:"#22c55e"}}>{Object.keys(customerMap).length} customers · {routes.length} routes ✓</span>}
         </div>
       </div>
@@ -6438,7 +6555,13 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
         </div>
         <div style={{display:"flex",gap:"4px",flexWrap:"wrap",flex:"2 1 auto"}}>
           <span style={{fontSize:"11px",color:"#475569",fontWeight:"600",alignSelf:"center",whiteSpace:"nowrap"}}>Route:</span>
-          {["All",...routes].map(r=><button key={r} onClick={()=>setRouteFilter(r)} style={{background:routeFilter===r?"#1e3a5f":"#080d18",border:`1px solid ${routeFilter===r?"#3b82f6":"#1e293b"}`,borderRadius:"5px",padding:"3px 9px",color:routeFilter===r?"#93c5fd":"#475569",fontSize:"11px",fontWeight:"600",cursor:"pointer",whiteSpace:"nowrap"}}>{r}</button>)}
+          {["All",...routes,"Unknown"].map(r=>{
+            const isUnknown=r==="Unknown";
+            const unknownCount=isUnknown?pendingOrders.filter(o=>o.route==="Unknown"||!o.route).length:0;
+            return <button key={r} onClick={()=>setRouteFilter(r)} style={{background:routeFilter===r?(isUnknown?"#2e0a0a":"#1e3a5f"):"#080d18",border:`1px solid ${routeFilter===r?(isUnknown?"#ef4444":"#3b82f6"):"#1e293b"}`,borderRadius:"5px",padding:"3px 9px",color:routeFilter===r?(isUnknown?"#f87171":"#93c5fd"):"#475569",fontSize:"11px",fontWeight:"600",cursor:"pointer",whiteSpace:"nowrap"}}>
+              {r}{isUnknown&&unknownCount>0?<span style={{marginLeft:"4px",background:"#ef4444",borderRadius:"99px",color:"#fff",fontSize:"9.5px",padding:"0 5px"}}>{unknownCount}</span>:null}
+            </button>;
+          })}
         </div>
       </div>
       <div style={{display:"flex",gap:"5px",marginBottom:"14px",flexWrap:"wrap"}}>
@@ -6489,31 +6612,58 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
           {/* ── CUSTOMER VIEW (existing) ── */}
           {viewMode==="customer"&&<div>
           {customerGroups.map(group=>{
+            const isUnknown=group.route==="Unknown"||!group.route;
             const isExp=expandedCustomer===group.partyName;
             const groupKey=k=>Object.keys(dispatchForm).some(dk=>dk.startsWith(group.orders.map(o=>o.id).join("|")+"|")||group.orders.some(o=>dk.startsWith(o.id+"__")));
             const selectedCount=group.orders.reduce((a,o)=>a+Object.keys(dispatchForm).filter(k=>k.startsWith(o.id+"__")).length,0);
             const allStatuses=group.orders.map(o=>o.status);
             const hasPartial=allStatuses.includes("Partial");
-            const borderColor=hasPartial?"#3b82f6":"#f59e0b";
+            const borderColor=isUnknown?"#ef4444":hasPartial?"#3b82f6":"#f59e0b";
+            const isQA=quickAddCustomer===group.partyName;
 
-            return <div key={group.partyName} style={{background:"#0b1220",border:`1px solid ${isExp?"#2563eb60":"#1e293b"}`,borderLeft:`3px solid ${borderColor}`,borderRadius:"10px",marginBottom:"8px",overflow:"hidden"}}>
+            return <div key={group.partyName} style={{background:"#0b1220",border:`1px solid ${isExp?"#2563eb60":isUnknown?"#ef444430":"#1e293b"}`,borderLeft:`3px solid ${borderColor}`,borderRadius:"10px",marginBottom:"8px",overflow:"hidden"}}>
               {/* Customer header */}
               <div onClick={()=>{setExpandedCustomer(isExp?null:group.partyName);setDispatchForm({});}}
                 style={{padding:"11px 14px",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",gap:"8px",flexWrap:"wrap"}}>
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{fontSize:"13.5px",fontWeight:"700",color:"#f1f5f9",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{group.partyName}</div>
                   <div style={{fontSize:"11px",color:"#475569",display:"flex",gap:"10px",flexWrap:"wrap",marginTop:"2px"}}>
-                    <span style={{color:group.isDirect?"#22c55e":"#93c5fd"}}>{group.isDirect?"🚚 Direct":"🏢 "+group.transport}</span>
-                    <span>{group.route}</span>
+                    {isUnknown
+                      ?<span style={{color:"#f87171",fontWeight:"700"}}>⚠ Route unknown</span>
+                      :<><span style={{color:group.isDirect?"#22c55e":"#93c5fd"}}>{group.isDirect?"🚚 Direct":"🏢 "+group.transport}</span><span>{group.route}</span></>}
                     <span>{group.orders.length} order{group.orders.length!==1?"s":""}</span>
                     <span style={{color:"#f59e0b"}}>{group.orders.reduce((a,o)=>(o.items||[]).filter(i=>i.status!=="Dispatched"&&i.balanceQty>0).length+a,0)} items pending</span>
                   </div>
                 </div>
                 <div style={{display:"flex",gap:"6px",alignItems:"center",flexShrink:0}}>
+                  {isUnknown&&<button onClick={e=>{e.stopPropagation();setCustForm({customer:group.partyName,transport:"",route:"",isDirect:false});setQuickAddCustomer(isQA?null:group.partyName);}} style={{background:isQA?"#2e0a0a":"#1a0505",border:`1px solid ${isQA?"#ef4444":"#7f1d1d"}`,borderRadius:"5px",color:isQA?"#f87171":"#fca5a5",fontSize:"10.5px",fontWeight:"700",padding:"2px 8px",cursor:"pointer",whiteSpace:"nowrap"}}>
+                    {isQA?"✕ Cancel":"+ Add Route"}
+                  </button>}
                   {selectedCount>0&&<span style={{fontSize:"10px",color:"#4ade80",background:"#052e16",border:"1px solid #166534",borderRadius:"99px",padding:"1px 8px"}}>{selectedCount} selected</span>}
                   <span style={{color:"#334155",fontSize:"11px"}}>{isExp?"▲":"▼"}</span>
                 </div>
               </div>
+
+              {/* Quick-add route form for Unknown customers */}
+              {isQA&&<div style={{borderTop:"1px solid #7f1d1d40",padding:"10px 14px",background:"#0f0505"}}>
+                <div style={{fontSize:"11px",fontWeight:"700",color:"#fca5a5",marginBottom:"8px"}}>Add {group.partyName} to transport list</div>
+                <Grid2>
+                  <Field label="Route / Area *">
+                    <input style={inp} list="qa-route-list" value={custForm.route} onChange={e=>setCustForm({...custForm,route:e.target.value})} placeholder="e.g. BHIWANDI"/>
+                    <datalist id="qa-route-list">{routes.map(r=><option key={r} value={r}/>)}</datalist>
+                  </Field>
+                  <Field label="Transport Company">
+                    <input style={inp} value={custForm.transport} onChange={e=>setCustForm({...custForm,transport:e.target.value,isDirect:e.target.value.toLowerCase().includes("direct")})} placeholder="e.g. JANSEVA or DIRECT"/>
+                  </Field>
+                </Grid2>
+                <div style={{display:"flex",gap:"6px",marginBottom:"8px"}}>
+                  <button onClick={()=>setCustForm({...custForm,isDirect:true,transport:"DIRECT"})} style={{flex:1,background:custForm.isDirect?"#052e16":"#080d18",border:`1px solid ${custForm.isDirect?"#166534":"#1e293b"}`,borderRadius:"5px",color:custForm.isDirect?"#4ade80":"#475569",fontWeight:"700",fontSize:"11px",padding:"4px",cursor:"pointer"}}>🚚 Direct</button>
+                  <button onClick={()=>setCustForm({...custForm,isDirect:false})} style={{flex:1,background:!custForm.isDirect?"#0a1a2e":"#080d18",border:`1px solid ${!custForm.isDirect?"#2563eb":"#1e293b"}`,borderRadius:"5px",color:!custForm.isDirect?"#93c5fd":"#475569",fontWeight:"700",fontSize:"11px",padding:"4px",cursor:"pointer"}}>🏢 Transporter</button>
+                </div>
+                <div style={{display:"flex",justifyContent:"flex-end"}}>
+                  <button onClick={async()=>{await saveCustomer();setQuickAddCustomer(null);}} disabled={custSaving||!custForm.route.trim()} style={{background:"#052e16",border:"1px solid #166534",borderRadius:"6px",padding:"6px 14px",color:"#4ade80",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>{custSaving?"Saving…":"✓ Save & Update Orders"}</button>
+                </div>
+              </div>}
 
               {/* Expanded: all orders for this customer */}
               {isExp&&<div style={{padding:"0 14px 14px",borderTop:"1px solid #0f172a"}}>
@@ -11025,7 +11175,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
       testimonials:hp("testimonials"),
       enquiries:hp("enquiries_create")||hp("enquiries_view_all")||hp("enquiries_update")||hp("enquiries_dispatch"),
       stock:hp("stock_view"),
-      orders:hp("orders_view")||hp("orders_dispatch")||hp("orders_import"),
+      orders:roles.includes("issuer")||roles.includes("ho")||hp("orders_view")||hp("orders_dispatch")||hp("orders_import"),
       users:isAdmin,
       settings:hp("settings_products")||hp("settings_advanced"),
     };
