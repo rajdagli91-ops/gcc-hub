@@ -5803,23 +5803,135 @@ function FGMovementsTab({role,user,showToast,isAdmin,canManage}){
 // ══════════════════════════════════════════════════════════════════
 
 // Print today's dispatch list — plain ES5, defined in script block but called here
-function printDispatchList(groups,routeLabel,dateStr){
-  var css='*{box-sizing:border-box}body{font-family:Arial,sans-serif;margin:0;padding:6pt 8pt;font-size:9.5pt}@page{size:A4 portrait;margin:8mm}table{border-collapse:collapse;width:100%}tr{page-break-inside:avoid}.sh{font-weight:700;font-size:9pt;border-bottom:1.5px solid #000;padding-bottom:2pt;margin:6pt 0 3pt;text-transform:uppercase}';
+function printDispatchList(groups,routeLabel,dateStr,fgProds){
+  // Calculate volume from FG catalogue if available
+  function calcVol(name,qty){
+    if(!fgProds||!fgProds.length)return null;
+    var n=name.toLowerCase().trim();
+    var prod=null;
+    for(var i=0;i<fgProds.length;i++){
+      var pn=(fgProds[i].name||'').toLowerCase().trim();
+      if(pn===n||pn.indexOf(n)!==-1||n.indexOf(pn)!==-1){prod=fgProds[i];break;}
+    }
+    if(!prod||!prod.size)return null;
+    return (qty*prod.size).toFixed(2)+' '+(prod.unit||'L');
+  }
+  // Volume totals
+  var volTotals={};
+  groups.forEach(function(g){g.items.forEach(function(it){
+    if(!fgProds)return;
+    var v=calcVol(it.name,it.qty);
+    if(!v)return;
+    var parts=v.split(' ');var u=parts[1]||'L';var val=parseFloat(parts[0])||0;
+    volTotals[u]=(volTotals[u]||0)+val;
+  });});
+  var volSummary='';
+  Object.keys(volTotals).forEach(function(u){volSummary+=' &nbsp;|&nbsp; <b>'+volTotals[u].toFixed(2)+' '+u+'</b>';});
+
+  var css='*{box-sizing:border-box}body{font-family:Arial,sans-serif;margin:0;padding:4pt 6pt;font-size:8pt}@page{size:A4 portrait;margin:6mm}table{border-collapse:collapse;width:100%}tr{page-break-inside:avoid}td,th{padding:2pt 5pt}';
   var h='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Dispatch List<\/title><style>'+css+'<\/style><\/head><body>';
-  h+='<table style="margin-bottom:4pt"><tr><td><b style="font-size:13pt">VEEBEE<\/b><\/td><td style="text-align:right;font-size:10pt;font-weight:700">DISPATCH LIST — '+dateStr+'<\/td><\/tr><\/table>';
-  h+='<div style="border:1.5px solid #000;padding:4pt 8pt;margin-bottom:5pt"><span style="font-size:7.5pt">ROUTE \/ AREA: <\/span><b style="font-size:12pt">'+routeLabel+'<\/b><span style="font-size:9pt;margin-left:16pt">Total Customers: <b>'+groups.length+'<\/b><\/span><\/div>';
+  // Compact header — single line
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #000;padding-bottom:3pt;margin-bottom:4pt">';
+  h+='<b style="font-size:11pt">VEEBEE — DISPATCH LIST<\/b>';
+  h+='<span style="font-size:8pt"><b>'+dateStr+'<\/b> &nbsp;|&nbsp; Route: <b>'+routeLabel+'<\/b> &nbsp;|&nbsp; Customers: <b>'+groups.length+'<\/b>'+volSummary+'<\/span>';
+  h+='<\/div>';
+  // All customers in one continuous table
+  h+='<table><tr><th style="border:1px solid #000;background:#e8e8e8;text-align:left;width:4%">#<\/th><th style="border:1px solid #000;background:#e8e8e8;text-align:left;width:22%">Customer<\/th><th style="border:1px solid #000;background:#e8e8e8;text-align:left;width:42%">Product<\/th><th style="border:1px solid #000;background:#e8e8e8;text-align:center;width:10%">Qty<\/th><th style="border:1px solid #000;background:#e8e8e8;text-align:center;width:10%">Volume<\/th><th style="border:1px solid #000;background:#e8e8e8;text-align:left;width:12%">Order No<\/th><\/tr>';
   groups.forEach(function(g,gi){
-    h+='<div style="margin-bottom:6pt">';
-    h+='<div class="sh">'+(gi+1)+'. '+g.partyName+(g.transport?' &nbsp;<span style="font-size:8pt;font-weight:normal">('+g.transport+')<\/span>':'')+'<\/div>';
-    h+='<table><tr><th style="border:1px solid #000;padding:3pt 6pt;background:#e8e8e8;text-align:left;width:55%">Product<\/th><th style="border:1px solid #000;padding:3pt 6pt;background:#e8e8e8;text-align:center;width:20%">Dispatch Qty<\/th><th style="border:1px solid #000;padding:3pt 6pt;background:#e8e8e8;text-align:left">Order No<\/th><\/tr>';
-    g.items.forEach(function(it,i){
-      h+='<tr style="background:'+(i%2===0?'#fff':'#f8f8f8')+'"><td style="border:1px solid #000;padding:3pt 6pt">'+it.name+'<\/td><td style="border:1px solid #000;padding:3pt 6pt;text-align:center;font-weight:700">'+it.qty+'<\/td><td style="border:1px solid #000;padding:3pt 6pt;font-size:8.5pt;color:#555">'+it.voucherNo+'<\/td><\/tr>';
+    g.items.forEach(function(it,ii){
+      var vol=calcVol(it.name,it.qty)||'';
+      var bg=gi%2===0?'#fff':'#f5f5f5';
+      h+='<tr style="background:'+bg+'">';
+      if(ii===0)h+='<td style="border:1px solid #000;font-weight:700;vertical-align:top" rowspan="'+g.items.length+'">'+(gi+1)+'<\/td><td style="border:1px solid #000;font-size:7.5pt;vertical-align:top" rowspan="'+g.items.length+'"><b>'+g.partyName+'<\/b><br><span style="color:#666;font-size:7pt">'+(g.isDirect?'Direct':g.transport)+'<\/span><\/td>';
+      else h+='';
+      h+='<td style="border:1px solid #000">'+it.name+'<\/td><td style="border:1px solid #000;text-align:center;font-weight:700">'+it.qty+'<\/td><td style="border:1px solid #000;text-align:center;color:#333">'+vol+'<\/td><td style="border:1px solid #000;font-size:7pt;color:#555">'+it.voucherNo+'<\/td><\/tr>';
     });
-    h+='<\/table><\/div>';
   });
-  h+='<div style="margin-top:8pt;font-size:7.5pt;display:flex;justify-content:space-between;border-top:1px solid #ccc;padding-top:3pt"><span>GCC Operations Hub<\/span><span>Prepared by: _____________________ &nbsp; Checked by: _____________________<\/span><\/div>';
+  h+='<\/table>';
+  h+='<div style="margin-top:6pt;font-size:7pt;display:flex;justify-content:space-between;border-top:1px solid #ccc;padding-top:3pt"><span>GCC Operations Hub<\/span><span>Prepared by: _________________________ &nbsp; Checked by: _________________________<\/span><\/div>';
   h+='<\/body><\/html>';
   var w=window.open('','_blank');w.document.write(h);w.document.close();setTimeout(function(){w.print();},400);
+}
+
+function TransporterGroupRow({tg}){
+  const [open,setOpen]=useState(false);
+  const totalItems=tg.customers.reduce((a,c)=>a+c.totalItems,0);
+  const borderCol=tg.isDirect?"#22c55e":"#93c5fd";
+  return <div style={{background:"#0b1220",border:`1px solid #1e293b`,borderLeft:`3px solid ${borderCol}`,borderRadius:"10px",marginBottom:"7px",overflow:"hidden"}}>
+    <div onClick={()=>setOpen(o=>!o)} style={{padding:"10px 14px",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",gap:"8px"}}>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontSize:"13px",fontWeight:"700",color:tg.isDirect?"#4ade80":"#93c5fd",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{tg.transport}</div>
+        <div style={{fontSize:"11px",color:"#475569",marginTop:"2px"}}>{tg.customers.length} customer{tg.customers.length!==1?"s":" · "+tg.customers[0]?.route}</div>
+      </div>
+      <div style={{display:"flex",gap:"10px",alignItems:"center",flexShrink:0}}>
+        <div style={{textAlign:"right"}}>
+          <div style={{fontSize:"17px",fontWeight:"700",color:"#fcd34d",lineHeight:1}}>{totalItems}</div>
+          <div style={{fontSize:"9.5px",color:"#475569"}}>items</div>
+        </div>
+        <div style={{textAlign:"right"}}>
+          <div style={{fontSize:"17px",fontWeight:"700",color:"#f1f5f9",lineHeight:1}}>{tg.customers.length}</div>
+          <div style={{fontSize:"9.5px",color:"#475569"}}>parties</div>
+        </div>
+        <span style={{color:"#334155",fontSize:"11px"}}>{open?"▲":"▼"}</span>
+      </div>
+    </div>
+    {open&&<div style={{borderTop:"1px solid #0f172a"}}>
+      {tg.customers.map((c,ci)=><div key={ci} style={{borderTop:ci===0?"none":"1px solid #0f172a",background:ci%2===0?"transparent":"#060d1a"}}>
+        <div style={{padding:"7px 14px 3px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div style={{fontSize:"12.5px",fontWeight:"700",color:"#e2e8f0"}}>{c.partyName}</div>
+          <div style={{display:"flex",gap:"8px",fontSize:"11px",color:"#475569"}}>
+            <span>{c.route}</span>
+            <span style={{color:"#fcd34d",fontWeight:"700"}}>{c.totalItems} item{c.totalItems!==1?"s":""}</span>
+          </div>
+        </div>
+        {/* Show items for this customer */}
+        <div style={{paddingLeft:"22px",paddingBottom:"6px"}}>
+          {(c.orders||[]).flatMap(o=>(o.items||[]).filter(i=>i.status!=="Dispatched"&&i.balanceQty>0).map((item,ii)=><div key={o.id+ii} style={{fontSize:"11px",color:"#64748b",padding:"1px 14px",display:"flex",gap:"8px"}}>
+            <span style={{color:"#94a3b8"}}>·</span>
+            <span style={{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.name}</span>
+            <span style={{color:"#fcd34d",fontWeight:"600",flexShrink:0}}>{item.balanceQty}</span>
+          </div>))}
+        </div>
+      </div>)}
+      <div style={{padding:"7px 14px",background:"#0b1220",borderTop:"1px solid #0f172a",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <span style={{fontSize:"11px",color:"#475569"}}>Book one consignment to <strong style={{color:"#93c5fd"}}>{tg.transport}</strong> for all {tg.customers.length} customers above</span>
+        <span style={{fontSize:"12px",fontWeight:"700",color:"#fcd34d"}}>{totalItems} items total</span>
+      </div>
+    </div>}
+  </div>;
+}
+
+function ProductGroupRow({pg}){
+  const [open,setOpen]=useState(false);
+  return <div style={{background:"#0b1220",border:"1px solid #1e293b",borderLeft:"3px solid #3b82f6",borderRadius:"10px",marginBottom:"7px",overflow:"hidden"}}>
+    <div onClick={()=>setOpen(o=>!o)} style={{padding:"10px 14px",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",gap:"8px"}}>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontSize:"13px",fontWeight:"700",color:"#f1f5f9",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{pg.name}</div>
+        <div style={{fontSize:"11px",color:"#475569",marginTop:"2px"}}>{pg.customers.length} customer{pg.customers.length!==1?"s":""}</div>
+      </div>
+      <div style={{display:"flex",gap:"8px",alignItems:"center",flexShrink:0}}>
+        <div style={{textAlign:"right"}}>
+          <div style={{fontSize:"18px",fontWeight:"700",color:"#fcd34d",lineHeight:1}}>{pg.totalQty}</div>
+          <div style={{fontSize:"9.5px",color:"#475569"}}>total units</div>
+        </div>
+        <span style={{color:"#334155",fontSize:"11px"}}>{open?"▲":"▼"}</span>
+      </div>
+    </div>
+    {open&&<div style={{borderTop:"1px solid #0f172a"}}>
+      <div style={{display:"grid",gridTemplateColumns:"2fr 80px 1fr",gap:"6px",background:"#060d1a",padding:"5px 14px",fontSize:"10px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.06em"}}>
+        <span>Customer</span><span style={{textAlign:"center"}}>Qty</span><span>Transport</span>
+      </div>
+      {pg.customers.map((c,ci)=><div key={ci} style={{display:"grid",gridTemplateColumns:"2fr 80px 1fr",gap:"6px",padding:"7px 14px",borderTop:"1px solid #0f172a",alignItems:"center",background:ci%2===0?"transparent":"#060d1a"}}>
+        <div style={{fontSize:"12.5px",color:"#e2e8f0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.partyName}</div>
+        <div style={{textAlign:"center",fontSize:"13px",fontWeight:"700",color:"#fcd34d"}}>{c.qty}</div>
+        <div style={{fontSize:"11px",color:c.isDirect?"#4ade80":"#93c5fd"}}>{c.isDirect?"🚚 Direct":"🏢 "+c.transport}</div>
+      </div>)}
+      <div style={{padding:"7px 14px",background:"#0b1220",borderTop:"1px solid #0f172a",display:"flex",justifyContent:"flex-end",alignItems:"center",gap:"8px"}}>
+        <span style={{fontSize:"11px",color:"#475569"}}>Total for {pg.name}:</span>
+        <span style={{fontSize:"14px",fontWeight:"700",color:"#fcd34d"}}>{pg.totalQty}</span>
+      </div>
+    </div>}
+  </div>;
 }
 
 function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
@@ -5833,17 +5945,19 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
   const [parsing,setParsing]=useState(false);
   const [transportParsing,setTransportParsing]=useState(false);
   const [subTab,setSubTab]=useState("pending"); // "pending"|"dispatch"|"setup"
-  const [viewMode,setViewMode]=useState("customer"); // "customer"|"product"
+  const [viewMode,setViewMode]=useState("customer"); // "customer"|"product"|"transporter"
   const [search,setSearch]=useState("");
   const [routeFilter,setRouteFilter]=useState("All");
   const [deliveryFilter,setDeliveryFilter]=useState("All");
   const [expandedCustomer,setExpandedCustomer]=useState(null);
-  const [dispatchForm,setDispatchForm]=useState({}); // "orderId__itemIdx" -> {type,qty}
+  const [dispatchForm,setDispatchForm]=useState({});
   const [saving,setSaving]=useState(false);
   const [customerSearch,setCustomerSearch]=useState("");
   const [editingCustomer,setEditingCustomer]=useState(null);
   const [custForm,setCustForm]=useState({customer:"",transport:"",route:"",isDirect:false});
   const [custSaving,setCustSaving]=useState(false);
+  const [fgProducts,setFgProducts]=useState([]);
+  const [confirmingDispatch,setConfirmingDispatch]=useState(null); // partyName being confirmed
 
   useEffect(()=>{
     const u1=C("orders").orderBy("orderDate","asc").onSnapshot(
@@ -5852,7 +5966,8 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
     const u2=C("settings").doc("customerTransport").onSnapshot(snap=>{
       if(snap.exists){const d=snap.data();setCustomerMap(d.map||{});setRoutes(d.routes||[]);}
     },()=>{});
-    return ()=>{u1();u2();};
+    const u3=C("fg_products").onSnapshot(s=>{setFgProducts(s.docs.map(d=>({id:d.id,...d.data()})));},()=>{});
+    return ()=>{u1();u2();u3();};
   },[]);
 
   // ── Import Transport List ──
@@ -6002,6 +6117,77 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
     setSaving(false);
   };
 
+  // ── Calculate total volume (L or KG) from FG catalogue ──
+  const calcVolume=(itemName,qty)=>{
+    const prod=fgProducts.find(p=>normalize(p.name)===normalize(itemName)||normalize(itemName).includes(normalize(p.name)));
+    if(!prod||!prod.size)return null;
+    return {vol:parseFloat((qty*prod.size).toFixed(2)),unit:prod.unit||"L"};
+  };
+
+  // ── Reverse a confirmed dispatch within 24h ──
+  const reverseDispatch=async(partyName,items)=>{
+    setConfirmingDispatch(partyName+"_reverse");
+    try{
+      const orderIds=[...new Set(items.map(i=>i.orderId))];
+      for(const orderId of orderIds){
+        const orderDoc=await C("orders").doc(orderId).get();
+        if(!orderDoc.exists)continue;
+        const data=orderDoc.data();
+        const updatedItems=(data.items||[]).map(item=>{
+          const matched=items.find(i=>i.orderId===orderId&&normalize(i.name)===normalize(item.name));
+          return matched?{...item,dispatchConfirmed:false,dispatchConfirmedAt:null}:item;
+        });
+        await C("orders").doc(orderId).update({items:updatedItems,status:"Partial",updatedAt:ts()});
+      }
+      showToast(`${partyName} dispatch reversed — moved back to pending dispatch ✓`);
+    }catch(e){showToast("Error: "+e.message,"error");}
+    setConfirmingDispatch(null);
+  };
+
+  // ── Finalise dispatch for a customer ──
+  const [dispatchReports,setDispatchReports]=useState([]);
+  useEffect(()=>{
+    if(!isAdmin)return;
+    const cutoff=new Date(Date.now()-48*60*60*1000).toISOString();
+    const unsub=C("dispatch_reports").where("createdAt",">=",cutoff).orderBy("createdAt","desc").onSnapshot(
+      s=>setDispatchReports(s.docs.map(d=>({id:d.id,...d.data()}))),()=>{});
+    return unsub;
+  },[isAdmin]);
+
+  const finaliseDispatch=async(partyName,items)=>{
+    setConfirmingDispatch(partyName);
+    try{
+      const orderIds=[...new Set(items.map(i=>i.orderId))];
+      const confirmedAt=new Date().toISOString();
+      for(const orderId of orderIds){
+        const orderDoc=await C("orders").doc(orderId).get();
+        if(!orderDoc.exists)continue;
+        const data=orderDoc.data();
+        const updatedItems=(data.items||[]).map(item=>{
+          const matched=items.find(i=>i.orderId===orderId&&normalize(i.name)===normalize(item.name));
+          return matched?{...item,dispatchConfirmed:true,dispatchConfirmedAt:confirmedAt}:item;
+        });
+        const allDone=updatedItems.every(i=>i.status==="Dispatched"||i.balanceQty<=0);
+        await C("orders").doc(orderId).update({items:updatedItems,status:allDone?"Dispatched":"Partial",updatedAt:ts()});
+      }
+      // Save dispatch report entry — one per customer per day, merged with today's report doc
+      const reportId="report_"+todayStr;
+      const reportDoc=await C("dispatch_reports").doc(reportId).get();
+      const volTotals={};
+      items.forEach(item=>{const v=calcVolume(item.name,item.qty);if(v){volTotals[v.unit]=(volTotals[v.unit]||0)+v.vol;}});
+      const entry={partyName,items:items.map(i=>({name:i.name,qty:i.qty,vol:calcVolume(i.name,i.qty),voucherNo:i.voucherNo})),confirmedAt,volTotals};
+      if(reportDoc.exists){
+        const existing=reportDoc.data();
+        const entries=[...(existing.entries||[]).filter(e=>e.partyName!==partyName),entry];
+        await C("dispatch_reports").doc(reportId).update({entries,updatedAt:confirmedAt});
+      }else{
+        await C("dispatch_reports").doc(reportId).set({date:todayStr,entries:[entry],createdAt:confirmedAt,updatedAt:confirmedAt,createdBy:user.email});
+      }
+      showToast(`${partyName} — dispatch confirmed ✓`);
+    }catch(e){showToast("Error: "+e.message,"error");}
+    setConfirmingDispatch(null);
+  };
+
   const STATUS_COLOR={Pending:"#f59e0b",Partial:"#3b82f6",Dispatched:"#22c55e","Pre-closed":"#475569"};
   const todayStr=new Date().toISOString().slice(0,10);
 
@@ -6028,15 +6214,19 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
     });
   })();
 
-  // ── Today's dispatch data ──
+  // ── Today's dispatch — show all dispatched today; confirmed ones show reverse option within 24h ──
   const todayDispatched=(()=>{
     const map={};
+    const now=Date.now();
     orders.forEach(o=>{
-      (o.items||[]).forEach((item,idx)=>{
+      (o.items||[]).forEach((item)=>{
         if(item.lastDispatchedAt===todayStr){
           const k=normalize(o.partyName);
           if(!map[k])map[k]={partyName:o.partyName,route:o.route,transport:o.transport,isDirect:o.isDirect,items:[]};
-          map[k].items.push({name:item.name,qty:item.dispatchedQty||0,voucherNo:o.voucherNo,orderId:o.id});
+          const vol=calcVolume(item.name,item.dispatchedQty||0);
+          const confirmedAt=item.dispatchConfirmedAt?new Date(item.dispatchConfirmedAt).getTime():null;
+          const canReverse=item.dispatchConfirmed&&confirmedAt&&(now-confirmedAt<24*60*60*1000);
+          map[k].items.push({name:item.name,qty:item.dispatchedQty||0,vol,voucherNo:o.voucherNo,orderId:o.id,confirmed:!!item.dispatchConfirmed,canReverse,confirmedAt});
         }
       });
     });
@@ -6050,7 +6240,23 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
     return true;
   });
 
-  const counts={Pending:orders.filter(o=>o.status==="Pending").length,Partial:orders.filter(o=>o.status==="Partial").length};
+  // ── Transporter grouping (for booking consolidated dispatches) ──
+  const transporterGroups=(()=>{
+    const map={};
+    customerGroups.forEach(cg=>{
+      const tKey=cg.isDirect?"🚚 DIRECT DELIVERY":cg.transport||"Unknown";
+      if(!map[tKey])map[tKey]={transport:tKey,isDirect:cg.isDirect,customers:[]};
+      const totalItems=(cg.orders||[]).reduce((a,o)=>(o.items||[]).filter(i=>i.status!=="Dispatched"&&i.balanceQty>0).length+a,0);
+      const totalQty=(cg.orders||[]).reduce((a,o)=>(o.items||[]).reduce((b,i)=>i.status!=="Dispatched"&&i.balanceQty>0?b+i.balanceQty:b,0)+a,0);
+      map[tKey].customers.push({partyName:cg.partyName,route:cg.route,orders:cg.orders,totalItems,totalQty});
+    });
+    // Sort: Direct first (our vehicle), then by customer count desc
+    return Object.values(map).sort((a,b)=>{
+      if(a.isDirect&&!b.isDirect)return -1;
+      if(!a.isDirect&&b.isDirect)return 1;
+      return b.customers.length-a.customers.length;
+    });
+  })();
   const totalTodayItems=filteredToday.reduce((a,g)=>a+g.items.length,0);
 
   // ── Product-wise grouping (for material preparation view) ──
@@ -6124,9 +6330,10 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
 
     {/* Sub-tabs */}
     {subTab!=="setup"&&<div style={{display:"flex",gap:"6px",marginBottom:"14px",borderBottom:"1px solid #1e293b",paddingBottom:"10px"}}>
-      {[["pending","📋 Pending Orders","#f59e0b"],["dispatch","🚚 Today's Dispatch","#22c55e"]].map(([k,l,c])=><button key={k} onClick={()=>setSubTab(k)}
+      {[["pending","📋 Pending Orders","#f59e0b"],["dispatch","🚚 Today's Dispatch","#22c55e"],...(isAdmin?[["reports","📊 Dispatch Reports","#a78bfa"]]:[])] .map(([k,l,c])=><button key={k} onClick={()=>setSubTab(k)}
         style={{background:subTab===k?c+"22":"transparent",border:`1px solid ${subTab===k?c+"60":"#1e293b"}`,borderRadius:"7px",padding:"7px 14px",color:subTab===k?c:"#475569",fontWeight:"700",fontSize:"12.5px",cursor:"pointer"}}>
         {l}{k==="dispatch"&&filteredToday.length>0?<span style={{marginLeft:"6px",background:c+"40",border:`1px solid ${c}60`,borderRadius:"99px",padding:"0px 7px",fontSize:"10px"}}>{filteredToday.length}</span>:null}
+        {k==="reports"&&dispatchReports.length>0?<span style={{marginLeft:"6px",background:c+"40",border:`1px solid ${c}60`,borderRadius:"99px",padding:"0px 7px",fontSize:"10px"}}>{dispatchReports.length}</span>:null}
       </button>)}
     </div>}
 
@@ -6217,11 +6424,13 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
             <div style={{fontSize:"11.5px",color:"#475569"}}>
               {viewMode==="customer"
                 ?`${customerGroups.length} customer${customerGroups.length!==1?"s":""} · ${pendingOrders.length} orders${routeFilter!=="All"?` · ${routeFilter}`:""}`
-                :`${productGroups.length} product${productGroups.length!==1?"s":""} · ${customerGroups.length} customers${routeFilter!=="All"?` · ${routeFilter}`:""}`}
+                :viewMode==="product"
+                ?`${productGroups.length} product${productGroups.length!==1?"s":""} · ${customerGroups.length} customers${routeFilter!=="All"?` · ${routeFilter}`:""}`
+                :`${transporterGroups.length} transporter${transporterGroups.length!==1?"s":""} · ${customerGroups.length} customers${routeFilter!=="All"?` · ${routeFilter}`:""}`}
             </div>
             <div style={{display:"flex",gap:"4px",background:"#080d18",border:"1px solid #1e293b",borderRadius:"7px",padding:"3px"}}>
-              {[["customer","👥 By Customer"],["product","📦 By Product"]].map(([v,l])=><button key={v} onClick={()=>setViewMode(v)}
-                style={{background:viewMode===v?"#1e3a5f":"transparent",border:"none",borderRadius:"5px",padding:"5px 12px",color:viewMode===v?"#93c5fd":"#475569",fontWeight:"700",fontSize:"11.5px",cursor:"pointer",transition:"all 0.15s"}}>{l}</button>)}
+              {[["customer","👥 By Customer"],["product","📦 By Product"],["transporter","🚛 By Transporter"]].map(([v,l])=><button key={v} onClick={()=>setViewMode(v)}
+                style={{background:viewMode===v?"#1e3a5f":"transparent",border:"none",borderRadius:"5px",padding:"5px 10px",color:viewMode===v?"#93c5fd":"#475569",fontWeight:"700",fontSize:"11px",cursor:"pointer",transition:"all 0.15s"}}>{l}</button>)}
             </div>
           </div>
 
@@ -6230,38 +6439,15 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
             <div style={{background:"#0b1220",border:"1px solid #1e3a5f",borderRadius:"8px",padding:"8px 12px",marginBottom:"10px",fontSize:"11.5px",color:"#64748b"}}>
               📋 <strong style={{color:"#93c5fd"}}>Material Preparation View</strong> — shows total qty needed per product across all customers in this filter. Switch to Customer view to mark dispatch.
             </div>
-            {productGroups.map((pg,pi)=>{
-              const [open,setOpen_]=useState(false); // local state per row
-              return <div key={pg.name} style={{background:"#0b1220",border:"1px solid #1e293b",borderLeft:"3px solid #3b82f6",borderRadius:"10px",marginBottom:"7px",overflow:"hidden"}}>
-                <div onClick={()=>setOpen_(!open)} style={{padding:"10px 14px",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",gap:"8px"}}>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:"13px",fontWeight:"700",color:"#f1f5f9",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{pg.name}</div>
-                    <div style={{fontSize:"11px",color:"#475569",marginTop:"2px"}}>{pg.customers.length} customer{pg.customers.length!==1?"s":""}</div>
-                  </div>
-                  <div style={{display:"flex",gap:"8px",alignItems:"center",flexShrink:0}}>
-                    <div style={{textAlign:"right"}}>
-                      <div style={{fontSize:"18px",fontWeight:"700",color:"#fcd34d",lineHeight:1}}>{pg.totalQty}</div>
-                      <div style={{fontSize:"9.5px",color:"#475569"}}>total units</div>
-                    </div>
-                    <span style={{color:"#334155",fontSize:"11px"}}>{open?"▲":"▼"}</span>
-                  </div>
-                </div>
-                {open&&<div style={{borderTop:"1px solid #0f172a"}}>
-                  <div style={{display:"grid",gridTemplateColumns:"2fr 80px 1fr",gap:"6px",background:"#060d1a",padding:"5px 14px",fontSize:"10px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.06em"}}>
-                    <span>Customer</span><span style={{textAlign:"center"}}>Qty</span><span>Transport</span>
-                  </div>
-                  {pg.customers.map((c,ci)=><div key={ci} style={{display:"grid",gridTemplateColumns:"2fr 80px 1fr",gap:"6px",padding:"7px 14px",borderTop:"1px solid #0f172a",alignItems:"center",background:ci%2===0?"transparent":"#060d1a"}}>
-                    <div style={{fontSize:"12.5px",color:"#e2e8f0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.partyName}</div>
-                    <div style={{textAlign:"center",fontSize:"13px",fontWeight:"700",color:"#fcd34d"}}>{c.qty}</div>
-                    <div style={{fontSize:"11px",color:c.isDirect?"#4ade80":"#93c5fd"}}>{c.isDirect?"🚚 Direct":"🏢 "+c.transport}</div>
-                  </div>)}
-                  <div style={{padding:"7px 14px",background:"#0b1220",borderTop:"1px solid #0f172a",display:"flex",justifyContent:"flex-end",alignItems:"center",gap:"8px"}}>
-                    <span style={{fontSize:"11px",color:"#475569"}}>Total for {pg.name}:</span>
-                    <span style={{fontSize:"14px",fontWeight:"700",color:"#fcd34d"}}>{pg.totalQty}</span>
-                  </div>
-                </div>}
-              </div>;
-            })}
+            {productGroups.map((pg,pi)=><ProductGroupRow key={pg.name} pg={pg}/>)}
+          </div>}
+
+          {/* ── TRANSPORTER VIEW — for consolidated booking ── */}
+          {viewMode==="transporter"&&<div>
+            <div style={{background:"#0b1220",border:"1px solid #1e3a5f",borderRadius:"8px",padding:"8px 12px",marginBottom:"10px",fontSize:"11.5px",color:"#64748b"}}>
+              🚛 <strong style={{color:"#93c5fd"}}>Transporter View</strong> — customers grouped by transporter. Dispatch all customers under one transporter together to avoid sending material to the same transporter multiple times.
+            </div>
+            {transporterGroups.map(tg=><TransporterGroupRow key={tg.transport} tg={tg}/>)}
           </div>}
 
           {/* ── CUSTOMER VIEW (existing) ── */}
@@ -6348,36 +6534,67 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
 
     {/* ── TODAY'S DISPATCH LIST ── */}
     {subTab==="dispatch"&&<div>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"12px",flexWrap:"wrap",gap:"8px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"10px",flexWrap:"wrap",gap:"8px"}}>
         <div>
           <div style={{fontSize:"13px",fontWeight:"700",color:"#22c55e"}}>Today's Dispatch — {new Date().toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"})}</div>
-          <div style={{fontSize:"11px",color:"#475569",marginTop:"2px"}}>{filteredToday.length} customer{filteredToday.length!==1?"s":""} · {totalTodayItems} product line{totalTodayItems!==1?"s":""}{routeFilter!=="All"?` · Route: ${routeFilter}`:""}</div>
+          <div style={{fontSize:"11px",color:"#475569",marginTop:"2px"}}>{filteredToday.length} customer{filteredToday.length!==1?"s":""} · {totalTodayItems} item{totalTodayItems!==1?"s":""}{routeFilter!=="All"?` · ${routeFilter}`:""}</div>
         </div>
-        {filteredToday.length>0&&<button onClick={()=>printDispatchList(filteredToday,routeFilter==="All"?"All Routes":routeFilter,new Date().toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"}))}
-          style={{background:"#052e16",border:"1px solid #166534",borderRadius:"7px",padding:"7px 14px",color:"#4ade80",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>🖨 Print Dispatch List</button>}
+        <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
+          {filteredToday.length>0&&<button onClick={()=>printDispatchList(filteredToday,routeFilter==="All"?"All Routes":routeFilter,new Date().toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"}),fgProducts)}
+            style={{background:"#052e16",border:"1px solid #166534",borderRadius:"7px",padding:"6px 12px",color:"#4ade80",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>🖨 Print</button>}
+        </div>
       </div>
+
+      {/* Volume summary */}
+      {(()=>{const vols={};filteredToday.forEach(g=>g.items.forEach(i=>{if(i.vol){vols[i.vol.unit]=(vols[i.vol.unit]||0)+i.vol.vol;}}));
+        return Object.keys(vols).length>0&&<div style={{background:"#060d1a",border:"1px solid #1e3a5f",borderRadius:"8px",padding:"8px 14px",marginBottom:"10px",display:"flex",gap:"16px",flexWrap:"wrap"}}>
+          <span style={{fontSize:"11.5px",color:"#64748b",fontWeight:"700"}}>Total Volume:</span>
+          {Object.entries(vols).map(([u,v])=><span key={u} style={{fontSize:"13px",fontWeight:"700",color:"#93c5fd"}}>{v.toFixed(2)} {u}</span>)}
+        </div>;
+      })()}
 
       {filteredToday.length===0
         ?<div style={{textAlign:"center",padding:"50px",border:"2px dashed #1e293b",borderRadius:"10px",color:"#334155"}}>No dispatches recorded today{routeFilter!=="All"?` for ${routeFilter}`:""}</div>
         :<div>
-          {filteredToday.map((group,gi)=><div key={group.partyName} style={{background:"#0b1220",border:"1px solid #1e293b",borderLeft:"3px solid #22c55e",borderRadius:"10px",marginBottom:"8px",overflow:"hidden"}}>
-            <div style={{padding:"11px 14px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"6px"}}>
+          {filteredToday.map((group,gi)=>{
+            const allConfirmed=group.items.every(i=>i.confirmed);
+            const anyReversible=group.items.some(i=>i.canReverse);
+            const pendingConfirm=group.items.filter(i=>!i.confirmed);
+            const borderCol=allConfirmed?"#22c55e":"#f59e0b";
+            return <div key={group.partyName} style={{background:"#0b1220",border:"1px solid #1e293b",borderLeft:`3px solid ${borderCol}`,borderRadius:"10px",marginBottom:"6px",overflow:"hidden",opacity:allConfirmed?0.85:1}}>
+            <div style={{padding:"9px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"6px"}}>
               <div>
-                <div style={{fontSize:"13.5px",fontWeight:"700",color:"#f1f5f9"}}>{gi+1}. {group.partyName}</div>
-                <div style={{fontSize:"11px",color:"#475569",display:"flex",gap:"10px",marginTop:"2px"}}>
+                <div style={{fontSize:"12.5px",fontWeight:"700",color:"#f1f5f9"}}>{gi+1}. {group.partyName}</div>
+                <div style={{fontSize:"10.5px",color:"#475569",display:"flex",gap:"8px",marginTop:"1px"}}>
                   <span style={{color:group.isDirect?"#22c55e":"#93c5fd"}}>{group.isDirect?"🚚 Direct":"🏢 "+group.transport}</span>
                   <span>{group.route}</span>
                 </div>
               </div>
-              <span style={{fontSize:"11px",color:"#4ade80",background:"#052e16",border:"1px solid #166534",borderRadius:"99px",padding:"2px 10px"}}>{group.items.length} item{group.items.length!==1?"s":""}</span>
+              <div style={{display:"flex",gap:"5px",alignItems:"center",flexWrap:"wrap"}}>
+                {allConfirmed
+                  ?<span style={{fontSize:"10.5px",color:"#4ade80",background:"#052e16",border:"1px solid #166534",borderRadius:"99px",padding:"2px 9px"}}>✓ Delivered</span>
+                  :<span style={{fontSize:"10.5px",color:"#fcd34d",background:"#1a0f00",border:"1px solid #92400e60",borderRadius:"99px",padding:"2px 8px"}}>{pendingConfirm.length} awaiting confirm</span>}
+                {pendingConfirm.length>0&&canDispatch&&<button onClick={()=>finaliseDispatch(group.partyName,pendingConfirm)} disabled={confirmingDispatch===group.partyName}
+                  style={{background:"#052e16",border:"1px solid #166534",borderRadius:"6px",padding:"4px 9px",color:"#4ade80",fontWeight:"700",fontSize:"11px",cursor:"pointer",whiteSpace:"nowrap"}}>
+                  {confirmingDispatch===group.partyName?"…":"✓ Dispatched"}
+                </button>}
+                {anyReversible&&canDispatch&&<button onClick={()=>reverseDispatch(group.partyName,group.items.filter(i=>i.canReverse))} disabled={confirmingDispatch===group.partyName+"_reverse"}
+                  style={{background:"#2e0a0a",border:"1px solid #7f1d1d",borderRadius:"6px",padding:"4px 9px",color:"#f87171",fontWeight:"700",fontSize:"11px",cursor:"pointer",whiteSpace:"nowrap"}}>
+                  {confirmingDispatch===group.partyName+"_reverse"?"…":"↩ Reverse (24h)"}
+                </button>}
+              </div>
             </div>
             <div style={{background:"#060d1a",borderTop:"1px solid #0f172a"}}>
               {group.items.map((item,ii)=>{
-                return <div key={ii} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 14px",borderTop:ii===0?"none":"1px solid #0f172a",gap:"8px"}}>
-                  <div style={{fontSize:"12.5px",color:"#e2e8f0",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.name}</div>
-                  <div style={{fontSize:"13px",fontWeight:"700",color:"#4ade80",flexShrink:0}}>{item.qty}</div>
-                  <div style={{fontSize:"10px",color:"#334155",flexShrink:0}}>{item.voucherNo}</div>
-                  {canDispatch&&(()=>{
+                return <div key={ii} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 12px",borderTop:ii===0?"none":"1px solid #0f172a",gap:"6px",opacity:item.confirmed?0.6:1}}>
+                  <div style={{fontSize:"11.5px",color:item.confirmed?"#64748b":"#e2e8f0",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.name}</div>
+                  <div style={{display:"flex",gap:"5px",alignItems:"center",flexShrink:0}}>
+                    <span style={{fontSize:"12.5px",fontWeight:"700",color:item.confirmed?"#475569":"#4ade80"}}>{item.qty}</span>
+                    {item.vol&&<span style={{fontSize:"10px",color:"#64748b",background:"#0b1220",border:"1px solid #1e293b",borderRadius:"4px",padding:"1px 5px"}}>{item.vol.vol} {item.vol.unit}</span>}
+                    {item.confirmed&&<span style={{fontSize:"9px",color:"#4ade80",background:"#052e16",borderRadius:"3px",padding:"1px 5px"}}>✓</span>}
+                    <span style={{fontSize:"9.5px",color:"#334155"}}>{item.voucherNo}</span>
+                  </div>
+                  {canDispatch&&!item.confirmed&&(()=>{
                     const rKey=item.orderId+"__"+item.name;
                     const isReverting=reverting===rKey;
                     const showInput=revertForm[rKey]!==undefined;
@@ -6400,8 +6617,46 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
                 </div>;
               })}
             </div>
-          </div>)}
+          </div>;
+          })}
         </div>}
+    </div>}
+
+    {/* ── DISPATCH REPORTS — admin only, auto-expires after 48h ── */}
+    {subTab==="reports"&&isAdmin&&<div>
+      <div style={{fontSize:"13px",fontWeight:"700",color:"#a78bfa",marginBottom:"12px"}}>📊 Dispatch Reports — last 48 hours</div>
+      {dispatchReports.length===0
+        ?<div style={{textAlign:"center",padding:"50px",border:"2px dashed #1e293b",borderRadius:"10px",color:"#334155"}}>No dispatch reports in the last 48 hours.<br/>Reports appear here after issuer clicks ✓ Dispatched and auto-expire after 2 days.</div>
+        :dispatchReports.map(report=>{
+          // Aggregate totals across all entries for this report
+          const allVols={};
+          (report.entries||[]).forEach(e=>Object.entries(e.volTotals||{}).forEach(([u,v])=>{allVols[u]=(allVols[u]||0)+v;}));
+          return <div key={report.id} style={{background:"#0b1220",border:"1px solid #1e293b",borderLeft:"3px solid #a78bfa",borderRadius:"10px",marginBottom:"10px",overflow:"hidden"}}>
+            <div style={{padding:"10px 14px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"8px"}}>
+              <div>
+                <div style={{fontSize:"13px",fontWeight:"700",color:"#f1f5f9"}}>Dispatch Report — {report.date}</div>
+                <div style={{fontSize:"11px",color:"#475569",marginTop:"2px"}}>{(report.entries||[]).length} customer{(report.entries||[]).length!==1?"s":""} dispatched · expires in {Math.max(0,Math.ceil((new Date(report.createdAt).getTime()+48*60*60*1000-Date.now())/3600000))}h</div>
+              </div>
+              <div style={{display:"flex",gap:"10px",flexWrap:"wrap"}}>
+                {Object.entries(allVols).map(([u,v])=><span key={u} style={{fontSize:"13px",fontWeight:"700",color:"#93c5fd"}}>{v.toFixed(2)} {u}</span>)}
+              </div>
+            </div>
+            {(report.entries||[]).map((entry,ei)=><div key={ei} style={{borderTop:"1px solid #0f172a",background:ei%2===0?"transparent":"#060d1a"}}>
+              <div style={{padding:"7px 14px 3px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div style={{fontSize:"12.5px",fontWeight:"700",color:"#e2e8f0"}}>{entry.partyName}</div>
+                <div style={{fontSize:"10.5px",color:"#475569"}}>{new Date(entry.confirmedAt).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"})}</div>
+              </div>
+              <div style={{paddingBottom:"6px"}}>
+                {(entry.items||[]).map((item,ii)=><div key={ii} style={{fontSize:"11px",color:"#64748b",padding:"1px 28px",display:"flex",gap:"10px"}}>
+                  <span style={{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.name}</span>
+                  <span style={{color:"#fcd34d",fontWeight:"600",flexShrink:0}}>{item.qty}</span>
+                  {item.vol&&<span style={{color:"#475569",flexShrink:0}}>{item.vol.vol} {item.vol.unit}</span>}
+                  <span style={{color:"#334155",flexShrink:0,fontSize:"10px"}}>{item.voucherNo}</span>
+                </div>)}
+              </div>
+            </div>)}
+          </div>;
+        })}
     </div>}
   </div>;
 }
