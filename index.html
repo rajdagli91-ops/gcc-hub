@@ -5930,13 +5930,20 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
         });
       }
 
-      const incomingKeys=new Set(Object.keys(orderMap));
+      // Sanitise orderMap keys — Firestore doc IDs cannot contain /
+      const sanitise=k=>k.replace(/\//g,"-").replace(/\s+/g,"_").replace(/[^a-zA-Z0-9_\-.]/g,"").slice(0,400);
+      const sanitisedMap={};
+      for(const [rawKey,order] of Object.entries(orderMap)){
+        const safeKey=sanitise(rawKey)||("order_"+Date.now()+"_"+Math.random().toString(36).slice(2));
+        sanitisedMap[safeKey]={...order,voucherNo:order.voucherNo||rawKey};
+      }
+      const incomingSet=new Set(Object.keys(sanitisedMap));
 
-      // Smart dedup: auto-close pending orders not in new file
+      // Auto-close pending orders not in new file
       const pendingInDB=orders.filter(o=>o.status==="Pending"||o.status==="Partial");
       let closedCount=0;
       for(const dbOrder of pendingInDB){
-        if(!incomingKeys.has(dbOrder.id)){
+        if(!incomingSet.has(dbOrder.id)){
           await C("orders").doc(dbOrder.id).update({status:"Pre-closed",preClosedAt:ts(),preClosedNote:"Not found in latest Tally export — likely pre-closed by HO"});
           closedCount++;
         }
@@ -5944,11 +5951,10 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
 
       // Upsert incoming orders
       let newCount=0,updCount=0;
-      for(const [key,order] of Object.entries(orderMap)){
+      for(const [key,order] of Object.entries(sanitisedMap)){
         const docRef=C("orders").doc(key);
         const existing=orders.find(o=>o.id===key);
         if(existing){
-          // Preserve dispatch progress per item
           const mergedItems=order.items.map(newItem=>{
             const prev=(existing.items||[]).find(p=>normalize(p.name)===normalize(newItem.name));
             return prev?{...newItem,dispatchedQty:prev.dispatchedQty||0,status:prev.status||"Pending"}:newItem;
