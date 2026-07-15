@@ -6048,6 +6048,27 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
   const counts={Pending:orders.filter(o=>o.status==="Pending").length,Partial:orders.filter(o=>o.status==="Partial").length};
   const totalTodayItems=filteredToday.reduce((a,g)=>a+g.items.length,0);
 
+  const [reverting,setReverting]=useState(null);
+  const revertDispatch=async(orderId,itemName,dispatchedQty)=>{
+    const key=orderId+"__"+itemName;
+    setReverting(key);
+    try{
+      const orderDoc=await C("orders").doc(orderId).get();
+      if(!orderDoc.exists){showToast("Order not found","error");setReverting(null);return;}
+      const data=orderDoc.data();
+      const updatedItems=(data.items||[]).map(item=>{
+        if(normalize(item.name)!==normalize(itemName))return item;
+        const restoredBalance=(item.balanceQty||0)+dispatchedQty;
+        const restoredDispatched=Math.max(0,(item.dispatchedQty||0)-dispatchedQty);
+        return {...item,balanceQty:restoredBalance,dispatchedQty:restoredDispatched,status:restoredDispatched<=0?"Pending":"Partial",lastDispatchedAt:null,lastDispatchedBy:null};
+      });
+      const anyDispatched=updatedItems.some(i=>i.status==="Dispatched"||i.status==="Partial");
+      await C("orders").doc(orderId).update({items:updatedItems,status:anyDispatched?"Partial":"Pending",updatedAt:ts()});
+      showToast(`"${itemName}" moved back to Pending ✓`);
+    }catch(e){showToast("Error: "+e.message,"error");}
+    setReverting(null);
+  };
+
   return <div>
     {/* Header */}
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"14px",flexWrap:"wrap",gap:"8px"}}>
@@ -6268,11 +6289,19 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
               <span style={{fontSize:"11px",color:"#4ade80",background:"#052e16",border:"1px solid #166534",borderRadius:"99px",padding:"2px 10px"}}>{group.items.length} item{group.items.length!==1?"s":""}</span>
             </div>
             <div style={{background:"#060d1a",borderTop:"1px solid #0f172a"}}>
-              {group.items.map((item,ii)=><div key={ii} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 14px",borderTop:ii===0?"none":"1px solid #0f172a",gap:"8px"}}>
-                <div style={{fontSize:"12.5px",color:"#e2e8f0",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.name}</div>
-                <div style={{fontSize:"13px",fontWeight:"700",color:"#4ade80",flexShrink:0}}>{item.qty}</div>
-                <div style={{fontSize:"10px",color:"#334155",flexShrink:0}}>{item.voucherNo}</div>
-              </div>)}
+              {group.items.map((item,ii)=>{
+                const rKey=item.orderId+"__"+item.name;
+                const isReverting=reverting===rKey;
+                return <div key={ii} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 14px",borderTop:ii===0?"none":"1px solid #0f172a",gap:"8px"}}>
+                  <div style={{fontSize:"12.5px",color:"#e2e8f0",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.name}</div>
+                  <div style={{fontSize:"13px",fontWeight:"700",color:"#4ade80",flexShrink:0}}>{item.qty}</div>
+                  <div style={{fontSize:"10px",color:"#334155",flexShrink:0}}>{item.voucherNo}</div>
+                  {canDispatch&&<button onClick={()=>revertDispatch(item.orderId,item.name,item.qty)} disabled={isReverting}
+                    style={{background:"#1a0a00",border:"1px solid #92400e",borderRadius:"5px",color:"#fcd34d",fontSize:"10.5px",fontWeight:"700",padding:"3px 8px",cursor:"pointer",flexShrink:0,whiteSpace:"nowrap"}}>
+                    {isReverting?"…":"↩ Pending"}
+                  </button>}
+                </div>;
+              })}
             </div>
           </div>)}
         </div>}
