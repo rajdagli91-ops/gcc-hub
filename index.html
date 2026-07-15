@@ -6125,23 +6125,59 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
   };
 
   // ── Reverse a confirmed dispatch within 24h ──
-  const reverseDispatch=async(partyName,items)=>{
-    setConfirmingDispatch(partyName+"_reverse");
+  const [reverseForm,setReverseForm]=useState(null); // {partyName, items: [{...item, reverseQty}]}
+  const [reverseSaving,setReverseSaving]=useState(false);
+
+  const openReverseForm=(partyName,items)=>{
+    setReverseForm({partyName,items:items.map(i=>({...i,reverseQty:String(i.qty)}))});
+  };
+
+  const reverseDispatch=async()=>{
+    if(!reverseForm)return;
+    setReverseSaving(true);
     try{
-      const orderIds=[...new Set(items.map(i=>i.orderId))];
+      const orderIds=[...new Set(reverseForm.items.map(i=>i.orderId))];
       for(const orderId of orderIds){
         const orderDoc=await C("orders").doc(orderId).get();
         if(!orderDoc.exists)continue;
         const data=orderDoc.data();
         const updatedItems=(data.items||[]).map(item=>{
-          const matched=items.find(i=>i.orderId===orderId&&normalize(i.name)===normalize(item.name));
-          return matched?{...item,dispatchConfirmed:false,dispatchConfirmedAt:null}:item;
+          const rev=reverseForm.items.find(i=>i.orderId===orderId&&normalize(i.name)===normalize(item.name));
+          if(!rev)return item;
+          const rQty=Math.min(parseFloat(rev.reverseQty)||0,rev.qty);
+          if(rQty<=0)return item;
+          const newDispatched=Math.max(0,(item.dispatchedQty||0)-rQty);
+          const newBalance=(item.balanceQty||0)+rQty;
+          const fullyReversed=rQty>=rev.qty;
+          return {...item,
+            dispatchedQty:newDispatched,balanceQty:newBalance,
+            dispatchConfirmed:fullyReversed?false:item.dispatchConfirmed,
+            dispatchConfirmedAt:fullyReversed?null:item.dispatchConfirmedAt,
+            lastDispatchedAt:newDispatched<=0?null:item.lastDispatchedAt,
+            status:newDispatched<=0?"Pending":newBalance<=0?"Dispatched":"Partial"
+          };
         });
-        await C("orders").doc(orderId).update({items:updatedItems,status:"Partial",updatedAt:ts()});
+        const anyActive=updatedItems.some(i=>i.status==="Dispatched"||i.status==="Partial");
+        await C("orders").doc(orderId).update({items:updatedItems,status:anyActive?"Partial":"Pending",updatedAt:ts()});
       }
-      showToast(`${partyName} dispatch reversed — moved back to pending dispatch ✓`);
+      showToast(`${reverseForm.partyName} — dispatch reversed ✓`);
+      setReverseForm(null);
     }catch(e){showToast("Error: "+e.message,"error");}
-    setConfirmingDispatch(null);
+    setReverseSaving(false);
+  };
+
+  // ── Confirm ALL unconfirmed customers in today's dispatch ──
+  const confirmAllDispatches=async()=>{
+    const unconfirmed=filteredToday.filter(g=>g.items.some(i=>!i.confirmed));
+    if(!unconfirmed.length)return showToast("All dispatches already confirmed","error");
+    setSaving(true);
+    try{
+      for(const group of unconfirmed){
+        const pendingItems=group.items.filter(i=>!i.confirmed);
+        await finaliseDispatch(group.partyName,pendingItems);
+      }
+    }catch(e){showToast("Error: "+e.message,"error");}
+    setSaving(false);
   };
 
   // ── Finalise dispatch for a customer ──
@@ -6540,8 +6576,14 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
           <div style={{fontSize:"11px",color:"#475569",marginTop:"2px"}}>{filteredToday.length} customer{filteredToday.length!==1?"s":""} · {totalTodayItems} item{totalTodayItems!==1?"s":""}{routeFilter!=="All"?` · ${routeFilter}`:""}</div>
         </div>
         <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
-          {filteredToday.length>0&&<button onClick={()=>printDispatchList(filteredToday,routeFilter==="All"?"All Routes":routeFilter,new Date().toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"}),fgProducts)}
-            style={{background:"#052e16",border:"1px solid #166534",borderRadius:"7px",padding:"6px 12px",color:"#4ade80",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>🖨 Print</button>}
+          {filteredToday.length>0&&<>
+            {filteredToday.some(g=>g.items.some(i=>!i.confirmed))&&canDispatch&&<button onClick={confirmAllDispatches} disabled={saving}
+              style={{background:"#052e16",border:"1px solid #166534",borderRadius:"7px",padding:"6px 12px",color:"#4ade80",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>
+              {saving?"…":"✓ Confirm All Dispatched"}
+            </button>}
+            <button onClick={()=>printDispatchList(filteredToday,routeFilter==="All"?"All Routes":routeFilter,new Date().toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"}),fgProducts)}
+              style={{background:"#0a1a2e",border:"1px solid #1e3a5f",borderRadius:"7px",padding:"6px 12px",color:"#93c5fd",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>🖨 Print</button>
+          </>}
         </div>
       </div>
 
@@ -6578,9 +6620,9 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
                   style={{background:"#052e16",border:"1px solid #166534",borderRadius:"6px",padding:"4px 9px",color:"#4ade80",fontWeight:"700",fontSize:"11px",cursor:"pointer",whiteSpace:"nowrap"}}>
                   {confirmingDispatch===group.partyName?"…":"✓ Dispatched"}
                 </button>}
-                {anyReversible&&canDispatch&&<button onClick={()=>reverseDispatch(group.partyName,group.items.filter(i=>i.canReverse))} disabled={confirmingDispatch===group.partyName+"_reverse"}
+                {anyReversible&&canDispatch&&<button onClick={()=>openReverseForm(group.partyName,group.items.filter(i=>i.canReverse))} disabled={confirmingDispatch===group.partyName+"_reverse"}
                   style={{background:"#2e0a0a",border:"1px solid #7f1d1d",borderRadius:"6px",padding:"4px 9px",color:"#f87171",fontWeight:"700",fontSize:"11px",cursor:"pointer",whiteSpace:"nowrap"}}>
-                  {confirmingDispatch===group.partyName+"_reverse"?"…":"↩ Reverse (24h)"}
+                  ↩ Reverse (24h)
                 </button>}
               </div>
             </div>
@@ -6620,6 +6662,40 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
           </div>;
           })}
         </div>}
+    </div>}
+
+    {/* ── PARTIAL REVERSE MODAL ── */}
+    {reverseForm&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.78)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <div style={{background:"#0b1220",border:"1px solid #7f1d1d",borderRadius:"14px",padding:"20px",width:"min(500px,96vw)",maxHeight:"90vh",overflowY:"auto"}}>
+        <div style={{fontSize:"14px",fontWeight:"700",color:"#f87171",marginBottom:"4px"}}>↩ Reverse Dispatch — {reverseForm.partyName}</div>
+        <div style={{fontSize:"11.5px",color:"#475569",marginBottom:"14px"}}>Adjust quantities to reverse. Set to 0 to keep an item as dispatched. Full reverse restores to pending orders.</div>
+        <div style={{background:"#060d1a",border:"1px solid #1e293b",borderRadius:"8px",overflow:"hidden",marginBottom:"14px"}}>
+          <div style={{display:"grid",gridTemplateColumns:"2fr 80px 80px",gap:"6px",background:"#0b1220",padding:"6px 12px",fontSize:"10px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.06em"}}>
+            <span>Product</span><span style={{textAlign:"center"}}>Dispatched</span><span style={{textAlign:"center"}}>Reverse Qty</span>
+          </div>
+          {reverseForm.items.map((item,i)=><div key={i} style={{display:"grid",gridTemplateColumns:"2fr 80px 80px",gap:"6px",padding:"7px 12px",borderTop:"1px solid #0f172a",alignItems:"center"}}>
+            <div style={{fontSize:"12px",color:"#e2e8f0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.name}</div>
+            <div style={{textAlign:"center",fontSize:"13px",fontWeight:"700",color:"#4ade80"}}>{item.qty}</div>
+            <div style={{display:"flex",gap:"4px",alignItems:"center",justifyContent:"center"}}>
+              <input type="number" min="0" max={item.qty} step="0.001" value={item.reverseQty}
+                onChange={e=>setReverseForm(f=>({...f,items:f.items.map((it,ii)=>ii===i?{...it,reverseQty:e.target.value}:it)}))}
+                style={{...inp,width:"65px",padding:"4px 6px",fontSize:"12px",textAlign:"center"}}/>
+              <button onClick={()=>setReverseForm(f=>({...f,items:f.items.map((it,ii)=>ii===i?{...it,reverseQty:String(item.qty)}:it)}))}
+                style={{background:"none",border:"none",color:"#334155",fontSize:"10px",cursor:"pointer",padding:"0 2px"}} title="Set to full">↑all</button>
+            </div>
+          </div>)}
+        </div>
+        <div style={{background:"#0f0505",border:"1px solid #7f1d1d40",borderRadius:"6px",padding:"8px 12px",marginBottom:"14px",fontSize:"11.5px",color:"#fca5a5"}}>
+          Reversed qty will be added back to <strong>Balance</strong> in pending orders. Items fully reversed will reappear in Pending Orders tab.
+        </div>
+        <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
+          <button onClick={()=>setReverseForm(null)} style={{background:"none",border:"1px solid #334155",borderRadius:"6px",padding:"7px 14px",color:"#475569",fontSize:"12px",cursor:"pointer"}}>Cancel</button>
+          <button onClick={()=>setReverseForm(f=>({...f,items:f.items.map(it=>({...it,reverseQty:String(it.qty)}))}))}
+            style={{background:"#1a0505",border:"1px solid #7f1d1d",borderRadius:"6px",padding:"7px 14px",color:"#f87171",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>Fully Reverse All</button>
+          <button onClick={reverseDispatch} disabled={reverseSaving}
+            style={{background:"#2e0a0a",border:"1px solid #ef4444",borderRadius:"6px",padding:"7px 14px",color:"#fca5a5",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>{reverseSaving?"Reversing…":"↩ Confirm Reverse"}</button>
+        </div>
+      </div>
     </div>}
 
     {/* ── DISPATCH REPORTS — admin only, auto-expires after 48h ── */}
