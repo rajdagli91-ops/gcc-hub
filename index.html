@@ -5858,116 +5858,168 @@ function printDispatchList(groups,routeLabel,dateStr,fgProds){
 }
 
 function DispatchHistoryReport({normT,showToast}){
-  const [reportDate,setReportDate]=useState(new Date().toISOString().slice(0,10));
+  const todayISO=new Date().toISOString().slice(0,10);
+  const [mode,setMode]=useState("single"); // "single"|"range"
+  const [reportDate,setReportDate]=useState(todayISO);
+  const [fromDate,setFromDate]=useState(new Date(Date.now()-6*24*60*60*1000).toISOString().slice(0,10));
+  const [toDate,setToDate]=useState(todayISO);
   const [report,setReport]=useState(null);
+  const [reports,setReports]=useState([]);
   const [loading,setLoading]=useState(false);
   const [routeFilter,setRouteFilter]=useState("All");
   const [transportFilter,setTransportFilter]=useState("All");
 
-  const load=async(date)=>{
+  const loadSingle=async(date)=>{
     setLoading(true);
-    try{
-      const doc=await C("dispatch_reports").doc("report_"+date).get();
-      setReport(doc.exists?{id:doc.id,...doc.data()}:null);
-    }catch(e){showToast("Error: "+e.message,"error");}
+    try{const doc=await C("dispatch_reports").doc("report_"+date).get();setReport(doc.exists?{id:doc.id,...doc.data()}:null);}
+    catch(e){showToast("Error: "+e.message,"error");}
+    setLoading(false);
+  };
+  const loadRange=async()=>{
+    setLoading(true);
+    try{const snap=await C("dispatch_reports").where("date",">=",fromDate).where("date","<=",toDate).orderBy("date","desc").get();setReports(snap.docs.map(d=>({id:d.id,...d.data()})));}
+    catch(e){showToast("Error: "+e.message,"error");}
     setLoading(false);
   };
 
-  useEffect(()=>{load(reportDate);},[reportDate]);
+  useEffect(()=>{if(mode==="single")loadSingle(reportDate);else loadRange();},[mode,reportDate,fromDate,toDate]);
 
-  const entries=(report?.entries||[]).filter(e=>{
+  // Filter helpers
+  const filterEntry=e=>{
     if(routeFilter!=="All"&&e.route!==routeFilter)return false;
     if(transportFilter!=="All"&&normT(e.transport)!==normT(transportFilter))return false;
     return true;
-  });
+  };
+
+  // Single mode data
+  const entries=(report?.entries||[]).filter(filterEntry);
   const reversals=(report?.reversals||[]);
+  const allRoutesSingle=[...new Set((report?.entries||[]).map(e=>e.route).filter(Boolean))].sort();
+  const allTransSingle=[...new Set((report?.entries||[]).map(e=>e.transport).filter(t=>t&&!["DIRECT","direct","Direct"].includes(t)))].sort();
 
-  const allRoutes=[...new Set((report?.entries||[]).map(e=>e.route).filter(Boolean))].sort();
-  const allTransporters=[...new Set((report?.entries||[]).map(e=>e.transport).filter(t=>t&&!["DIRECT","direct","Direct"].includes(t)))].sort();
+  // Range mode data
+  const filteredReports=reports.map(r=>({...r,entries:(r.entries||[]).filter(filterEntry)})).filter(r=>r.entries.length>0||(r.reversals||[]).length>0);
+  const allRoutesRange=[...new Set(reports.flatMap(r=>(r.entries||[]).map(e=>e.route).filter(Boolean)))].sort();
+  const allTransRange=[...new Set(reports.flatMap(r=>(r.entries||[]).map(e=>e.transport).filter(t=>t&&!["DIRECT","direct","Direct"].includes(t))))].sort();
 
-  const grandTotals={};
-  entries.forEach(e=>(e.volTotals||{})||Object.entries(e.volTotals||{}).forEach(([u,v])=>{grandTotals[u]=(grandTotals[u]||0)+v;}));
+  // Totals
+  const calcTotals=(entriesList)=>{const vols={};let qty=0;entriesList.forEach(e=>(e.items||[]).forEach(it=>{qty+=it.qty||0;if(it.vol)vols[it.vol.unit]=(vols[it.vol.unit]||0)+it.vol.vol;}));return{qty,vols};};
+  const singleTotals=calcTotals(entries);
+  const rangeTotals=calcTotals(filteredReports.flatMap(r=>r.entries));
 
   const printReport=()=>{
-    let h='<!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{font-family:Arial,sans-serif;font-size:9pt;margin:0;padding:6pt}@page{size:A4 portrait;margin:8mm}table{border-collapse:collapse;width:100%;margin-bottom:8pt}td,th{padding:2pt 5pt;border:1px solid #000}th{background:#e8e8e8;font-weight:700}.sec{font-weight:700;font-size:9.5pt;border-bottom:1.5px solid #000;padding-bottom:2pt;margin:6pt 0 3pt}</style></head><body>';
-    h+=`<div style="display:flex;justify-content:space-between;border-bottom:2px solid #000;margin-bottom:5pt;padding-bottom:3pt"><b style="font-size:12pt">VEEBEE — DISPATCH REPORT</b><span>${reportDate}${routeFilter!=="All"?" · "+routeFilter:""}${transportFilter!=="All"?" · "+transportFilter:""}</span></div>`;
-    if(entries.length){
-      h+='<div class="sec">Dispatched</div><table><tr><th>Customer</th><th>Route</th><th>Transport</th><th>Product</th><th style="text-align:center">Qty</th><th style="text-align:center">Volume</th></tr>';
-      entries.forEach(e=>(e.items||[]).forEach((it,ii)=>{
-        h+=`<tr><td>${ii===0?e.partyName:""}</td><td>${ii===0?(e.route||""):""}</td><td>${ii===0?(e.isDirect?"Direct":e.transport||""):""}</td><td>${it.name}</td><td style="text-align:center">${it.qty}</td><td style="text-align:center">${it.vol?it.vol.vol+" "+it.vol.unit:""}</td></tr>`;
-      }));
-      h+='</table>';
-    }
-    if(reversals.length){
-      h+='<div class="sec">Reversals</div><table><tr><th>Customer</th><th>Product</th><th style="text-align:center">Reversed Qty</th><th>Time</th><th>By</th></tr>';
-      reversals.forEach(r=>(r.items||[]).forEach((it,ii)=>{
-        h+=`<tr><td>${ii===0?r.partyName:""}</td><td>${it.name}</td><td style="text-align:center">${it.qty}</td><td>${ii===0?new Date(r.reversedAt).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"}):""}</td><td>${ii===0?(r.reversedBy?.split("@")[0]||""):""}</td></tr>`;
-      }));
-      h+='</table>';
-    }
+    const entriesToPrint=mode==="single"?entries:filteredReports.flatMap(r=>r.entries.map(e=>({...e,_date:r.date})));
+    const reversalsToPrint=mode==="single"?reversals:filteredReports.flatMap(r=>(r.reversals||[]).map(rv=>({...rv,_date:r.date})));
+    const totals=calcTotals(entriesToPrint);
+    let h='<!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{font-family:Arial,sans-serif;font-size:9pt;margin:0;padding:6pt}@page{size:A4 portrait;margin:8mm}table{border-collapse:collapse;width:100%;margin-bottom:6pt}td,th{padding:2pt 5pt;border:1px solid #000}th{background:#e8e8e8;font-weight:700}.sec{font-weight:700;font-size:9.5pt;border-bottom:1.5px solid #000;padding-bottom:2pt;margin:5pt 0 3pt}</style></head><body>';
+    const dateLabel=mode==="single"?reportDate:`${fromDate} to ${toDate}`;
+    h+=`<div style="display:flex;justify-content:space-between;border-bottom:2px solid #000;margin-bottom:4pt;padding-bottom:3pt"><b style="font-size:12pt">VEEBEE — DISPATCH REPORT</b><span>${dateLabel}${routeFilter!=="All"?" · "+routeFilter:""}${transportFilter!=="All"?" · "+transportFilter:""}</span></div>`;
+    h+=`<div style="margin-bottom:4pt;font-size:9pt"><b>Total Qty: ${totals.qty}</b>${Object.entries(totals.vols).map(([u,v])=>" | "+v.toFixed(2)+" "+u).join("")}</div>`;
+    h+='<div class="sec">Dispatched</div>';
+    h+='<table><tr><th>Date</th><th>Customer</th><th>Route</th><th>Transport</th><th>Product</th><th style="text-align:center">Qty</th><th style="text-align:center">Volume</th></tr>';
+    entriesToPrint.forEach(e=>(e.items||[]).forEach((it,ii)=>{h+=`<tr><td>${ii===0?(e._date||""):""}</td><td>${ii===0?e.partyName:""}</td><td>${ii===0?(e.route||""):""}</td><td>${ii===0?(e.isDirect?"Direct":e.transport||""):""}</td><td>${it.name}</td><td style="text-align:center">${it.qty}</td><td style="text-align:center">${it.vol?it.vol.vol+" "+it.vol.unit:""}</td></tr>`;}));
+    h+='</table>';
+    if(reversalsToPrint.length){h+='<div class="sec">Reversals</div><table><tr><th>Date</th><th>Customer</th><th>Product</th><th style="text-align:center">Qty</th><th>By</th></tr>';reversalsToPrint.forEach(r=>(r.items||[]).forEach((it,ii)=>{h+=`<tr><td>${ii===0?(r._date||new Date(r.reversedAt).toLocaleDateString("en-IN")):""}</td><td>${ii===0?r.partyName:""}</td><td>${it.name}</td><td style="text-align:center">${it.qty}</td><td>${ii===0?(r.reversedBy?.split("@")[0]||""):""}</td></tr>`;}));h+='</table>';}
     h+='</body></html>';
     const w=window.open('','_blank');w.document.write(h);w.document.close();setTimeout(()=>w.print(),400);
   };
 
+  const allRoutes=mode==="single"?allRoutesSingle:allRoutesRange;
+  const allTrans=mode==="single"?allTransSingle:allTransRange;
+
   return <div>
     <div style={{fontSize:"13px",fontWeight:"700",color:"#a78bfa",marginBottom:"12px"}}>📊 Dispatch Report</div>
-    <div style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"10px",padding:"12px 14px",marginBottom:"12px",display:"flex",gap:"10px",flexWrap:"wrap",alignItems:"flex-end"}}>
-      <Field label="Date"><input type="date" style={{...inp,width:"150px"}} value={reportDate} onChange={e=>{setReportDate(e.target.value);setRouteFilter("All");setTransportFilter("All");}}/></Field>
-      {allRoutes.length>0&&<Field label="Route">
-        <select style={{...sl,minWidth:"120px"}} value={routeFilter} onChange={e=>setRouteFilter(e.target.value)}>
-          <option value="All">All Routes</option>{allRoutes.map(r=><option key={r}>{r}</option>)}
-        </select>
-      </Field>}
-      {allTransporters.length>0&&<Field label="Transporter">
-        <select style={{...sl,minWidth:"130px"}} value={transportFilter} onChange={e=>setTransportFilter(e.target.value)}>
-          <option value="All">All Transporters</option>{allTransporters.map(t=><option key={t}>{t}</option>)}
-        </select>
-      </Field>}
-      <button onClick={()=>load(reportDate)} disabled={loading} style={{background:"#0a1a2e",border:"1px solid #2563eb",borderRadius:"7px",padding:"7px 14px",color:"#93c5fd",fontWeight:"700",fontSize:"12px",cursor:"pointer",marginBottom:"1px"}}>{loading?"…":"🔄"}</button>
-      {(entries.length>0||reversals.length>0)&&<button onClick={printReport} style={{background:"#052e16",border:"1px solid #166534",borderRadius:"7px",padding:"7px 14px",color:"#4ade80",fontWeight:"700",fontSize:"12px",cursor:"pointer",marginBottom:"1px"}}>🖨 Print</button>}
+    <div style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"10px",padding:"12px 14px",marginBottom:"12px"}}>
+      {/* Mode toggle */}
+      <div style={{display:"flex",gap:"4px",background:"#080d18",border:"1px solid #1e293b",borderRadius:"7px",padding:"3px",marginBottom:"10px",width:"fit-content"}}>
+        {[["single","📅 Single Date"],["range","📆 Date Range"]].map(([v,l])=><button key={v} onClick={()=>{setMode(v);setRouteFilter("All");setTransportFilter("All");}} style={{background:mode===v?"#1e3a5f":"transparent",border:"none",borderRadius:"5px",padding:"5px 12px",color:mode===v?"#93c5fd":"#475569",fontWeight:"700",fontSize:"11.5px",cursor:"pointer"}}>{l}</button>)}
+      </div>
+      <div style={{display:"flex",gap:"10px",flexWrap:"wrap",alignItems:"flex-end"}}>
+        {mode==="single"
+          ?<Field label="Date"><input type="date" style={{...inp,width:"150px"}} value={reportDate} onChange={e=>{setReportDate(e.target.value);setRouteFilter("All");setTransportFilter("All");}}/></Field>
+          :<><Field label="From"><input type="date" style={{...inp,width:"140px"}} value={fromDate} onChange={e=>setFromDate(e.target.value)}/></Field>
+            <Field label="To"><input type="date" style={{...inp,width:"140px"}} value={toDate} onChange={e=>setToDate(e.target.value)}/></Field></>}
+        {allRoutes.length>0&&<Field label="Route"><select style={{...sl,minWidth:"120px"}} value={routeFilter} onChange={e=>setRouteFilter(e.target.value)}><option value="All">All Routes</option>{allRoutes.map(r=><option key={r}>{r}</option>)}</select></Field>}
+        {allTrans.length>0&&<Field label="Transporter"><select style={{...sl,minWidth:"130px"}} value={transportFilter} onChange={e=>setTransportFilter(e.target.value)}><option value="All">All</option>{allTrans.map(t=><option key={t}>{t}</option>)}</select></Field>}
+        <button onClick={()=>mode==="single"?loadSingle(reportDate):loadRange()} disabled={loading} style={{background:"#0a1a2e",border:"1px solid #2563eb",borderRadius:"7px",padding:"7px 14px",color:"#93c5fd",fontWeight:"700",fontSize:"12px",cursor:"pointer",marginBottom:"1px"}}>{loading?"…":"🔄"}</button>
+        {((mode==="single"&&entries.length>0)||(mode==="range"&&filteredReports.length>0))&&<button onClick={printReport} style={{background:"#052e16",border:"1px solid #166534",borderRadius:"7px",padding:"7px 14px",color:"#4ade80",fontWeight:"700",fontSize:"12px",cursor:"pointer",marginBottom:"1px"}}>🖨 Print</button>}
+      </div>
     </div>
 
-    {loading?<div style={{textAlign:"center",padding:"40px",color:"#334155"}}>Loading…</div>
-    :!report?<div style={{textAlign:"center",padding:"50px",border:"2px dashed #1e293b",borderRadius:"10px",color:"#334155"}}>No dispatch report found for {reportDate}.</div>
-    :<div>
-      {/* Dispatched */}
-      {entries.length>0&&<>
-        <div style={{fontSize:"12px",fontWeight:"700",color:"#4ade80",marginBottom:"8px"}}>✓ Dispatched — {entries.length} customer{entries.length!==1?"s":""}</div>
-        {entries.map((entry,ei)=><div key={ei} style={{background:"#0b1220",border:"1px solid #1e293b",borderLeft:"3px solid #22c55e",borderRadius:"8px",marginBottom:"7px",overflow:"hidden"}}>
-          <div style={{padding:"7px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"6px",borderBottom:"1px solid #0f172a"}}>
-            <div style={{fontSize:"12.5px",fontWeight:"700",color:"#f1f5f9"}}>{entry.partyName}</div>
-            <div style={{fontSize:"10.5px",color:"#475569",display:"flex",gap:"8px"}}>
-              {entry.route&&<span>{entry.route}</span>}
-              {entry.transport&&<span style={{color:entry.isDirect?"#4ade80":"#93c5fd"}}>{entry.isDirect?"🚚 Direct":"🏢 "+entry.transport}</span>}
-              {entry.confirmedAt&&<span>{new Date(entry.confirmedAt).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"})}</span>}
-            </div>
-          </div>
-          {(entry.items||[]).map((item,ii)=><div key={ii} style={{display:"flex",justifyContent:"space-between",padding:"4px 12px",borderTop:ii===0?"none":"1px solid #0f172a",fontSize:"11.5px",gap:"8px"}}>
-            <span style={{color:"#94a3b8",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.name}</span>
-            <span style={{color:"#fcd34d",fontWeight:"600",flexShrink:0}}>{item.qty}</span>
-            {item.vol&&<span style={{color:"#334155",flexShrink:0}}>{item.vol.vol} {item.vol.unit}</span>}
-          </div>)}
-        </div>)}
-      </>}
-
-      {/* Reversals */}
-      {reversals.length>0&&<>
-        <div style={{fontSize:"12px",fontWeight:"700",color:"#f87171",marginBottom:"8px",marginTop:entries.length?"12px":"0"}}>↩ Reversed — {reversals.length} entr{reversals.length!==1?"ies":"y"}</div>
-        {reversals.map((rev,ri)=><div key={ri} style={{background:"#0b1220",border:"1px solid #7f1d1d40",borderLeft:"3px solid #ef4444",borderRadius:"8px",marginBottom:"7px",overflow:"hidden"}}>
-          <div style={{padding:"7px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid #0f172a"}}>
-            <div style={{fontSize:"12.5px",fontWeight:"700",color:"#f1f5f9"}}>{rev.partyName}</div>
-            <div style={{fontSize:"10.5px",color:"#475569",display:"flex",gap:"8px"}}>
-              <span>{new Date(rev.reversedAt).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"})}</span>
-              <span>by {rev.reversedBy?.split("@")[0]||""}</span>
-            </div>
-          </div>
-          {(rev.items||[]).map((item,ii)=><div key={ii} style={{display:"flex",justifyContent:"space-between",padding:"4px 12px",borderTop:ii===0?"none":"1px solid #0f172a",fontSize:"11.5px",gap:"8px"}}>
-            <span style={{color:"#fca5a5",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.name}</span>
-            <span style={{color:"#f87171",fontWeight:"600",flexShrink:0}}>{item.qty}</span>
-          </div>)}
-        </div>)}
-      </>}
+    {/* Totals banner */}
+    {(mode==="single"?singleTotals:rangeTotals).qty>0&&<div style={{background:"#060d1a",border:"1px solid #1e3a5f",borderRadius:"8px",padding:"8px 14px",marginBottom:"10px",display:"flex",gap:"16px",flexWrap:"wrap",alignItems:"center"}}>
+      <span style={{fontSize:"11.5px",color:"#64748b",fontWeight:"700"}}>{mode==="range"?`${fromDate} to ${toDate} · `:""}Total:</span>
+      <span style={{fontSize:"14px",fontWeight:"700",color:"#fcd34d"}}>{(mode==="single"?singleTotals:rangeTotals).qty} units</span>
+      {Object.entries((mode==="single"?singleTotals:rangeTotals).vols).map(([u,v])=><span key={u} style={{fontSize:"14px",fontWeight:"700",color:"#93c5fd"}}>{v.toFixed(2)} {u}</span>)}
     </div>}
+
+    {loading?<div style={{textAlign:"center",padding:"40px",color:"#334155"}}>Loading…</div>
+    :mode==="single"?(!report?<div style={{textAlign:"center",padding:"50px",border:"2px dashed #1e293b",borderRadius:"10px",color:"#334155"}}>No dispatch report found for {reportDate}.</div>
+      :<div>
+        {entries.length>0&&<>
+          <div style={{fontSize:"12px",fontWeight:"700",color:"#4ade80",marginBottom:"8px"}}>✓ Dispatched — {entries.length} customer{entries.length!==1?"s":""}</div>
+          {entries.map((entry,ei)=><div key={ei} style={{background:"#0b1220",border:"1px solid #1e293b",borderLeft:"3px solid #22c55e",borderRadius:"8px",marginBottom:"7px",overflow:"hidden"}}>
+            <div style={{padding:"7px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"6px",borderBottom:"1px solid #0f172a"}}>
+              <div style={{fontSize:"12.5px",fontWeight:"700",color:"#f1f5f9"}}>{entry.partyName}</div>
+              <div style={{fontSize:"10.5px",color:"#475569",display:"flex",gap:"8px"}}>
+                {entry.route&&<span>{entry.route}</span>}
+                {entry.transport&&<span style={{color:entry.isDirect?"#4ade80":"#93c5fd"}}>{entry.isDirect?"🚚 Direct":"🏢 "+entry.transport}</span>}
+                {entry.confirmedAt&&<span>{new Date(entry.confirmedAt).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"})}</span>}
+              </div>
+            </div>
+            {(entry.items||[]).map((item,ii)=><div key={ii} style={{display:"flex",justifyContent:"space-between",padding:"4px 12px",borderTop:ii===0?"none":"1px solid #0f172a",fontSize:"11.5px",gap:"8px"}}>
+              <span style={{color:"#94a3b8",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.name}</span>
+              <span style={{color:"#fcd34d",fontWeight:"600",flexShrink:0}}>{item.qty}</span>
+              {item.vol&&<span style={{color:"#334155",flexShrink:0}}>{item.vol.vol} {item.vol.unit}</span>}
+            </div>)}
+          </div>)}
+        </>}
+        {reversals.length>0&&<>
+          <div style={{fontSize:"12px",fontWeight:"700",color:"#f87171",marginBottom:"8px",marginTop:entries.length?"12px":"0"}}>↩ Reversed — {reversals.length} entr{reversals.length!==1?"ies":"y"}</div>
+          {reversals.map((rev,ri)=><div key={ri} style={{background:"#0b1220",border:"1px solid #7f1d1d40",borderLeft:"3px solid #ef4444",borderRadius:"8px",marginBottom:"7px",overflow:"hidden"}}>
+            <div style={{padding:"7px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid #0f172a"}}>
+              <div style={{fontSize:"12.5px",fontWeight:"700",color:"#f1f5f9"}}>{rev.partyName}</div>
+              <div style={{fontSize:"10.5px",color:"#475569",display:"flex",gap:"8px"}}>
+                <span>{new Date(rev.reversedAt).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"})}</span>
+                <span>by {rev.reversedBy?.split("@")[0]||""}</span>
+              </div>
+            </div>
+            {(rev.items||[]).map((item,ii)=><div key={ii} style={{display:"flex",justifyContent:"space-between",padding:"4px 12px",borderTop:ii===0?"none":"1px solid #0f172a",fontSize:"11.5px",gap:"8px"}}>
+              <span style={{color:"#fca5a5",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.name}</span>
+              <span style={{color:"#f87171",fontWeight:"600",flexShrink:0}}>{item.qty}</span>
+            </div>)}
+          </div>)}
+        </>}
+      </div>)
+    :(filteredReports.length===0?<div style={{textAlign:"center",padding:"50px",border:"2px dashed #1e293b",borderRadius:"10px",color:"#334155"}}>No dispatch reports found for {fromDate} to {toDate}.</div>
+      :filteredReports.map(r=><div key={r.id} style={{background:"#0b1220",border:"1px solid #1e293b",borderLeft:"3px solid #a78bfa",borderRadius:"10px",marginBottom:"10px",overflow:"hidden"}}>
+        <div style={{padding:"8px 14px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"8px",borderBottom:"1px solid #0f172a"}}>
+          <div style={{fontSize:"13px",fontWeight:"700",color:"#f1f5f9"}}>{r.date}</div>
+          <div style={{display:"flex",gap:"10px",alignItems:"center"}}>
+            {(()=>{const t=calcTotals(r.entries);return<><span style={{fontSize:"12px",fontWeight:"700",color:"#fcd34d"}}>{t.qty} units</span>{Object.entries(t.vols).map(([u,v])=><span key={u} style={{fontSize:"12px",fontWeight:"700",color:"#93c5fd"}}>{v.toFixed(2)} {u}</span>)}</>;}  )()}
+          </div>
+        </div>
+        {r.entries.map((e,ei)=><div key={ei} style={{borderTop:ei===0?"none":"1px solid #0f172a",background:ei%2===0?"transparent":"#060d1a"}}>
+          <div style={{padding:"5px 14px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:"8px",flexWrap:"wrap"}}>
+            <div style={{fontSize:"12px",fontWeight:"700",color:"#e2e8f0"}}>{e.partyName}</div>
+            <div style={{fontSize:"10px",color:"#475569",display:"flex",gap:"8px"}}>
+              {e.route&&<span>{e.route}</span>}
+              {e.transport&&<span style={{color:e.isDirect?"#4ade80":"#93c5fd"}}>{e.isDirect?"🚚":e.transport}</span>}
+            </div>
+          </div>
+          {(e.items||[]).map((it,ii)=><div key={ii} style={{fontSize:"11px",color:"#64748b",padding:"1px 26px",display:"flex",gap:"10px"}}>
+            <span style={{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{it.name}</span>
+            <span style={{color:"#fcd34d",fontWeight:"600",flexShrink:0}}>{it.qty}</span>
+            {it.vol&&<span style={{color:"#334155",flexShrink:0}}>{it.vol.vol} {it.vol.unit}</span>}
+          </div>)}
+        </div>)}
+        {(r.reversals||[]).length>0&&<div style={{borderTop:"1px solid #7f1d1d40",background:"#0f0505",padding:"5px 14px"}}>
+          <div style={{fontSize:"10px",color:"#f87171",fontWeight:"700",marginBottom:"3px"}}>↩ {r.reversals.length} Reversal{r.reversals.length!==1?"s":""}</div>
+          {(r.reversals||[]).map((rv,ri)=><div key={ri} style={{fontSize:"10.5px",color:"#fca5a5",padding:"1px 0"}}>
+            {rv.partyName}: {(rv.items||[]).map(it=>it.name+" ("+it.qty+")").join(", ")}
+          </div>)}
+        </div>}
+      </div>))}
   </div>;
 }
 
@@ -6347,8 +6399,10 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
   };
 
   // ── Reverse a confirmed dispatch within 24h ──
-  const [reverseForm,setReverseForm]=useState(null); // {partyName, items: [{...item, reverseQty}]}
+  const [reverseForm,setReverseForm]=useState(null);
   const [reverseSaving,setReverseSaving]=useState(false);
+  const [dispatchDateChoice,setDispatchDateChoice]=useState("today");
+  const dispatchDateStr=dispatchDateChoice==="tomorrow"?new Date(Date.now()+24*60*60*1000).toISOString().slice(0,10):todayStr;
 
   const openReverseForm=(partyName,items)=>{
     setReverseForm({partyName,items:items.map(i=>({...i,reverseQty:""}))});
@@ -6385,7 +6439,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
       showToast(`${reverseForm.partyName} — dispatch reversed ✓`);
       // Save reversal to dispatch report for today
       try{
-        const reportId="report_"+todayStr;
+        const reportId="report_"+dispatchDateStr;
         const reversedItems=reverseForm.items.filter(i=>parseFloat(i.reverseQty)>0).map(i=>({name:i.name,qty:parseFloat(i.reverseQty)||0,voucherNo:i.voucherNo}));
         if(reversedItems.length>0){
           const reportDoc=await C("dispatch_reports").doc(reportId).get();
@@ -6400,7 +6454,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
       }catch(e){/* best-effort */}
       // Sync dispatch report — update reversed quantities
       try{
-        const reportId="report_"+todayStr;
+        const reportId="report_"+dispatchDateStr;
         const reportDoc=await C("dispatch_reports").doc(reportId).get();
         if(reportDoc.exists){
           const data=reportDoc.data();
@@ -6464,7 +6518,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
         await C("orders").doc(orderId).update({items:updatedItems,status:allDone?"Dispatched":"Partial",updatedAt:ts()});
       }
       // Save dispatch report entry — one per customer per day, merged with today's report doc
-      const reportId="report_"+todayStr;
+      const reportId="report_"+dispatchDateStr;
       const reportDoc=await C("dispatch_reports").doc(reportId).get();
       const volTotals={};
       items.forEach(item=>{const v=calcVolume(item.name,item.qty);if(v){volTotals[v.unit]=(volTotals[v.unit]||0)+v.vol;}});
@@ -6474,7 +6528,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
         const entries=[...(existing.entries||[]).filter(e=>e.partyName!==partyName),entry];
         await C("dispatch_reports").doc(reportId).update({entries,updatedAt:confirmedAt});
       }else{
-        await C("dispatch_reports").doc(reportId).set({date:todayStr,entries:[entry],createdAt:confirmedAt,updatedAt:confirmedAt,createdBy:user.email});
+        await C("dispatch_reports").doc(reportId).set({date:dispatchDateStr,entries:[entry],createdAt:confirmedAt,updatedAt:confirmedAt,createdBy:user.email});
       }
       showToast(`${partyName} — dispatch confirmed ✓`);
     }catch(e){showToast("Error: "+e.message,"error");}
@@ -6651,7 +6705,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
           const newBalance=Math.max(0,item.balanceQty-dispQty);
           const newDispatched=(item.dispatchedQty||0)+dispQty;
           return {...item,balanceQty:newBalance,dispatchedQty:newDispatched,status:newBalance<=0?"Dispatched":"Partial",
-            lastDispatchedAt:todayStr,lastDispatchedBy:user.email,
+            lastDispatchedAt:dispatchDateStr,lastDispatchedBy:user.email,
             stagedForTransport:newBalance>0,stagedAt:newBalance>0?item.stagedAt:null};
         });
         const allDone=updatedItems.every(i=>i.status==="Dispatched");
@@ -7118,8 +7172,12 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
     {subTab==="dispatch"&&<div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"10px",flexWrap:"wrap",gap:"8px"}}>
         <div>
-          <div style={{fontSize:"13px",fontWeight:"700",color:"#22c55e"}}>Today's Dispatch — {new Date().toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"})}</div>
+          <div style={{fontSize:"13px",fontWeight:"700",color:"#22c55e"}}>🚚 Dispatch — {dispatchDateStr}</div>
           <div style={{fontSize:"11px",color:"#475569",marginTop:"2px"}}>{filteredToday.length} customer{filteredToday.length!==1?"s":""} · {totalTodayItems} item{totalTodayItems!==1?"s":""}{routeFilter!=="All"?` · ${routeFilter}`:""}</div>
+          <div style={{display:"flex",gap:"4px",background:"#080d18",border:"1px solid #1e293b",borderRadius:"7px",padding:"3px",marginTop:"6px"}}>
+            <button onClick={()=>setDispatchDateChoice("today")} style={{background:dispatchDateChoice==="today"?"#052e16":"transparent",border:"none",borderRadius:"5px",padding:"4px 12px",color:dispatchDateChoice==="today"?"#4ade80":"#475569",fontWeight:"700",fontSize:"11.5px",cursor:"pointer"}}>📅 Today ({todayStr.slice(5)})</button>
+            <button onClick={()=>setDispatchDateChoice("tomorrow")} style={{background:dispatchDateChoice==="tomorrow"?"#1e3a5f":"transparent",border:"none",borderRadius:"5px",padding:"4px 12px",color:dispatchDateChoice==="tomorrow"?"#93c5fd":"#475569",fontWeight:"700",fontSize:"11.5px",cursor:"pointer"}}>📅 Tomorrow ({new Date(Date.now()+86400000).toISOString().slice(5,10)})</button>
+          </div>
         </div>
         <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
       {filteredToday.length>0&&<>
@@ -7351,7 +7409,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
                           const dispQty=override!==undefined?Math.min(parseFloat(override)||0,item.balanceQty):item.balanceQty;
                           const newBalance=Math.max(0,item.balanceQty-dispQty);
                           const newDispatched=(item.dispatchedQty||0)+dispQty;
-                          return {...item,balanceQty:newBalance,dispatchedQty:newDispatched,status:newBalance<=0?"Dispatched":"Partial",lastDispatchedAt:todayStr,lastDispatchedBy:user.email,stagedForTransport:false,stagedAt:null};
+                          return {...item,balanceQty:newBalance,dispatchedQty:newDispatched,status:newBalance<=0?"Dispatched":"Partial",lastDispatchedAt:dispatchDateStr,lastDispatchedBy:user.email,stagedForTransport:false,stagedAt:null};
                         });
                         const allDone=updatedItems.every(i=>i.status==="Dispatched");
                         await C("orders").doc(orderId).update({items:updatedItems,status:allDone?"Dispatched":"Partial",updatedAt:ts()});
