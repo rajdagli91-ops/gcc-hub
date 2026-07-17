@@ -11392,6 +11392,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
   const [complaintSearch,setComplaintSearch]=useState("");
   const [projSearch,setProjSearch]=useState("");
   const [projFilter,setProjFilter]=useState("All");
+  const [showHiddenProjects,setShowHiddenProjects]=useState(false);
   const [rmSearch,setRmSearch]=useState("");
   const [rmFilter,setRmFilter]=useState("All");
 
@@ -11652,7 +11653,6 @@ function MainApp({user,role,roles=[],permissions=[]}){
     const q=complaintSearch.toLowerCase();
     return ms&&(!q||c.customerName?.toLowerCase().includes(q)||c.productName?.toLowerCase().includes(q)||c.batchNo?.toLowerCase().includes(q));
   });
-  const [showHiddenProjects,setShowHiddenProjects]=useState(false);
   const isAdminRD=roles.includes("admin");
   const fp=projects.filter(p=>{
     // QC users (non-admin) cannot see projects hidden from QC
