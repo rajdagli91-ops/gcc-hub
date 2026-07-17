@@ -6617,13 +6617,17 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
         });
         await C("orders").doc(orderId).update({items:updatedItems,updatedAt:ts()});
       }
-      // After staging, suggest other customers with same transporter
+      // After staging, suggest OTHER customers with same transporter — exclude just-staged ones
       if(shouldStage&&transport&&!isDirect){
+        const stagedPartyNames=new Set(itemsToStage.map(i=>orders.find(o=>o.id===i.orderId)?.partyName).filter(Boolean));
         const unstaged=customerGroups.filter(g=>
-          !g.isDirect&&normT(g.transport)===normT(transport)&&
+          !g.isDirect&&
+          normT(g.transport)===normT(transport)&&
+          !stagedPartyNames.has(g.partyName)&&
           g.orders.some(o=>(o.items||[]).some(i=>i.balanceQty>0&&i.status!=="Dispatched"&&!i.stagedForTransport))
         );
         if(unstaged.length>0)setStageSuggest({transport,others:unstaged});
+        else setStageSuggest(null);
       }
     }catch(e){showToast("Error staging: "+e.message,"error");}
     setStagingSaving(false);
@@ -7341,6 +7345,14 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
 
         {/* Right panel: preparation summary */}
         <div>
+          {(()=>{
+            const volTotals={};
+            stagedTransportItems.forEach(i=>{const v=calcVolume(i.name,i.qty);if(v)volTotals[v.unit]=(volTotals[v.unit]||0)+v.vol;});
+            return Object.keys(volTotals).length>0&&<div style={{background:"#060d1a",border:"1px solid #1e3a5f",borderRadius:"6px",padding:"6px 12px",marginBottom:"8px",display:"flex",gap:"14px",flexWrap:"wrap",alignItems:"center"}}>
+              <span style={{fontSize:"10.5px",color:"#475569",fontWeight:"700"}}>Total Volume:</span>
+              {Object.entries(volTotals).map(([u,v])=><span key={u} style={{fontSize:"14px",fontWeight:"700",color:"#93c5fd"}}>{v.toFixed(2)} {u}</span>)}
+            </div>;
+          })()}
           <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:"8px"}}>Preparation Summary — {transportPrepView==="customer"?"By Customer":transportPrepView==="product"?"By Product":"By Transporter"}</div>
           {(()=>{
             // Build staged list directly from stagedTransportItems (customerGroups excludes staged items)
@@ -7358,15 +7370,20 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
             }
             if(transportPrepView==="product"){
               const byP={};stagedList.forEach(i=>{if(!byP[i.name])byP[i.name]={name:i.name,total:0,customers:[]};byP[i.name].total+=i.qty;byP[i.name].customers.push(i);});
-              return Object.values(byP).sort((a,b)=>b.total-a.total).map(p=><div key={p.name} style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"8px",marginBottom:"6px",overflow:"hidden"}}>
+              return Object.values(byP).sort((a,b)=>b.total-a.total).map(p=>{
+                const pVol=calcVolume(p.name,p.total);
+                return <div key={p.name} style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"8px",marginBottom:"6px",overflow:"hidden"}}>
                 <div style={{padding:"7px 12px",display:"flex",justifyContent:"space-between",borderBottom:"1px solid #0f172a"}}>
                   <span style={{fontSize:"12px",fontWeight:"700",color:"#f1f5f9",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name}</span>
-                  <span style={{fontSize:"13px",fontWeight:"700",color:"#fcd34d",flexShrink:0}}>{p.total} total</span>
+                  <div style={{display:"flex",gap:"8px",alignItems:"center",flexShrink:0}}>
+                    <span style={{fontSize:"13px",fontWeight:"700",color:"#fcd34d"}}>{p.total}</span>
+                    {pVol&&<span style={{fontSize:"11px",color:"#93c5fd",background:"#0a1a2e",border:"1px solid #1e3a5f",borderRadius:"4px",padding:"1px 6px"}}>{pVol.vol} {pVol.unit}</span>}
+                  </div>
                 </div>
                 {p.customers.map((c,ci)=><div key={ci} style={{display:"flex",justifyContent:"space-between",padding:"4px 12px",borderTop:ci===0?"none":"1px solid #0f172a",fontSize:"11px"}}>
                   <span style={{color:"#94a3b8"}}>{c.partyName}</span><span style={{color:"#fcd34d",fontWeight:"600"}}>{c.qty}</span>
                 </div>)}
-              </div>);
+              </div>;});
             }
             // By transporter
             const byT={};stagedList.forEach(i=>{const k=normT(i.transport);if(!byT[k])byT[k]={transport:i.transport,items:[],customers:new Set()};byT[k].items.push(i);byT[k].customers.add(i.partyName);});
