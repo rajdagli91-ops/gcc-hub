@@ -5907,6 +5907,17 @@ function DispatchHistoryReport({normT,showToast}){
         </select>
       </Field>
       <button onClick={load} disabled={loading} style={{background:"#0a1a2e",border:"1px solid #2563eb",borderRadius:"7px",padding:"7px 14px",color:"#93c5fd",fontWeight:"700",fontSize:"12px",cursor:"pointer",marginBottom:"1px"}}>{loading?"Loading…":"🔄 Refresh"}</button>
+      {filteredReports.length>0&&<button onClick={()=>{
+        let h='<!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{font-family:Arial,sans-serif;font-size:9pt;margin:0;padding:6pt}@page{size:A4 portrait;margin:8mm}table{border-collapse:collapse;width:100%}td,th{padding:2pt 5pt;border:1px solid #000}th{background:#e8e8e8;font-weight:700}</style></head><body>';
+        h+=`<div style="display:flex;justify-content:space-between;border-bottom:2px solid #000;margin-bottom:5pt;padding-bottom:3pt"><b style="font-size:12pt">VEEBEE — DISPATCH REPORT</b><span style="font-size:9pt">${fromDate} to ${toDate}${routeFilter!=="All"?" · "+routeFilter:""}${transportFilter!=="All"?" · "+transportFilter:""}</span></div>`;
+        if(Object.keys(grandTotals).length)h+=`<div style="margin-bottom:5pt;font-size:9pt">Total Volume: ${Object.entries(grandTotals).map(([u,v])=>v.toFixed(2)+" "+u).join(" | ")}</div>`;
+        h+='<table><tr><th>Date</th><th>Customer</th><th>Route</th><th>Transport</th><th>Product</th><th style="text-align:center">Qty</th><th style="text-align:center">Volume</th></tr>';
+        filteredReports.forEach(r=>r.entries.forEach(e=>(e.items||[]).forEach((it,ii)=>{
+          h+=`<tr><td>${ii===0?r.date:""}</td><td>${ii===0?e.partyName:""}</td><td>${ii===0?(e.route||""):""}</td><td>${ii===0?(e.isDirect?"Direct":e.transport||""):""}</td><td>${it.name}</td><td style="text-align:center">${it.qty}</td><td style="text-align:center">${it.vol?it.vol.vol+" "+it.vol.unit:""}</td></tr>`;
+        })));
+        h+='</table></body></html>';
+        const w=window.open('','_blank');w.document.write(h);w.document.close();setTimeout(()=>w.print(),400);
+      }} style={{background:"#052e16",border:"1px solid #166534",borderRadius:"7px",padding:"7px 14px",color:"#4ade80",fontWeight:"700",fontSize:"12px",cursor:"pointer",marginBottom:"1px"}}>🖨 Print Report</button>}
     </div>
     {Object.keys(grandTotals).length>0&&<div style={{background:"#060d1a",border:"1px solid #1e3a5f",borderRadius:"8px",padding:"8px 14px",marginBottom:"10px",display:"flex",gap:"16px",flexWrap:"wrap",alignItems:"center"}}>
       <span style={{fontSize:"11.5px",color:"#64748b",fontWeight:"700"}}>Total Volume ({fromDate} to {toDate}):</span>
@@ -5948,7 +5959,7 @@ function DispatchHistoryReport({normT,showToast}){
   </div>;
 }
 
-function TransporterGroupRow({tg,dispatchForm,setDispatchForm,canDispatch}){
+function TransporterGroupRow({tg,dispatchForm,setDispatchForm,canDispatch,stageItems,stagingSaving}){
   const [open,setOpen]=useState(false);
   const totalItems=tg.customers.reduce((a,c)=>a+c.totalItems,0);
   const borderCol=tg.isDirect?"#22c55e":"#93c5fd";
@@ -5991,6 +6002,8 @@ function TransporterGroupRow({tg,dispatchForm,setDispatchForm,canDispatch}){
               {canDispatch&&<div style={{display:"flex",gap:"3px",flexShrink:0}}>
                 <button onClick={()=>setDispatchForm(f=>({...f,[fk]:{type:"full",qty:String(item.balanceQty)}}))} style={{background:df.type==="full"?"#052e16":"#0a0f1e",border:`1px solid ${df.type==="full"?"#166534":"#1e293b"}`,borderRadius:"4px",color:df.type==="full"?"#4ade80":"#475569",fontSize:"9.5px",fontWeight:"700",padding:"1px 6px",cursor:"pointer"}}>Full</button>
                 <button onClick={()=>setDispatchForm(f=>({...f,[fk]:{type:"partial",qty:""}}))} style={{background:df.type==="partial"?"#0a1a2e":"#0a0f1e",border:`1px solid ${df.type==="partial"?"#2563eb":"#1e293b"}`,borderRadius:"4px",color:df.type==="partial"?"#93c5fd":"#475569",fontSize:"9.5px",fontWeight:"700",padding:"1px 6px",cursor:"pointer"}}>Part</button>
+                {stageItems&&<button onClick={()=>stageItems([{orderId:o.id,itemIdx:ii}],true,tg.isDirect?"DIRECT":tg.transport,tg.isDirect)} disabled={stagingSaving}
+                  style={{background:"#1a0a2e",border:"1px solid #7c3aed",borderRadius:"4px",color:"#c4b5fd",fontSize:"9.5px",fontWeight:"700",padding:"1px 6px",cursor:"pointer"}}>📦</button>}
                 {df.type==="partial"&&<input type="number" min="0.001" max={item.balanceQty} value={df.qty||""} onChange={e=>setDispatchForm(f=>({...f,[fk]:{...f[fk],qty:e.target.value}}))} style={{...inp,width:"50px",padding:"1px 4px",fontSize:"10px",textAlign:"center"}}/>}
                 {df.type&&<button onClick={()=>setDispatchForm(f=>{const n={...f};delete n[fk];return n;})} style={{background:"none",border:"none",color:"#334155",fontSize:"10px",cursor:"pointer"}}>✕</button>}
               </div>}
@@ -6006,7 +6019,7 @@ function TransporterGroupRow({tg,dispatchForm,setDispatchForm,canDispatch}){
   </div>;
 }
 
-function ProductGroupRow({pg,dispatchForm,setDispatchForm,canDispatch,onCustomerSelect,selectedCustomer}){
+function ProductGroupRow({pg,dispatchForm,setDispatchForm,canDispatch,onCustomerSelect,selectedCustomer,stageItems,stagingSaving}){
   const [open,setOpen]=useState(false);
   return <div style={{background:"#0b1220",border:"1px solid #1e293b",borderLeft:"3px solid #3b82f6",borderRadius:"10px",marginBottom:"7px",overflow:"hidden"}}>
     <div onClick={()=>setOpen(o=>!o)} style={{padding:"10px 14px",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",gap:"8px"}}>
@@ -6036,9 +6049,11 @@ function ProductGroupRow({pg,dispatchForm,setDispatchForm,canDispatch,onCustomer
             </div>
           <div style={{textAlign:"center",fontSize:"13px",fontWeight:"700",color:"#fcd34d"}}>{c.qty}</div>
           <div style={{fontSize:"11px",color:c.isDirect?"#4ade80":"#93c5fd"}}>{c.isDirect?"🚚 Direct":"🏢 "+c.transport}</div>
-          {canDispatch&&<div style={{display:"flex",gap:"3px",alignItems:"center"}}>
-            <button onClick={()=>{setDispatchForm(f=>({...f,[fk]:{type:"full",qty:String(c.qty)}}));if(onCustomerSelect)onCustomerSelect(c.partyName);}} style={{background:df.type==="full"?"#052e16":"#0a0f1e",border:`1px solid ${df.type==="full"?"#166534":"#1e293b"}`,borderRadius:"4px",color:df.type==="full"?"#4ade80":"#475569",fontSize:"10px",fontWeight:"700",padding:"2px 7px",cursor:"pointer"}}>Full</button>
-            <button onClick={()=>{setDispatchForm(f=>({...f,[fk]:{type:"partial",qty:""}}));if(onCustomerSelect)onCustomerSelect(c.partyName);}} style={{background:df.type==="partial"?"#0a1a2e":"#0a0f1e",border:`1px solid ${df.type==="partial"?"#2563eb":"#1e293b"}`,borderRadius:"4px",color:df.type==="partial"?"#93c5fd":"#475569",fontSize:"10px",fontWeight:"700",padding:"2px 7px",cursor:"pointer"}}>Part</button>
+          {canDispatch&&<div style={{display:"flex",gap:"3px",alignItems:"center",justifyContent:"center"}}>
+            <button onClick={()=>{setDispatchForm(f=>({...f,[fk]:{type:"full",qty:String(c.qty)}}));if(onCustomerSelect)onCustomerSelect(c.partyName);}} style={{background:df.type==="full"?"#052e16":"#0a0f1e",border:`1px solid ${df.type==="full"?"#166534":"#1e293b"}`,borderRadius:"4px",color:df.type==="full"?"#4ade80":"#475569",fontSize:"10px",fontWeight:"700",padding:"2px 6px",cursor:"pointer"}}>Full</button>
+            <button onClick={()=>{setDispatchForm(f=>({...f,[fk]:{type:"partial",qty:""}}));if(onCustomerSelect)onCustomerSelect(c.partyName);}} style={{background:df.type==="partial"?"#0a1a2e":"#0a0f1e",border:`1px solid ${df.type==="partial"?"#2563eb":"#1e293b"}`,borderRadius:"4px",color:df.type==="partial"?"#93c5fd":"#475569",fontSize:"10px",fontWeight:"700",padding:"2px 6px",cursor:"pointer"}}>Part</button>
+            {!c.isDirect&&stageItems&&<button onClick={()=>stageItems([{orderId:c.orderId,itemIdx:c.itemIdx}],true,c.transport,false)} disabled={stagingSaving}
+              style={{background:"#1a0a2e",border:"1px solid #7c3aed",borderRadius:"4px",color:"#c4b5fd",fontSize:"10px",fontWeight:"700",padding:"2px 6px",cursor:"pointer"}}>📦</button>}
             {df.type==="partial"&&<input type="number" min="0.001" max={c.qty} value={df.qty||""} onChange={e=>setDispatchForm(f=>({...f,[fk]:{...f[fk],qty:e.target.value}}))} style={{...inp,width:"55px",padding:"2px 4px",fontSize:"10px",textAlign:"center"}} placeholder={c.qty}/>}
             {df.type&&<button onClick={()=>setDispatchForm(f=>{const n={...f};delete n[fk];return n;})} style={{background:"none",border:"none",color:"#334155",fontSize:"10px",cursor:"pointer"}}>✕</button>}
           </div>}
@@ -6324,7 +6339,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
   const [reverseSaving,setReverseSaving]=useState(false);
 
   const openReverseForm=(partyName,items)=>{
-    setReverseForm({partyName,items:items.map(i=>({...i,reverseQty:String(i.qty)}))});
+    setReverseForm({partyName,items:items.map(i=>({...i,reverseQty:""}))});
   };
 
   const reverseDispatch=async()=>{
@@ -6443,7 +6458,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
   const todayStr=new Date().toISOString().slice(0,10);
 
   // ── Group orders by customer for pending view ──
-  const pendingOrders=orders.filter(o=>["Pending","Partial"].includes(o.status));
+  const pendingOrders=orders.filter(o=>["Pending","Partial"].includes(o.status)&&(o.items||[]).some(i=>i.balanceQty>0&&i.status!=="Dispatched"&&!i.stagedForTransport));
   const customerGroups=(()=>{
     const map={};
     const filtered=pendingOrders.filter(o=>{
@@ -6538,30 +6553,50 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
   const totalTodayItems=filteredToday.reduce((a,g)=>a+g.items.length,0);
 
   // ── Product-wise grouping (for material preparation view) ──
-  const [selectedCustomerInProduct,setSelectedCustomerInProduct]=useState(null); // partyName with pending items
+  const [selectedCustomerInProduct,setSelectedCustomerInProduct]=useState(null);
+
+  // Clear suggestion when customer has no selected items left in dispatchForm
+  useEffect(()=>{
+    if(!selectedCustomerInProduct)return;
+    const customerOrders=customerGroups.find(g=>normalize(g.partyName)===normalize(selectedCustomerInProduct))?.orders||[];
+    const hasAnySelected=customerOrders.some(o=>Object.keys(dispatchForm).some(k=>k.startsWith(o.id+"__")));
+    if(!hasAnySelected)setSelectedCustomerInProduct(null);
+  },[dispatchForm,selectedCustomerInProduct]);
   const [transportPrepView,setTransportPrepView]=useState("customer");
   const [stagingSaving,setStagingSaving]=useState(false);
 
   // Stage/unstage items in Firestore — gives live updates to all users via onSnapshot
-  const stageItemsForTransport=async(itemsToStage,shouldStage)=>{
+  const [stageSuggest,setStageSuggest]=useState(null);
+
+  const stageItemsForTransport=async(itemsToStage,shouldStage,transport,isDirect)=>{
     setStagingSaving(true);
     try{
       const byOrder={};
-      itemsToStage.forEach(({orderId,itemIdx})=>{
+      itemsToStage.forEach(({orderId,itemIdx,qty})=>{
         if(!byOrder[orderId])byOrder[orderId]=[];
-        byOrder[orderId].push(itemIdx);
+        byOrder[orderId].push({itemIdx,qty});
       });
       for(const [orderId,idxList] of Object.entries(byOrder)){
         const orderDoc=await C("orders").doc(orderId).get();
         if(!orderDoc.exists)continue;
         const data=orderDoc.data();
         const updatedItems=(data.items||[]).map((item,idx)=>{
-          if(!idxList.includes(idx))return item;
-          return shouldStage
-            ?{...item,stagedForTransport:true,stagedAt:new Date().toISOString(),stagedBy:user.email}
-            :{...item,stagedForTransport:false,stagedAt:null,stagedBy:null};
+          const spec=idxList.find(s=>s.itemIdx===idx);
+          if(!spec)return item;
+          if(!shouldStage)return {...item,stagedForTransport:false,stagedAt:null,stagedBy:null};
+          // Allow partial staging qty
+          const stageQty=spec.qty!=null?parseFloat(spec.qty)||item.balanceQty:item.balanceQty;
+          return {...item,stagedForTransport:true,stagedQty:stageQty,stagedAt:new Date().toISOString(),stagedBy:user.email};
         });
         await C("orders").doc(orderId).update({items:updatedItems,updatedAt:ts()});
+      }
+      // After staging, suggest other customers with same transporter
+      if(shouldStage&&transport&&!isDirect){
+        const unstaged=customerGroups.filter(g=>
+          !g.isDirect&&normT(g.transport)===normT(transport)&&
+          g.orders.some(o=>(o.items||[]).some(i=>i.balanceQty>0&&i.status!=="Dispatched"&&!i.stagedForTransport))
+        );
+        if(unstaged.length>0)setStageSuggest({transport,others:unstaged});
       }
     }catch(e){showToast("Error staging: "+e.message,"error");}
     setStagingSaving(false);
@@ -6678,7 +6713,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
         ["transport_prep","🚛 Transport Prep","#a78bfa"],
         ["dispatch","🚚 Dispatch Today","#22c55e"],
         ["dispatched","✅ Dispatched (24h)","#3b82f6"],
-        ...(isAdmin?[["reports","📊 Reports","#a78bfa"]]:[])
+        ...(isAdmin||roles.includes("issuer")||roles.includes("ho")?[["reports","📊 Reports","#a78bfa"]]:[])
       ].map(([k,l,c])=><button key={k} onClick={()=>setSubTab(k)}
         style={{background:subTab===k?c+"22":"transparent",border:`1px solid ${subTab===k?c+"60":"#1e293b"}`,borderRadius:"7px",padding:"6px 12px",color:subTab===k?c:"#475569",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>
         {l}
@@ -6842,16 +6877,30 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
           {orders.length===0?"No orders yet — import from Tally":"No pending orders match this filter"}
         </div>
         :<div>
-          {/* Transporter suggestion banner */}
+          {/* Transporter suggestion banner — dispatch */}
           {transporterSuggest&&<div style={{background:"#0a1a2e",border:"1px solid #2563eb",borderRadius:"10px",padding:"12px 14px",marginBottom:"12px",display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:"10px",flexWrap:"wrap"}}>
             <div>
-              <div style={{fontSize:"12.5px",fontWeight:"700",color:"#93c5fd",marginBottom:"4px"}}>📦 Same Transporter — {transporterSuggest.transport}</div>
-              <div style={{fontSize:"11.5px",color:"#64748b",marginBottom:"6px"}}>You just dispatched via <strong style={{color:"#93c5fd"}}>{transporterSuggest.transport}</strong>. These customers also use the same transporter — dispatch together to save trips:</div>
+              <div style={{fontSize:"12.5px",fontWeight:"700",color:"#93c5fd",marginBottom:"4px"}}>📦 Same Transporter for Dispatch — {transporterSuggest.transport}</div>
+              <div style={{fontSize:"11.5px",color:"#64748b",marginBottom:"6px"}}>These customers also use <strong style={{color:"#93c5fd"}}>{transporterSuggest.transport}</strong> — dispatch together:</div>
               {transporterSuggest.others.map((g,i)=><div key={i} style={{fontSize:"12px",color:"#e2e8f0",padding:"2px 0"}}>
-                · <strong>{g.partyName}</strong> <span style={{color:"#475569"}}>({g.route} · {g.orders.reduce((a,o)=>a+(o.items||[]).filter(i=>i.status!=="Dispatched"&&i.balanceQty>0).length,0)} items pending)</span>
+                · <strong>{g.partyName}</strong> <span style={{color:"#475569"}}>({g.route} · {g.orders.reduce((a,o)=>a+(o.items||[]).filter(i=>i.status!=="Dispatched"&&i.balanceQty>0).length,0)} items)</span>
               </div>)}
             </div>
             <button onClick={()=>setTransporterSuggest(null)} style={{background:"none",border:"none",color:"#334155",cursor:"pointer",fontSize:"16px",flexShrink:0}}>✕</button>
+          </div>}
+
+          {/* Stage suggestion banner */}
+          {stageSuggest&&<div style={{background:"#120830",border:"1px solid #7c3aed",borderRadius:"10px",padding:"12px 14px",marginBottom:"12px",display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:"10px",flexWrap:"wrap"}}>
+            <div>
+              <div style={{fontSize:"12.5px",fontWeight:"700",color:"#c4b5fd",marginBottom:"4px"}}>📦 Stage Together — {stageSuggest.transport}</div>
+              <div style={{fontSize:"11.5px",color:"#64748b",marginBottom:"6px"}}>These customers also use <strong style={{color:"#c4b5fd"}}>{stageSuggest.transport}</strong> — stage together to prepare in one batch:</div>
+              {stageSuggest.others.map((g,i)=><div key={i} style={{fontSize:"12px",color:"#e2e8f0",padding:"2px 0",display:"flex",justifyContent:"space-between",alignItems:"center",gap:"12px"}}>
+                <span>· <strong>{g.partyName}</strong> <span style={{color:"#475569"}}>({g.route} · {g.orders.reduce((a,o)=>a+(o.items||[]).filter(i=>i.status!=="Dispatched"&&i.balanceQty>0&&!i.stagedForTransport).length,0)} items)</span></span>
+                <button onClick={()=>{const items=g.orders.flatMap(o=>(o.items||[]).filter(i=>i.balanceQty>0&&i.status!=="Dispatched"&&!i.stagedForTransport).map(item=>({orderId:o.id,itemIdx:(o.items||[]).indexOf(item)})));stageItemsForTransport(items,true,g.transport,false);}} disabled={stagingSaving}
+                  style={{background:"#1a0a2e",border:"1px solid #7c3aed",borderRadius:"5px",padding:"2px 8px",color:"#c4b5fd",fontSize:"10px",fontWeight:"700",cursor:"pointer",flexShrink:0}}>📦 Stage</button>
+              </div>)}
+            </div>
+            <button onClick={()=>setStageSuggest(null)} style={{background:"none",border:"none",color:"#334155",cursor:"pointer",fontSize:"16px",flexShrink:0}}>✕</button>
           </div>}
 
           {/* View mode toggle + summary */}
@@ -6900,7 +6949,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
                 }} style={{background:"#0a1a2e",border:"1px solid #2563eb",borderRadius:"5px",padding:"4px 12px",color:"#93c5fd",fontSize:"11px",fontWeight:"700",cursor:"pointer"}}>+ Add All Pending Products</button>
               </div>;
             })()}
-            {productGroups.map((pg,pi)=><ProductGroupRow key={pg.name} pg={pg} dispatchForm={dispatchForm} setDispatchForm={setDispatchForm} canDispatch={canDispatch} onCustomerSelect={setSelectedCustomerInProduct} selectedCustomer={selectedCustomerInProduct}/>)}
+            {productGroups.map((pg,pi)=><ProductGroupRow key={pg.name} pg={pg} dispatchForm={dispatchForm} setDispatchForm={setDispatchForm} canDispatch={canDispatch} onCustomerSelect={setSelectedCustomerInProduct} selectedCustomer={selectedCustomerInProduct} stageItems={stageItemsForTransport} stagingSaving={stagingSaving}/>)}
           </div>}
 
           {/* ── TRANSPORTER VIEW — for consolidated booking ── */}
@@ -6908,7 +6957,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
             <div style={{background:"#0b1220",border:"1px solid #1e3a5f",borderRadius:"8px",padding:"8px 12px",marginBottom:"10px",fontSize:"11.5px",color:"#64748b"}}>
               🚛 <strong style={{color:"#93c5fd"}}>Transporter View</strong> — customers grouped by transporter. Dispatch all customers under one transporter together to avoid sending material to the same transporter multiple times.
             </div>
-            {transporterGroups.map(tg=><TransporterGroupRow key={tg.transport} tg={tg} dispatchForm={dispatchForm} setDispatchForm={setDispatchForm} canDispatch={canDispatch}/>)}
+            {transporterGroups.map(tg=><TransporterGroupRow key={tg.transport} tg={tg} dispatchForm={dispatchForm} setDispatchForm={setDispatchForm} canDispatch={canDispatch} stageItems={stageItemsForTransport} stagingSaving={stagingSaving}/>)}
           </div>}
 
           {/* ── CUSTOMER VIEW (existing) ── */}
@@ -6943,10 +6992,10 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
                   </button>}
                   {/* Stage for Transport button — only for non-direct orders */}
                   {!isUnknown&&!group.isDirect&&canDispatch&&(()=>{
-                    const allPending=group.orders.flatMap(o=>(o.items||[]).filter(i=>i.balanceQty>0&&i.status!=="Dispatched").map((item,idx)=>({orderId:o.id,itemIdx:(o.items||[]).indexOf(item)})));
+                    const allPending=group.orders.flatMap(o=>(o.items||[]).filter(i=>i.balanceQty>0&&i.status!=="Dispatched"&&!i.stagedForTransport).map((item)=>({orderId:o.id,itemIdx:(o.items||[]).indexOf(item)})));
                     const stagedCount=stagedTransportItems.filter(i=>group.orders.some(o=>o.id===i.orderId)).length;
-                    const allStaged=stagedCount===allPending.length&&allPending.length>0;
-                    return <button onClick={e=>{e.stopPropagation();stageItemsForTransport(allPending,!allStaged);}} disabled={stagingSaving}
+                    const allStaged=stagedCount>0&&allPending.length===0;
+                    return <button onClick={e=>{e.stopPropagation();if(allStaged)stageItemsForTransport(group.orders.flatMap(o=>(o.items||[]).map((_,idx)=>({orderId:o.id,itemIdx:idx}))),false);else stageItemsForTransport(allPending,true,group.transport,group.isDirect);}} disabled={stagingSaving}
                       style={{background:allStaged?"#12083a":"#080d18",border:`1px solid ${allStaged?"#7c3aed":"#1e293b"}`,borderRadius:"5px",color:allStaged?"#c4b5fd":"#475569",fontSize:"10.5px",fontWeight:"700",padding:"2px 9px",cursor:"pointer",whiteSpace:"nowrap"}}>
                       {allStaged?"📦 Staged":"📦 Stage"}
                     </button>;
@@ -6989,7 +7038,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
                     <div style={{display:"grid",gridTemplateColumns:"2.5fr 80px 80px 75px auto",gap:"5px",background:"#0b1220",padding:"5px 10px",fontSize:"9.5px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.05em",minWidth:"460px"}}>
                       <span>Product</span><span style={{textAlign:"center"}}>Balance</span><span style={{textAlign:"center"}}>Dispatched</span><span style={{textAlign:"center"}}>Status</span><span style={{textAlign:"center"}}>{canDispatch?"Dispatch":""}</span>
                     </div>
-                    {(order.items||[]).map((item,idx)=>{
+                    {(order.items||[]).filter(i=>!i.stagedForTransport||i.status==="Dispatched").map((item,idx)=>{
                       const formKey=order.id+"__"+idx;
                       const df=dispatchForm[formKey]||{};
                       const bal=item.balanceQty||0;
@@ -7165,14 +7214,16 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
           </div>)}
         </div>
         <div style={{background:"#0f0505",border:"1px solid #7f1d1d40",borderRadius:"6px",padding:"8px 12px",marginBottom:"14px",fontSize:"11.5px",color:"#fca5a5"}}>
-          Reversed qty will be added back to <strong>Balance</strong> in pending orders. Items fully reversed will reappear in Pending Orders tab.
+          Leave qty empty to skip an item. Reversed qty restores to <strong>Balance</strong> in pending orders.
         </div>
-        <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
-          <button onClick={()=>setReverseForm(null)} style={{background:"none",border:"1px solid #334155",borderRadius:"6px",padding:"7px 14px",color:"#475569",fontSize:"12px",cursor:"pointer"}}>Cancel</button>
+        <div style={{display:"flex",gap:"8px",justifyContent:"space-between",alignItems:"center"}}>
           <button onClick={()=>setReverseForm(f=>({...f,items:f.items.map(it=>({...it,reverseQty:String(it.qty)}))}))}
-            style={{background:"#1a0505",border:"1px solid #7f1d1d",borderRadius:"6px",padding:"7px 14px",color:"#f87171",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>Fully Reverse All</button>
-          <button onClick={reverseDispatch} disabled={reverseSaving}
-            style={{background:"#2e0a0a",border:"1px solid #ef4444",borderRadius:"6px",padding:"7px 14px",color:"#fca5a5",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>{reverseSaving?"Reversing…":"↩ Confirm Reverse"}</button>
+            style={{background:"#1a0505",border:"1px solid #7f1d1d",borderRadius:"6px",padding:"7px 14px",color:"#f87171",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>↩ Reverse All (Fill Max)</button>
+          <div style={{display:"flex",gap:"8px"}}>
+            <button onClick={()=>setReverseForm(null)} style={{background:"none",border:"1px solid #334155",borderRadius:"6px",padding:"7px 14px",color:"#475569",fontSize:"12px",cursor:"pointer"}}>Cancel</button>
+            <button onClick={reverseDispatch} disabled={reverseSaving}
+              style={{background:"#2e0a0a",border:"1px solid #ef4444",borderRadius:"6px",padding:"7px 14px",color:"#fca5a5",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>{reverseSaving?"Reversing…":"↩ Confirm Reverse"}</button>
+          </div>
         </div>
       </div>
     </div>}
@@ -7318,7 +7369,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
     </div>}
 
     {/* ── DISPATCH REPORTS — admin only, auto-expires after 48h ── */}
-    {subTab==="reports"&&isAdmin&&<DispatchHistoryReport normT={normT} showToast={showToast}/> }
+    {subTab==="reports"&&(isAdmin||roles.includes("issuer")||roles.includes("ho"))&&<DispatchHistoryReport normT={normT} showToast={showToast}/> }
   </div>;
 }
 
