@@ -2367,20 +2367,24 @@ function ProjectWorkspace({project,isAdmin,showToast,sysUnits,sysRmCats,onAddRmC
   </div>;
 }
 
-function ProjectCard({p,onClick,onDelete,onEdit,isAdmin}){
+function ProjectCard({p,onClick,onDelete,onEdit,onToggleHide,isAdmin}){
   const accent=PAINT_ACCENT[p.paintType]||"#cbd5e1";
   const sc=STATUS_COLORS[p.status]||"#94a3b8";
   const tc=(p.trials||[]).length;
   const hasFinal=(p.trials||[]).some(t=>t.outcome==="Approved as Final");
-  return <div onClick={onClick} onMouseEnter={e=>e.currentTarget.style.background="#0f1f35"} onMouseLeave={e=>e.currentTarget.style.background="#0f172a"}
-    style={{background:"#0f172a",border:"1px solid #1e293b",borderLeft:`3px solid ${accent}`,borderRadius:"12px",padding:"15px 20px",cursor:"pointer",transition:"background 0.15s",boxShadow:"0 2px 10px rgba(0,0,0,0.3)",marginBottom:"10px"}}>
+  return <div onClick={onClick} onMouseEnter={e=>e.currentTarget.style.background="#0f1f35"} onMouseLeave={e=>e.currentTarget.style.background=p.hiddenFromQC?"#060d1a":"#0f172a"}
+    style={{background:p.hiddenFromQC?"#060d1a":"#0f172a",border:"1px solid #1e293b",borderLeft:`3px solid ${p.hiddenFromQC?"#334155":accent}`,borderRadius:"12px",padding:"15px 20px",cursor:"pointer",transition:"background 0.15s",boxShadow:"0 2px 10px rgba(0,0,0,0.3)",marginBottom:"10px",opacity:p.hiddenFromQC?0.65:1}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:"8px"}}>
       <div style={{flex:1}}>
-        <div style={{fontSize:"14px",fontWeight:"700",color:"#f1f5f9",marginBottom:"3px",fontFamily:"'DM Serif Display',serif"}}>{p.projectName}</div>
+        <div style={{fontSize:"14px",fontWeight:"700",color:"#f1f5f9",marginBottom:"3px",fontFamily:"'DM Serif Display',serif"}}>{p.projectName}{p.hiddenFromQC&&<span style={{fontSize:"10px",color:"#334155",fontWeight:"400",marginLeft:"8px",fontFamily:"'DM Sans',sans-serif"}}>Hidden from QC</span>}</div>
         <div style={{fontSize:"11.5px",color:"#64748b",marginBottom:"6px"}}>#{p.projectCode} · {p.paintType} · {p.application||"—"}</div>
       </div>
       <div style={{display:"flex",gap:"6px",alignItems:"center",flexShrink:0}}>
         <Bdg label={p.status} color={sc}/>
+        {isAdmin&&onToggleHide&&<button onClick={e=>{e.stopPropagation();onToggleHide(p);}} title={p.hiddenFromQC?"Show to QC":"Hide from QC"}
+          style={{background:p.hiddenFromQC?"#1e293b":"none",border:"1px solid #1e293b",borderRadius:"6px",color:p.hiddenFromQC?"#94a3b8":"#475569",fontSize:"12px",padding:"2px 8px",cursor:"pointer"}}>
+          {p.hiddenFromQC?"👁 Show":"🙈 Hide"}
+        </button>}
         {isAdmin&&<button onClick={e=>{e.stopPropagation();onEdit(p)}} style={{background:"none",border:"1px solid #1e293b",borderRadius:"6px",color:"#475569",fontSize:"12px",padding:"2px 8px",cursor:"pointer"}}>✏️</button>}
         {isAdmin&&<button onClick={e=>{e.stopPropagation();onDelete(p.id)}} style={{background:"none",border:"none",color:"#334155",fontSize:"15px",padding:"2px 4px",cursor:"pointer"}}>🗑</button>}
       </div>
@@ -11648,7 +11652,13 @@ function MainApp({user,role,roles=[],permissions=[]}){
     const q=complaintSearch.toLowerCase();
     return ms&&(!q||c.customerName?.toLowerCase().includes(q)||c.productName?.toLowerCase().includes(q)||c.batchNo?.toLowerCase().includes(q));
   });
+  const [showHiddenProjects,setShowHiddenProjects]=useState(false);
+  const isAdminRD=roles.includes("admin");
   const fp=projects.filter(p=>{
+    // QC users (non-admin) cannot see projects hidden from QC
+    if(!isAdminRD&&p.hiddenFromQC)return false;
+    // Admin: hide archived unless showHiddenProjects is on
+    if(isAdminRD&&p.hiddenFromQC&&!showHiddenProjects)return false;
     const ms=projFilter==="All"||p.status===projFilter;
     const q=projSearch.toLowerCase();
     return ms&&(!q||p.projectName?.toLowerCase().includes(q)||p.projectCode?.toLowerCase().includes(q));
@@ -11858,7 +11868,17 @@ function MainApp({user,role,roles=[],permissions=[]}){
             </div>
             {isAdmin&&<Btn label="+ New Project" onClick={()=>setShowAddProject(true)} color="#3b82f6"/>}
           </div>
-          {fp.length===0?<div style={{textAlign:"center",padding:"50px 0"}}><div style={{fontSize:"36px",marginBottom:"10px"}}>🧪</div><div style={{fontSize:"13px",color:"#475569"}}>No projects.{isAdmin?" Click + New Project.":""}</div></div>:fp.map(p=><ProjectCard key={p.id} p={p} onClick={()=>setActiveProject(p)} onDelete={async(id)=>{if(!confirm("Delete project?"))return;await C("rd_projects").doc(id).delete();showToast("Deleted","error");}} onEdit={p=>setEditProject({...p})} isAdmin={isAdmin}/>)}
+          {isAdminRD&&projects.some(p=>p.hiddenFromQC)&&<div style={{display:"flex",justifyContent:"flex-end",marginBottom:"8px"}}>
+            <button onClick={()=>setShowHiddenProjects(s=>!s)} style={{background:"#080d18",border:"1px solid #1e293b",borderRadius:"6px",padding:"4px 12px",color:showHiddenProjects?"#fcd34d":"#475569",fontSize:"11.5px",fontWeight:"600",cursor:"pointer"}}>
+              {showHiddenProjects?"🙈 Hide archived":"👁 Show hidden ("+projects.filter(p=>p.hiddenFromQC).length+")"}
+            </button>
+          </div>}
+          {fp.length===0?<div style={{textAlign:"center",padding:"50px 0"}}><div style={{fontSize:"36px",marginBottom:"10px"}}>🧪</div><div style={{fontSize:"13px",color:"#475569"}}>No projects.{isAdmin?" Click + New Project.":""}</div></div>
+          :fp.map(p=><ProjectCard key={p.id} p={p} onClick={()=>setActiveProject(p)}
+            onDelete={async(id)=>{if(!confirm("Delete project?"))return;await C("rd_projects").doc(id).delete();showToast("Deleted","error");}}
+            onEdit={p=>setEditProject({...p})}
+            onToggleHide={async(proj)=>{await C("rd_projects").doc(proj.id).update({hiddenFromQC:!proj.hiddenFromQC});showToast(proj.hiddenFromQC?"Project visible to QC ✓":"Project hidden from QC ✓");}}
+            isAdmin={isAdminRD}/>)}
         </>}
         {rdSubTab==="rmtests"&&<>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"14px",flexWrap:"wrap",gap:"10px"}}>
