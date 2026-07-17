@@ -6594,6 +6594,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
 
   // Stage/unstage items in Firestore — gives live updates to all users via onSnapshot
   const [stageSuggest,setStageSuggest]=useState(null);
+  const [stagedQtyOverrides,setStagedQtyOverrides]=useState({}); // orderId__itemIdx -> qty string
 
   const stageItemsForTransport=async(itemsToStage,shouldStage,transport,isDirect)=>{
     setStagingSaving(true);
@@ -6642,13 +6643,16 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
         (o.items||[]).some(i=>i.stagedForTransport&&i.balanceQty>0&&i.status!=="Dispatched")
       );
       for(const order of stagedOrders){
-        const updatedItems=(order.items||[]).map(item=>{
+        const updatedItems=(order.items||[]).map((item,idx)=>{
           if(!item.stagedForTransport||item.balanceQty<=0||item.status==="Dispatched")return item;
-          const newBalance=0;
-          const newDispatched=(item.dispatchedQty||0)+item.balanceQty;
-          return {...item,balanceQty:newBalance,dispatchedQty:newDispatched,status:"Dispatched",
+          const fk=order.id+"__"+idx;
+          const override=stagedQtyOverrides[fk];
+          const dispQty=override!==undefined?Math.min(parseFloat(override)||0,item.balanceQty):item.balanceQty;
+          const newBalance=Math.max(0,item.balanceQty-dispQty);
+          const newDispatched=(item.dispatchedQty||0)+dispQty;
+          return {...item,balanceQty:newBalance,dispatchedQty:newDispatched,status:newBalance<=0?"Dispatched":"Partial",
             lastDispatchedAt:todayStr,lastDispatchedBy:user.email,
-            stagedForTransport:false,stagedAt:null};
+            stagedForTransport:newBalance>0,stagedAt:newBalance>0?item.stagedAt:null};
         });
         const allDone=updatedItems.every(i=>i.status==="Dispatched");
         const anyDone=updatedItems.some(i=>i.status==="Dispatched"||i.status==="Partial");
@@ -7342,7 +7346,12 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
                         const updatedItems=(data.items||[]).map((item,idx)=>{
                           const staged=cg.items.find(i=>i.orderId===orderId&&i.itemIdx===idx);
                           if(!staged)return item;
-                          return {...item,balanceQty:0,dispatchedQty:(item.dispatchedQty||0)+item.balanceQty,status:"Dispatched",lastDispatchedAt:todayStr,lastDispatchedBy:user.email,stagedForTransport:false,stagedAt:null};
+                          const fk=orderId+"__"+idx;
+                          const override=stagedQtyOverrides[fk];
+                          const dispQty=override!==undefined?Math.min(parseFloat(override)||0,item.balanceQty):item.balanceQty;
+                          const newBalance=Math.max(0,item.balanceQty-dispQty);
+                          const newDispatched=(item.dispatchedQty||0)+dispQty;
+                          return {...item,balanceQty:newBalance,dispatchedQty:newDispatched,status:newBalance<=0?"Dispatched":"Partial",lastDispatchedAt:todayStr,lastDispatchedBy:user.email,stagedForTransport:false,stagedAt:null};
                         });
                         const allDone=updatedItems.every(i=>i.status==="Dispatched");
                         await C("orders").doc(orderId).update({items:updatedItems,status:allDone?"Dispatched":"Partial",updatedAt:ts()});
@@ -7356,12 +7365,23 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
                     style={{background:"#2e0a0a",border:"1px solid #7f1d1d",borderRadius:"4px",padding:"2px 8px",color:"#f87171",fontSize:"10px",fontWeight:"700",cursor:"pointer"}}>✕</button>
                 </div>
               </div>
-              {cg.items.map((item,ii)=><div key={ii} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 12px",borderTop:"1px solid #0f172a",gap:"8px",background:"#12083a"}}>
-                <div style={{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontSize:"11.5px",color:"#c4b5fd"}}>{item.name}</div>
-                <span style={{fontSize:"12px",fontWeight:"700",color:"#fcd34d",flexShrink:0}}>{item.qty}</span>
-                <button onClick={()=>stageItemsForTransport([{orderId:item.orderId,itemIdx:item.itemIdx}],false)} disabled={stagingSaving}
-                  style={{background:"none",border:"none",color:"#475569",fontSize:"11px",cursor:"pointer"}}>✕</button>
-              </div>)}
+              {cg.items.map((item,ii)=>{
+                const fk=item.orderId+"__"+item.itemIdx;
+                const editQty=stagedQtyOverrides[fk];
+                const dispQty=editQty!==undefined?parseFloat(editQty)||0:item.qty;
+                return <div key={ii} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 12px",borderTop:"1px solid #0f172a",gap:"6px",background:"#12083a"}}>
+                  <div style={{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontSize:"11.5px",color:"#c4b5fd"}}>{item.name}</div>
+                  <div style={{display:"flex",gap:"5px",alignItems:"center",flexShrink:0}}>
+                    <input type="number" min="0.001" max={item.qty} step="0.001"
+                      value={editQty!==undefined?editQty:item.qty}
+                      onChange={e=>setStagedQtyOverrides(f=>({...f,[fk]:e.target.value}))}
+                      style={{...inp,width:"65px",padding:"2px 5px",fontSize:"11px",textAlign:"center",background:"#0b1220",border:`1px solid ${editQty!==undefined&&parseFloat(editQty)<item.qty?"#f59e0b":"#1e293b"}`}}/>
+                    {editQty!==undefined&&parseFloat(editQty)<item.qty&&<span style={{fontSize:"9.5px",color:"#f59e0b",whiteSpace:"nowrap"}}>of {item.qty}</span>}
+                  </div>
+                  <button onClick={()=>stageItemsForTransport([{orderId:item.orderId,itemIdx:item.itemIdx}],false)} disabled={stagingSaving}
+                    style={{background:"none",border:"none",color:"#475569",fontSize:"11px",cursor:"pointer"}}>✕</button>
+                </div>;
+              })}
             </div>);
           })()}
         </div>
