@@ -737,6 +737,8 @@ const sml={...inp,padding:"7px 10px",fontSize:"12.5px"};
 const newId=()=>Math.random().toString(36).slice(2,11);
 const today=()=>new Date().toISOString().slice(0,10);
 const ts=()=>firebase.firestore.FieldValue.serverTimestamp();
+// Firestore rejects undefined values — convert them to null
+const san=obj=>{if(obj===undefined)return null;if(obj===null||typeof obj!=="object")return obj;if(Array.isArray(obj))return obj.map(san);const out={};Object.entries(obj).forEach(([k,v])=>{if(v!==undefined)out[k]=san(v);});return out;};
 const C=(name)=>db.collection(name);
 
 // ══════════════════════════════════════════════════════════
@@ -6373,7 +6375,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
         });
         const allDone=updatedItems.every(i=>i.status==="Dispatched");
         const anyDone=updatedItems.some(i=>i.status==="Dispatched"||i.status==="Partial");
-        await C("orders").doc(order.id).update({items:updatedItems,status:allDone?"Dispatched":anyDone?"Partial":"Pending",updatedAt:ts()});
+        await C("orders").doc(order.id).update({items:san(updatedItems),status:allDone?"Dispatched":anyDone?"Partial":"Pending",updatedAt:ts()});
       }
       setDispatchForm({});setExpandedCustomer(null);
       showToast("Dispatch recorded ✓ — check Today's Dispatch tab");
@@ -6434,7 +6436,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
           };
         });
         const anyActive=updatedItems.some(i=>i.status==="Dispatched"||i.status==="Partial");
-        await C("orders").doc(orderId).update({items:updatedItems,status:anyActive?"Partial":"Pending",updatedAt:ts()});
+        await C("orders").doc(orderId).update({items:san(updatedItems),status:anyActive?"Partial":"Pending",updatedAt:ts()});
       }
       showToast(`${reverseForm.partyName} — dispatch reversed ✓`);
       // Save reversal to dispatch report for today
@@ -6515,7 +6517,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
           return matched?{...item,dispatchConfirmed:true,dispatchConfirmedAt:confirmedAt}:item;
         });
         const allDone=updatedItems.every(i=>i.status==="Dispatched"||i.balanceQty<=0);
-        await C("orders").doc(orderId).update({items:updatedItems,status:allDone?"Dispatched":"Partial",updatedAt:ts()});
+        await C("orders").doc(orderId).update({items:san(updatedItems),status:allDone?"Dispatched":"Partial",updatedAt:ts()});
       }
       // Save dispatch report entry — one per customer per day, merged with today's report doc
       const reportId="report_"+dispatchDateStr;
@@ -6669,7 +6671,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
           const stageQty=spec.qty!=null?parseFloat(spec.qty)||item.balanceQty:item.balanceQty;
           return {...item,stagedForTransport:true,stagedQty:stageQty,stagedAt:new Date().toISOString(),stagedBy:user.email};
         });
-        await C("orders").doc(orderId).update({items:updatedItems,updatedAt:ts()});
+        await C("orders").doc(orderId).update({items:san(updatedItems),updatedAt:ts()});
       }
       // After staging, suggest OTHER customers with same transporter — exclude just-staged ones
       if(shouldStage&&transport&&!isDirect){
@@ -6722,7 +6724,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
         const allDone=updatedItems.every(i=>i.balanceQty<=0||i.status==="Dispatched");
         const anyDispatched=updatedItems.some(i=>(i.dispatchedQty||0)>0);
         await C("orders").doc(orderId).update({
-          items:updatedItems,
+          items:san(updatedItems),
           status:allDone?"Dispatched":anyDispatched?"Partial":"Pending",
           updatedAt:ts()
         });
@@ -6779,7 +6781,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
         return {...item,balanceQty:restoredBalance,dispatchedQty:restoredDispatched,status:newStatus,lastDispatchedAt:newLastDispatched,lastDispatchedBy:restoredDispatched<=0?null:item.lastDispatchedBy};
       });
       const anyDispatched=updatedItems.some(i=>i.status==="Dispatched"||i.status==="Partial");
-      await C("orders").doc(orderId).update({items:updatedItems,status:anyDispatched?"Partial":"Pending",updatedAt:ts()});
+      await C("orders").doc(orderId).update({items:san(updatedItems),status:anyDispatched?"Partial":"Pending",updatedAt:ts()});
       showToast(`${qty} of "${itemName}" moved back to Pending ✓`);
       setRevertForm(f=>{const n={...f};delete n[key];return n;});
     }catch(e){showToast("Error: "+e.message,"error");}
@@ -7427,7 +7429,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
                           return {...item,balanceQty:newBalance,dispatchedQty:newDispatched,status:newBalance<=0?"Dispatched":"Partial",lastDispatchedAt:dispatchDateStr,lastDispatchedBy:user.email,stagedForTransport:false,stagedAt:null,dispatchConfirmed:false,dispatchConfirmedAt:null};
                         });
                         const allDone=updatedItems.every(i=>i.status==="Dispatched");
-                        await C("orders").doc(orderId).update({items:updatedItems,status:allDone?"Dispatched":"Partial",updatedAt:ts()});
+                        await C("orders").doc(orderId).update({items:san(updatedItems),status:allDone?"Dispatched":"Partial",updatedAt:ts()});
                       }
                       showToast(`${cg.partyName} moved to Dispatch ✓`);
                     }catch(e){showToast("Error: "+e.message,"error");}
