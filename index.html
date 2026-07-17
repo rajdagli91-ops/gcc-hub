@@ -7343,18 +7343,8 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
         <div>
           <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:"8px"}}>Preparation Summary — {transportPrepView==="customer"?"By Customer":transportPrepView==="product"?"By Product":"By Transporter"}</div>
           {(()=>{
-            // Build staged item list
-            const stagedList=[];
-            customerGroups.filter(g=>!g.isDirect).forEach(cg=>{
-              cg.orders.forEach(o=>{
-                (o.items||[]).forEach((item,idx)=>{
-                  const fk=o.id+"__"+idx;
-                  if(item.stagedForTransport&&item.balanceQty>0&&item.status!=="Dispatched"){
-                    stagedList.push({name:item.name,qty:item.balanceQty,partyName:cg.partyName,transport:cg.transport,route:cg.route,voucherNo:o.voucherNo,orderId:o.id,itemIdx:idx});
-                  }
-                });
-              });
-            });
+            // Build staged list directly from stagedTransportItems (customerGroups excludes staged items)
+            const stagedList=stagedTransportItems;
             if(!stagedList.length)return null;
             if(transportPrepView==="customer"){
               const byC={};stagedList.forEach(i=>{if(!byC[i.partyName])byC[i.partyName]={partyName:i.partyName,transport:i.transport,route:i.route,items:[]};byC[i.partyName].items.push(i);});
