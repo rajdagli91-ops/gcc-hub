@@ -6562,19 +6562,18 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
     });
   })();
 
-  // ── Today's dispatch — UNCONFIRMED only (staging area) ──
+  // ── Unconfirmed dispatches — show items dispatched today OR for tomorrow (both pending confirmation) ──
   const todayDispatchedAll=(()=>{
-    const now=Date.now();
     const map={};
+    const tomorrow=new Date(Date.now()+24*60*60*1000).toISOString().slice(0,10);
     orders.forEach(o=>{
       (o.items||[]).forEach((item)=>{
-        if(item.lastDispatchedAt===todayStr){
+        // Show all unconfirmed dispatches from today or tomorrow date
+        if(!item.dispatchConfirmed&&item.lastDispatchedAt&&(item.lastDispatchedAt===todayStr||item.lastDispatchedAt===tomorrow)&&(item.dispatchedQty||0)>0){
           const k=normalize(o.partyName);
           if(!map[k])map[k]={partyName:o.partyName,route:o.route,transport:o.transport,isDirect:o.isDirect,items:[]};
           const vol=calcVolume(item.name,item.dispatchedQty||0);
-          const confirmedAt=item.dispatchConfirmedAt?new Date(item.dispatchConfirmedAt).getTime():null;
-          const canReverse=item.dispatchConfirmed&&confirmedAt&&(now-confirmedAt<24*60*60*1000);
-          map[k].items.push({name:item.name,qty:item.dispatchedQty||0,vol,voucherNo:o.voucherNo,orderId:o.id,confirmed:!!item.dispatchConfirmed,canReverse,confirmedAt});
+          map[k].items.push({name:item.name,qty:item.dispatchedQty||0,vol,voucherNo:o.voucherNo,orderId:o.id,confirmed:false,canReverse:false,confirmedAt:null,dispatchDate:item.lastDispatchedAt});
         }
       });
     });
@@ -6692,27 +6691,43 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
   const moveStagedToDispatch=async()=>{
     setSaving(true);
     try{
-      const stagedOrders=orders.filter(o=>
-        !o.isDirect&&["Pending","Partial"].includes(o.status)&&
-        (o.items||[]).some(i=>i.stagedForTransport&&i.balanceQty>0&&i.status!=="Dispatched")
-      );
-      for(const order of stagedOrders){
-        const updatedItems=(order.items||[]).map((item,idx)=>{
-          if(!item.stagedForTransport||item.balanceQty<=0||item.status==="Dispatched")return item;
-          const fk=order.id+"__"+idx;
+      // Get staged order IDs from live state
+      const stagedOrderIds=[...new Set(stagedTransportItems.map(i=>i.orderId))];
+      if(stagedOrderIds.length===0){showToast("No staged items to move","error");setSaving(false);return;}
+      for(const orderId of stagedOrderIds){
+        // Always fetch fresh from Firestore to avoid stale state issues
+        const doc=await C("orders").doc(orderId).get();
+        if(!doc.exists)continue;
+        const data=doc.data();
+        const updatedItems=(data.items||[]).map((item,idx)=>{
+          if(!item.stagedForTransport||!item.balanceQty||item.status==="Dispatched")return item;
+          const fk=orderId+"__"+idx;
           const override=stagedQtyOverrides[fk];
           const dispQty=override!==undefined?Math.min(parseFloat(override)||0,item.balanceQty):item.balanceQty;
+          if(dispQty<=0)return item;
           const newBalance=Math.max(0,item.balanceQty-dispQty);
           const newDispatched=(item.dispatchedQty||0)+dispQty;
-          return {...item,balanceQty:newBalance,dispatchedQty:newDispatched,status:newBalance<=0?"Dispatched":"Partial",
-            lastDispatchedAt:dispatchDateStr,lastDispatchedBy:user.email,
-            stagedForTransport:newBalance>0,stagedAt:newBalance>0?item.stagedAt:null};
+          return {...item,
+            balanceQty:newBalance,
+            dispatchedQty:newDispatched,
+            status:newBalance<=0?"Dispatched":"Partial",
+            lastDispatchedAt:dispatchDateStr,
+            lastDispatchedBy:user.email,
+            stagedForTransport:newBalance>0,
+            stagedAt:newBalance>0?item.stagedAt:null,
+            dispatchConfirmed:false,
+            dispatchConfirmedAt:null
+          };
         });
-        const allDone=updatedItems.every(i=>i.status==="Dispatched");
-        const anyDone=updatedItems.some(i=>i.status==="Dispatched"||i.status==="Partial");
-        await C("orders").doc(order.id).update({items:updatedItems,status:allDone?"Dispatched":anyDone?"Partial":"Pending",updatedAt:ts()});
+        const allDone=updatedItems.every(i=>i.balanceQty<=0||i.status==="Dispatched");
+        const anyDispatched=updatedItems.some(i=>(i.dispatchedQty||0)>0);
+        await C("orders").doc(orderId).update({
+          items:updatedItems,
+          status:allDone?"Dispatched":anyDispatched?"Partial":"Pending",
+          updatedAt:ts()
+        });
       }
-      showToast("Staged items moved to Dispatch Today ✓ — go to 🚚 Dispatch Today to confirm");
+      showToast(`${stagedOrderIds.length} order${stagedOrderIds.length!==1?"s":""} moved to Dispatch Today ✓`);
     }catch(e){showToast("Error: "+e.message,"error");}
     setSaving(false);
   };
@@ -7409,7 +7424,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
                           const dispQty=override!==undefined?Math.min(parseFloat(override)||0,item.balanceQty):item.balanceQty;
                           const newBalance=Math.max(0,item.balanceQty-dispQty);
                           const newDispatched=(item.dispatchedQty||0)+dispQty;
-                          return {...item,balanceQty:newBalance,dispatchedQty:newDispatched,status:newBalance<=0?"Dispatched":"Partial",lastDispatchedAt:dispatchDateStr,lastDispatchedBy:user.email,stagedForTransport:false,stagedAt:null};
+                          return {...item,balanceQty:newBalance,dispatchedQty:newDispatched,status:newBalance<=0?"Dispatched":"Partial",lastDispatchedAt:dispatchDateStr,lastDispatchedBy:user.email,stagedForTransport:false,stagedAt:null,dispatchConfirmed:false,dispatchConfirmedAt:null};
                         });
                         const allDone=updatedItems.every(i=>i.status==="Dispatched");
                         await C("orders").doc(orderId).update({items:updatedItems,status:allDone?"Dispatched":"Partial",updatedAt:ts()});
