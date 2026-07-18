@@ -6575,14 +6575,12 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
     });
   })();
 
-  // ── Unconfirmed dispatches — show items dispatched today OR for tomorrow (both pending confirmation) ──
+  // ── Unconfirmed dispatches — all items dispatched but not yet confirmed ──
   const todayDispatchedAll=(()=>{
     const map={};
-    const tomorrow=new Date(Date.now()+24*60*60*1000).toISOString().slice(0,10);
     orders.forEach(o=>{
       (o.items||[]).forEach((item)=>{
-        // Show all unconfirmed dispatches from today or tomorrow date
-        if(!item.dispatchConfirmed&&item.lastDispatchedAt&&(item.lastDispatchedAt===todayStr||item.lastDispatchedAt===tomorrow)&&(item.dispatchedQty||0)>0){
+        if(!item.dispatchConfirmed&&item.lastDispatchedAt&&(item.dispatchedQty||0)>0&&!item.stagedForTransport){
           const k=normalize(o.partyName);
           if(!map[k])map[k]={partyName:o.partyName,route:o.route,transport:o.transport,isDirect:o.isDirect,items:[]};
           const vol=calcVolume(item.name,item.dispatchedQty||0);
