@@ -6432,8 +6432,9 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
   };
 
   // ── Reverse a confirmed dispatch within 24h ──
-  const [dispatched48hDateFilter,setDispatched48hDateFilter]=useState("all");
+  const [reverseForm,setReverseForm]=useState(null);
   const [reverseSaving,setReverseSaving]=useState(false);
+  const [dispatched48hDateFilter,setDispatched48hDateFilter]=useState("all");
   const [dispatchDateChoice,setDispatchDateChoice]=useState("today");
   const dispatchDateStr=dispatchDateChoice==="tomorrow"?new Date(Date.now()+24*60*60*1000).toISOString().slice(0,10):todayStr;
 
