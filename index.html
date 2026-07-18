@@ -6765,6 +6765,9 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
         });
       }
       showToast(`${stagedOrderIds.length} order${stagedOrderIds.length!==1?"s":""} moved to Dispatch Today ✓`);
+      setDispatchRouteFilter("All");
+      setDispatchDeliveryFilter("All");
+      setSubTab("dispatch");
     }catch(e){showToast("Error: "+e.message,"error");}
     setSaving(false);
   };
@@ -7487,7 +7490,10 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
                         const anyDispatched=updatedItems.some(i=>(i.dispatchedQty||0)>0);
                         await C("orders").doc(orderId).update({items:san(updatedItems),status:allDone?"Dispatched":anyDispatched?"Partial":"Pending",updatedAt:ts()});
                       }
-                      showToast(`${cg.partyName} moved to Dispatch Today ✓ — check Dispatch Today tab`);
+                      showToast(`${cg.partyName} moved to Dispatch Today ✓`);
+                      setDispatchRouteFilter("All");
+                      setDispatchDeliveryFilter("All");
+                      setSubTab("dispatch");
                     }catch(e){showToast("Error: "+e.message,"error");}
                     setSaving(false);
                   }} disabled={saving}
