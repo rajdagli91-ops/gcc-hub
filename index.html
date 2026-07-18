@@ -6182,24 +6182,47 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
       }
     }
     let newCount=0,updCount=0;
+    const alreadyDispatched=[]; // vouchers that were fully dispatched — warn team
+
     for(const [key,order] of Object.entries(sanitisedMap)){
       const docRef=C("orders").doc(key);
       const existing=orders.find(o=>o.id===key);
       if(existing){
+        // ── Guard: if order is already fully dispatched, do NOT reset it ──
+        if(existing.status==="Dispatched"){
+          alreadyDispatched.push(order.voucherNo||key);
+          // Update metadata only — preserve all dispatch state
+          await docRef.update({partyName:order.partyName,route:order.route,transport:order.transport,isDirect:order.isDirect,lastImportedAt:ts()});
+          continue;
+        }
+        // For Partial orders — preserve dispatched items, only update balance on pending items
         const mergedItems=order.items.map(ni=>{
           const prev=(existing.items||[]).find(p=>normalize(p.name)===normalize(ni.name));
-          return prev?{...ni,dispatchedQty:prev.dispatchedQty||0,status:prev.status||"Pending"}:ni;
+          if(!prev)return ni;
+          // If this specific item is already dispatched, keep its current state entirely
+          if(prev.status==="Dispatched")return prev;
+          // If partially dispatched, preserve dispatched qty; update balance from Tally
+          return {...ni,dispatchedQty:prev.dispatchedQty||0,status:prev.status||"Pending",
+            stagedForTransport:prev.stagedForTransport||false,stagedAt:prev.stagedAt||null,
+            dispatchConfirmed:prev.dispatchConfirmed||false,dispatchConfirmedAt:prev.dispatchConfirmedAt||null,
+            lastDispatchedAt:prev.lastDispatchedAt||null};
         });
         const allDone=mergedItems.every(i=>i.status==="Dispatched");
         const anyDone=mergedItems.some(i=>i.status==="Dispatched"||i.status==="Partial");
-        await docRef.update({...order,items:mergedItems,status:allDone?"Dispatched":anyDone?"Partial":"Pending",lastImportedAt:ts()});
+        await docRef.update({...order,items:san(mergedItems),status:allDone?"Dispatched":anyDone?"Partial":"Pending",lastImportedAt:ts()});
         updCount++;
       }else{
         await docRef.set({...order,importedBy:user.email,importedAt:ts(),lastImportedAt:ts()});
         newCount++;
       }
     }
-    showToast(`Import done: ${newCount} new · ${updCount} updated · ${closedCount} auto-closed ✓`);
+    let msg=`Import done: ${newCount} new · ${updCount} updated · ${closedCount} auto-closed ✓`;
+    if(alreadyDispatched.length>0){
+      showToast(msg,"success");
+      setTimeout(()=>showToast(`⚠ ${alreadyDispatched.length} order${alreadyDispatched.length!==1?"s":""} already dispatched — skipped: ${alreadyDispatched.slice(0,3).join(", ")}${alreadyDispatched.length>3?" …":""}. Please verify Tally export.`,"error"),600);
+    }else{
+      showToast(msg);
+    }
   };
   const [fgProducts,setFgProducts]=useState([]);
   const [quickAddCustomer,setQuickAddCustomer]=useState(null);
@@ -6410,9 +6433,6 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
 
   // ── Reverse a confirmed dispatch within 24h ──
   const [dispatched48hDateFilter,setDispatched48hDateFilter]=useState("all");
-  const dispatched48hDates=[...new Set(dispatched48h.flatMap(g=>g.items.map(i=>i.dispatchDate||todayStr)))].sort().reverse();
-  const filteredDispatched48h=dispatched48hDateFilter==="all"?dispatched48h
-    :dispatched48h.map(g=>({...g,items:g.items.filter(i=>(i.dispatchDate||todayStr)===dispatched48hDateFilter)})).filter(g=>g.items.length>0);
   const [reverseSaving,setReverseSaving]=useState(false);
   const [dispatchDateChoice,setDispatchDateChoice]=useState("today");
   const dispatchDateStr=dispatchDateChoice==="tomorrow"?new Date(Date.now()+24*60*60*1000).toISOString().slice(0,10):todayStr;
@@ -6610,6 +6630,8 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
     });
     return Object.values(map).sort((a,b)=>a.partyName.localeCompare(b.partyName));
   })();
+  const dispatched48hDates=[...new Set(dispatched48h.flatMap(g=>g.items.map(i=>i.dispatchDate||todayStr)))].sort().reverse();
+  const filteredDispatched48h=dispatched48hDateFilter==="all"?dispatched48h:dispatched48h.map(g=>({...g,items:g.items.filter(i=>(i.dispatchDate||todayStr)===dispatched48hDateFilter)})).filter(g=>g.items.length>0);
 
   const filteredToday=todayDispatched.filter(g=>{
     if(dispatchRouteFilter!=="All"&&g.route!==dispatchRouteFilter)return false;
