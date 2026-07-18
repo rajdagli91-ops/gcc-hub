@@ -739,6 +739,14 @@ const today=()=>new Date().toISOString().slice(0,10);
 const ts=()=>firebase.firestore.FieldValue.serverTimestamp();
 // Firestore rejects undefined values — convert them to null
 const san=obj=>{if(obj===undefined)return null;if(obj===null||typeof obj!=="object")return obj;if(Array.isArray(obj))return obj.map(san);const out={};Object.entries(obj).forEach(([k,v])=>{if(v!==undefined)out[k]=san(v);});return out;};
+// Notify one or more emails — writes to Firestore so dashboard picks it up live
+const notify=async(emails,{type,msg,customer,link})=>{
+  const targets=[...(Array.isArray(emails)?emails:[emails])].filter(Boolean);
+  if(!targets.length)return;
+  const batch=firebase.firestore().batch();
+  targets.forEach(email=>{const ref=firebase.firestore().collection("notifications").doc();batch.set(ref,{for:email,type:type||"info",msg,customer:customer||"",link:link||"",read:false,createdAt:new Date().toISOString()});});
+  await batch.commit();
+};
 const C=(name)=>db.collection(name);
 
 // ══════════════════════════════════════════════════════════
@@ -2775,7 +2783,7 @@ function EnquiryCard({e,onClick,onDelete,isAdmin,allProfiles={}}){
   </div>;
 }
 
-function EnquiryDetail({entry,onClose,canUpdate,canDispatch,isAdmin,allProfiles={},showToast,salesmen}){
+function EnquiryDetail({entry,onClose,canUpdate,canDispatch,isAdmin,allProfiles={},allRoles={},showToast,salesmen}){
   const [live,setLive]=useState(entry);
   const [newStatus,setNewStatus]=useState(entry.status);
   const [rejReason,setRejReason]=useState(entry.rejectionReason||"");
@@ -2802,15 +2810,15 @@ function EnquiryDetail({entry,onClose,canUpdate,canDispatch,isAdmin,allProfiles=
         sampleDispatchNotes:dispatchForm.notes,
         updatedAt:ts()
       });
-      if(live.assignedTo){
-        await C("notifications").add({
-          assignedTo:live.assignedTo,
-          title:"📦 Sample dispatched: "+live.customerName,
-          message:"Sample dispatched on "+dispatchForm.date+(dispatchForm.notes?" — "+dispatchForm.notes:"")+". Follow up with the customer.",
-          type:"sample_dispatched",read:false,_createdAt:ts()
-        });
+      // Notify issuers — they need to prepare/dispatch the sample
+      const issuerEmails=Object.keys(allRoles).filter(e=>(allRoles[e]||[]).includes("issuer"));
+      const adminEmails=Object.keys(allRoles).filter(e=>(allRoles[e]||[]).includes("admin"));
+      await notify([...issuerEmails,...adminEmails],{type:"sample_dispatch",msg:`📦 Sample to dispatch: ${live.customerName}`,customer:live.customerName});
+      // Also notify the assigned salesman
+      if(live.assignedTo&&!issuerEmails.includes(live.assignedTo)){
+        await notify(live.assignedTo,{type:"sample_dispatched",msg:`Sample dispatched for ${live.customerName} on ${dispatchForm.date}. Follow up with customer.`,customer:live.customerName});
       }
-      showToast("Marked as dispatched ✓ — salesman notified");
+      showToast("Marked as dispatched ✓ — issuers and salesman notified");
       setShowDispatchForm(false);
     }catch(e){showToast("Error: "+e.message,"error");}
     setSaving(false);
@@ -2837,6 +2845,9 @@ function EnquiryDetail({entry,onClose,canUpdate,canDispatch,isAdmin,allProfiles=
         statusHistory:[...(live.statusHistory||[]),historyEntry]
       });
       showToast("Status updated ✓");
+      // Notify admins of status change
+      const adminEmails=Object.keys(allRoles).filter(e=>(allRoles[e]||[]).includes("admin"));
+      await notify(adminEmails,{type:"enquiry_update",msg:`📞 Enquiry ${live.customerName} updated to "${newStatus}" by ${who.split("@")[0]}`,customer:live.customerName});
     }catch(e){showToast("Error: "+e.message,"error");}
     setSaving(false);
   };
@@ -3059,12 +3070,9 @@ function EnquiriesTab({role,roles,user,showToast,allProfiles={},allRoles={},isAd
         ...form,_createdAt:ts(),createdBy:user?.email,
         statusHistory:[{status:form.status,by:user?.email||"",date:new Date().toISOString(),id:newId()}]
       });
-      await C("notifications").add({
-        assignedTo:form.assignedTo,
-        title:"📞 New enquiry assigned: "+form.customerName,
-        message:"From "+(allProfiles[user?.email]?.displayName||user?.email||"HO")+(form.productInterest?" · Interested in: "+form.productInterest:"")+". Open Enquiries to view & update status.",
-        type:"enquiry_assigned",read:false,_createdAt:ts()
-      });
+      const adminEmails=Object.keys(allRoles).filter(e=>(allRoles[e]||[]).includes("admin"));
+      await notify(form.assignedTo,{type:"enquiry_assigned",msg:`📞 New enquiry: ${form.customerName}${form.productInterest?" · "+form.productInterest:""}`,customer:form.customerName});
+      await notify(adminEmails,{type:"enquiry_new",msg:`📞 New enquiry created for ${form.customerName} → assigned to ${allProfiles[form.assignedTo]?.displayName||form.assignedTo?.split("@")[0]||form.assignedTo}`,customer:form.customerName});
       showToast("Enquiry created & salesman notified ✓");
       setForm(blank);setShowCreate(false);
     }catch(e){showToast("Error: "+e.message,"error");}
@@ -3138,7 +3146,7 @@ function EnquiriesTab({role,roles,user,showToast,allProfiles={},allRoles={},isAd
       </div>
     </div>}
 
-    {active&&<EnquiryDetail entry={{...active,_currentUserEmail:user?.email}} onClose={()=>setActiveId(null)} canUpdate={isAdmin||(canUpdateAny&&active.assignedTo===user?.email)||(canViewAll)} canDispatch={canDispatch} isAdmin={isAdmin} allProfiles={allProfiles} showToast={showToast} salesmen={salesmen}/>}
+    {active&&<EnquiryDetail entry={{...active,_currentUserEmail:user?.email}} onClose={()=>setActiveId(null)} canUpdate={isAdmin||(canUpdateAny&&active.assignedTo===user?.email)||(canViewAll)} canDispatch={canDispatch} isAdmin={isAdmin} allProfiles={allProfiles} allRoles={allRoles} showToast={showToast} salesmen={salesmen}/>}
 
     {loading?<div style={{textAlign:"center",padding:"40px",color:"#475569"}}>Loading…</div>
     :filtered.length===0?<div style={{textAlign:"center",padding:"50px 0"}}><div style={{fontSize:"36px",marginBottom:"10px"}}>📞</div><div style={{fontSize:"13px",color:"#475569"}}>No enquiries{statusFilter!=="All"?" with this status":""}.</div></div>
@@ -6586,7 +6594,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
   const todayDispatched=todayDispatchedAll.map(g=>({...g,items:g.items.filter(i=>!i.confirmed)})).filter(g=>g.items.length>0);
   const dispatched24h=(()=>{
     const now=Date.now();
-    const WINDOW_24H=24*60*60*1000;
+    const WINDOW_24H=48*60*60*1000; // 48h window for reversal
     const map={};
     orders.forEach(o=>{
       (o.items||[]).forEach(item=>{
@@ -10149,8 +10157,11 @@ function TasksTab({user,roles,showToast,allRoles,allProfiles}){
     setSaving(true);
     try{
       await C("tasks").doc(reassignTask.id).update({status:"pending",assignedTo:reassignTask.assignedTo,reassignedBy:user.email,reassignedAt:today(),completedAt:null,completionNotes:"",completedBy:null});
-      if(reassignTask.assignedTo!==user.email)
-        await C("notifications").add({assignedTo:reassignTask.assignedTo,title:"Task reassigned: "+reassignTask.title,message:"Reassigned by "+(allProfiles[user.email]?.displayName||user.email),type:"task_assigned",read:false,_createdAt:ts()});
+      if(reassignTask.assignedTo!==user.email){
+        await notify(reassignTask.assignedTo,{type:"task_assigned",msg:`📋 Task "${reassignTask.title}" assigned to you by ${allProfiles[user.email]?.displayName||user.email.split("@")[0]}`});
+        const adminEmails=Object.keys(allRoles).filter(e=>(allRoles[e]||[]).includes("admin")&&e!==user.email);
+        await notify(adminEmails,{type:"task_reassigned",msg:`📋 Task "${reassignTask.title}" reassigned to ${reassignTask.assignedTo.split("@")[0]}`});
+      }
       showToast("Task reassigned ✓");setReassignTask(null);
     }catch(e){showToast("Error: "+e.message,"error");}
     setSaving(false);
@@ -11567,8 +11578,13 @@ function MainApp({user,role,roles=[],permissions=[]}){
 
     // Run reminder check after a short delay (let app settle first)
     setTimeout(()=>checkComplaintReminders(user.email,roles||[]),3000);
+    // Subscribe to both old format (assignedTo) and new format (for) notifications
+    const mergeNotifications=(a,b)=>{const m={};[...a,...b].forEach(n=>m[n.id]=n);return Object.values(m).sort((a,b)=>(b.createdAt||b._createdAt?.seconds||0)>(a.createdAt||a._createdAt?.seconds||0)?1:-1);};
+    let notifOld=[],notifNew=[];
     subs.push(C("notifications").where("assignedTo","==",user.email).where("read","==",false)
-      .onSnapshot(s=>setNotifications(s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b._createdAt?.seconds||0)-(a._createdAt?.seconds||0))),()=>{}));
+      .onSnapshot(s=>{notifOld=s.docs.map(d=>({id:d.id,...d.data()}));setNotifications(mergeNotifications(notifOld,notifNew));},()=>{}));
+    subs.push(C("notifications").where("for","==",user.email).where("read","==",false)
+      .onSnapshot(s=>{notifNew=s.docs.map(d=>({id:d.id,...d.data()}));setNotifications(mergeNotifications(notifOld,notifNew));},()=>{}));
     // Load product/QC settings for all roles
     C("settings").doc("products").get().then(snap=>{
       if(snap.exists){const d=snap.data();
@@ -11671,16 +11687,16 @@ function MainApp({user,role,roles=[],permissions=[]}){
         fieldVisit:null, // filled by salesman after visiting customer
       };
       const ref=await C("complaints").add(doc);
+      const adminEmails=Object.keys(allRoles).filter(e=>(allRoles[e]||[]).includes("admin"));
       // Notify QC users if salesman submitted directly
       if(!isHO){
         const qcList=Object.keys(allRoles).filter(e=>(allRoles[e]||[]).includes("qc"));
-        for(const qcEmail of qcList){
-          await C("notifications").add({type:"complaint_new",complaintId:ref.id,customer:complaintForm.customerName,msg:`New complaint from ${complaintForm.customerName} — submitted by ${user.email.split("@")[0]}`,assignedTo:qcEmail,date:today(),read:false,_createdAt:ts()});
-        }
+        await notify([...qcList,...adminEmails],{type:"complaint_new",msg:`🔴 New complaint: ${complaintForm.customerName} — from ${user.email.split("@")[0]}`,customer:complaintForm.customerName});
       }
       // Notify salesman if HO assigned
       if(isHO&&complaintForm.assignedSalesman){
-        await C("notifications").add({type:"complaint_assigned",complaintId:ref.id,customer:complaintForm.customerName,msg:`Complaint from ${complaintForm.customerName} assigned to you — please visit customer and update`,assignedTo:complaintForm.assignedSalesman,date:today(),read:false,_createdAt:ts()});
+        await notify(complaintForm.assignedSalesman,{type:"complaint_assigned",msg:`🔴 Complaint from ${complaintForm.customerName} assigned to you — please visit and update`,customer:complaintForm.customerName});
+        await notify(adminEmails,{type:"complaint_new",msg:`🔴 New complaint added for ${complaintForm.customerName} — assigned to ${complaintForm.assignedSalesman.split("@")[0]}`,customer:complaintForm.customerName});
       }
       setComplaintFiles([]);
       setComplaintForm(EC);setShowAddComplaint(false);showToast("Complaint added ✓");
@@ -11695,6 +11711,11 @@ function MainApp({user,role,roles=[],permissions=[]}){
       const cnt=(await C("rd_projects").get()).size;
       const code=projForm.projectCode.trim()||`GCC-RD-${String(cnt+1).padStart(3,"0")}`;
       await C("rd_projects").add({...projForm,projectCode:code,dateCreated:today(),trials:[],_createdAt:ts()});
+      if(projForm.assignedTo){
+        const adminEmails=Object.keys(allRoles).filter(e=>(allRoles[e]||[]).includes("admin"));
+        await notify(projForm.assignedTo,{type:"rd_assigned",msg:`🧪 R&D project "${projForm.projectName}" assigned to you`,customer:projForm.projectName});
+        await notify(adminEmails,{type:"rd_new",msg:`🧪 New R&D project "${projForm.projectName}" created — assigned to ${projForm.assignedTo.split("@")[0]}`,customer:projForm.projectName});
+      }
       setProjForm(EP);setShowAddProject(false);showToast("Project created ✓");
     }catch(e){showToast("Error saving","error");}
     setSaving(false);
@@ -11864,11 +11885,11 @@ function MainApp({user,role,roles=[],permissions=[]}){
                     </div>
                     {notifications.length===0?<div style={{padding:"20px",textAlign:"center",color:"#334155",fontSize:"12px"}}>No new notifications</div>
                     :notifications.map(n=>{
-                      // Support both old format (title/message) and new format (msg)
-                      const heading=n.title||n.msg||(n.type==="reminder"?"⚠ Reminder":n.type==="complaint_assigned"?"📋 Complaint Assigned":n.type==="complaint_new"?"⚠ New Complaint":n.type==="field_visit_done"?"✅ Field Visit Done":"Notification");
+                      // Support both old format (title/message/assignedTo) and new format (msg/for)
+                      const heading=n.title||n.msg||(n.type==="reminder"?"⚠ Reminder":n.type==="complaint_assigned"?"📋 Complaint Assigned":n.type==="complaint_new"?"⚠ New Complaint":n.type==="field_visit_done"?"✅ Field Visit Done":n.type==="sample_dispatch"?"📦 Sample to Dispatch":n.type==="sample_dispatched"?"📦 Sample Dispatched":n.type==="enquiry_assigned"?"📞 Enquiry Assigned":n.type==="enquiry_new"?"📞 New Enquiry":n.type==="enquiry_update"?"📞 Enquiry Updated":n.type==="task_assigned"?"📋 Task Assigned":n.type==="rd_assigned"?"🧪 R&D Assigned":n.type==="rd_new"?"🧪 R&D Project":n.type==="complaint_new"?"🔴 New Complaint":"Notification");
                       const sub=n.message||(n.title&&n.msg?n.msg:null)||(n.customer?`Customer: ${n.customer}`:"");
-                      const icon=n.type==="reminder"?"⏰":n.type==="complaint_assigned"?"📋":n.type==="complaint_new"?"⚠️":n.type==="field_visit_done"?"✅":n.type==="task_assigned"?"✅":"📋";
-                      const when=n._createdAt?.toDate?.()?.toLocaleDateString("en-IN",{day:"2-digit",month:"short"})||n.date||"";
+                      const icon=n.type==="reminder"?"⏰":n.type==="complaint_assigned"?"🔴":n.type==="complaint_new"?"🔴":n.type==="field_visit_done"?"✅":n.type==="sample_dispatch"?"📦":n.type==="sample_dispatched"?"📦":n.type==="enquiry_assigned"?"📞":n.type==="enquiry_new"?"📞":n.type==="enquiry_update"?"📞":n.type==="task_assigned"?"📋":n.type==="task_reassigned"?"📋":n.type==="rd_assigned"?"🧪":n.type==="rd_new"?"🧪":"🔔";
+                      const when=n.createdAt?new Date(n.createdAt).toLocaleDateString("en-IN",{day:"2-digit",month:"short"}):n._createdAt?.toDate?.()?.toLocaleDateString("en-IN",{day:"2-digit",month:"short"})||n.date||"";
                       return <div key={n.id} style={{padding:"10px 14px",borderBottom:"1px solid #1e293b",display:"flex",gap:"8px",alignItems:"flex-start"}}>
                         <span style={{fontSize:"16px",flexShrink:0}}>{icon}</span>
                         <div style={{flex:1,minWidth:0}}>
