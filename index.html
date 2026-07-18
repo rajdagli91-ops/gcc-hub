@@ -6721,6 +6721,14 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
     setStagingSaving(false);
   };
 
+  // Derive staged items from order state (live via onSnapshot)
+  const stagedTransportItems=orders.flatMap(o=>
+    (!o.isDirect&&["Pending","Partial"].includes(o.status))
+      ?(o.items||[]).filter(i=>i.stagedForTransport&&i.balanceQty>0&&i.status!=="Dispatched")
+        .map((item,idx)=>({name:item.name,qty:item.balanceQty,partyName:o.partyName,transport:o.transport,route:o.route,voucherNo:o.voucherNo,orderId:o.id,itemIdx:(o.items||[]).indexOf(item),stagedBy:item.stagedBy,stagedAt:item.stagedAt}))
+      :[]
+  );
+
   // Move all staged transport items to Dispatch Today
   const moveStagedToDispatch=async()=>{
     setSaving(true);
@@ -6771,14 +6779,6 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
     }catch(e){showToast("Error: "+e.message,"error");}
     setSaving(false);
   };
-
-  // Derive staged items from order state (live via onSnapshot)
-  const stagedTransportItems=orders.flatMap(o=>
-    (!o.isDirect&&["Pending","Partial"].includes(o.status))
-      ?(o.items||[]).filter(i=>i.stagedForTransport&&i.balanceQty>0&&i.status!=="Dispatched")
-        .map((item,idx)=>({name:item.name,qty:item.balanceQty,partyName:o.partyName,transport:o.transport,route:o.route,voucherNo:o.voucherNo,orderId:o.id,itemIdx:(o.items||[]).indexOf(item),stagedBy:item.stagedBy,stagedAt:item.stagedAt}))
-      :[]
-  );
 
   const productGroups=(()=>{
     const map={};
