@@ -6733,8 +6733,12 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
         const doc=await C("orders").doc(orderId).get();
         if(!doc.exists)continue;
         const data=doc.data();
-        const updatedItems=(data.items||[]).map((item,idx)=>{
-          if(!item.stagedForTransport||!item.balanceQty||item.status==="Dispatched")return item;
+      const stagedNames=new Set(
+        (data.items||[]).filter(i=>i.stagedForTransport&&i.balanceQty>0&&i.status!=="Dispatched").map(i=>normalize(i.name))
+      );
+        const updatedItems=(data.items||[]).map((item)=>{
+          if(!item.stagedForTransport||!item.balanceQty||item.status==="Dispatched"||!stagedNames.has(normalize(item.name)))return item;
+          const idx=(data.items||[]).indexOf(item);
           const fk=orderId+"__"+idx;
           const override=stagedQtyOverrides[fk];
           const dispQty=override!==undefined?Math.min(parseFloat(override)||0,item.balanceQty):item.balanceQty;
@@ -7459,20 +7463,23 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
                         const doc=await C("orders").doc(orderId).get();
                         if(!doc.exists)continue;
                         const data=doc.data();
-                        const updatedItems=(data.items||[]).map((item,idx)=>{
-                          const staged=cg.items.find(i=>i.orderId===orderId&&i.itemIdx===idx);
-                          if(!staged)return item;
-                          const fk=orderId+"__"+idx;
+                        // Match by name — robust against itemIdx drift
+                        const stagedNames=new Set(cg.items.filter(i=>i.orderId===orderId).map(i=>normalize(i.name)));
+                        const updatedItems=(data.items||[]).map(item=>{
+                          if(!item.stagedForTransport||!stagedNames.has(normalize(item.name)))return item;
+                          const fk=orderId+"__"+(data.items||[]).indexOf(item);
                           const override=stagedQtyOverrides[fk];
                           const dispQty=override!==undefined?Math.min(parseFloat(override)||0,item.balanceQty):item.balanceQty;
+                          if(dispQty<=0)return item;
                           const newBalance=Math.max(0,item.balanceQty-dispQty);
                           const newDispatched=(item.dispatchedQty||0)+dispQty;
                           return {...item,balanceQty:newBalance,dispatchedQty:newDispatched,status:newBalance<=0?"Dispatched":"Partial",lastDispatchedAt:dispatchDateStr,lastDispatchedBy:user.email,stagedForTransport:false,stagedAt:null,dispatchConfirmed:false,dispatchConfirmedAt:null};
                         });
-                        const allDone=updatedItems.every(i=>i.status==="Dispatched");
-                        await C("orders").doc(orderId).update({items:san(updatedItems),status:allDone?"Dispatched":"Partial",updatedAt:ts()});
+                        const allDone=updatedItems.every(i=>i.balanceQty<=0||i.status==="Dispatched");
+                        const anyDispatched=updatedItems.some(i=>(i.dispatchedQty||0)>0);
+                        await C("orders").doc(orderId).update({items:san(updatedItems),status:allDone?"Dispatched":anyDispatched?"Partial":"Pending",updatedAt:ts()});
                       }
-                      showToast(`${cg.partyName} moved to Dispatch ✓`);
+                      showToast(`${cg.partyName} moved to Dispatch Today ✓ — check Dispatch Today tab`);
                     }catch(e){showToast("Error: "+e.message,"error");}
                     setSaving(false);
                   }} disabled={saving}
