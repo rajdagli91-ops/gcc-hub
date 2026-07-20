@@ -5926,8 +5926,8 @@ function DispatchHistoryReport({normT,showToast}){
     h+=`<div style="display:flex;justify-content:space-between;border-bottom:2px solid #000;margin-bottom:4pt;padding-bottom:3pt"><b style="font-size:12pt">VEEBEE — DISPATCH REPORT</b><span>${dateLabel}${routeFilter!=="All"?" · "+routeFilter:""}${transportFilter!=="All"?" · "+transportFilter:""}</span></div>`;
     h+=`<div style="margin-bottom:4pt;font-size:9pt"><b>Total Qty: ${totals.qty}</b>${Object.entries(totals.vols).map(([u,v])=>" | "+v.toFixed(2)+" "+u).join("")}</div>`;
     h+='<div class="sec">Dispatched</div>';
-    h+='<table><tr><th>Date</th><th>Customer</th><th>Route</th><th>Transport</th><th>Product</th><th style="text-align:center">Qty</th><th style="text-align:center">Volume</th></tr>';
-    entriesToPrint.forEach(e=>(e.items||[]).forEach((it,ii)=>{h+=`<tr><td>${ii===0?(e._date||""):""}</td><td>${ii===0?e.partyName:""}</td><td>${ii===0?(e.route||""):""}</td><td>${ii===0?(e.isDirect?"Direct":e.transport||""):""}</td><td>${it.name}</td><td style="text-align:center">${it.qty}</td><td style="text-align:center">${it.vol?it.vol.vol+" "+it.vol.unit:""}</td></tr>`;}));
+    h+='<table><tr><th>Date</th><th>Customer</th><th>Route</th><th>Transport</th><th>Order No</th><th>Order Date</th><th>Product</th><th style="text-align:center">Qty</th><th style="text-align:center">Volume</th></tr>';
+    entriesToPrint.forEach(e=>(e.items||[]).forEach((it,ii)=>{h+=`<tr><td>${ii===0?(e._date||""):""}</td><td>${ii===0?e.partyName:""}</td><td>${ii===0?(e.route||""):""}</td><td>${ii===0?(e.isDirect?"Direct":e.transport||""):""}</td><td>${it.voucherNo||""}</td><td>${it.orderDate||""}</td><td>${it.name}</td><td style="text-align:center">${it.qty}</td><td style="text-align:center">${it.vol?it.vol.vol+" "+it.vol.unit:""}</td></tr>`;}));
     h+='</table>';
     if(reversalsToPrint.length){h+='<div class="sec">Reversals</div><table><tr><th>Date</th><th>Customer</th><th>Product</th><th style="text-align:center">Qty</th><th>By</th></tr>';reversalsToPrint.forEach(r=>(r.items||[]).forEach((it,ii)=>{h+=`<tr><td>${ii===0?(r._date||new Date(r.reversedAt).toLocaleDateString("en-IN")):""}</td><td>${ii===0?r.partyName:""}</td><td>${it.name}</td><td style="text-align:center">${it.qty}</td><td>${ii===0?(r.reversedBy?.split("@")[0]||""):""}</td></tr>`;}));h+='</table>';}
     h+='</body></html>';
@@ -5981,6 +5981,8 @@ function DispatchHistoryReport({normT,showToast}){
               <span style={{color:"#94a3b8",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.name}</span>
               <span style={{color:"#fcd34d",fontWeight:"600",flexShrink:0}}>{item.qty}</span>
               {item.vol&&<span style={{color:"#334155",flexShrink:0}}>{item.vol.vol} {item.vol.unit}</span>}
+              {item.voucherNo&&<span style={{color:"#475569",fontSize:"10px",flexShrink:0}}>{item.voucherNo}</span>}
+              {item.orderDate&&<span style={{color:"#334155",fontSize:"10px",flexShrink:0}}>{item.orderDate}</span>}
             </div>)}
           </div>)}
         </>}
@@ -6559,7 +6561,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
       const volTotals={};
       items.forEach(item=>{const v=calcVolume(item.name,item.qty);if(v){volTotals[v.unit]=(volTotals[v.unit]||0)+v.vol;}});
       const sampleOrder=orders.find(o=>items.some(i=>i.orderId===o.id));
-      const entry={partyName,route:sampleOrder?.route||"",transport:sampleOrder?.transport||"",isDirect:sampleOrder?.isDirect||false,items:items.map(i=>({name:i.name,qty:i.qty,vol:calcVolume(i.name,i.qty),voucherNo:i.voucherNo})),confirmedAt,volTotals};
+      const entry={partyName,route:sampleOrder?.route||"",transport:sampleOrder?.transport||"",isDirect:sampleOrder?.isDirect||false,items:items.map(i=>{const ord=orders.find(o=>o.id===i.orderId);return {name:i.name,qty:i.qty,vol:calcVolume(i.name,i.qty),voucherNo:i.voucherNo,orderDate:ord?.orderDate||""};}) ,confirmedAt,volTotals};
       if(reportDoc.exists){
         const existing=reportDoc.data();
         const entries=[...(existing.entries||[]).filter(e=>e.partyName!==partyName),entry];
