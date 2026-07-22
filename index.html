@@ -6624,9 +6624,11 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
     const map={};
     orders.forEach(o=>{
       (o.items||[]).forEach(item=>{
-        if(!item.dispatchConfirmed||!item.dispatchConfirmedAt)return;
-        const confirmedAt=new Date(item.dispatchConfirmedAt).getTime();
-        if(isNaN(confirmedAt)||now-confirmedAt>WINDOW_24H)return;
+        if(!item.dispatchConfirmed)return;
+        // Handle both ISO string and Firestore Timestamp object
+        const cat=item.dispatchConfirmedAt;
+        const confirmedAt=cat?typeof cat==="string"?new Date(cat).getTime():cat.toMillis?cat.toMillis():cat.seconds?cat.seconds*1000:0:0;
+        if(!confirmedAt||now-confirmedAt>WINDOW_24H)return;
         const k=normalize(o.partyName);
         if(!map[k])map[k]={partyName:o.partyName,route:o.route,transport:o.transport,isDirect:o.isDirect,items:[]};
         const vol=calcVolume(item.name,item.dispatchedQty||0);
@@ -7405,10 +7407,10 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
         </div>
         <div style={{display:"flex",gap:"5px",flexWrap:"wrap",alignItems:"center"}}>
           {[["All","All"],["Direct","🚚 Direct"],["Transport","🏢 Transport"]].map(([v,l])=><button key={v} onClick={()=>setDispatched48hTypeFilter(v)} style={{background:dispatched48hTypeFilter===v?"#1e293b":"#080d18",border:`1px solid ${dispatched48hTypeFilter===v?"#475569":"#1e293b"}`,borderRadius:"5px",padding:"3px 10px",color:dispatched48hTypeFilter===v?"#f1f5f9":"#475569",fontSize:"11px",fontWeight:"600",cursor:"pointer"}}>{l}</button>)}
-          {dispatched48hDates.length>1&&<>
+          {dispatched48hDates.length>0&&<>
             <span style={{color:"#334155",fontSize:"12px"}}>|</span>
-            <button onClick={()=>setDispatched48hDateFilter("all")} style={{background:dispatched48hDateFilter==="all"?"#1e3a5f":"#080d18",border:`1px solid ${dispatched48hDateFilter==="all"?"#3b82f6":"#1e293b"}`,borderRadius:"5px",padding:"3px 9px",color:dispatched48hDateFilter==="all"?"#93c5fd":"#475569",fontSize:"11px",fontWeight:"600",cursor:"pointer"}}>All Dates</button>
-            {dispatched48hDates.map(d=><button key={d} onClick={()=>setDispatched48hDateFilter(d)} style={{background:dispatched48hDateFilter===d?"#1e3a5f":"#080d18",border:`1px solid ${dispatched48hDateFilter===d?"#3b82f6":"#1e293b"}`,borderRadius:"5px",padding:"3px 9px",color:dispatched48hDateFilter===d?"#93c5fd":"#475569",fontSize:"11px",fontWeight:"600",cursor:"pointer"}}>{d.slice(5)}</button>)}
+            <button onClick={()=>setDispatched48hDateFilter("all")} style={{background:dispatched48hDateFilter==="all"?"#1e3a5f":"#080d18",border:`1px solid ${dispatched48hDateFilter==="all"?"#3b82f6":"#1e293b"}`,borderRadius:"5px",padding:"3px 9px",color:dispatched48hDateFilter==="all"?"#93c5fd":"#475569",fontSize:"11px",fontWeight:"600",cursor:"pointer"}}>All</button>
+            {dispatched48hDates.map(d=><button key={d} onClick={()=>setDispatched48hDateFilter(dispatched48hDateFilter===d?"all":d)} style={{background:dispatched48hDateFilter===d?"#1e3a5f":"#080d18",border:`1px solid ${dispatched48hDateFilter===d?"#3b82f6":"#1e293b"}`,borderRadius:"5px",padding:"3px 9px",color:dispatched48hDateFilter===d?"#93c5fd":"#475569",fontSize:"11px",fontWeight:"600",cursor:"pointer"}}>{d.slice(5)}</button>)}
           </>}
         </div>
       </div>
