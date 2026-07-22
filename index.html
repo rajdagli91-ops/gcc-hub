@@ -6404,7 +6404,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
           const newBalance=Math.max(0,item.balanceQty-dispQty);
           const newDispatched=(item.dispatchedQty||0)+dispQty;
           const status=newBalance<=0?"Dispatched":"Partial";
-          return {...item,dispatchedQty:newDispatched,balanceQty:newBalance,status,lastDispatchedAt:new Date().toISOString().slice(0,10),lastDispatchedBy:user.email};
+          return {...item,dispatchedQty:newDispatched,balanceQty:newBalance,status,lastDispatchedAt:dispatchDateStr,lastDispatchedBy:user.email};
         });
         const allDone=updatedItems.every(i=>i.status==="Dispatched");
         const anyDone=updatedItems.some(i=>i.status==="Dispatched"||i.status==="Partial");
