@@ -11548,13 +11548,18 @@ function MainApp({user,role,roles=[],permissions=[]}){
   // Data
   const [batches,setBatches]=useState([]);
   const [complaints,setComplaints]=useState([]);
-  const [complaintCustomers,setComplaintCustomers]=useState([]); // list of customer names for dropdown
-  const [loadingCustList,setLoadingCustList]=useState(false);
+  const [complaintCustomers,setComplaintCustomers]=useState([]);
 
   useEffect(()=>{
-    C("settings").doc("complaintCustomers").onSnapshot(snap=>{
-      if(snap.exists)setComplaintCustomers(snap.data().customers||[]);
+    // Fetch customer list from order setup routes — same source as Orders tab
+    const unsub=C("settings").doc("customerTransport").onSnapshot(snap=>{
+      if(snap.exists){
+        const map=snap.data().map||{};
+        const names=Object.values(map).map(v=>v.customer||"").filter(Boolean).sort();
+        setComplaintCustomers([...new Set(names)]);
+      }
     },()=>{});
+    return unsub;
   },[]);
   const [projects,setProjects]=useState([]);
   const [rmTests,setRmTests]=useState([]);
@@ -11761,22 +11766,6 @@ function MainApp({user,role,roles=[],permissions=[]}){
       setBatchForm(EB);setShowIssueBatch(false);
     }catch(e){showToast("Error issuing batch","error");}
     setSaving(false);
-  };
-
-  const importComplaintCustomers=async(file)=>{
-    setLoadingCustList(true);
-    try{
-      await loadXLSX();const XLSX=window.XLSX;
-      const ab=await file.arrayBuffer();
-      const wb=XLSX.read(new Uint8Array(ab),{type:"array"});
-      const ws=wb.Sheets[wb.SheetNames[0]];
-      const rows=XLSX.utils.sheet_to_json(ws,{header:1});
-      // Accept single column (customer names) or first column
-      const names=[...new Set(rows.flat().map(v=>String(v||"").trim()).filter(Boolean).filter(v=>v.toLowerCase()!=="customer"&&v.toLowerCase()!=="name"&&v.toLowerCase()!=="customer name"))].sort();
-      await C("settings").doc("complaintCustomers").set({customers:names,updatedAt:ts()},{merge:true});
-      showToast(`${names.length} customers imported ✓`);
-    }catch(e){showToast("Error: "+e.message,"error");}
-    setLoadingCustList(false);
   };
 
   const [complaintFiles,setComplaintFiles]=useState([]);
@@ -12099,14 +12088,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
             {["All",...COMPLAINT_STATUS].map(s=><button key={s} onClick={()=>setComplaintFilter(s)} style={{background:complaintFilter===s?"#1e3a5f":"transparent",border:`1px solid ${complaintFilter===s?"#3b82f6":"#1e293b"}`,color:complaintFilter===s?"#93c5fd":"#475569",borderRadius:"99px",padding:"5px 12px",fontSize:"11.5px",fontWeight:"600",transition:"all 0.15s",cursor:"pointer"}}>{s}</button>)}
           </div>
           {(role==="sales"||role==="admin")&&<Btn label="+ Add Complaint" onClick={()=>setShowAddComplaint(true)} color="#ef4444"/>}
-          {isAdmin&&<>
-            <button onClick={()=>document.getElementById("complaint-cust-import").click()} disabled={loadingCustList}
-              style={{background:"#1a0a2e",border:"1px solid #7c3aed",borderRadius:"6px",padding:"5px 11px",color:"#c4b5fd",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>
-              {loadingCustList?"…":"📋 Upload Customer List"}
-            </button>
-            <input id="complaint-cust-import" type="file" accept=".xlsx,.xls,.csv" style={{display:"none"}} onChange={async e=>{if(e.target.files[0]){await importComplaintCustomers(e.target.files[0]);e.target.value="";}}}/>
-            {complaintCustomers.length>0&&<span style={{fontSize:"11px",color:"#64748b"}}>{complaintCustomers.length} customers</span>}
-          </>}
+          {complaintCustomers.length>0&&<span style={{fontSize:"11px",color:"#475569"}}>{complaintCustomers.length} customers from routes</span>}
         </div>
         {fc.length===0?<div style={{textAlign:"center",padding:"50px 0"}}><div style={{fontSize:"36px",marginBottom:"10px"}}>✅</div><div style={{fontSize:"13px",color:"#475569"}}>No complaints found.{role==="sales"?" Click + Add Complaint.":""}</div></div>:fc.map(c=><ComplaintCard key={c.id} c={c} onClick={()=>setActiveComplaint(c)} onDelete={async(id)=>{if(!confirm("Delete?"))return;await C("complaints").doc(id).delete();showToast("Deleted","error");}} role={role}/>)}
       </>}
