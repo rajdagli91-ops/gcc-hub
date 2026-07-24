@@ -6548,7 +6548,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
         const data=orderDoc.data();
         const updatedItems=(data.items||[]).map(item=>{
           const matched=items.find(i=>i.orderId===orderId&&normalize(i.name)===normalize(item.name));
-          return matched?{...item,dispatchConfirmed:true,dispatchConfirmedAt:confirmedAt}:item;
+          return matched?{...item,dispatchConfirmed:true,dispatchConfirmedAt:confirmedAt,lastDispatchedAt:dispatchDateStr}:item;
         });
         const allDone=updatedItems.every(i=>i.status==="Dispatched"||i.balanceQty<=0);
         await C("orders").doc(orderId).update({items:san(updatedItems),status:allDone?"Dispatched":"Partial",updatedAt:ts()});
@@ -11548,6 +11548,14 @@ function MainApp({user,role,roles=[],permissions=[]}){
   // Data
   const [batches,setBatches]=useState([]);
   const [complaints,setComplaints]=useState([]);
+  const [complaintCustomers,setComplaintCustomers]=useState([]); // list of customer names for dropdown
+  const [loadingCustList,setLoadingCustList]=useState(false);
+
+  useEffect(()=>{
+    C("settings").doc("complaintCustomers").onSnapshot(snap=>{
+      if(snap.exists)setComplaintCustomers(snap.data().customers||[]);
+    },()=>{});
+  },[]);
   const [projects,setProjects]=useState([]);
   const [rmTests,setRmTests]=useState([]);
 
@@ -11753,6 +11761,22 @@ function MainApp({user,role,roles=[],permissions=[]}){
       setBatchForm(EB);setShowIssueBatch(false);
     }catch(e){showToast("Error issuing batch","error");}
     setSaving(false);
+  };
+
+  const importComplaintCustomers=async(file)=>{
+    setLoadingCustList(true);
+    try{
+      await loadXLSX();const XLSX=window.XLSX;
+      const ab=await file.arrayBuffer();
+      const wb=XLSX.read(new Uint8Array(ab),{type:"array"});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const rows=XLSX.utils.sheet_to_json(ws,{header:1});
+      // Accept single column (customer names) or first column
+      const names=[...new Set(rows.flat().map(v=>String(v||"").trim()).filter(Boolean).filter(v=>v.toLowerCase()!=="customer"&&v.toLowerCase()!=="name"&&v.toLowerCase()!=="customer name"))].sort();
+      await C("settings").doc("complaintCustomers").set({customers:names,updatedAt:ts()},{merge:true});
+      showToast(`${names.length} customers imported ✓`);
+    }catch(e){showToast("Error: "+e.message,"error");}
+    setLoadingCustList(false);
   };
 
   const [complaintFiles,setComplaintFiles]=useState([]);
@@ -12075,6 +12099,14 @@ function MainApp({user,role,roles=[],permissions=[]}){
             {["All",...COMPLAINT_STATUS].map(s=><button key={s} onClick={()=>setComplaintFilter(s)} style={{background:complaintFilter===s?"#1e3a5f":"transparent",border:`1px solid ${complaintFilter===s?"#3b82f6":"#1e293b"}`,color:complaintFilter===s?"#93c5fd":"#475569",borderRadius:"99px",padding:"5px 12px",fontSize:"11.5px",fontWeight:"600",transition:"all 0.15s",cursor:"pointer"}}>{s}</button>)}
           </div>
           {(role==="sales"||role==="admin")&&<Btn label="+ Add Complaint" onClick={()=>setShowAddComplaint(true)} color="#ef4444"/>}
+          {isAdmin&&<>
+            <button onClick={()=>document.getElementById("complaint-cust-import").click()} disabled={loadingCustList}
+              style={{background:"#1a0a2e",border:"1px solid #7c3aed",borderRadius:"6px",padding:"5px 11px",color:"#c4b5fd",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>
+              {loadingCustList?"…":"📋 Upload Customer List"}
+            </button>
+            <input id="complaint-cust-import" type="file" accept=".xlsx,.xls,.csv" style={{display:"none"}} onChange={async e=>{if(e.target.files[0]){await importComplaintCustomers(e.target.files[0]);e.target.value="";}}}/>
+            {complaintCustomers.length>0&&<span style={{fontSize:"11px",color:"#64748b"}}>{complaintCustomers.length} customers</span>}
+          </>}
         </div>
         {fc.length===0?<div style={{textAlign:"center",padding:"50px 0"}}><div style={{fontSize:"36px",marginBottom:"10px"}}>✅</div><div style={{fontSize:"13px",color:"#475569"}}>No complaints found.{role==="sales"?" Click + Add Complaint.":""}</div></div>:fc.map(c=><ComplaintCard key={c.id} c={c} onClick={()=>setActiveComplaint(c)} onDelete={async(id)=>{if(!confirm("Delete?"))return;await C("complaints").doc(id).delete();showToast("Deleted","error");}} role={role}/>)}
       </>}
@@ -12261,9 +12293,20 @@ function MainApp({user,role,roles=[],permissions=[]}){
         </Field>
       </div>}
       <Grid2>
-        <Field label="Customer Name *"><input style={inp} value={complaintForm.customerName} onChange={e=>setComplaintForm({...complaintForm,customerName:e.target.value})} placeholder="Customer / party name"/></Field>
+        <Field label="Customer Name *">
+          <div style={{position:"relative"}}>
+            <input style={inp} list="complaint-customer-list" value={complaintForm.customerName} onChange={e=>setComplaintForm({...complaintForm,customerName:e.target.value})} placeholder="Type or select customer…"/>
+            <datalist id="complaint-customer-list">{complaintCustomers.map((c,i)=><option key={i} value={c}/>)}</datalist>
+          </div>
+        </Field>
         <Field label="Product *"><input style={inp} value={complaintForm.productName} onChange={e=>setComplaintForm({...complaintForm,productName:e.target.value})} placeholder="Product name"/></Field>
       </Grid2>
+      {isAdmin&&<Field label="User / Salesman">
+        <select style={sl} value={complaintForm.reportedByUser||""} onChange={e=>setComplaintForm({...complaintForm,reportedByUser:e.target.value})}>
+          <option value="">— Select user —</option>
+          {Object.keys(allRoles).sort().map(e=><option key={e} value={e}>{allProfiles[e]?.displayName||e.split("@")[0]}</option>)}
+        </select>
+      </Field>}
       <Grid3>
         <Field label="Batch No"><input style={inp} value={complaintForm.batchNo} onChange={e=>setComplaintForm({...complaintForm,batchNo:e.target.value})} placeholder="e.g. GCC-2501-001"/></Field>
         <Field label="Month / Year"><input style={inp} value={complaintForm.monthYear} onChange={e=>setComplaintForm({...complaintForm,monthYear:e.target.value})} placeholder="e.g. Jan 2025"/></Field>
