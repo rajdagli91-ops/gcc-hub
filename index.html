@@ -11774,11 +11774,13 @@ function MainApp({user,role,roles=[],permissions=[]}){
     if(saving)return;setSaving(true);
     try{
       const isHO=complaintForm.source==="ho";
+      const reportedByUser=isHO?(complaintForm.reportedByUser||""):user.email;
       const doc={
         ...complaintForm,attachments:complaintFiles,
+        reportedByUser,
         status:isHO&&complaintForm.assignedSalesman?"Assigned to Salesman":"Open",
         addedBy:user.email,dateCreated:today(),currentRound:1,_createdAt:ts(),
-        fieldVisit:null, // filled by salesman after visiting customer
+        fieldVisit:null,
       };
       const ref=await C("complaints").add(doc);
       const adminEmails=Object.keys(allRoles).filter(e=>(allRoles[e]||[]).includes("admin"));
@@ -12294,12 +12296,19 @@ function MainApp({user,role,roles=[],permissions=[]}){
         </Field>
         <Field label="Product *"><input style={inp} value={complaintForm.productName} onChange={e=>setComplaintForm({...complaintForm,productName:e.target.value})} placeholder="Product name"/></Field>
       </Grid2>
-      {isAdmin&&<Field label="User / Salesman">
-        <select style={sl} value={complaintForm.reportedByUser||""} onChange={e=>setComplaintForm({...complaintForm,reportedByUser:e.target.value})}>
-          <option value="">— Select user —</option>
-          {Object.keys(allRoles).sort().map(e=><option key={e} value={e}>{allProfiles[e]?.displayName||e.split("@")[0]}</option>)}
-        </select>
-      </Field>}
+      {/* User / Salesman — auto-filled for salesman source, manual for HO */}
+      <Field label="User / Salesman">
+        {complaintForm.source==="salesman"
+          ?<div style={{...inp,color:"#94a3b8",background:"#060d1a",display:"flex",alignItems:"center",gap:"8px"}}>
+            <span>👤</span>
+            <span style={{color:"#e2e8f0",fontWeight:"600"}}>{allProfiles[user.email]?.displayName||user.email.split("@")[0]}</span>
+            <span style={{fontSize:"10.5px",color:"#475569"}}>(you — auto-filled)</span>
+          </div>
+          :<select style={sl} value={complaintForm.reportedByUser||""} onChange={e=>setComplaintForm({...complaintForm,reportedByUser:e.target.value})}>
+            <option value="">— Select user —</option>
+            {Object.keys(allRoles).sort().map(e=><option key={e} value={e}>{allProfiles[e]?.displayName||e.split("@")[0]}</option>)}
+          </select>}
+      </Field>
       <Grid3>
         <Field label="Batch No"><input style={inp} value={complaintForm.batchNo} onChange={e=>setComplaintForm({...complaintForm,batchNo:e.target.value})} placeholder="e.g. GCC-2501-001"/></Field>
         <Field label="Month / Year"><input style={inp} value={complaintForm.monthYear} onChange={e=>setComplaintForm({...complaintForm,monthYear:e.target.value})} placeholder="e.g. Jan 2025"/></Field>
