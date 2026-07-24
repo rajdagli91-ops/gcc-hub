@@ -1471,6 +1471,22 @@ function FieldVisitForm({complaint,user,showToast,allProfiles,allRoles}){
   </div>;
 }
 
+function CustomerSearchInput({value,customers,onChange}){
+  const [search,setSearch]=useState(value||"");
+  const [open,setOpen]=useState(false);
+  const matches=search.trim()?customers.filter(c=>normalize(c).includes(normalize(search))).slice(0,12):[];
+  return <div style={{position:"relative"}}>
+    <input style={inp} value={search} placeholder="Type to search customer…"
+      onChange={e=>{setSearch(e.target.value);onChange(e.target.value);setOpen(true);}}
+      onFocus={()=>setOpen(true)} onBlur={()=>setTimeout(()=>setOpen(false),150)}/>
+    {open&&matches.length>0&&<div style={{position:"absolute",top:"100%",left:0,right:0,background:"#0b1220",border:"1px solid #2563eb",borderRadius:"0 0 8px 8px",zIndex:100,maxHeight:"190px",overflowY:"auto",boxShadow:"0 4px 20px rgba(0,0,0,0.5)"}}>
+      {matches.map((c,i)=><div key={i} onMouseDown={()=>{setSearch(c);onChange(c);setOpen(false);}}
+        style={{padding:"7px 12px",cursor:"pointer",fontSize:"12.5px",color:"#e2e8f0",borderBottom:"1px solid #0f172a"}}
+        onMouseEnter={e=>e.currentTarget.style.background="#1e3a5f"} onMouseLeave={e=>e.currentTarget.style.background=""}>{c}</div>)}
+    </div>}
+  </div>;
+}
+
 function ComplaintCard({c,onClick,onDelete,role}){
   const sc=CS_COL[c.status]||"#94a3b8";
   return <div onClick={onClick} onMouseEnter={e=>e.currentTarget.style.background="#0f1f35"} onMouseLeave={e=>e.currentTarget.style.background="#0f172a"}
@@ -12278,21 +12294,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
       </div>}
       <Grid2>
         <Field label="Customer Name *">
-          {(()=>{
-            const [custSearch,setCustSearch]=useState(complaintForm.customerName);
-            const [showSug,setShowSug]=useState(false);
-            const matches=custSearch.trim()?complaintCustomers.filter(c=>normalize(c).includes(normalize(custSearch))).slice(0,10):[];
-            return <div style={{position:"relative"}}>
-              <input style={inp} value={custSearch} placeholder="Type to search customer…"
-                onChange={e=>{setCustSearch(e.target.value);setComplaintForm({...complaintForm,customerName:e.target.value});setShowSug(true);}}
-                onFocus={()=>setShowSug(true)} onBlur={()=>setTimeout(()=>setShowSug(false),150)}/>
-              {showSug&&matches.length>0&&<div style={{position:"absolute",top:"100%",left:0,right:0,background:"#0b1220",border:"1px solid #2563eb",borderRadius:"0 0 8px 8px",zIndex:50,maxHeight:"180px",overflowY:"auto"}}>
-                {matches.map((c,i)=><div key={i} onMouseDown={()=>{setCustSearch(c);setComplaintForm({...complaintForm,customerName:c});setShowSug(false);}}
-                  style={{padding:"7px 12px",cursor:"pointer",fontSize:"12.5px",color:"#e2e8f0",borderBottom:"1px solid #0f172a"}}
-                  onMouseEnter={e=>e.target.style.background="#1e3a5f"} onMouseLeave={e=>e.target.style.background=""}>{c}</div>)}
-              </div>}
-            </div>;
-          })()}
+          <CustomerSearchInput value={complaintForm.customerName} customers={complaintCustomers} onChange={v=>setComplaintForm({...complaintForm,customerName:v})}/>
         </Field>
         <Field label="Product *"><input style={inp} value={complaintForm.productName} onChange={e=>setComplaintForm({...complaintForm,productName:e.target.value})} placeholder="Product name"/></Field>
       </Grid2>
