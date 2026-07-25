@@ -6489,9 +6489,14 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
         await C("orders").doc(orderId).update({items:san(updatedItems),status:anyActive?"Partial":"Pending",updatedAt:ts()});
       }
       showToast(`${reverseForm.partyName} — dispatch reversed ✓`);
-      // Save reversal to dispatch report for today
+      // Save reversal to dispatch report — under the ORIGINAL dispatch date, not today
       try{
-        const reportId="report_"+dispatchDateStr;
+        // Find the original dispatch date from the first reversed item's order
+        const firstItem=reverseForm.items.find(i=>parseFloat(i.reverseQty)>0);
+        const originalOrder=firstItem?orders.find(o=>o.id===firstItem.orderId):null;
+        const originalItem=originalOrder?(originalOrder.items||[]).find(i=>normalize(i.name)===normalize(firstItem.name)):null;
+        const originalDispatchDate=originalItem?.lastDispatchedAt||dispatchDateStr||todayStr;
+        const reportId="report_"+originalDispatchDate;
         const reversedItems=reverseForm.items.filter(i=>parseFloat(i.reverseQty)>0).map(i=>({name:i.name,qty:parseFloat(i.reverseQty)||0,voucherNo:i.voucherNo}));
         if(reversedItems.length>0){
           const reportDoc=await C("dispatch_reports").doc(reportId).get();
@@ -6500,7 +6505,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
             const existing=reportDoc.data();
             await C("dispatch_reports").doc(reportId).update({reversals:[...(existing.reversals||[]),reversalEntry],updatedAt:new Date().toISOString()});
           }else{
-            await C("dispatch_reports").doc(reportId).set({date:todayStr,entries:[],reversals:[reversalEntry],createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),createdBy:user.email});
+            await C("dispatch_reports").doc(reportId).set({date:originalDispatchDate,entries:[],reversals:[reversalEntry],createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),createdBy:user.email});
           }
         }
       }catch(e){/* best-effort */}
