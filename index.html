@@ -6166,6 +6166,21 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
   const [routes,setRoutes]=useState([]);
   // Normalize key for transporter comparison — strips dots, spaces, lowercases
   const normTKey=s=>String(s||"").toLowerCase().replace(/[.\s]+/g,"");
+  // Normalize route for comparison — strips case, spaces, dots, hyphens
+  const normRoute=s=>String(s||"").toLowerCase().replace(/[\s\-_.,()/\\]+/g,"");
+
+  const [directAreas,setDirectAreas]=useState(["Bombay Route","Vasai-Virar","Navi Mumbai","Panvel","Mulund Bhandup Sakinaka","Kalyan Dombivali Ulhasnagar Ambernath","Dahisar-Mira road Borivali","Bhiwandi"]);
+  const [editingAreas,setEditingAreas]=useState(false);
+  const [newAreaInput,setNewAreaInput]=useState("");
+
+  useEffect(()=>{
+    C("settings").doc("directAreas").onSnapshot(s=>{if(s.exists&&s.data().areas?.length)setDirectAreas(s.data().areas);},()=>{});
+  },[]);
+
+  const saveDirectAreas=async(areas)=>{
+    await C("settings").doc("directAreas").set({areas},{merge:false});
+    setDirectAreas(areas);
+  };
   // Unique transporter names — deduplicated by normTKey so "JANSEVA TRANSPORT" == "janseva.transport"
   const transporterNames=(()=>{
     const seen={};
@@ -6723,9 +6738,9 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
   },[dispatchForm,selectedCustomerInProduct]);
   const [transportPrepView,setTransportPrepView]=useState("customer");
   const [directPrepArea,setDirectPrepArea]=useState("All");
+  const [directQtyOverrides,setDirectQtyOverrides]=useState({});
   const [deliverySequence,setDeliverySequence]=useState({direct:{},transport:{}});
   const [loadingSeq,setLoadingSeq]=useState(false);
-  const DIRECT_AREAS=["Bombay Route","Vasai-Virar","Navi Mumbai","Panvel","Mulund Bhandup Sakinaka","Kalyan Dombivali Ulhasnagar Ambernath","Dahisar-Mira road Borivali"];
 
   useEffect(()=>{
     C("settings").doc("deliverySequence").onSnapshot(s=>{if(s.exists)setDeliverySequence(s.data());},()=>{});
@@ -7558,22 +7573,44 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
           <div style={{fontSize:"11px",color:"#475569",marginTop:"2px"}}>Select an area to view pending direct orders sorted by delivery sequence</div>
         </div>
         <div style={{display:"flex",gap:"5px",alignItems:"center"}}>
-          <span style={{fontSize:"10.5px",color:"#64748b"}}>Upload sequence:</span>
-          <button onClick={()=>document.getElementById("dir-seq-import").click()} disabled={loadingSeq} style={{background:"#060d1a",border:"1px solid #166534",borderRadius:"5px",padding:"3px 10px",color:"#4ade80",fontSize:"11px",fontWeight:"700",cursor:"pointer"}}>⬆ Direct</button>
+          <span style={{fontSize:"10.5px",color:"#64748b"}}>Sequence:</span>
+          <button onClick={()=>document.getElementById("dir-seq-import").click()} disabled={loadingSeq} style={{background:"#060d1a",border:"1px solid #166534",borderRadius:"5px",padding:"3px 10px",color:"#4ade80",fontSize:"11px",fontWeight:"700",cursor:"pointer"}}>⬆ Upload Sequence</button>
           <input id="dir-seq-import" type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={async e=>{if(e.target.files[0]){await importDeliverySequence(e.target.files[0],"direct");e.target.value="";}}}/>
-          <button onClick={()=>document.getElementById("trn-seq-import").click()} disabled={loadingSeq} style={{background:"#060d1a",border:"1px solid #7c3aed",borderRadius:"5px",padding:"3px 10px",color:"#c4b5fd",fontSize:"11px",fontWeight:"700",cursor:"pointer"}}>⬆ Transport</button>
-          <input id="trn-seq-import" type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={async e=>{if(e.target.files[0]){await importDeliverySequence(e.target.files[0],"transport");e.target.value="";}}}/>
         </div>
       </div>
 
-      {/* Area filter */}
-      <div style={{display:"flex",gap:"4px",marginBottom:"12px",flexWrap:"wrap"}}>
-        {["All",...DIRECT_AREAS].map(area=><button key={area} onClick={()=>setDirectPrepArea(area)} style={{background:directPrepArea===area?"#052e16":"#080d18",border:`1px solid ${directPrepArea===area?"#166534":"#1e293b"}`,borderRadius:"5px",padding:"4px 10px",color:directPrepArea===area?"#4ade80":"#475569",fontSize:"11px",fontWeight:"600",cursor:"pointer",whiteSpace:"nowrap"}}>{area}</button>)}
+      {/* Area filter + admin management */}
+      <div style={{display:"flex",gap:"4px",marginBottom:"8px",flexWrap:"wrap",alignItems:"center"}}>
+        {["All",...directAreas].map(area=><button key={area} onClick={()=>setDirectPrepArea(area)} style={{background:directPrepArea===area?"#052e16":"#080d18",border:`1px solid ${directPrepArea===area?"#166534":"#1e293b"}`,borderRadius:"5px",padding:"4px 10px",color:directPrepArea===area?"#4ade80":"#475569",fontSize:"11px",fontWeight:"600",cursor:"pointer",whiteSpace:"nowrap"}}>{area}</button>)}
+        {isAdmin&&<button onClick={()=>setEditingAreas(e=>!e)} style={{background:editingAreas?"#1e293b":"#080d18",border:"1px solid #334155",borderRadius:"5px",padding:"4px 10px",color:"#475569",fontSize:"11px",cursor:"pointer",whiteSpace:"nowrap"}}>⚙ {editingAreas?"Done":"Edit Areas"}</button>}
       </div>
+
+      {/* Admin: edit direct areas list */}
+      {editingAreas&&isAdmin&&<div style={{background:"#060d1a",border:"1px solid #1e293b",borderRadius:"8px",padding:"10px 12px",marginBottom:"10px"}}>
+        <div style={{fontSize:"11.5px",fontWeight:"700",color:"#64748b",marginBottom:"8px"}}>Manage Direct Delivery Areas</div>
+        <div style={{display:"flex",gap:"4px",flexWrap:"wrap",marginBottom:"8px"}}>
+          {directAreas.map((area,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:"3px",background:"#0b1220",border:"1px solid #1e293b",borderRadius:"5px",padding:"3px 8px"}}>
+            <span style={{fontSize:"11.5px",color:"#e2e8f0"}}>{area}</span>
+            <button onClick={()=>saveDirectAreas(directAreas.filter((_,j)=>j!==i))} style={{background:"none",border:"none",color:"#475569",cursor:"pointer",fontSize:"11px",padding:"0 2px"}}>✕</button>
+          </div>)}
+        </div>
+        <div style={{display:"flex",gap:"6px"}}>
+          <input style={{...inp,flex:1,padding:"5px 10px",fontSize:"12px"}} value={newAreaInput} onChange={e=>setNewAreaInput(e.target.value)} placeholder="Add new area e.g. Thane" onKeyDown={e=>{if(e.key==="Enter"&&newAreaInput.trim()){saveDirectAreas([...directAreas,newAreaInput.trim()]);setNewAreaInput("");}}}/>
+          <button onClick={()=>{if(newAreaInput.trim()){saveDirectAreas([...directAreas,newAreaInput.trim()]);setNewAreaInput("");}}} style={{background:"#052e16",border:"1px solid #166534",borderRadius:"6px",padding:"5px 12px",color:"#4ade80",fontSize:"12px",fontWeight:"700",cursor:"pointer"}}>+ Add</button>
+        </div>
+      </div>}
 
       {/* Orders for selected area */}
       {(()=>{
-        const dirGroups=customerGroups.filter(g=>g.isDirect&&(directPrepArea==="All"||g.route===directPrepArea));
+        // Include direct orders + Bhiwandi (which can go either direct or transport)
+        const isBhiwandi=a=>normRoute(a).includes("bhiwandi");
+        const dirGroups=customerGroups.filter(g=>{
+          const areaMatch=directPrepArea==="All"||normRoute(g.route)===normRoute(directPrepArea);
+          if(g.isDirect)return areaMatch;
+          // Also include Bhiwandi transport orders so team can choose route
+          if(isBhiwandi(g.route||""))return directPrepArea==="All"||normRoute(directPrepArea)==="All"||isBhiwandi(directPrepArea);
+          return false;
+        });
         const sorted=[...dirGroups].sort((a,b)=>seqSort(a.partyName,b.partyName,deliverySequence.direct||{}));
         if(sorted.length===0)return <div style={{textAlign:"center",padding:"40px",border:"2px dashed #1e293b",borderRadius:"10px",color:"#334155"}}>No pending direct orders{directPrepArea!=="All"?` for ${directPrepArea}`:""}</div>;
         return <div>
@@ -7588,33 +7625,64 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
                   <span style={{fontSize:"12.5px",fontWeight:"700",color:"#f1f5f9"}}>{cg.partyName}</span>
                   <span style={{fontSize:"10.5px",color:"#475569",marginLeft:"8px"}}>{cg.route}</span>
                 </div>
-                <div style={{display:"flex",gap:"5px"}}>
+              <div style={{display:"flex",gap:"5px",flexWrap:"wrap",justifyContent:"flex-end"}}>
+                  {/* Bhiwandi: show both Stage to Transport and Dispatch Direct */}
+                  {!cg.isDirect&&isBhiwandi(cg.route||"")&&canDispatch&&<button onClick={async()=>{
+                    setSaving(true);
+                    try{
+                      const itemsToStage=cg.orders.flatMap(o=>(o.items||[]).filter(i=>i.balanceQty>0&&i.status!=="Dispatched").map((item,idx)=>({orderId:o.id,itemIdx:(o.items||[]).indexOf(item)})));
+                      await stageItemsForTransport(itemsToStage,true,cg.transport,false);
+                      showToast(`${cg.partyName} staged to Transport Prep ✓`);
+                    }catch(e){showToast("Error: "+e.message,"error");}
+                    setSaving(false);
+                  }} disabled={saving||stagingSaving} style={{background:"#1a0a2e",border:"1px solid #7c3aed",borderRadius:"5px",padding:"2px 9px",color:"#c4b5fd",fontSize:"11px",fontWeight:"700",cursor:"pointer",whiteSpace:"nowrap"}}>📦 Stage to Transport</button>}
                   {canDispatch&&<button onClick={async()=>{
                     setSaving(true);
                     try{
                       for(const o of cg.orders){
                         const doc=await C("orders").doc(o.id).get();if(!doc.exists)continue;
                         const data=doc.data();
-                        const updatedItems=(data.items||[]).map(item=>{
+                        const updatedItems=(data.items||[]).map((item,idx)=>{
                           if(item.balanceQty<=0||item.status==="Dispatched")return item;
-                          const bal=parseFloat(item.balanceQty)||0;
-                          return {...item,balanceQty:0,dispatchedQty:(parseFloat(item.dispatchedQty)||0)+bal,status:"Dispatched",lastDispatchedAt:dispatchDateStr,lastDispatchedBy:user.email,dispatchConfirmed:false,dispatchConfirmedAt:null};
+                          const fk=o.id+"__"+idx;
+                          const override=directQtyOverrides[fk];
+                          if(override==="0"||override===0)return item;
+                          const dispQty=override!==undefined?Math.min(parseFloat(override)||0,parseFloat(item.balanceQty)||0):parseFloat(item.balanceQty)||0;
+                          if(dispQty<=0)return item;
+                          const newBalance=Math.max(0,(parseFloat(item.balanceQty)||0)-dispQty);
+                          return {...item,balanceQty:newBalance,dispatchedQty:(parseFloat(item.dispatchedQty)||0)+dispQty,status:newBalance<=0?"Dispatched":"Partial",lastDispatchedAt:dispatchDateStr,lastDispatchedBy:user.email,dispatchConfirmed:false,dispatchConfirmedAt:null};
                         });
                         const allDone=updatedItems.every(i=>i.balanceQty<=0||i.status==="Dispatched");
                         await C("orders").doc(o.id).update({items:updatedItems.map(cleanItem),status:allDone?"Dispatched":"Partial",updatedAt:ts()});
                       }
-                      showToast(`${cg.partyName} dispatched ✓ — check Dispatch Today`);
+                      showToast(`${cg.partyName} dispatched direct ✓`);
                       setPrintRouteFilter("All");
                     }catch(e){showToast("Error: "+e.message,"error");}
                     setSaving(false);
-                  }} disabled={saving} style={{background:"#052e16",border:"1px solid #166534",borderRadius:"5px",padding:"2px 9px",color:"#4ade80",fontSize:"11px",fontWeight:"700",cursor:"pointer"}}>🚚 Dispatch All</button>}
+                  }} disabled={saving} style={{background:"#052e16",border:"1px solid #166534",borderRadius:"5px",padding:"2px 9px",color:"#4ade80",fontSize:"11px",fontWeight:"700",cursor:"pointer",whiteSpace:"nowrap"}}>🚚 {cg.isDirect?"Dispatch All":"Dispatch Direct"}</button>}
                 </div>
               </div>
-              {items.map((item,ii)=><div key={ii} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 12px",borderTop:ii===0?"none":"1px solid #0f172a",gap:"8px",fontSize:"11.5px",background:ii%2===0?"transparent":"#060d1a"}}>
-                <span style={{color:"#94a3b8",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.name}</span>
-                <span style={{color:"#fcd34d",fontWeight:"600",flexShrink:0}}>{item.balanceQty}</span>
-                <span style={{color:"#334155",fontSize:"10px",flexShrink:0}}>{item.voucherNo}</span>
-              </div>)}
+              {items.map((item,ii)=>{
+                const fk=item.orderId+"__"+item.itemIdx;
+                const editQty=directQtyOverrides[fk];
+                const removed=editQty==="0"||editQty===0;
+                return <div key={ii} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 12px",borderTop:ii===0?"none":"1px solid #0f172a",gap:"6px",fontSize:"11.5px",background:removed?"#0f0505":ii%2===0?"transparent":"#060d1a",opacity:removed?0.5:1}}>
+                  <span style={{color:removed?"#475569":"#94a3b8",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",textDecoration:removed?"line-through":"none"}}>{item.name}</span>
+                  <div style={{display:"flex",gap:"5px",alignItems:"center",flexShrink:0}}>
+                    <input type="number" min="0" max={item.balanceQty} step="0.001"
+                      value={editQty!==undefined?editQty:item.balanceQty}
+                      onChange={e=>setDirectQtyOverrides(f=>({...f,[fk]:e.target.value}))}
+                      style={{...inp,width:"65px",padding:"2px 5px",fontSize:"11px",textAlign:"center",background:"#0b1220",border:`1px solid ${editQty!==undefined&&parseFloat(editQty)<item.balanceQty?"#f59e0b":"#1e293b"}`}}/>
+                    {editQty!==undefined&&parseFloat(editQty)<item.balanceQty&&<span style={{fontSize:"9.5px",color:"#f59e0b",whiteSpace:"nowrap"}}>of {item.balanceQty}</span>}
+                    <button onClick={()=>setDirectQtyOverrides(f=>({...f,[fk]:removed?"":String(item.balanceQty)}))}
+                      title={removed?"Restore item":"Remove item"}
+                      style={{background:removed?"#052e16":"#2e0a0a",border:`1px solid ${removed?"#166534":"#7f1d1d"}`,borderRadius:"4px",padding:"1px 7px",color:removed?"#4ade80":"#f87171",fontSize:"10px",cursor:"pointer"}}>
+                      {removed?"↩":"✕"}
+                    </button>
+                  </div>
+                  <span style={{color:"#334155",fontSize:"10px",flexShrink:0}}>{item.voucherNo}</span>
+                </div>;
+              })}
             </div>;
           })}
           {canDispatch&&<div style={{padding:"10px 0"}}>
@@ -7625,10 +7693,15 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
                   for(const o of cg.orders){
                     const doc=await C("orders").doc(o.id).get();if(!doc.exists)continue;
                     const data=doc.data();
-                    const updatedItems=(data.items||[]).map(item=>{
+                    const updatedItems=(data.items||[]).map((item,idx)=>{
                       if(item.balanceQty<=0||item.status==="Dispatched")return item;
-                      const bal=parseFloat(item.balanceQty)||0;
-                      return {...item,balanceQty:0,dispatchedQty:(parseFloat(item.dispatchedQty)||0)+bal,status:"Dispatched",lastDispatchedAt:dispatchDateStr,lastDispatchedBy:user.email,dispatchConfirmed:false,dispatchConfirmedAt:null};
+                      const fk=o.id+"__"+idx;
+                      const override=directQtyOverrides[fk];
+                      if(override==="0"||override===0)return item;
+                      const dispQty=override!==undefined?Math.min(parseFloat(override)||0,parseFloat(item.balanceQty)||0):parseFloat(item.balanceQty)||0;
+                      if(dispQty<=0)return item;
+                      const newBalance=Math.max(0,(parseFloat(item.balanceQty)||0)-dispQty);
+                      return {...item,balanceQty:newBalance,dispatchedQty:(parseFloat(item.dispatchedQty)||0)+dispQty,status:newBalance<=0?"Dispatched":"Partial",lastDispatchedAt:dispatchDateStr,lastDispatchedBy:user.email,dispatchConfirmed:false,dispatchConfirmedAt:null};
                     });
                     const allDone=updatedItems.every(i=>i.balanceQty<=0||i.status==="Dispatched");
                     await C("orders").doc(o.id).update({items:updatedItems.map(cleanItem),status:allDone?"Dispatched":"Partial",updatedAt:ts()});
@@ -7648,20 +7721,25 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
 
     {/* ── TRANSPORT PREP TAB ── */}
     {subTab==="transport_prep"&&<div>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"10px",flexWrap:"wrap",gap:"8px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"10px",flexWrap:"wrap",gap:"8px"}}>
         <div>
           <div style={{fontSize:"13px",fontWeight:"700",color:"#a78bfa"}}>🚛 Transport Order Preparation</div>
           <div style={{fontSize:"11px",color:"#475569",marginTop:"2px"}}>Select transport orders ready to dispatch today. Team sees the preparation list by customer/product/transporter.</div>
         </div>
-        {stagedTransportItems.length>0&&<div style={{display:"flex",gap:"5px",flexWrap:"wrap",alignItems:"center"}}>
-          <span style={{fontSize:"10px",color:"#4ade80",display:"flex",alignItems:"center",gap:"4px",marginRight:"2px"}}><span style={{width:"6px",height:"6px",borderRadius:"50%",background:"#4ade80",display:"inline-block",animation:"pulse 1.5s infinite"}}/>Live</span>
+        <div style={{display:"flex",gap:"5px",alignItems:"center",flexWrap:"wrap",flexShrink:0}}>
+          <span style={{fontSize:"10.5px",color:"#64748b"}}>Sequence:</span>
+          <button onClick={()=>document.getElementById("trn-seq-import").click()} disabled={loadingSeq} style={{background:"#060d1a",border:"1px solid #7c3aed",borderRadius:"5px",padding:"3px 9px",color:"#c4b5fd",fontSize:"11px",fontWeight:"700",cursor:"pointer"}}>⬆ Upload</button>
+          <input id="trn-seq-import" type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={async e=>{if(e.target.files[0]){await importDeliverySequence(e.target.files[0],"transport");e.target.value="";}}}/>
+        </div>
+      </div>
+      {stagedTransportItems.length>0&&<div style={{display:"flex",gap:"5px",flexWrap:"wrap",alignItems:"center",marginBottom:"10px"}}>
+          <span style={{fontSize:"10px",color:"#4ade80",display:"flex",alignItems:"center",gap:"4px"}}><span style={{width:"6px",height:"6px",borderRadius:"50%",background:"#4ade80",display:"inline-block"}}/>Live</span>
           <button onClick={moveStagedToDispatch} disabled={saving} style={{background:"#052e16",border:"1px solid #166534",borderRadius:"5px",padding:"4px 12px",color:"#4ade80",fontSize:"11.5px",fontWeight:"700",cursor:"pointer"}}>{saving?"…":"🚚 Move to Dispatch Today"}</button>
           <button onClick={()=>setTransportPrepView("customer")} style={{background:transportPrepView==="customer"?"#1e293b":"#080d18",border:`1px solid ${transportPrepView==="customer"?"#475569":"#1e293b"}`,borderRadius:"5px",padding:"4px 9px",color:transportPrepView==="customer"?"#f1f5f9":"#475569",fontSize:"11px",fontWeight:"600",cursor:"pointer"}}>👥 Customer</button>
           <button onClick={()=>setTransportPrepView("product")} style={{background:transportPrepView==="product"?"#1e293b":"#080d18",border:`1px solid ${transportPrepView==="product"?"#475569":"#1e293b"}`,borderRadius:"5px",padding:"4px 9px",color:transportPrepView==="product"?"#f1f5f9":"#475569",fontSize:"11px",fontWeight:"600",cursor:"pointer"}}>📦 Product</button>
           <button onClick={()=>setTransportPrepView("transporter")} style={{background:transportPrepView==="transporter"?"#1e293b":"#080d18",border:`1px solid ${transportPrepView==="transporter"?"#475569":"#1e293b"}`,borderRadius:"5px",padding:"4px 9px",color:transportPrepView==="transporter"?"#f1f5f9":"#475569",fontSize:"11px",fontWeight:"600",cursor:"pointer"}}>🚛 Transporter</button>
           <button onClick={()=>{if(!confirm("Unstage all items?"))return;stageItemsForTransport(stagedTransportItems,false);}} disabled={stagingSaving} style={{background:"#2e0a0a",border:"1px solid #7f1d1d",borderRadius:"5px",padding:"4px 9px",color:"#f87171",fontSize:"11px",fontWeight:"700",cursor:"pointer"}}>✕ Clear</button>
         </div>}
-      </div>
       {stagedTransportItems.length===0
         ?<div style={{textAlign:"center",padding:"50px",border:"2px dashed #1e293b",borderRadius:"10px"}}>
             <div style={{color:"#a78bfa",fontSize:"16px",marginBottom:"8px"}}>📦</div>
