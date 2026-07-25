@@ -6164,6 +6164,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
   const [orders,setOrders]=useState([]);
   const [customerMap,setCustomerMap]=useState({});
   const [routes,setRoutes]=useState([]);
+  const transporterNames=[...new Set(Object.values(customerMap).filter(c=>!c.isDirect&&c.transport).map(c=>c.transport).filter(Boolean))].sort();
   const [loading,setLoading]=useState(true);
   const [parsing,setParsing]=useState(false);
   const [transportParsing,setTransportParsing]=useState(false);
@@ -6968,7 +6969,8 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
               <datalist id={`route-uc-${i}`}>{routes.map(r=><option key={r} value={r}/>)}</datalist>
             </Field>
             <Field label="Transport / Delivery">
-              <input style={inp} value={c.transport} onChange={e=>setUnknownCusts(u=>u.map((x,xi)=>xi===i?{...x,transport:e.target.value,isDirect:e.target.value.toLowerCase().includes("direct")}:x))} placeholder="e.g. JANSEVA TRANSPORT or DIRECT"/>
+              <input style={inp} list={`uc-trans-${i}`} value={c.transport} onChange={e=>setUnknownCusts(u=>u.map((x,xi)=>xi===i?{...x,transport:e.target.value,isDirect:e.target.value.toLowerCase().includes("direct")}:x))} placeholder="e.g. JANSEVA TRANSPORT or DIRECT"/>
+              <datalist id={`uc-trans-${i}`}><option value="DIRECT"/>{transporterNames.map(t=><option key={t} value={t}/>)}</datalist>
             </Field>
           </Grid2>
           <div style={{display:"flex",gap:"6px",marginTop:"4px"}}>
@@ -7036,7 +7038,23 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
           </Field>
         </Grid2>
         <Grid2>
-          <Field label="Transport Company"><input style={inp} value={custForm.transport} onChange={e=>setCustForm({...custForm,transport:e.target.value,isDirect:e.target.value.toLowerCase().includes("direct")})} placeholder="e.g. JANSEVA TRANSPORT or DIRECT"/></Field>
+          <Field label="Transport Company">
+            <div style={{display:"flex",gap:"5px",alignItems:"center"}}>
+              <div style={{flex:1,position:"relative"}}>
+                <input style={inp} list="setup-trans-list" value={custForm.transport} onChange={e=>setCustForm({...custForm,transport:e.target.value,isDirect:e.target.value.toLowerCase().includes("direct")})} placeholder="Select or type new transporter…"/>
+                <datalist id="setup-trans-list"><option value="DIRECT"/>{transporterNames.map(t=><option key={t} value={t}/>)}</datalist>
+              </div>
+              {custForm.transport.trim()&&!custForm.isDirect&&!transporterNames.find(t=>t.toLowerCase()===custForm.transport.toLowerCase())&&<button onClick={async()=>{
+                const name=custForm.transport.trim().toUpperCase();
+                const newMap={...customerMap};
+                // Add a placeholder entry so the transporter appears in the dropdown
+                const tempKey="__trans__"+normalize(name);
+                newMap[tempKey]={customer:"",transport:name,route:"",isDirect:false,_transportOnly:true};
+                await C("settings").doc("customerTransport").set({map:newMap},{merge:true});
+                showToast(`${name} added to transporter list ✓`);
+              }} style={{background:"#1a0a2e",border:"1px solid #7c3aed",borderRadius:"6px",padding:"5px 10px",color:"#c4b5fd",fontSize:"11px",fontWeight:"700",cursor:"pointer",whiteSpace:"nowrap"}}>+ Save</button>}
+            </div>
+          </Field>
           <Field label="Delivery Type"><div style={{display:"flex",gap:"6px"}}>
             <button onClick={()=>setCustForm({...custForm,isDirect:true,transport:custForm.transport||"DIRECT"})} style={{flex:1,background:custForm.isDirect?"#052e16":"#080d18",border:`1px solid ${custForm.isDirect?"#166534":"#1e293b"}`,borderRadius:"6px",padding:"7px",color:custForm.isDirect?"#4ade80":"#475569",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>🚚 Direct</button>
             <button onClick={()=>setCustForm({...custForm,isDirect:false})} style={{flex:1,background:!custForm.isDirect?"#0a1a2e":"#080d18",border:`1px solid ${!custForm.isDirect?"#2563eb":"#1e293b"}`,borderRadius:"6px",padding:"7px",color:!custForm.isDirect?"#93c5fd":"#475569",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>🏢 Transport</button>
@@ -7241,7 +7259,8 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
                     <datalist id="qa-route-list">{routes.map(r=><option key={r} value={r}/>)}</datalist>
                   </Field>
                   <Field label="Transport Company">
-                    <input style={inp} value={custForm.transport} onChange={e=>setCustForm({...custForm,transport:e.target.value,isDirect:e.target.value.toLowerCase().includes("direct")})} placeholder="e.g. JANSEVA or DIRECT"/>
+                    <input style={inp} list="qa-trans-list" value={custForm.transport} onChange={e=>setCustForm({...custForm,transport:e.target.value,isDirect:e.target.value.toLowerCase().includes("direct")})} placeholder="e.g. JANSEVA or DIRECT"/>
+                    <datalist id="qa-trans-list"><option value="DIRECT"/>{transporterNames.map(t=><option key={t} value={t}/>)}</datalist>
                   </Field>
                 </Grid2>
                 <div style={{display:"flex",gap:"6px",marginBottom:"8px"}}>
