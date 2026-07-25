@@ -6825,7 +6825,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
   const stagedTransportItems=orders.flatMap(o=>
     (!o.isDirect&&["Pending","Partial"].includes(o.status))
       ?(o.items||[]).filter(i=>i.stagedForTransport&&i.balanceQty>0&&i.status!=="Dispatched")
-        .map((item,idx)=>({name:item.name,qty:item.balanceQty,partyName:o.partyName,transport:o.transport,route:o.route,voucherNo:o.voucherNo,orderId:o.id,itemIdx:(o.items||[]).indexOf(item),stagedBy:item.stagedBy,stagedAt:item.stagedAt}))
+        .map((item,idx)=>({name:item.name,qty:item.balanceQty,partyName:o.partyName,transport:o.transport,route:o.route,voucherNo:o.voucherNo,orderDate:o.orderDate||"",orderId:o.id,itemIdx:(o.items||[]).indexOf(item),stagedBy:item.stagedBy,stagedAt:item.stagedAt}))
       :[]
   );
 
@@ -7813,6 +7813,10 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
                 const dispQty=editQty!==undefined?parseFloat(editQty)||0:item.qty;
                 return <div key={ii} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 12px",borderTop:"1px solid #0f172a",gap:"6px",background:"#12083a"}}>
                   <div style={{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontSize:"11.5px",color:"#c4b5fd"}}>{item.name}</div>
+                  <div style={{display:"flex",gap:"4px",alignItems:"center",flexShrink:0}}>
+                    {item.voucherNo&&<span style={{fontSize:"10px",color:"#475569",background:"#0b1220",border:"1px solid #1e293b",borderRadius:"4px",padding:"1px 5px"}}>{item.voucherNo}</span>}
+                    {item.orderDate&&<span style={{fontSize:"10px",color:"#334155"}}>{item.orderDate}</span>}
+                  </div>
                   <div style={{display:"flex",gap:"5px",alignItems:"center",flexShrink:0}}>
                     <input type="number" min="0.001" max={item.qty} step="0.001"
                       value={editQty!==undefined?editQty:item.qty}
