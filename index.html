@@ -7322,15 +7322,18 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
                   {isUnknown&&<button onClick={e=>{e.stopPropagation();setCustForm({customer:group.partyName,transport:"",route:"",isDirect:false});setQuickAddCustomer(isQA?null:group.partyName);}} style={{background:isQA?"#2e0a0a":"#1a0505",border:`1px solid ${isQA?"#ef4444":"#7f1d1d"}`,borderRadius:"5px",color:isQA?"#f87171":"#fca5a5",fontSize:"10.5px",fontWeight:"700",padding:"2px 8px",cursor:"pointer",whiteSpace:"nowrap"}}>
                     {isQA?"✕ Cancel":"+ Add Route"}
                   </button>}
-                  {/* Stage for Transport button — only for non-direct orders */}
-                  {!isUnknown&&!group.isDirect&&canDispatch&&(()=>{
+                  {/* Stage for Transport — non-direct orders OR direct customers in transport sequence */}
+                  {!isUnknown&&(canDispatch||isAdmin||roles.includes("issuer"))&&(()=>{
+                    const inTransportSeq=group.isDirect&&getTransportSeq(group.partyName,group.transport)<999;
+                    if(!group.isDirect||inTransportSeq){
                     const allPending=group.orders.flatMap(o=>(o.items||[]).filter(i=>i.balanceQty>0&&i.status!=="Dispatched"&&!i.stagedForTransport).map((item)=>({orderId:o.id,itemIdx:(o.items||[]).indexOf(item)})));
                     const stagedCount=stagedTransportItems.filter(i=>group.orders.some(o=>o.id===i.orderId)).length;
                     const allStaged=stagedCount>0&&allPending.length===0;
                     return <button onClick={e=>{e.stopPropagation();if(allStaged)stageItemsForTransport(group.orders.flatMap(o=>(o.items||[]).map((_,idx)=>({orderId:o.id,itemIdx:idx}))),false);else stageItemsForTransport(allPending,true,group.transport,group.isDirect);}} disabled={stagingSaving}
                       style={{background:allStaged?"#12083a":"#080d18",border:`1px solid ${allStaged?"#7c3aed":"#1e293b"}`,borderRadius:"5px",color:allStaged?"#c4b5fd":"#475569",fontSize:"10.5px",fontWeight:"700",padding:"2px 9px",cursor:"pointer",whiteSpace:"nowrap"}}>
                       {allStaged?"📦 Staged":"📦 Stage"}
-                    </button>;
+                    </button>;}
+                    return null;
                   })()}
                   {selectedCount>0&&<span style={{fontSize:"10px",color:"#4ade80",background:"#052e16",border:"1px solid #166534",borderRadius:"99px",padding:"1px 8px"}}>{selectedCount} selected</span>}
                   <span style={{color:"#334155",fontSize:"11px"}}>{isExp?"▲":"▼"}</span>
@@ -7675,8 +7678,8 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
                   <span style={{fontSize:"10.5px",color:"#475569",marginLeft:"8px"}}>{cg.route}</span>
                 </div>
               <div style={{display:"flex",gap:"5px",flexWrap:"wrap",justifyContent:"flex-end"}}>
-                  {/* Stage to Transport - only if customer appears in transport sequence */}
-                  {(isAdmin||roles.includes("issuer"))&&getTransportSeq(cg.partyName,cg.transport)<999&&<button onClick={async()=>{
+                  {/* Stage to Transport - available to issuer and admin for any direct order */}
+                  {(isAdmin||roles.includes("issuer"))&&<button onClick={async()=>{
                     setSaving(true);
                     try{
                       const itemsToStage=cg.orders.flatMap(o=>(o.items||[]).filter(i=>i.balanceQty>0&&i.status!=="Dispatched").map(item=>({orderId:o.id,itemIdx:(o.items||[]).indexOf(item)})));
