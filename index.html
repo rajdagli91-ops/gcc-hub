@@ -6752,22 +6752,40 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
       await loadXLSX();const XLSX=window.XLSX;
       const ab=await file.arrayBuffer();
       const wb=XLSX.read(new Uint8Array(ab),{type:"array"});
-      // Each sheet = area (for direct) or flat (for transport)
       const seqMap={};
+      let counter=0; // use real counter, not row index
       wb.SheetNames.forEach(sheetName=>{
         const ws=wb.Sheets[sheetName];
         const rows=XLSX.utils.sheet_to_json(ws,{header:1});
-        rows.forEach((row,idx)=>{
+        rows.forEach((row)=>{
           const name=String(row[0]||"").trim();
-          if(!name||name.toLowerCase()==="name"||name.toLowerCase()==="customer")return;
-          const seq=parseFloat(row[1])||idx+1;
+          if(!name||name.toLowerCase()==="name"||name.toLowerCase()==="customer"||name.toLowerCase()==="transporter")return;
+          counter++;
+          const seq=parseFloat(row[1])||counter; // col B if present, else auto-increment
           seqMap[normalize(name)]={name,seq};
         });
       });
       const existing=(await C("settings").doc("deliverySequence").get()).data()||{direct:{},transport:{}};
-      if(type==="direct")await C("settings").doc("deliverySequence").set({...existing,direct:{...existing.direct,...seqMap}},{merge:true});
-      else await C("settings").doc("deliverySequence").set({...existing,transport:{...existing.transport,...seqMap}},{merge:true});
-      showToast(`Sequence uploaded — ${Object.keys(seqMap).length} entries ✓`);
+      // OVERWRITE (not merge) the specific type so re-upload fully replaces
+      if(type==="direct")await C("settings").doc("deliverySequence").set({...existing,direct:seqMap});
+      else await C("settings").doc("deliverySequence").set({...existing,transport:seqMap});
+      // Also add any new transport names to the customerTransport map so they appear in dropdowns
+      const custMapDoc=await C("settings").doc("customerTransport").get();
+      const existingCustMap=(custMapDoc.exists?custMapDoc.data().map:null)||{};
+      const newTransporters={};
+      Object.values(seqMap).forEach(({name})=>{
+        const k="__trans__"+normTKey(name);
+        // Only add if not already in the map (don't overwrite real customer entries)
+        if(!existingCustMap[k]&&!Object.values(existingCustMap).some(c=>normTKey(c.transport||"")=== normTKey(name)&&!c._transportOnly)){
+          newTransporters[k]={customer:"",transport:name.trim().toUpperCase().replace(/\.+/g,"").replace(/\s+/g," "),route:"",isDirect:false,_transportOnly:true};
+        }
+      });
+      if(Object.keys(newTransporters).length>0){
+        await C("settings").doc("customerTransport").set({map:{...existingCustMap,...newTransporters}},{merge:true});
+        showToast(`${Object.keys(seqMap).length} entries uploaded · ${Object.keys(newTransporters).length} new transporters added to Setup Routes ✓`);
+      }else{
+        showToast(`${Object.keys(seqMap).length} entries uploaded — sequence replaced ✓`);
+      }
     }catch(e){showToast("Error: "+e.message,"error");}
     setLoadingSeq(false);
   };
@@ -6778,23 +6796,21 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
     return sa!==sb?sa-sb:a.localeCompare(b);
   };
 
-  // Get sequence for a transport prep customer — checks customer name, then transporter
-  // Uses partial matching so "HARSHIT" in sequence file matches "HARSHIT AGENCIES" in orders
   const getTransportSeq=(partyName,transport)=>{
     const seqMap=deliverySequence.transport||{};
     if(!Object.keys(seqMap).length)return 999;
     const normParty=normalize(partyName||"");
     const normTrans=normTKey(transport||"");
-    // 1. Exact customer name match
-    if(seqMap[normParty])return seqMap[normParty].seq;
-    // 2. Partial: sequence key is contained in order name, or vice versa
-    const partialCust=Object.keys(seqMap).find(k=>normParty.includes(k)||k.includes(normParty));
-    if(partialCust)return seqMap[partialCust].seq;
-    // 3. Exact transporter match
+    // 1. Exact transporter match (primary — file is mostly transporter-based)
     if(seqMap[normTrans])return seqMap[normTrans].seq;
-    // 4. Partial transporter match
-    const partialTrans=Object.keys(seqMap).find(k=>normTrans.includes(k)||k.includes(normTrans));
+    // 2. Partial transporter match
+    const partialTrans=Object.keys(seqMap).find(k=>k.length>=4&&(normTrans.includes(k)||k.includes(normTrans)));
     if(partialTrans)return seqMap[partialTrans].seq;
+    // 3. Exact customer name match (individual override)
+    if(seqMap[normParty])return seqMap[normParty].seq;
+    // 4. Partial customer name match
+    const partialCust=Object.keys(seqMap).find(k=>k.length>=4&&(normParty.includes(k)||k.includes(normParty)));
+    if(partialCust)return seqMap[partialCust].seq;
     return 999;
   };
   const [stagingSaving,setStagingSaving]=useState(false);
