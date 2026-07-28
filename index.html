@@ -6778,12 +6778,24 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
     return sa!==sb?sa-sb:a.localeCompare(b);
   };
 
-  // Get sequence for a transport prep customer — checks customer name first, then transporter
+  // Get sequence for a transport prep customer — checks customer name, then transporter
+  // Uses partial matching so "HARSHIT" in sequence file matches "HARSHIT AGENCIES" in orders
   const getTransportSeq=(partyName,transport)=>{
     const seqMap=deliverySequence.transport||{};
-    const byCust=seqMap[normalize(partyName)]?.seq??seqMap[normTKey(partyName)]?.seq;
-    if(byCust!=null)return byCust;
-    return seqMap[normalize(transport||"")]?.seq??seqMap[normTKey(transport||"")]?.seq??999;
+    if(!Object.keys(seqMap).length)return 999;
+    const normParty=normalize(partyName||"");
+    const normTrans=normTKey(transport||"");
+    // 1. Exact customer name match
+    if(seqMap[normParty])return seqMap[normParty].seq;
+    // 2. Partial: sequence key is contained in order name, or vice versa
+    const partialCust=Object.keys(seqMap).find(k=>normParty.includes(k)||k.includes(normParty));
+    if(partialCust)return seqMap[partialCust].seq;
+    // 3. Exact transporter match
+    if(seqMap[normTrans])return seqMap[normTrans].seq;
+    // 4. Partial transporter match
+    const partialTrans=Object.keys(seqMap).find(k=>normTrans.includes(k)||k.includes(normTrans));
+    if(partialTrans)return seqMap[partialTrans].seq;
+    return 999;
   };
   const [stagingSaving,setStagingSaving]=useState(false);
 
@@ -7766,7 +7778,10 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
             return Object.values(byCustomer).sort((a,b)=>getTransportSeq(a.partyName,a.transport)-getTransportSeq(b.partyName,b.transport)||a.partyName.localeCompare(b.partyName)).map(cg=><div key={cg.partyName} style={{background:"#0b1220",border:"1px solid #7c3aed40",borderLeft:"3px solid #a78bfa",borderRadius:"8px",marginBottom:"6px",overflow:"hidden"}}>
               <div style={{padding:"7px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:"6px",flexWrap:"wrap"}}>
                 <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontSize:"12px",fontWeight:"700",color:"#f1f5f9",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{cg.partyName}</div>
+                  <div style={{fontSize:"12px",fontWeight:"700",color:"#f1f5f9",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                    {Object.keys(deliverySequence.transport||{}).length>0&&getTransportSeq(cg.partyName,cg.transport)<999&&<span style={{fontSize:"10px",color:"#a78bfa",marginRight:"5px",fontWeight:"800"}}>#{getTransportSeq(cg.partyName,cg.transport)}</span>}
+                    {cg.partyName}
+                  </div>
                   <div style={{fontSize:"10px",color:"#93c5fd"}}>🏢 {cg.transport} · {cg.route}</div>
                 </div>
                 <div style={{display:"flex",gap:"5px",alignItems:"center",flexShrink:0}}>
