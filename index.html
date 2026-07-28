@@ -6773,9 +6773,17 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
   };
 
   const seqSort=(a,b,seqMap)=>{
-    const sa=seqMap[normalize(a)]?.seq??999;
-    const sb=seqMap[normalize(b)]?.seq??999;
+    const sa=seqMap[normalize(a)]?.seq??seqMap[normTKey(a)]?.seq??999;
+    const sb=seqMap[normalize(b)]?.seq??seqMap[normTKey(b)]?.seq??999;
     return sa!==sb?sa-sb:a.localeCompare(b);
+  };
+
+  // Get sequence for a transport prep customer — checks customer name first, then transporter
+  const getTransportSeq=(partyName,transport)=>{
+    const seqMap=deliverySequence.transport||{};
+    const byCust=seqMap[normalize(partyName)]?.seq??seqMap[normTKey(partyName)]?.seq;
+    if(byCust!=null)return byCust;
+    return seqMap[normalize(transport||"")]?.seq??seqMap[normTKey(transport||"")]?.seq??999;
   };
   const [stagingSaving,setStagingSaving]=useState(false);
 
@@ -7755,7 +7763,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
               if(!byCustomer[i.partyName])byCustomer[i.partyName]={partyName:i.partyName,transport:i.transport,route:i.route,items:[]};
               byCustomer[i.partyName].items.push(i);
             });
-            return Object.values(byCustomer).sort((a,b)=>seqSort(normTKey(a.transport),normTKey(b.transport),deliverySequence.transport||{})).map(cg=><div key={cg.partyName} style={{background:"#0b1220",border:"1px solid #7c3aed40",borderLeft:"3px solid #a78bfa",borderRadius:"8px",marginBottom:"6px",overflow:"hidden"}}>
+            return Object.values(byCustomer).sort((a,b)=>getTransportSeq(a.partyName,a.transport)-getTransportSeq(b.partyName,b.transport)||a.partyName.localeCompare(b.partyName)).map(cg=><div key={cg.partyName} style={{background:"#0b1220",border:"1px solid #7c3aed40",borderLeft:"3px solid #a78bfa",borderRadius:"8px",marginBottom:"6px",overflow:"hidden"}}>
               <div style={{padding:"7px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:"6px",flexWrap:"wrap"}}>
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{fontSize:"12px",fontWeight:"700",color:"#f1f5f9",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{cg.partyName}</div>
