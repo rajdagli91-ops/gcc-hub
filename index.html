@@ -6776,15 +6776,27 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
       Object.values(seqMap).forEach(({name})=>{
         const k="__trans__"+normTKey(name);
         // Only add if not already in the map (don't overwrite real customer entries)
-        if(!existingCustMap[k]&&!Object.values(existingCustMap).some(c=>normTKey(c.transport||"")=== normTKey(name)&&!c._transportOnly)){
+        if(!existingCustMap[k]&&!Object.values(existingCustMap).some(c=>normalize(c.transport||"")=== normalize(name)&&!c._transportOnly)){
           newTransporters[k]={customer:"",transport:name.trim().toUpperCase().replace(/\.+/g,"").replace(/\s+/g," "),route:"",isDirect:false,_transportOnly:true};
         }
       });
       if(Object.keys(newTransporters).length>0){
         await C("settings").doc("customerTransport").set({map:{...existingCustMap,...newTransporters}},{merge:true});
-        showToast(`${Object.keys(seqMap).length} entries uploaded · ${Object.keys(newTransporters).length} new transporters added to Setup Routes ✓`);
+      }
+      // Find transporters in system NOT covered by the sequence
+      const allTransInSystem=[...new Set(Object.values({...existingCustMap,...newTransporters}).filter(c=>!c.isDirect&&c.transport&&!c._transportOnly).map(c=>c.transport))];
+      const missing=allTransInSystem.filter(t=>!Object.keys(seqMap).some(k=>k===normalize(t)));
+      if(missing.length>0){
+        // Download missing transporters as Excel
+        const XLSX=window.XLSX;
+        const rows=[["Transporter Name","(Not in sequence — add manually)"],...missing.sort().map(t=>[t,""])];
+        const ws=XLSX.utils.aoa_to_sheet(rows);
+        const ck="!cols";ws[ck]=[{wch:40},{wch:35}];
+        const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Missing from Sequence");
+        XLSX.writeFile(wb,"VEEBEE_Missing_Transporters.xlsx");
+        showToast(`${Object.keys(seqMap).length} entries uploaded · ${missing.length} transporter${missing.length!==1?"s":""} not in sequence — downloaded list ⬇`);
       }else{
-        showToast(`${Object.keys(seqMap).length} entries uploaded — sequence replaced ✓`);
+        showToast(`${Object.keys(seqMap).length} entries uploaded — sequence replaced · all transporters covered ✓`);
       }
     }catch(e){showToast("Error: "+e.message,"error");}
     setLoadingSeq(false);
@@ -6799,16 +6811,17 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
   const getTransportSeq=(partyName,transport)=>{
     const seqMap=deliverySequence.transport||{};
     if(!Object.keys(seqMap).length)return 999;
+    // Use same normalize() as import — strips spaces, dots, hyphens, special chars
     const normParty=normalize(partyName||"");
-    const normTrans=normTKey(transport||"");
-    // 1. Exact transporter match (primary — file is mostly transporter-based)
+    const normTrans=normalize(transport||"");
+    // 1. Exact transporter match (primary)
     if(seqMap[normTrans])return seqMap[normTrans].seq;
-    // 2. Partial transporter match
+    // 2. Partial transporter — ignore short keys (min 4 chars) to avoid false positives
     const partialTrans=Object.keys(seqMap).find(k=>k.length>=4&&(normTrans.includes(k)||k.includes(normTrans)));
     if(partialTrans)return seqMap[partialTrans].seq;
     // 3. Exact customer name match (individual override)
     if(seqMap[normParty])return seqMap[normParty].seq;
-    // 4. Partial customer name match
+    // 4. Partial customer name
     const partialCust=Object.keys(seqMap).find(k=>k.length>=4&&(normParty.includes(k)||k.includes(normParty)));
     if(partialCust)return seqMap[partialCust].seq;
     return 999;
