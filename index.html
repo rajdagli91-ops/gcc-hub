@@ -7665,7 +7665,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
         return <div>
           <div style={{fontSize:"11px",color:"#475569",marginBottom:"8px"}}>{sorted.length} customer{sorted.length!==1?"s":""} · {sorted.reduce((a,g)=>a+g.orders.reduce((b,o)=>(o.items||[]).filter(i=>i.balanceQty>0&&i.status!=="Dispatched").length+b,0),0)} items{Object.keys(deliverySequence.direct||{}).length>0?" · sorted by delivery sequence":""}</div>
           {sorted.map((cg,ci)=>{
-            const items=cg.orders.flatMap(o=>(o.items||[]).filter(i=>i.balanceQty>0&&i.status!=="Dispatched").map((item,idx)=>({...item,orderId:o.id,itemIdx:idx,voucherNo:o.voucherNo})));
+            const items=cg.orders.flatMap(o=>(o.items||[]).filter(i=>i.balanceQty>0&&i.status!=="Dispatched").map((item,idx)=>({...item,orderId:o.id,itemIdx:idx,voucherNo:o.voucherNo,orderDate:o.orderDate||""})));
             if(!items.length)return null;
             return <div key={cg.partyName} style={{background:"#0b1220",border:"1px solid #1e293b",borderLeft:"3px solid #22c55e",borderRadius:"8px",marginBottom:"6px",overflow:"hidden"}}>
               <div style={{padding:"8px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"6px",borderBottom:"1px solid #0f172a"}}>
@@ -7675,8 +7675,8 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
                   <span style={{fontSize:"10.5px",color:"#475569",marginLeft:"8px"}}>{cg.route}</span>
                 </div>
               <div style={{display:"flex",gap:"5px",flexWrap:"wrap",justifyContent:"flex-end"}}>
-                  {/* All direct orders can optionally be staged to Transport Prep */}
-                  {canDispatch&&<button onClick={async()=>{
+                  {/* Stage to Transport - only if customer appears in transport sequence */}
+                  {(isAdmin||roles.includes("issuer"))&&getTransportSeq(cg.partyName,cg.transport)<999&&<button onClick={async()=>{
                     setSaving(true);
                     try{
                       const itemsToStage=cg.orders.flatMap(o=>(o.items||[]).filter(i=>i.balanceQty>0&&i.status!=="Dispatched").map(item=>({orderId:o.id,itemIdx:(o.items||[]).indexOf(item)})));
@@ -7723,6 +7723,8 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
                       onChange={e=>setDirectQtyOverrides(f=>({...f,[fk]:e.target.value}))}
                       style={{...inp,width:"65px",padding:"2px 5px",fontSize:"11px",textAlign:"center",background:"#0b1220",border:`1px solid ${editQty!==undefined&&parseFloat(editQty)<item.balanceQty?"#f59e0b":"#1e293b"}`}}/>
                     {editQty!==undefined&&parseFloat(editQty)<item.balanceQty&&<span style={{fontSize:"9.5px",color:"#f59e0b",whiteSpace:"nowrap"}}>of {item.balanceQty}</span>}
+                    {item.voucherNo&&<span style={{fontSize:"10px",color:"#475569",background:"#0b1220",border:"1px solid #1e293b",borderRadius:"4px",padding:"1px 5px"}}>{item.voucherNo}</span>}
+                    {item.orderDate&&<span style={{fontSize:"10px",color:"#334155"}}>{item.orderDate}</span>}
                     <button onClick={()=>setDirectQtyOverrides(f=>({...f,[fk]:removed?"":String(item.balanceQty)}))}
                       title={removed?"Restore item":"Remove item"}
                       style={{background:removed?"#052e16":"#2e0a0a",border:`1px solid ${removed?"#166534":"#7f1d1d"}`,borderRadius:"4px",padding:"1px 7px",color:removed?"#4ade80":"#f87171",fontSize:"10px",cursor:"pointer"}}>
