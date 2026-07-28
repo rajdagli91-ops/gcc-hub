@@ -6871,12 +6871,12 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
   };
 
   // Derive staged items from order state (live via onSnapshot)
-  const stagedTransportItems=orders.flatMap(o=>
-    (!o.isDirect&&["Pending","Partial"].includes(o.status))
-      ?(o.items||[]).filter(i=>i.stagedForTransport&&i.balanceQty>0&&i.status!=="Dispatched")
-        .map((item,idx)=>({name:item.name,qty:item.balanceQty,partyName:o.partyName,transport:o.transport,route:o.route,voucherNo:o.voucherNo,orderDate:o.orderDate||"",orderId:o.id,itemIdx:(o.items||[]).indexOf(item),stagedBy:item.stagedBy,stagedAt:item.stagedAt}))
-      :[]
-  );
+  const stagedTransportItems=orders.flatMap(o=>{
+    // Include any order (direct or transport) that has staged items
+    if(!["Pending","Partial"].includes(o.status))return[];
+    return (o.items||[]).filter(i=>i.stagedForTransport&&i.balanceQty>0&&i.status!=="Dispatched")
+      .map((item)=>({name:item.name,qty:item.balanceQty,partyName:o.partyName,transport:o.transport,route:o.route,voucherNo:o.voucherNo,orderDate:o.orderDate||"",orderId:o.id,itemIdx:(o.items||[]).indexOf(item),stagedBy:item.stagedBy,stagedAt:item.stagedAt,isDirect:o.isDirect}));
+  });
 
   // Clean item for Firestore — explicit fields only, no undefined
   const cleanItem=item=>({
@@ -7675,12 +7675,12 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
                   <span style={{fontSize:"10.5px",color:"#475569",marginLeft:"8px"}}>{cg.route}</span>
                 </div>
               <div style={{display:"flex",gap:"5px",flexWrap:"wrap",justifyContent:"flex-end"}}>
-                  {/* Bhiwandi: show both Stage to Transport and Dispatch Direct */}
-                  {!cg.isDirect&&isBhiwandi(cg.route||"")&&canDispatch&&<button onClick={async()=>{
+                  {/* All direct orders can optionally be staged to Transport Prep */}
+                  {canDispatch&&<button onClick={async()=>{
                     setSaving(true);
                     try{
-                      const itemsToStage=cg.orders.flatMap(o=>(o.items||[]).filter(i=>i.balanceQty>0&&i.status!=="Dispatched").map((item,idx)=>({orderId:o.id,itemIdx:(o.items||[]).indexOf(item)})));
-                      await stageItemsForTransport(itemsToStage,true,cg.transport,false);
+                      const itemsToStage=cg.orders.flatMap(o=>(o.items||[]).filter(i=>i.balanceQty>0&&i.status!=="Dispatched").map(item=>({orderId:o.id,itemIdx:(o.items||[]).indexOf(item)})));
+                      await stageItemsForTransport(itemsToStage,true,cg.transport||cg.route,false);
                       showToast(`${cg.partyName} staged to Transport Prep ✓`);
                     }catch(e){showToast("Error: "+e.message,"error");}
                     setSaving(false);
