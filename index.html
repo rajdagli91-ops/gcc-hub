@@ -6487,10 +6487,10 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
       showToast("Dispatch recorded ✓ — check Today's Dispatch tab");
       // Suggest other orders with same transporter
       const dispatchedGroup=customerGroups.find(g=>g.orders.some(o=>customerOrders.some(co=>co.id===o.id)));
-      if(dispatchedGroup&&!dispatchedGroup.isDirect){
+      if(dispatchedGroup&&dispatchedGroup.transport&&!dispatchedGroup.isDirect){
         const sameTransporter=customerGroups.filter(g=>
           g.partyName!==dispatchedGroup.partyName&&
-          normTKey(g.transport)===normTKey(dispatchedGroup.transport)&&
+          normTKey(g.transport||"")===normTKey(dispatchedGroup.transport||"")&&
           g.orders.some(o=>o.items.some(i=>i.status!=="Dispatched"&&i.balanceQty>0))
         );
         if(sameTransporter.length>0)setTransporterSuggest({partyName:dispatchedGroup.partyName,transport:dispatchedGroup.transport,others:sameTransporter});
@@ -7305,8 +7305,8 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
           {/* Transporter suggestion banner — dispatch */}
           {transporterSuggest&&<div style={{background:"#0a1a2e",border:"1px solid #2563eb",borderRadius:"10px",padding:"12px 14px",marginBottom:"12px",display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:"10px",flexWrap:"wrap"}}>
             <div>
-              <div style={{fontSize:"12.5px",fontWeight:"700",color:"#93c5fd",marginBottom:"4px"}}>📦 Same Transporter for Dispatch — {transporterSuggest.transport}</div>
-              <div style={{fontSize:"11.5px",color:"#64748b",marginBottom:"6px"}}>These customers also use <strong style={{color:"#93c5fd"}}>{transporterSuggest.transport}</strong> — dispatch together:</div>
+              <div style={{fontSize:"12.5px",fontWeight:"700",color:"#93c5fd",marginBottom:"4px"}}>📦 Same Transporter for Dispatch — {transporterSuggest.transport||"(no transporter)"}</div>
+              <div style={{fontSize:"11.5px",color:"#64748b",marginBottom:"6px"}}>These customers also use <strong style={{color:"#93c5fd"}}>{transporterSuggest.transport||"the same transporter"}</strong> — dispatch together:</div>
               {transporterSuggest.others.map((g,i)=><div key={i} style={{fontSize:"12px",color:"#e2e8f0",padding:"2px 0"}}>
                 · <strong>{g.partyName}</strong> <span style={{color:"#475569"}}>({g.route} · {g.orders.reduce((a,o)=>a+(o.items||[]).filter(i=>i.status!=="Dispatched"&&i.balanceQty>0).length,0)} items)</span>
               </div>)}
