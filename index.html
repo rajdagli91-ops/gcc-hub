@@ -77,12 +77,16 @@ window._firebaseConfig=firebaseConfig;
 
 // Show any JS errors on screen instead of silent blank page
 window.onerror=function(msg,src,line,col,err){
+  var stack=err&&err.stack?err.stack:'(no stack)';
+  // Extract lines with gcc-hub to find the exact source line
+  var gccLines=stack.split('\n').filter(function(l){return l.includes('gcc-hub')||l.includes('eval')||l.includes('<anonymous>');}).slice(0,6).join('\n');
   document.getElementById('root').innerHTML=
     '<div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;background:#060b16;color:#fca5a5;font-family:monospace;gap:12px">'
     +'<div style="font-size:18px">⚠️ App Error</div>'
-    +'<div style="font-size:13px;color:#ef4444;max-width:600px;word-break:break-all;text-align:center">'+msg+'</div>'
-    +'<div style="font-size:11px;color:#475569">Line '+line+' · '+src+'</div>'
-    +'<div style="font-size:12px;color:#64748b;margin-top:8px">Please send a screenshot of this to your developer.</div>'
+    +'<div style="font-size:13px;color:#ef4444;max-width:700px;word-break:break-all;text-align:center">'+msg+'</div>'
+    +'<div style="font-size:11px;color:#475569">Line '+line+' · Col '+col+'</div>'
+    +'<div style="font-size:11px;color:#fcd34d;background:#0f0000;padding:10px;border-radius:6px;max-width:700px;white-space:pre-wrap;text-align:left;max-height:300px;overflow:auto">'+gccLines+'</div>'
+    +'<div style="font-size:10px;color:#475569;max-width:700px;white-space:pre-wrap;text-align:left;max-height:200px;overflow:auto">'+stack.replace(/</g,"&lt;").slice(0,2000)+'</div>'
     +'</div>';
 };
 </script>
@@ -1471,6 +1475,24 @@ function FieldVisitForm({complaint,user,showToast,allProfiles,allRoles}){
   </div>;
 }
 
+
+
+class ErrorBoundary extends React.Component{
+  constructor(p){super(p);this.state={err:null,info:null};}
+  componentDidCatch(err,info){this.setState({err,info});}
+  render(){
+    if(this.state.err){
+      const lines=(this.state.info?.componentStack||"").split("\n").slice(0,8).join("\n");
+      return <div style={{background:"#1a0000",border:"2px solid #ef4444",borderRadius:"10px",padding:"20px",margin:"20px",color:"#fca5a5",fontFamily:"monospace",fontSize:"13px"}}>
+        <div style={{fontSize:"16px",fontWeight:"700",color:"#ef4444",marginBottom:"10px"}}>⚠ App Error — Exact Location:</div>
+        <div style={{background:"#0f0000",padding:"10px",borderRadius:"6px",marginBottom:"10px",whiteSpace:"pre-wrap",color:"#fcd34d"}}>{String(this.state.err)}</div>
+        <div style={{background:"#0f0000",padding:"10px",borderRadius:"6px",fontSize:"11px",color:"#94a3b8",whiteSpace:"pre-wrap"}}>{lines}</div>
+        <button onClick={()=>this.setState({err:null,info:null})} style={{marginTop:"12px",background:"#7f1d1d",border:"1px solid #ef4444",borderRadius:"6px",padding:"6px 16px",color:"#fca5a5",cursor:"pointer",fontWeight:"700"}}>↩ Try Again</button>
+      </div>;
+    }
+    return this.props.children;
+  }
+}
 function CustomerSearchInput({value,customers,onChange}){
   const [search,setSearch]=useState(value||"");
   const [open,setOpen]=useState(false);
@@ -1486,7 +1508,6 @@ function CustomerSearchInput({value,customers,onChange}){
     </div>}
   </div>;
 }
-
 function ComplaintCard({c,onClick,onDelete,role}){
   const sc=CS_COL[c.status]||"#94a3b8";
   return <div onClick={onClick} onMouseEnter={e=>e.currentTarget.style.background="#0f1f35"} onMouseLeave={e=>e.currentTarget.style.background="#0f172a"}
@@ -12592,7 +12613,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
       </>}
       {tab==="bom"&&<BOMTab role={role} roles={roles} user={user} showToast={showToast} sysProducts={sysProducts} sysPackSizes={sysPackSizes} sysQcParams={sysQcParams}/>}
       {tab==="tasks"&&<TasksTab user={user} roles={roles} showToast={showToast} allRoles={allRoles} allProfiles={allProfiles}/>}
-      {tab==="orders"&&<OrdersTab role={role} roles={roles} user={user} showToast={showToast} isAdmin={isAdmin} hp={hp}/>}
+      {tab==="orders"&&<ErrorBoundary><OrdersTab role={role} roles={roles} user={user} showToast={showToast} isAdmin={isAdmin} hp={hp}/></ErrorBoundary>}
       {tab==="stock"&&<StockTab role={role} roles={roles} user={user} showToast={showToast} sysUnits={sysUnits} sysRmCats={sysRmCats} onAddRmCat={addGlobalRmCat} onAddUnit={addGlobalUnit} hp={hp}/>}
       {tab==="testimonials"&&<TestimonialsTab role={role} user={user} showToast={showToast}/>}
       {tab==="enquiries"&&<EnquiriesTab role={role} roles={roles} user={user} showToast={showToast} allProfiles={allProfiles} allRoles={allRoles} isAdmin={isAdmin} hp={hp}/>}
