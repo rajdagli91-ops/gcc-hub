@@ -5834,7 +5834,6 @@ function FGMovementsTab({role,user,showToast,isAdmin,canManage}){
 
 // Print today's dispatch list — plain ES5, defined in script block but called here
 function printDispatchList(groups,routeLabel,dateStr,fgProds){
-  // Calculate volume from FG catalogue if available
   function calcVol(name,qty){
     if(!fgProds||!fgProds.length)return null;
     var n=name.toLowerCase().trim();
@@ -5846,7 +5845,23 @@ function printDispatchList(groups,routeLabel,dateStr,fgProds){
     if(!prod||!prod.size)return null;
     return (qty*prod.size).toFixed(2)+' '+(prod.unit||'L');
   }
-  // Volume totals
+  function calcCtn(name,qty){
+    if(!fgProds||!fgProds.length)return '';
+    var n=name.toLowerCase().trim();
+    var prod=null;
+    for(var i=0;i<fgProds.length;i++){
+      var pn=(fgProds[i].name||'').toLowerCase().trim();
+      if(pn===n||pn.indexOf(n)!==-1||n.indexOf(pn)!==-1){prod=fgProds[i];break;}
+    }
+    if(!prod||!prod.tinsPerCarton)return '';
+    var tpc=prod.tinsPerCarton;
+    var cartons=Math.floor(qty/tpc);
+    var loose=qty%tpc;
+    var parts=[];
+    if(cartons>0)parts.push(cartons+' ctn');
+    if(loose>0)parts.push(loose+' loose');
+    return parts.join('+');
+  }
   var volTotals={};
   groups.forEach(function(g){g.items.forEach(function(it){
     if(!fgProds)return;
@@ -5857,24 +5872,21 @@ function printDispatchList(groups,routeLabel,dateStr,fgProds){
   });});
   var volSummary='';
   Object.keys(volTotals).forEach(function(u){volSummary+=' &nbsp;|&nbsp; <b>'+volTotals[u].toFixed(2)+' '+u+'</b>';});
-
   var css='*{box-sizing:border-box}body{font-family:Arial,sans-serif;margin:0;padding:4pt 6pt;font-size:8pt}@page{size:A4 portrait;margin:6mm}table{border-collapse:collapse;width:100%}tr{page-break-inside:avoid}td,th{padding:2pt 5pt}';
   var h='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Dispatch List<\/title><style>'+css+'<\/style><\/head><body>';
-  // Compact header — single line
   h+='<div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #000;padding-bottom:3pt;margin-bottom:4pt">';
   h+='<b style="font-size:11pt">VEEBEE — DISPATCH LIST<\/b>';
   h+='<span style="font-size:8pt"><b>'+dateStr+'<\/b> &nbsp;|&nbsp; Route: <b>'+routeLabel+'<\/b> &nbsp;|&nbsp; Customers: <b>'+groups.length+'<\/b>'+volSummary+'<\/span>';
   h+='<\/div>';
-  // All customers in one continuous table
-  h+='<table><tr><th style="border:1px solid #000;background:#e8e8e8;text-align:left;width:4%">#<\/th><th style="border:1px solid #000;background:#e8e8e8;text-align:left;width:22%">Customer<\/th><th style="border:1px solid #000;background:#e8e8e8;text-align:left;width:42%">Product<\/th><th style="border:1px solid #000;background:#e8e8e8;text-align:center;width:10%">Qty<\/th><th style="border:1px solid #000;background:#e8e8e8;text-align:center;width:10%">Volume<\/th><th style="border:1px solid #000;background:#e8e8e8;text-align:left;width:12%">Order No<\/th><\/tr>';
+  h+='<table><tr><th style="border:1px solid #000;background:#e8e8e8;text-align:left;width:4%">#<\/th><th style="border:1px solid #000;background:#e8e8e8;text-align:left;width:20%">Customer<\/th><th style="border:1px solid #000;background:#e8e8e8;text-align:left;width:38%">Product<\/th><th style="border:1px solid #000;background:#e8e8e8;text-align:center;width:7%">Qty<\/th><th style="border:1px solid #000;background:#e8e8e8;text-align:center;width:12%">Cartons<\/th><th style="border:1px solid #000;background:#e8e8e8;text-align:center;width:8%">Volume<\/th><th style="border:1px solid #000;background:#e8e8e8;text-align:left;width:11%">Order No<\/th><\/tr>';
   groups.forEach(function(g,gi){
     g.items.forEach(function(it,ii){
       var vol=calcVol(it.name,it.qty)||'';
+      var ctn=calcCtn(it.name,it.qty);
       var bg=gi%2===0?'#fff':'#f5f5f5';
       h+='<tr style="background:'+bg+'">';
       if(ii===0)h+='<td style="border:1px solid #000;font-weight:700;vertical-align:top" rowspan="'+g.items.length+'">'+(gi+1)+'<\/td><td style="border:1px solid #000;font-size:7.5pt;vertical-align:top" rowspan="'+g.items.length+'"><b>'+g.partyName+'<\/b><br><span style="color:#666;font-size:7pt">'+(g.isDirect?'Direct':g.transport)+'<\/span><\/td>';
-      else h+='';
-      h+='<td style="border:1px solid #000">'+it.name+'<\/td><td style="border:1px solid #000;text-align:center;font-weight:700">'+it.qty+'<\/td><td style="border:1px solid #000;text-align:center;color:#333">'+vol+'<\/td><td style="border:1px solid #000;font-size:7pt;color:#555">'+it.voucherNo+'<\/td><\/tr>';
+      h+='<td style="border:1px solid #000">'+it.name+'<\/td><td style="border:1px solid #000;text-align:center;font-weight:700">'+it.qty+'<\/td><td style="border:1px solid #000;text-align:center;color:#555;font-size:7.5pt">'+ctn+'<\/td><td style="border:1px solid #000;text-align:center;color:#333">'+vol+'<\/td><td style="border:1px solid #000;font-size:7pt;color:#555">'+it.voucherNo+'<\/td><\/tr>';
     });
   });
   h+='<\/table>';
@@ -6722,12 +6734,18 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
     return res;
   })();
 
-  const filteredToday=todayDispatched.filter(g=>{
-    if(search.trim()&&!normalize(g.partyName).includes(normalize(search)))return false;
-    if(printRouteFilter==="transport")return !g.isDirect;
-    if(printRouteFilter.startsWith("direct:"))return g.isDirect&&g.route===printRouteFilter.slice(7);
-    return true;
-  });
+  const filteredToday=(()=>{
+    // Helper: order goes with transport if it's non-direct OR it appears in transport sequence
+    const isTransportOrder=g=>!g.isDirect||getTransportSeq(g.partyName,g.transport)<999;
+    let res=todayDispatched.filter(g=>{
+      if(search.trim()&&!normalize(g.partyName).includes(normalize(search)))return false;
+      if(printRouteFilter==="transport")return isTransportOrder(g);
+      if(printRouteFilter==="directonly")return g.isDirect&&getTransportSeq(g.partyName,g.transport)===999;
+      if(printRouteFilter.startsWith("direct:"))return g.isDirect&&g.route===printRouteFilter.slice(7);
+      return true;
+    });
+    return [...res].sort((a,b)=>getTransportSeq(a.partyName,a.transport)-getTransportSeq(b.partyName,b.transport)||a.partyName.localeCompare(b.partyName));
+  })();
 
   // ── Transporter grouping (for booking consolidated dispatches) ──
   const transporterGroups=(()=>{
@@ -7512,22 +7530,24 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
         </button>}
         <div style={{display:"flex",alignItems:"center",gap:"4px",background:"#060d1a",border:"1px solid #1e293b",borderRadius:"6px",padding:"3px 6px"}}>
           <span style={{fontSize:"10px",color:"#475569",whiteSpace:"nowrap"}}>Print:</span>
-          <select value={printRouteFilter} onChange={e=>setPrintRouteFilter(e.target.value)} style={{...sl,fontSize:"11px",padding:"2px 4px",minWidth:"120px"}}>
-            <option value="All">All (Direct + Transport)</option>
-            <optgroup label="── Direct Routes ──">
+          <select value={printRouteFilter} onChange={e=>setPrintRouteFilter(e.target.value)} style={{...sl,fontSize:"11px",padding:"2px 4px",minWidth:"140px"}}>
+            <option value="All">All Orders</option>
+            <option value="transport">🏢 Transport (incl. sequenced direct)</option>
+            <option value="directonly">🚚 Direct Only (not in sequence)</option>
+            <optgroup label="── By Direct Route ──">
               {[...new Set(todayDispatched.filter(g=>g.isDirect).map(g=>g.route).filter(Boolean))].sort().map(r=><option key={"d_"+r} value={"direct:"+r}>🚚 {r}</option>)}
             </optgroup>
-            {todayDispatched.some(g=>!g.isDirect)&&<optgroup label="── Transport ──">
-              <option value="transport">🏢 Transporter (all)</option>
-            </optgroup>}
           </select>
         </div>
         <button onClick={()=>{
           let toPrint=filteredToday;
           let label="All Routes";
-          if(printRouteFilter.startsWith("direct:")){toPrint=filteredToday.filter(g=>g.isDirect&&g.route===printRouteFilter.slice(7));label="Direct · "+printRouteFilter.slice(7);}
-          else if(printRouteFilter==="transport"){toPrint=filteredToday.filter(g=>!g.isDirect);label="Via Transporter";}
-          printDispatchList(toPrint,label,new Date().toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"}),fgProducts);
+          if(printRouteFilter==="transport"){label="Transport + Sequenced Direct";}
+          else if(printRouteFilter==="directonly"){label="Direct Only";}
+          else if(printRouteFilter.startsWith("direct:")){label="Direct · "+printRouteFilter.slice(7);}
+          const printDate=dispatchDateStr?new Date(dispatchDateStr+"T00:00:00").toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"}):new Date().toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"});
+          const sorted=[...toPrint].sort((a,b)=>getTransportSeq(a.partyName,a.transport)-getTransportSeq(b.partyName,b.transport)||a.partyName.localeCompare(b.partyName));
+          printDispatchList(sorted,label,printDate,fgProducts);
         }} style={{background:"#0a1a2e",border:"1px solid #1e3a5f",borderRadius:"7px",padding:"6px 12px",color:"#93c5fd",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>🖨 Print</button>
       </>}
         </div>
