@@ -7814,7 +7814,6 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
                       {removed?"↩":"✕"}
                     </button>
                   </div>
-                  <span style={{color:"#334155",fontSize:"10px",flexShrink:0}}>{item.voucherNo}</span>
                 </div>;
               })}
             </div>;
@@ -7987,13 +7986,27 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
             if(!stagedList.length)return null;
             if(transportPrepView==="customer"){
               const byC={};stagedList.forEach(i=>{if(!byC[i.partyName])byC[i.partyName]={partyName:i.partyName,transport:i.transport,route:i.route,items:[]};byC[i.partyName].items.push(i);});
-              return Object.values(byC).map(c=><div key={c.partyName} style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"8px",marginBottom:"6px",overflow:"hidden"}}>
-                <div style={{padding:"7px 12px",fontSize:"12px",fontWeight:"700",color:"#f1f5f9",borderBottom:"1px solid #0f172a"}}>{c.partyName}<span style={{fontSize:"10px",color:"#93c5fd",marginLeft:"8px"}}>🏢 {c.transport}</span></div>
-                {c.items.map((it,ii)=><div key={ii} style={{display:"flex",justifyContent:"space-between",padding:"4px 12px",borderTop:ii===0?"none":"1px solid #0f172a",fontSize:"11.5px"}}>
-                  <span style={{color:"#94a3b8",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{it.name}</span>
-                  <span style={{color:"#fcd34d",fontWeight:"700",flexShrink:0}}>{it.qty}</span>
-                </div>)}
-              </div>);
+              // Sort by delivery sequence
+              const sorted=Object.values(byC).sort((a,b)=>getTransportSeq(a.partyName,a.transport)-getTransportSeq(b.partyName,b.transport)||a.partyName.localeCompare(b.partyName));
+              return sorted.map((c,ci)=>{
+                const seq=getTransportSeq(c.partyName,c.transport);
+                return <div key={c.partyName} style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"8px",marginBottom:"6px",overflow:"hidden"}}>
+                  <div style={{padding:"7px 12px",fontSize:"12px",fontWeight:"700",color:"#f1f5f9",borderBottom:"1px solid #0f172a",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <span>{seq<999&&<span style={{fontSize:"10px",color:"#a78bfa",marginRight:"5px"}}>#{seq}</span>}{c.partyName}</span>
+                    <span style={{fontSize:"10px",color:"#93c5fd"}}>🏢 {c.transport}</span>
+                  </div>
+                  {c.items.map((it,ii)=>{
+                    const ct=calcCartons(it.name,it.qty);
+                    return <div key={ii} style={{display:"flex",justifyContent:"space-between",padding:"4px 12px",borderTop:ii===0?"none":"1px solid #0f172a",fontSize:"11.5px",gap:"6px"}}>
+                      <span style={{color:"#94a3b8",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{it.name}</span>
+                      <div style={{display:"flex",gap:"5px",alignItems:"center",flexShrink:0}}>
+                        {ct&&<span style={{fontSize:"10px",color:"#a78bfa",background:"#12083a",border:"1px solid #7c3aed30",borderRadius:"4px",padding:"1px 4px"}}>{ct.cartons>0?ct.cartons+" ctn":""}{ct.loose>0?(ct.cartons>0?" + ":"")+ct.loose+" loose":""}</span>}
+                        <span style={{color:"#fcd34d",fontWeight:"700"}}>{it.qty}</span>
+                      </div>
+                    </div>;
+                  })}
+                </div>;
+              });
             }
             if(transportPrepView==="product"){
               const byP={};stagedList.forEach(i=>{if(!byP[i.name])byP[i.name]={name:i.name,total:0,customers:[]};byP[i.name].total+=i.qty;byP[i.name].customers.push(i);});
