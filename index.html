@@ -6219,7 +6219,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
     const seen={};
     Object.values(customerMap).filter(c=>!c.isDirect&&c.transport).forEach(c=>{
       const k=normTKey(c.transport);
-      if(!seen[k])seen[k]=c.transport.trim().toUpperCase(); // keep first seen, normalised to upper
+      if(!seen[k])seen[k]=(c.transport||"").trim().toUpperCase(); // keep first seen, normalised to upper
     });
     return Object.values(seen).sort();
   })();
@@ -6394,8 +6394,8 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
     if(!custForm.customer.trim()||!custForm.route.trim())return showToast("Customer name and route required","error");
     setCustSaving(true);
     try{
-      const isDirect=custForm.isDirect||custForm.transport.toLowerCase().includes("direct");
-      const normalizedTransport=isDirect?"DIRECT":custForm.transport.trim().toUpperCase().replace(/\.+/g,"").replace(/\s+/g," ");
+      const isDirect=custForm.isDirect||(custForm.transport||"").toLowerCase().includes("direct");
+      const normalizedTransport=isDirect?"DIRECT":(custForm.transport||"").trim().toUpperCase().replace(/\.+/g,"").replace(/\s+/g," ");
       const key=normalize(custForm.customer.trim());
       const newEntry={customer:custForm.customer.trim(),transport:normalizedTransport,route:custForm.route.trim(),isDirect};
       const newMap={...customerMap,[key]:newEntry};
@@ -7182,7 +7182,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
               for(const c of unknownCusts){
                 if(!c.route.trim())continue;
                 const key=normalize(c.partyName);
-                const isDirect=c.isDirect||c.transport.toLowerCase().includes("direct");
+                const isDirect=c.isDirect||(c.transport||"").toLowerCase().includes("direct");
                 newMap[key]={customer:c.partyName,transport:c.transport||"DIRECT",route:c.route.trim(),isDirect};
                 routeSet.add(c.route.trim());
               }
@@ -7246,8 +7246,8 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
                 <input style={inp} list="setup-trans-list" value={custForm.transport} onChange={e=>setCustForm({...custForm,transport:e.target.value,isDirect:e.target.value.toLowerCase().includes("direct")})} placeholder="Select or type new transporter…"/>
                 <datalist id="setup-trans-list"><option value="DIRECT"/>{transporterNames.map(t=><option key={t} value={t}/>)}</datalist>
               </div>
-              {custForm.transport.trim()&&!custForm.isDirect&&!transporterNames.find(t=>normTKey(t)===normTKey(custForm.transport))&&<button onClick={async()=>{
-                const name=custForm.transport.trim().toUpperCase().replace(/\.+/g,"").replace(/\s+/g," "); // normalize
+              {(custForm.transport||"").trim()&&!custForm.isDirect&&!transporterNames.find(t=>normTKey(t)===normTKey(custForm.transport))&&<button onClick={async()=>{
+                const name=(custForm.transport||"").trim().toUpperCase().replace(/\.+/g,"").replace(/\s+/g," "); // normalize
                 const newMap={...customerMap};
                 const tempKey="__trans__"+normTKey(name);
                 newMap[tempKey]={customer:"",transport:name,route:"",isDirect:false,_transportOnly:true};
