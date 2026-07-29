@@ -7540,12 +7540,8 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
             <button onClick={()=>setDispatchDateChoice("tomorrow")} style={{background:dispatchDateChoice==="tomorrow"?"#1e3a5f":"transparent",border:"none",borderRadius:"5px",padding:"4px 12px",color:dispatchDateChoice==="tomorrow"?"#93c5fd":"#475569",fontWeight:"700",fontSize:"11.5px",cursor:"pointer"}}>📅 Tomorrow ({new Date(Date.now()+86400000).toISOString().slice(5,10)})</button>
           </div>
         </div>
-        <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
-      {filteredToday.length>0&&<>
-        {filteredToday.some(g=>g.items.some(i=>!i.confirmed))&&canDispatch&&<button onClick={confirmAllDispatches} disabled={saving}
-          style={{background:"#052e16",border:"1px solid #166534",borderRadius:"7px",padding:"6px 12px",color:"#4ade80",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>
-          {saving?"…":"✓ Confirm All Dispatched"}
-        </button>}
+        <div style={{display:"flex",gap:"6px",flexWrap:"wrap",alignItems:"center"}}>
+        {/* Print filter always visible regardless of filteredToday */}
         <div style={{display:"flex",alignItems:"center",gap:"4px",background:"#060d1a",border:"1px solid #1e293b",borderRadius:"6px",padding:"3px 6px"}}>
           <span style={{fontSize:"10px",color:"#475569",whiteSpace:"nowrap"}}>Print:</span>
           <select value={printRouteFilter} onChange={e=>setPrintRouteFilter(e.target.value)} style={{...sl,fontSize:"11px",padding:"2px 4px",minWidth:"140px"}}>
@@ -7557,6 +7553,11 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
             </optgroup>
           </select>
         </div>
+      {filteredToday.length>0&&<>
+        {filteredToday.some(g=>g.items.some(i=>!i.confirmed))&&canDispatch&&<button onClick={confirmAllDispatches} disabled={saving}
+          style={{background:"#052e16",border:"1px solid #166534",borderRadius:"7px",padding:"6px 12px",color:"#4ade80",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>
+          {saving?"…":"✓ Confirm All Dispatched"}
+        </button>}
         <button onClick={()=>{
           let toPrint=filteredToday;
           let label="All Routes";
@@ -7571,11 +7572,17 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
         </div>
       </div>
 
-      {/* Volume summary */}
-      {(()=>{const vols={};filteredToday.forEach(g=>g.items.forEach(i=>{if(i.vol){vols[i.vol.unit]=(vols[i.vol.unit]||0)+i.vol.vol;}}));
-        return Object.keys(vols).length>0&&<div style={{background:"#060d1a",border:"1px solid #1e3a5f",borderRadius:"8px",padding:"8px 14px",marginBottom:"10px",display:"flex",gap:"16px",flexWrap:"wrap"}}>
-          <span style={{fontSize:"11.5px",color:"#64748b",fontWeight:"700"}}>Total Volume:</span>
-          {Object.entries(vols).map(([u,v])=><span key={u} style={{fontSize:"13px",fontWeight:"700",color:"#93c5fd"}}>{v.toFixed(2)} {u}</span>)}
+      {/* Carton summary */}
+      {(()=>{
+        let totalCartons=0,totalLoose=0;
+        filteredToday.forEach(g=>g.items.forEach(i=>{
+          const ct=calcCartons(i.name,i.qty);
+          if(ct){totalCartons+=ct.cartons;totalLoose+=ct.loose;}
+        }));
+        return (totalCartons>0||totalLoose>0)&&<div style={{background:"#060d1a",border:"1px solid #7c3aed40",borderRadius:"8px",padding:"8px 14px",marginBottom:"10px",display:"flex",gap:"16px",flexWrap:"wrap",alignItems:"center"}}>
+          <span style={{fontSize:"11.5px",color:"#64748b",fontWeight:"700"}}>Total:</span>
+          {totalCartons>0&&<span style={{fontSize:"13px",fontWeight:"700",color:"#a78bfa"}}>{totalCartons} cartons</span>}
+          {totalLoose>0&&<span style={{fontSize:"13px",fontWeight:"700",color:"#c4b5fd"}}>{totalLoose} loose tins</span>}
         </div>;
       })()}
 
@@ -7617,7 +7624,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
                   <div style={{fontSize:"11.5px",color:item.confirmed?"#64748b":"#e2e8f0",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.name}</div>
                   <div style={{display:"flex",gap:"5px",alignItems:"center",flexShrink:0}}>
                     <span style={{fontSize:"12.5px",fontWeight:"700",color:item.confirmed?"#475569":"#4ade80"}}>{item.qty}</span>
-                    {item.vol&&<span style={{fontSize:"10px",color:"#64748b",background:"#0b1220",border:"1px solid #1e293b",borderRadius:"4px",padding:"1px 5px"}}>{item.vol.vol} {item.vol.unit}</span>}
+                    {(()=>{const ct=calcCartons(item.name,item.qty);return ct&&(ct.cartons>0||ct.loose>0)?<span style={{fontSize:"10px",color:"#a78bfa",background:"#12083a",border:"1px solid #7c3aed30",borderRadius:"4px",padding:"1px 5px"}}>{ct.cartons>0?ct.cartons+" ctn":""}{ct.loose>0?(ct.cartons>0?" + ":"")+ct.loose+" loose":""}</span>:null;})()}
                     {item.confirmed&&<span style={{fontSize:"9px",color:"#4ade80",background:"#052e16",borderRadius:"3px",padding:"1px 5px"}}>✓</span>}
                     <span style={{fontSize:"9.5px",color:"#334155"}}>{item.voucherNo}</span>
                   </div>
