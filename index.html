@@ -6823,10 +6823,21 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
   const [directPrepArea,setDirectPrepArea]=useState("All");
   const [directQtyOverrides,setDirectQtyOverrides]=useState({});
   const [loadingSeq,setLoadingSeq]=useState(false);
+  const [addSeqEntry,setAddSeqEntry]=useState({name:"",seq:""}); // for adding single transport entry
 
   useEffect(()=>{
     C("settings").doc("deliverySequence").onSnapshot(s=>{if(s.exists)setDeliverySequence(s.data());},()=>{});
   },[]);
+
+  const saveTransportSeqEntry=async(name,seq)=>{
+    if(!name.trim()||!seq)return;
+    const key=normalize(name.trim());
+    const existing=(await C("settings").doc("deliverySequence").get()).data()||{direct:{},transport:{}};
+    const updated={...existing,transport:{...(existing.transport||{}),[key]:{name:name.trim(),seq:parseFloat(seq)}}};
+    await C("settings").doc("deliverySequence").set(updated);
+    showToast(`${name.trim()} added at position ${seq} ✓`);
+    setAddSeqEntry({name:"",seq:""});
+  };
 
   const importDeliverySequence=async(file,type)=>{
     setLoadingSeq(true);
@@ -6847,10 +6858,29 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
           seqMap[normalize(name)]={name,seq};
         });
       });
-      const existing=(await C("settings").doc("deliverySequence").get()).data()||{direct:{},transport:{}};
-      // OVERWRITE (not merge) the specific type so re-upload fully replaces
-      if(type==="direct")await C("settings").doc("deliverySequence").set({...existing,direct:seqMap});
-      else await C("settings").doc("deliverySequence").set({...existing,transport:seqMap});
+      if(type==="direct"){
+        const existingDoc=(await C("settings").doc("deliverySequence").get()).data()||{direct:{},transport:{}};
+        const routeSeqs={...(existingDoc.direct||{})};
+        wb.SheetNames.forEach(sheetName=>{
+          const routeKey=normalize(sheetName.trim()||"all");
+          let counter=0;
+          const ws=wb.Sheets[sheetName];
+          const rows=XLSX.utils.sheet_to_json(ws,{header:1});
+          const entries={};
+          rows.forEach(row=>{
+            const name=String(row[0]||"").trim();
+            if(!name||name.toLowerCase()==="name"||name.toLowerCase()==="customer"||name.toLowerCase()==="transporter")return;
+            counter++;
+            const seq=parseFloat(row[1])||counter;
+            entries[normalize(name)]={name,seq};
+          });
+          routeSeqs[routeKey]=entries;
+        });
+        await C("settings").doc("deliverySequence").set({...existingDoc,direct:routeSeqs});
+      } else {
+        const existingDoc=(await C("settings").doc("deliverySequence").get()).data()||{direct:{},transport:{}};
+        await C("settings").doc("deliverySequence").set({...existingDoc,transport:seqMap});
+      }
       // Also add any new transport names to the customerTransport map so they appear in dropdowns
       const custMapDoc=await C("settings").doc("customerTransport").get();
       const existingCustMap=(custMapDoc.exists?custMapDoc.data().map:null)||{};
@@ -7749,9 +7779,9 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
         </div>
         <div style={{display:"flex",gap:"5px",alignItems:"center"}}>
           <span style={{fontSize:"10.5px",color:"#64748b"}}>Sequence:</span>
-          <button onClick={()=>document.getElementById("dir-seq-import").click()} disabled={loadingSeq} style={{background:"#060d1a",border:"1px solid #166534",borderRadius:"5px",padding:"3px 10px",color:"#4ade80",fontSize:"11px",fontWeight:"700",cursor:"pointer"}}>⬆ Upload Sequence</button>
+          <button onClick={()=>document.getElementById("dir-seq-import").click()} disabled={loadingSeq} style={{background:"#060d1a",border:"1px solid #166534",borderRadius:"5px",padding:"3px 10px",color:"#4ade80",fontSize:"11px",fontWeight:"700",cursor:"pointer"}}>⬆ {directPrepArea==="All"?"Upload (All Routes)":"Upload for "+directPrepArea}</button>
           <input id="dir-seq-import" type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={async e=>{if(e.target.files[0]){await importDeliverySequence(e.target.files[0],"direct");e.target.value="";}}}/>
-        </div>
+          <span style={{fontSize:"9.5px",color:"#334155"}}>Each sheet = one route</span>        </div>
       </div>
 
       {/* Area filter + admin management */}
@@ -7788,7 +7818,14 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
           if(isBhiwandi(g.route||""))return directPrepArea==="All"||normRoute(directPrepArea)==="All"||isBhiwandi(directPrepArea);
           return false;
         });
-        const sorted=[...dirGroups].sort((a,b)=>seqSort(a.partyName,b.partyName,deliverySequence.direct||{}));
+        const sorted=[...dirGroups].sort((a,b)=>{
+          // Get route-specific sequence map, fall back to "all"
+          const routeKey=normalize(directPrepArea==="All"?"all":directPrepArea);
+          const seqMap=(deliverySequence.direct||{})[routeKey]||(deliverySequence.direct||{})["all"]||{};
+          const sa=seqMap[normalize(a.partyName)]?.seq??999;
+          const sb=seqMap[normalize(b.partyName)]?.seq??999;
+          return sa!==sb?sa-sb:(a.partyName||"").localeCompare(b.partyName||"");
+        });
         if(sorted.length===0)return <div style={{textAlign:"center",padding:"40px",border:"2px dashed #1e293b",borderRadius:"10px",color:"#334155"}}>No pending direct orders{directPrepArea!=="All"?` for ${directPrepArea}`:""}</div>;
         return <div>
           <div style={{fontSize:"11px",color:"#475569",marginBottom:"8px"}}>{sorted.length} customer{sorted.length!==1?"s":""} · {sorted.reduce((a,g)=>a+g.orders.reduce((b,o)=>(o.items||[]).filter(i=>i.balanceQty>0&&i.status!=="Dispatched").length+b,0),0)} items{Object.keys(deliverySequence.direct||{}).length>0?" · sorted by delivery sequence":""}</div>
@@ -7906,8 +7943,13 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
         </div>
         <div style={{display:"flex",gap:"5px",alignItems:"center",flexWrap:"wrap",flexShrink:0}}>
           <span style={{fontSize:"10.5px",color:"#64748b"}}>Sequence:</span>
-          <button onClick={()=>document.getElementById("trn-seq-import").click()} disabled={loadingSeq} style={{background:"#060d1a",border:"1px solid #7c3aed",borderRadius:"5px",padding:"3px 9px",color:"#c4b5fd",fontSize:"11px",fontWeight:"700",cursor:"pointer"}}>⬆ Upload</button>
+          <button onClick={()=>document.getElementById("trn-seq-import").click()} disabled={loadingSeq} style={{background:"#060d1a",border:"1px solid #7c3aed",borderRadius:"5px",padding:"3px 9px",color:"#c4b5fd",fontSize:"11px",fontWeight:"700",cursor:"pointer"}}>⬆ Upload All</button>
           <input id="trn-seq-import" type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={async e=>{if(e.target.files[0]){await importDeliverySequence(e.target.files[0],"transport");e.target.value="";}}}/>
+          {/* Add single entry without full re-upload */}
+          <input style={{...inp,width:"130px",padding:"2px 6px",fontSize:"11px"}} list="trans-seq-datalist" value={addSeqEntry.name} onChange={e=>setAddSeqEntry(v=>({...v,name:e.target.value}))} placeholder="Transporter name"/>
+          <datalist id="trans-seq-datalist">{transporterNames.map(t=><option key={t} value={t}/>)}</datalist>
+          <input style={{...inp,width:"50px",padding:"2px 6px",fontSize:"11px",textAlign:"center"}} type="number" value={addSeqEntry.seq} onChange={e=>setAddSeqEntry(v=>({...v,seq:e.target.value}))} placeholder="#"/>
+          <button onClick={()=>saveTransportSeqEntry(addSeqEntry.name,addSeqEntry.seq)} disabled={!addSeqEntry.name.trim()||!addSeqEntry.seq} style={{background:"#12083a",border:"1px solid #7c3aed",borderRadius:"5px",padding:"3px 9px",color:"#c4b5fd",fontSize:"11px",fontWeight:"700",cursor:"pointer"}}>+ Add</button>
         </div>
       </div>
       {stagedTransportItems.length>0&&<div style={{display:"flex",gap:"5px",flexWrap:"wrap",alignItems:"center",marginBottom:"10px"}}>
