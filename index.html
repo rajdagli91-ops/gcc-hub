@@ -6737,21 +6737,17 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
   const getTransportSeq=(partyName,transport)=>{
     const seqMap=deliverySequence.transport||{};
     if(!Object.keys(seqMap).length)return 999;
-    // Use same normalize() as import — strips spaces, dots, hyphens, special chars
     const normParty=normalize(partyName||"");
     const normTrans=normalize(transport||"");
-    // 1. Exact transporter match (primary)
     if(seqMap[normTrans])return seqMap[normTrans].seq;
-    // 2. Partial transporter — ignore short keys (min 4 chars) to avoid false positives
     const partialTrans=Object.keys(seqMap).find(k=>k.length>=4&&(normTrans.includes(k)||k.includes(normTrans)));
     if(partialTrans)return seqMap[partialTrans].seq;
-    // 3. Exact customer name match (individual override)
     if(seqMap[normParty])return seqMap[normParty].seq;
-    // 4. Partial customer name
     const partialCust=Object.keys(seqMap).find(k=>k.length>=4&&(normParty.includes(k)||k.includes(normParty)));
     if(partialCust)return seqMap[partialCust].seq;
     return 999;
   };
+  const seqSortFn=(a,b)=>getTransportSeq(a.partyName,a.transport)-getTransportSeq(b.partyName,b.transport)||((a.partyName||"").localeCompare(b.partyName||""));
 
   const filteredToday=(()=>{
     // Helper: order goes with transport if it's non-direct OR it appears in transport sequence
@@ -6763,7 +6759,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
       if(printRouteFilter.startsWith("direct:"))return g.isDirect&&g.route===printRouteFilter.slice(7);
       return true;
     });
-    return [...res].sort((a,b)=>getTransportSeq(a.partyName,a.transport)-getTransportSeq(b.partyName,b.transport)||a.partyName.localeCompare(b.partyName));
+    return [...res].sort(seqSortFn);
   })();
 
   // ── Transporter grouping (for booking consolidated dispatches) ──
@@ -7547,7 +7543,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
           else if(printRouteFilter==="directonly"){label="Direct Only";}
           else if(printRouteFilter.startsWith("direct:")){label="Direct · "+printRouteFilter.slice(7);}
           const printDate=dispatchDateStr?new Date(dispatchDateStr+"T00:00:00").toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"}):new Date().toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"});
-          const sorted=[...toPrint].sort((a,b)=>getTransportSeq(a.partyName,a.transport)-getTransportSeq(b.partyName,b.transport)||a.partyName.localeCompare(b.partyName));
+          const sorted=[...toPrint].sort(seqSortFn);
           printDispatchList(sorted,label,printDate,fgProducts);
         }} style={{background:"#0a1a2e",border:"1px solid #1e3a5f",borderRadius:"7px",padding:"6px 12px",color:"#93c5fd",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>🖨 Print</button>
       </>}
@@ -7909,7 +7905,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
               if(!byCustomer[i.partyName])byCustomer[i.partyName]={partyName:i.partyName,transport:i.transport,route:i.route,items:[]};
               byCustomer[i.partyName].items.push(i);
             });
-            return Object.values(byCustomer).sort((a,b)=>getTransportSeq(a.partyName,a.transport)-getTransportSeq(b.partyName,b.transport)||a.partyName.localeCompare(b.partyName)).map(cg=><div key={cg.partyName} style={{background:"#0b1220",border:"1px solid #7c3aed40",borderLeft:"3px solid #a78bfa",borderRadius:"8px",marginBottom:"6px",overflow:"hidden"}}>
+            return Object.values(byCustomer).sort(seqSortFn).map(cg=><div key={cg.partyName} style={{background:"#0b1220",border:"1px solid #7c3aed40",borderLeft:"3px solid #a78bfa",borderRadius:"8px",marginBottom:"6px",overflow:"hidden"}}>
               <div style={{padding:"7px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:"6px",flexWrap:"wrap"}}>
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{fontSize:"12px",fontWeight:"700",color:"#f1f5f9",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
@@ -8008,7 +8004,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
             if(transportPrepView==="customer"){
               const byC={};stagedList.forEach(i=>{if(!byC[i.partyName])byC[i.partyName]={partyName:i.partyName,transport:i.transport,route:i.route,items:[]};byC[i.partyName].items.push(i);});
               // Sort by delivery sequence
-              const sorted=Object.values(byC).sort((a,b)=>getTransportSeq(a.partyName,a.transport)-getTransportSeq(b.partyName,b.transport)||a.partyName.localeCompare(b.partyName));
+              const sorted=Object.values(byC).sort(seqSortFn);
               return sorted.map((c,ci)=>{
                 const seq=getTransportSeq(c.partyName,c.transport);
                 return <div key={c.partyName} style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"8px",marginBottom:"6px",overflow:"hidden"}}>
