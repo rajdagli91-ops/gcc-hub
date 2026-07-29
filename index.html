@@ -6285,8 +6285,9 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
     }
   };
   const [fgProducts,setFgProducts]=useState([]);
-  const [newItemsPrompt,setNewItemsPrompt]=useState(null); // {items:[{name,voucherNo}], pendingImport:{}}
-  const [newItemForms,setNewItemForms]=useState({});  // itemName -> {size, tpc, packType}
+  const [quickAddCustomer,setQuickAddCustomer]=useState(null);
+  const [newItemsPrompt,setNewItemsPrompt]=useState(null);
+  const [newItemForms,setNewItemForms]=useState({});
   const [confirmingDispatch,setConfirmingDispatch]=useState(null);
   const [transporterSuggest,setTransporterSuggest]=useState(null);
 
