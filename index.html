@@ -6755,6 +6755,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
     return res;
   })();
 
+  const [deliverySequence,setDeliverySequence]=useState({direct:{},transport:{}});
   const getTransportSeq=(partyName,transport)=>{
     const seqMap=deliverySequence.transport||{};
     if(!Object.keys(seqMap).length)return 999;
@@ -6821,7 +6822,6 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
   const [transportPrepView,setTransportPrepView]=useState("customer");
   const [directPrepArea,setDirectPrepArea]=useState("All");
   const [directQtyOverrides,setDirectQtyOverrides]=useState({});
-  const [deliverySequence,setDeliverySequence]=useState({direct:{},transport:{}});
   const [loadingSeq,setLoadingSeq]=useState(false);
 
   useEffect(()=>{
