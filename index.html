@@ -6734,6 +6734,25 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
     return res;
   })();
 
+  const getTransportSeq=(partyName,transport)=>{
+    const seqMap=deliverySequence.transport||{};
+    if(!Object.keys(seqMap).length)return 999;
+    // Use same normalize() as import — strips spaces, dots, hyphens, special chars
+    const normParty=normalize(partyName||"");
+    const normTrans=normalize(transport||"");
+    // 1. Exact transporter match (primary)
+    if(seqMap[normTrans])return seqMap[normTrans].seq;
+    // 2. Partial transporter — ignore short keys (min 4 chars) to avoid false positives
+    const partialTrans=Object.keys(seqMap).find(k=>k.length>=4&&(normTrans.includes(k)||k.includes(normTrans)));
+    if(partialTrans)return seqMap[partialTrans].seq;
+    // 3. Exact customer name match (individual override)
+    if(seqMap[normParty])return seqMap[normParty].seq;
+    // 4. Partial customer name
+    const partialCust=Object.keys(seqMap).find(k=>k.length>=4&&(normParty.includes(k)||k.includes(normParty)));
+    if(partialCust)return seqMap[partialCust].seq;
+    return 999;
+  };
+
   const filteredToday=(()=>{
     // Helper: order goes with transport if it's non-direct OR it appears in transport sequence
     const isTransportOrder=g=>!g.isDirect||getTransportSeq(g.partyName,g.transport)<999;
@@ -6854,24 +6873,6 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
     return sa!==sb?sa-sb:a.localeCompare(b);
   };
 
-  const getTransportSeq=(partyName,transport)=>{
-    const seqMap=deliverySequence.transport||{};
-    if(!Object.keys(seqMap).length)return 999;
-    // Use same normalize() as import — strips spaces, dots, hyphens, special chars
-    const normParty=normalize(partyName||"");
-    const normTrans=normalize(transport||"");
-    // 1. Exact transporter match (primary)
-    if(seqMap[normTrans])return seqMap[normTrans].seq;
-    // 2. Partial transporter — ignore short keys (min 4 chars) to avoid false positives
-    const partialTrans=Object.keys(seqMap).find(k=>k.length>=4&&(normTrans.includes(k)||k.includes(normTrans)));
-    if(partialTrans)return seqMap[partialTrans].seq;
-    // 3. Exact customer name match (individual override)
-    if(seqMap[normParty])return seqMap[normParty].seq;
-    // 4. Partial customer name
-    const partialCust=Object.keys(seqMap).find(k=>k.length>=4&&(normParty.includes(k)||k.includes(normParty)));
-    if(partialCust)return seqMap[partialCust].seq;
-    return 999;
-  };
   const [stagingSaving,setStagingSaving]=useState(false);
 
   // Stage/unstage items in Firestore — gives live updates to all users via onSnapshot
