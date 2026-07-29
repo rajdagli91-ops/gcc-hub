@@ -6254,9 +6254,27 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
         await docRef.update({...order,items:san(mergedItems),status:allDone?"Dispatched":anyDone?"Partial":"Pending",lastImportedAt:ts()});
         updCount++;
       }else{
+        // Check if any items are not in FG catalogue
+        const unknownItems=(order.items||[]).filter(i=>!fgProducts.some(p=>normalize(p.name)===normalize(i.name)||normalize(i.name).includes(normalize(p.name))));
+        if(unknownItems.length>0){
+          // Guess pack type from name: "2L" or "20L" patterns suggest single; "2 PK" or "COMBO" suggest 2-pack
+          unknownItems.forEach(i=>{
+            if(!newItemForms[i.name]){
+              const lname=i.name.toLowerCase();
+              const guessedPack=lname.includes("2pk")||lname.includes("2 pk")||lname.includes("combo")||lname.includes("twin")?"2-pack":"single";
+              const sizeMatch=i.name.match(/(\d+(?:\.\d+)?)\s*(l|ltr|litre|ml|kg|g)\b/i);
+              const guessedSize=sizeMatch?parseFloat(sizeMatch[1]):"";
+              setNewItemForms(f=>({...f,[i.name]:{size:guessedSize,tpc:"",packType:guessedPack}}));
+            }
+          });
+        }
         await docRef.set({...order,importedBy:user.email,importedAt:ts(),lastImportedAt:ts()});
         newCount++;
       }
+    }
+    const unknownItemNames=[...new Set(Object.keys(newItemForms))];
+    if(unknownItemNames.length>0){
+      setNewItemsPrompt({items:unknownItemNames});
     }
     let msg=`Import done: ${newCount} new · ${updCount} updated · ${closedCount} auto-closed ✓`;
     if(alreadyDispatched.length>0){
@@ -6267,7 +6285,8 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
     }
   };
   const [fgProducts,setFgProducts]=useState([]);
-  const [quickAddCustomer,setQuickAddCustomer]=useState(null);
+  const [newItemsPrompt,setNewItemsPrompt]=useState(null); // {items:[{name,voucherNo}], pendingImport:{}}
+  const [newItemForms,setNewItemForms]=useState({});  // itemName -> {size, tpc, packType}
   const [confirmingDispatch,setConfirmingDispatch]=useState(null);
   const [transporterSuggest,setTransporterSuggest]=useState(null);
 
@@ -6472,6 +6491,14 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
     const prod=fgProducts.find(p=>normalize(p.name)===normalize(itemName)||normalize(itemName).includes(normalize(p.name)));
     if(!prod||!prod.size)return null;
     return {vol:parseFloat((qty*prod.size).toFixed(2)),unit:prod.unit||"L"};
+  };
+
+  const calcCartons=(itemName,qty)=>{
+    const prod=fgProducts.find(p=>normalize(p.name)===normalize(itemName)||normalize(itemName).includes(normalize(p.name)));
+    if(!prod||!prod.tinsPerCarton)return null;
+    const cartons=Math.floor(qty/prod.tinsPerCarton);
+    const loose=qty%(prod.tinsPerCarton);
+    return {cartons,loose,tpc:prod.tinsPerCarton};
   };
 
   // ── Reverse a confirmed dispatch within 24h ──
@@ -7032,6 +7059,56 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
     </div>}
 
     {/* ── UNKNOWN CUSTOMERS MODAL — appears after import detects new customers ── */}
+    {/* ── New item size prompt modal ── */}
+    {newItemsPrompt&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:310,display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <div style={{background:"#0b1220",border:"1px solid #22c55e60",borderRadius:"14px",padding:"20px",width:"min(560px,96vw)",maxHeight:"90vh",overflowY:"auto"}}>
+        <div style={{fontSize:"14px",fontWeight:"700",color:"#4ade80",marginBottom:"4px"}}>📦 New Products Found</div>
+        <div style={{fontSize:"11.5px",color:"#64748b",marginBottom:"14px"}}>{newItemsPrompt.items.length} product{newItemsPrompt.items.length!==1?"s":""} not in FG catalogue. Add pack details so carton counts work in Transport Prep.</div>
+        {newItemsPrompt.items.map((name,i)=>{
+          const f=newItemForms[name]||{size:"",tpc:"",packType:"single"};
+          const update=patch=>setNewItemForms(prev=>({...prev,[name]:{...f,...patch}}));
+          return <div key={i} style={{background:"#060d1a",border:"1px solid #1e293b",borderRadius:"8px",padding:"10px 12px",marginBottom:"8px"}}>
+            <div style={{fontSize:"12.5px",fontWeight:"700",color:"#f1f5f9",marginBottom:"8px"}}>{name}</div>
+            <div style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>
+              <Field label="Pack Size (L/kg)"><input style={{...inp,width:"80px"}} type="number" step="0.001" value={f.size} onChange={e=>update({size:e.target.value})} placeholder="e.g. 4"/></Field>
+              <Field label="Tins / Carton"><input style={{...inp,width:"80px"}} type="number" step="1" value={f.tpc} onChange={e=>update({tpc:e.target.value})} placeholder="e.g. 4"/></Field>
+              <Field label="Pack Type">
+                <div style={{display:"flex",gap:"4px"}}>
+                  {[["single","Single"],["2-pack","2-Pack"]].map(([v,l])=><button key={v} onClick={()=>update({packType:v})} style={{background:f.packType===v?"#052e16":"#080d18",border:`1px solid ${f.packType===v?"#166534":"#1e293b"}`,borderRadius:"5px",padding:"4px 10px",color:f.packType===v?"#4ade80":"#475569",fontSize:"11px",fontWeight:"600",cursor:"pointer"}}>{l}</button>)}
+                </div>
+              </Field>
+            </div>
+          </div>;
+        })}
+        <div style={{display:"flex",gap:"8px",marginTop:"4px"}}>
+          <button onClick={async()=>{
+          // Save to fg_products (FG stock catalogue) for each item that has size and tpc filled
+            for(const name of newItemsPrompt.items){
+              const f=newItemForms[name]||{};
+              if(!f.size||!f.tpc)continue;
+              const alreadyExists=fgProducts.some(p=>normalize(p.name)===normalize(name));
+              if(!alreadyExists){
+                await C("fg_products").add({
+                  name,
+                  size:parseFloat(f.size)||0,
+                  unit:"L",
+                  tinsPerCarton:parseInt(f.tpc)||0,
+                  packType:f.packType||"single",
+                  category:"Imported from Order",
+                  importedAt:today(),
+                  addedBy:user.email,
+                  _createdAt:ts()
+                });
+              }
+            }
+            setNewItemsPrompt(null);
+            showToast("Product details saved ✓");
+          }} style={{flex:1,background:"#052e16",border:"1px solid #166534",borderRadius:"8px",padding:"8px",color:"#4ade80",fontWeight:"700",fontSize:"13px",cursor:"pointer"}}>💾 Save</button>
+          <button onClick={()=>setNewItemsPrompt(null)} style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:"8px",padding:"8px 16px",color:"#475569",fontWeight:"700",fontSize:"13px",cursor:"pointer"}}>Skip</button>
+        </div>
+      </div>
+    </div>}
+
     {unknownCusts&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.82)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center"}}>
       <div style={{background:"#0b1220",border:"1px solid #f59e0b60",borderRadius:"14px",padding:"20px",width:"min(540px,96vw)",maxHeight:"90vh",overflowY:"auto"}}>
         <div style={{fontSize:"14px",fontWeight:"700",color:"#fcd34d",marginBottom:"4px"}}>⚠ New Customers Found</div>
@@ -7637,19 +7714,21 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
         {isAdmin&&<button onClick={()=>setEditingAreas(e=>!e)} style={{background:editingAreas?"#1e293b":"#080d18",border:"1px solid #334155",borderRadius:"5px",padding:"4px 10px",color:"#475569",fontSize:"11px",cursor:"pointer",whiteSpace:"nowrap"}}>⚙ {editingAreas?"Done":"Edit Areas"}</button>}
       </div>
 
-      {/* Admin: edit direct areas list */}
+      {/* Admin: select areas from existing routes */}
       {editingAreas&&isAdmin&&<div style={{background:"#060d1a",border:"1px solid #1e293b",borderRadius:"8px",padding:"10px 12px",marginBottom:"10px"}}>
-        <div style={{fontSize:"11.5px",fontWeight:"700",color:"#64748b",marginBottom:"8px"}}>Manage Direct Delivery Areas</div>
-        <div style={{display:"flex",gap:"4px",flexWrap:"wrap",marginBottom:"8px"}}>
-          {directAreas.map((area,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:"3px",background:"#0b1220",border:"1px solid #1e293b",borderRadius:"5px",padding:"3px 8px"}}>
-            <span style={{fontSize:"11.5px",color:"#e2e8f0"}}>{area}</span>
-            <button onClick={()=>saveDirectAreas(directAreas.filter((_,j)=>j!==i))} style={{background:"none",border:"none",color:"#475569",cursor:"pointer",fontSize:"11px",padding:"0 2px"}}>✕</button>
-          </div>)}
+        <div style={{fontSize:"11.5px",fontWeight:"700",color:"#64748b",marginBottom:"8px"}}>Select which routes are Direct Delivery areas</div>
+        <div style={{display:"flex",gap:"4px",flexWrap:"wrap"}}>
+          {routes.map(route=>{
+            const selected=directAreas.some(a=>normRoute(a)===normRoute(route));
+            return <button key={route} onClick={()=>{
+              if(selected)saveDirectAreas(directAreas.filter(a=>normRoute(a)!==normRoute(route)));
+              else saveDirectAreas([...directAreas,route]);
+            }} style={{background:selected?"#052e16":"#080d18",border:`1px solid ${selected?"#166534":"#1e293b"}`,borderRadius:"5px",padding:"4px 10px",color:selected?"#4ade80":"#475569",fontSize:"11px",fontWeight:"600",cursor:"pointer",whiteSpace:"nowrap"}}>
+              {selected?"✓ ":""}{route}
+            </button>;
+          })}
         </div>
-        <div style={{display:"flex",gap:"6px"}}>
-          <input style={{...inp,flex:1,padding:"5px 10px",fontSize:"12px"}} value={newAreaInput} onChange={e=>setNewAreaInput(e.target.value)} placeholder="Add new area e.g. Thane" onKeyDown={e=>{if(e.key==="Enter"&&newAreaInput.trim()){saveDirectAreas([...directAreas,newAreaInput.trim()]);setNewAreaInput("");}}}/>
-          <button onClick={()=>{if(newAreaInput.trim()){saveDirectAreas([...directAreas,newAreaInput.trim()]);setNewAreaInput("");}}} style={{background:"#052e16",border:"1px solid #166534",borderRadius:"6px",padding:"5px 12px",color:"#4ade80",fontSize:"12px",fontWeight:"700",cursor:"pointer"}}>+ Add</button>
-        </div>
+        {routes.length===0&&<div style={{fontSize:"11.5px",color:"#334155"}}>No routes found. Add customers with routes in Setup Routes first.</div>}
       </div>}
 
       {/* Orders for selected area */}
@@ -7871,6 +7950,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
                 return <div key={ii} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 12px",borderTop:"1px solid #0f172a",gap:"6px",background:"#12083a"}}>
                   <div style={{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontSize:"11.5px",color:"#c4b5fd"}}>{item.name}</div>
                   <div style={{display:"flex",gap:"4px",alignItems:"center",flexShrink:0}}>
+                    {(()=>{const ct=calcCartons(item.name,item.qty);return ct?<span style={{fontSize:"10px",color:"#a78bfa",background:"#12083a",border:"1px solid #7c3aed30",borderRadius:"4px",padding:"1px 5px"}}>{ct.cartons>0?ct.cartons+" ctn":""}{ct.loose>0?(ct.cartons>0?" + ":"")+ct.loose+" loose":""}</span>:null;})()}
                     {item.voucherNo&&<span style={{fontSize:"10px",color:"#475569",background:"#0b1220",border:"1px solid #1e293b",borderRadius:"4px",padding:"1px 5px"}}>{item.voucherNo}</span>}
                     {item.orderDate&&<span style={{fontSize:"10px",color:"#334155"}}>{item.orderDate}</span>}
                   </div>
