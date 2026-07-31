@@ -6569,7 +6569,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
           if(!orderDoc.exists)continue;
           const data=orderDoc.data();
           const hasTransporter=data.transport&&normalize(data.transport||"")!=="direct"&&normalize(data.transport||"")!=="";
-          const goToPrep=(!data.isDirect||hasTransporter)&&!isGracePeriod;
+          const goToPrep=!data.isDirect||hasTransporter; // always stage transport orders regardless of grace period
           const updatedItems=(data.items||[]).map(item=>{
             const rev=items.find(i=>i.orderId===orderId&&normalize(i.name)===normalize(item.name));
             if(!rev)return item;
@@ -6621,9 +6621,9 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
         const orderDoc=await C("orders").doc(orderId).get();
         if(!orderDoc.exists)continue;
         const data=orderDoc.data();
-        // Go to Transport Prep if: has a transporter assigned (non-DIRECT) OR is non-direct order
+        // Go to Transport Prep if order has a transporter (or is non-direct) — regardless of grace period
         const hasTransporter=data.transport&&normalize(data.transport||"")!=="direct"&&normalize(data.transport||"")!=="";
-        const goToTransportPrep=!isGracePeriod&&(!data.isDirect||hasTransporter);
+        const goToTransportPrep=!data.isDirect||hasTransporter;
         const updatedItems=(data.items||[]).map(item=>{
           const rev=reverseForm.items.find(i=>i.orderId===orderId&&normalize(i.name)===normalize(item.name));
           if(!rev)return item;
@@ -6632,12 +6632,12 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
           const newDispatched=Math.max(0,(item.dispatchedQty||0)-rQty);
           const newBalance=(item.balanceQty||0)+rQty;
           const fullyReversed=newDispatched<=0;
-          const shouldStage=goToTransportPrep&&fullyReversed;
+          const shouldStage=fullyReversed&&goToTransportPrep; // always stage if transport order
           return {...item,
             dispatchedQty:newDispatched,balanceQty:newBalance,
-            dispatchConfirmed:isGracePeriod||fullyReversed?false:item.dispatchConfirmed,
-            dispatchConfirmedAt:isGracePeriod||fullyReversed?null:item.dispatchConfirmedAt,
-            lastDispatchedAt:isGracePeriod||fullyReversed?null:item.lastDispatchedAt,
+            dispatchConfirmed:fullyReversed?false:item.dispatchConfirmed,
+            dispatchConfirmedAt:fullyReversed?null:item.dispatchConfirmedAt,
+            lastDispatchedAt:fullyReversed?null:item.lastDispatchedAt,
             stagedForTransport:shouldStage,
             stagedAt:shouldStage?new Date().toISOString():null,
             stagedBy:shouldStage?user.email:null,
