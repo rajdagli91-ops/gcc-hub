@@ -6568,16 +6568,17 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
           const orderDoc=await C("orders").doc(orderId).get();
           if(!orderDoc.exists)continue;
           const data=orderDoc.data();
-          const isTransportOrder=!data.isDirect;
+          const inSeq=getTransportSeq(data.partyName||"",data.transport||"")<999;
+          const goToPrep=(!data.isDirect||inSeq)&&!isGracePeriod;
           const updatedItems=(data.items||[]).map(item=>{
             const rev=items.find(i=>i.orderId===orderId&&normalize(i.name)===normalize(item.name));
             if(!rev)return item;
             const newDispatched=0;const newBalance=(item.balanceQty||0)+rev.qty;
             return {...item,dispatchedQty:0,balanceQty:newBalance,
               dispatchConfirmed:false,dispatchConfirmedAt:null,lastDispatchedAt:null,
-              stagedForTransport:!isGracePeriod&&isTransportOrder?true:false,
-              stagedAt:!isGracePeriod&&isTransportOrder?new Date().toISOString():null,
-              stagedBy:!isGracePeriod&&isTransportOrder?user.email:null,
+              stagedForTransport:goToPrep,
+              stagedAt:goToPrep?new Date().toISOString():null,
+              stagedBy:goToPrep?user.email:null,
               status:"Pending"};
           });
           await C("orders").doc(orderId).update({items:san(updatedItems),status:"Pending",updatedAt:ts()});
@@ -6620,6 +6621,9 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
         const orderDoc=await C("orders").doc(orderId).get();
         if(!orderDoc.exists)continue;
         const data=orderDoc.data();
+        // Go to Transport Prep if: non-direct order OR direct order that's in transport sequence
+        const inTransportSeq=getTransportSeq(data.partyName||"",data.transport||"")<999;
+        const goToTransportPrep=!data.isDirect||inTransportSeq;
         const updatedItems=(data.items||[]).map(item=>{
           const rev=reverseForm.items.find(i=>i.orderId===orderId&&normalize(i.name)===normalize(item.name));
           if(!rev)return item;
@@ -6628,15 +6632,15 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
           const newDispatched=Math.max(0,(item.dispatchedQty||0)-rQty);
           const newBalance=(item.balanceQty||0)+rQty;
           const fullyReversed=newDispatched<=0;
+          const shouldStage=!isGracePeriod&&fullyReversed&&goToTransportPrep;
           return {...item,
             dispatchedQty:newDispatched,balanceQty:newBalance,
             dispatchConfirmed:isGracePeriod||fullyReversed?false:item.dispatchConfirmed,
             dispatchConfirmedAt:isGracePeriod||fullyReversed?null:item.dispatchConfirmedAt,
             lastDispatchedAt:isGracePeriod||fullyReversed?null:item.lastDispatchedAt,
-            // Always go to Transport Prep on reversal (not pending); team can move to pending from there
-            stagedForTransport:!isGracePeriod&&fullyReversed?true:false,
-            stagedAt:!isGracePeriod&&fullyReversed?new Date().toISOString():null,
-            stagedBy:!isGracePeriod&&fullyReversed?user.email:null,
+            stagedForTransport:shouldStage,
+            stagedAt:shouldStage?new Date().toISOString():null,
+            stagedBy:shouldStage?user.email:null,
             status:fullyReversed?"Pending":newBalance<=0?"Dispatched":"Partial"
           };
         });
