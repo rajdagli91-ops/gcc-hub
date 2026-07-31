@@ -7124,7 +7124,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
 
   const [reverting,setReverting]=useState(null);
   const [revertForm,setRevertForm]=useState({}); // rKey -> qty string
-  const revertDispatch=async(orderId,itemName,revertQty,totalDispatched)=>{
+  const revertDispatch=async(orderId,itemName,revertQty,totalDispatched,toTransport=false)=>{
     const key=orderId+"__"+itemName;
     const qty=parseFloat(revertQty)||0;
     if(qty<=0||qty>totalDispatched)return showToast(`Enter a valid quantity between 0.001 and ${totalDispatched}`,"error");
@@ -7133,18 +7133,53 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
       const orderDoc=await C("orders").doc(orderId).get();
       if(!orderDoc.exists){showToast("Order not found","error");setReverting(null);return;}
       const data=orderDoc.data();
+      const goToTransport=toTransport||!data.isDirect; // transport orders default to transport prep
       const updatedItems=(data.items||[]).map(item=>{
         if(normalize(item.name)!==normalize(itemName))return item;
         const restoredBalance=(item.balanceQty||0)+qty;
         const restoredDispatched=Math.max(0,(item.dispatchedQty||0)-qty);
         const newStatus=restoredDispatched<=0?"Pending":restoredBalance<=0?"Dispatched":"Partial";
         const newLastDispatched=restoredDispatched<=0?null:item.lastDispatchedAt;
-        return {...item,balanceQty:restoredBalance,dispatchedQty:restoredDispatched,status:newStatus,lastDispatchedAt:newLastDispatched,lastDispatchedBy:restoredDispatched<=0?null:item.lastDispatchedBy};
+        return {...item,balanceQty:restoredBalance,dispatchedQty:restoredDispatched,status:newStatus,
+          lastDispatchedAt:newLastDispatched,lastDispatchedBy:restoredDispatched<=0?null:item.lastDispatchedBy,
+          stagedForTransport:goToTransport&&restoredDispatched<=0?true:false,
+          stagedAt:goToTransport&&restoredDispatched<=0?new Date().toISOString():null,
+          stagedBy:goToTransport&&restoredDispatched<=0?user.email:null};
       });
       const anyDispatched=updatedItems.some(i=>i.status==="Dispatched"||i.status==="Partial");
       await C("orders").doc(orderId).update({items:san(updatedItems),status:anyDispatched?"Partial":"Pending",updatedAt:ts()});
-      showToast(`${qty} of "${itemName}" moved back to Pending ✓`);
+      showToast(`"${itemName}" moved back to ${goToTransport?"Transport Prep":"Pending"} ✓`);
       setRevertForm(f=>{const n={...f};delete n[key];return n;});
+    }catch(e){showToast("Error: "+e.message,"error");}
+    setReverting(null);
+  };
+
+  // Send entire customer's dispatch to transport prep or pending
+  const revertWholeOrder=async(group,toTransport)=>{
+    setReverting("whole__"+group.partyName);
+    try{
+      const orderIds=[...new Set(group.items.filter(i=>!i.confirmed).map(i=>i.orderId))];
+      for(const orderId of orderIds){
+        const orderDoc=await C("orders").doc(orderId).get();
+        if(!orderDoc.exists)continue;
+        const data=orderDoc.data();
+        const goToTransport=toTransport||!data.isDirect;
+        const updatedItems=(data.items||[]).map(item=>{
+          const groupItem=group.items.find(i=>i.orderId===orderId&&normalize(i.name)===normalize(item.name));
+          if(!groupItem||groupItem.confirmed)return item;
+          const restoredBalance=(item.balanceQty||0)+groupItem.qty;
+          const restoredDispatched=Math.max(0,(item.dispatchedQty||0)-groupItem.qty);
+          return {...item,balanceQty:restoredBalance,dispatchedQty:restoredDispatched,
+            status:restoredDispatched<=0?"Pending":"Partial",
+            lastDispatchedAt:restoredDispatched<=0?null:item.lastDispatchedAt,
+            stagedForTransport:goToTransport&&restoredDispatched<=0?true:false,
+            stagedAt:goToTransport&&restoredDispatched<=0?new Date().toISOString():null,
+            stagedBy:goToTransport&&restoredDispatched<=0?user.email:null};
+        });
+        const anyDispatched=updatedItems.some(i=>i.status==="Dispatched"||i.status==="Partial");
+        await C("orders").doc(orderId).update({items:san(updatedItems),status:anyDispatched?"Partial":"Pending",updatedAt:ts()});
+      }
+      showToast(`${group.partyName} moved to ${toTransport||!group.isDirect?"Transport Prep":"Pending"} ✓`);
     }catch(e){showToast("Error: "+e.message,"error");}
     setReverting(null);
   };
@@ -7708,6 +7743,14 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
                   style={{background:"#052e16",border:"1px solid #166534",borderRadius:"6px",padding:"4px 9px",color:"#4ade80",fontWeight:"700",fontSize:"11px",cursor:"pointer",whiteSpace:"nowrap"}}>
                   {confirmingDispatch===group.partyName?"…":"✓ Dispatched"}
                 </button>}
+                {pendingConfirm.length>0&&canDispatch&&!group.isDirect&&<button onClick={()=>revertWholeOrder(group,true)} disabled={!!reverting}
+                  style={{background:"#12083a",border:"1px solid #7c3aed",borderRadius:"6px",padding:"4px 9px",color:"#c4b5fd",fontWeight:"700",fontSize:"11px",cursor:"pointer",whiteSpace:"nowrap"}}>
+                  📦 → Transport Prep
+                </button>}
+                {pendingConfirm.length>0&&canDispatch&&group.isDirect&&<button onClick={()=>revertWholeOrder(group,false)} disabled={!!reverting}
+                  style={{background:"#1a0a00",border:"1px solid #92400e",borderRadius:"6px",padding:"4px 9px",color:"#fcd34d",fontWeight:"700",fontSize:"11px",cursor:"pointer",whiteSpace:"nowrap"}}>
+                  ↩ All → Pending
+                </button>}
                 {anyReversible&&canDispatch&&<button onClick={()=>openReverseForm(group.partyName,group.items.filter(i=>i.canReverse))} disabled={confirmingDispatch===group.partyName+"_reverse"}
                   style={{background:"#2e0a0a",border:"1px solid #7f1d1d",borderRadius:"6px",padding:"4px 9px",color:"#f87171",fontWeight:"700",fontSize:"11px",cursor:"pointer",whiteSpace:"nowrap"}}>
                   ↩ Reverse (24h)
@@ -7739,10 +7782,16 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
                           <button onClick={()=>setRevertForm(f=>{const n={...f};delete n[rKey];return n;})}
                             style={{background:"none",border:"1px solid #334155",borderRadius:"4px",color:"#475569",fontSize:"10.5px",padding:"3px 6px",cursor:"pointer"}}>✕</button>
                         </div>
-                      :<button onClick={()=>setRevertForm(f=>({...f,[rKey]:String(item.qty)}))}
-                          style={{background:"#1a0a00",border:"1px solid #92400e",borderRadius:"5px",color:"#fcd34d",fontSize:"10.5px",fontWeight:"700",padding:"3px 8px",cursor:"pointer",flexShrink:0,whiteSpace:"nowrap"}}>
-                          ↩ Pending
-                        </button>;
+                      :<div style={{display:"flex",gap:"4px",flexShrink:0}}>
+                          {!group.isDirect&&<button onClick={()=>revertDispatch(item.orderId,item.name,String(item.qty),item.qty,true)}
+                            style={{background:"#12083a",border:"1px solid #7c3aed",borderRadius:"5px",color:"#c4b5fd",fontSize:"10.5px",fontWeight:"700",padding:"2px 7px",cursor:"pointer",whiteSpace:"nowrap"}}>
+                            📦 Prep
+                          </button>}
+                          <button onClick={()=>setRevertForm(f=>({...f,[rKey]:String(item.qty)}))}
+                            style={{background:"#1a0a00",border:"1px solid #92400e",borderRadius:"5px",color:"#fcd34d",fontSize:"10.5px",fontWeight:"700",padding:"2px 7px",cursor:"pointer",flexShrink:0,whiteSpace:"nowrap"}}>
+                            ↩
+                          </button>
+                        </div>;
                   })()}
                 </div>;
               })}
