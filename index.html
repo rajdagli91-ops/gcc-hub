@@ -7902,6 +7902,21 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
         </div>
         <div style={{display:"flex",gap:"5px",alignItems:"center"}}>
           <span style={{fontSize:"10.5px",color:"#64748b"}}>Sequence:</span>
+          {Object.keys(deliverySequence.direct||{}).length>0&&<button onClick={async()=>{
+            await loadXLSX();const XLSX=window.XLSX;
+            const wb=XLSX.utils.book_new();
+            const directSeq=deliverySequence.direct||{};
+            // Each key = route (or "all"); each sheet = one route
+            Object.entries(directSeq).forEach(([routeKey,seqMap])=>{
+              if(!seqMap||typeof seqMap!=="object")return;
+              const rows=[["#","Customer Name"]];
+              Object.values(seqMap).sort((a,b)=>a.seq-b.seq).forEach(({name,seq})=>rows.push([seq,name]));
+              const ws=XLSX.utils.aoa_to_sheet(rows);ws["!cols"]=[{wch:6},{wch:40}];
+              XLSX.utils.book_append_sheet(wb,ws,routeKey.slice(0,31));
+            });
+            if(wb.SheetNames.length===0)XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([["#","Customer Name"]]),"all");
+            XLSX.writeFile(wb,"VEEBEE_Direct_Sequence.xlsx");
+          }} style={{background:"#060d1a",border:"1px solid #334155",borderRadius:"5px",padding:"3px 10px",color:"#64748b",fontSize:"11px",fontWeight:"700",cursor:"pointer"}}>⬇ Download</button>}
           <button onClick={()=>document.getElementById("dir-seq-import").click()} disabled={loadingSeq} style={{background:"#060d1a",border:"1px solid #166534",borderRadius:"5px",padding:"3px 10px",color:"#4ade80",fontSize:"11px",fontWeight:"700",cursor:"pointer"}}>⬆ {directPrepArea==="All"?"Upload (All Routes)":"Upload for "+directPrepArea}</button>
           <input id="dir-seq-import" type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={async e=>{if(e.target.files[0]){await importDeliverySequence(e.target.files[0],"direct");e.target.value="";}}}/>
           <span style={{fontSize:"9.5px",color:"#334155"}}>Each sheet = one route</span>        </div>
@@ -8066,13 +8081,17 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
         </div>
         <div style={{display:"flex",gap:"5px",alignItems:"center",flexWrap:"wrap",flexShrink:0}}>
           <span style={{fontSize:"10.5px",color:"#64748b"}}>Sequence:</span>
-          <button onClick={()=>document.getElementById("trn-seq-import").click()} disabled={loadingSeq} style={{background:"#060d1a",border:"1px solid #7c3aed",borderRadius:"5px",padding:"3px 9px",color:"#c4b5fd",fontSize:"11px",fontWeight:"700",cursor:"pointer"}}>⬆ Upload All</button>
+          {Object.keys(deliverySequence.transport||{}).length>0&&<button onClick={async()=>{
+            await loadXLSX();const XLSX=window.XLSX;
+            const rows=[["#","Name (Transporter / Customer)"]];
+            const seqMap=deliverySequence.transport||{};
+            Object.values(seqMap).sort((a,b)=>a.seq-b.seq).forEach(({name,seq})=>rows.push([seq,name]));
+            const ws=XLSX.utils.aoa_to_sheet(rows);ws["!cols"]=[{wch:6},{wch:40}];
+            const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Transport Sequence");
+            XLSX.writeFile(wb,"VEEBEE_Transport_Sequence.xlsx");
+          }} style={{background:"#060d1a",border:"1px solid #334155",borderRadius:"5px",padding:"3px 9px",color:"#64748b",fontSize:"11px",fontWeight:"700",cursor:"pointer"}}>⬇ Download ({Object.keys(deliverySequence.transport||{}).length})</button>}
+          <button onClick={()=>document.getElementById("trn-seq-import").click()} disabled={loadingSeq} style={{background:"#060d1a",border:"1px solid #7c3aed",borderRadius:"5px",padding:"3px 9px",color:"#c4b5fd",fontSize:"11px",fontWeight:"700",cursor:"pointer"}}>⬆ Upload</button>
           <input id="trn-seq-import" type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={async e=>{if(e.target.files[0]){await importDeliverySequence(e.target.files[0],"transport");e.target.value="";}}}/>
-          {/* Add single entry without full re-upload */}
-          <input style={{...inp,width:"130px",padding:"2px 6px",fontSize:"11px"}} list="trans-seq-datalist" value={addSeqEntry.name} onChange={e=>setAddSeqEntry(v=>({...v,name:e.target.value}))} placeholder="Transporter name"/>
-          <datalist id="trans-seq-datalist">{transporterNames.map(t=><option key={t} value={t}/>)}</datalist>
-          <input style={{...inp,width:"50px",padding:"2px 6px",fontSize:"11px",textAlign:"center"}} type="number" value={addSeqEntry.seq} onChange={e=>setAddSeqEntry(v=>({...v,seq:e.target.value}))} placeholder="#"/>
-          <button onClick={()=>saveTransportSeqEntry(addSeqEntry.name,addSeqEntry.seq)} disabled={!addSeqEntry.name.trim()||!addSeqEntry.seq} style={{background:"#12083a",border:"1px solid #7c3aed",borderRadius:"5px",padding:"3px 9px",color:"#c4b5fd",fontSize:"11px",fontWeight:"700",cursor:"pointer"}}>+ Add</button>
         </div>
       </div>
       {stagedTransportItems.length>0&&<div style={{display:"flex",gap:"5px",flexWrap:"wrap",alignItems:"center",marginBottom:"10px"}}>
