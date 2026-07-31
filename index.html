@@ -6548,15 +6548,78 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
     setReverseForm({partyName,items:items.map(i=>({...i,reverseQty:""}))});
   };
 
+  const reverseEntireOrder=async(partyName,items)=>{
+    // Pre-fill all items with max quantity and immediately reverse
+    setReverseForm({partyName,items:items.map(i=>({...i,reverseQty:String(i.qty)}))});
+    // Use a small timeout to let state settle, then auto-submit
+    setTimeout(async()=>{
+      // State won't be updated yet in closure, so call reverseDispatch directly with the filled form
+      if(!items.length)return;
+      setReverseSaving(true);
+      try{
+        const orderIds=[...new Set(items.map(i=>i.orderId))];
+        const firstOrderItem=items[0];
+        const firstOrder=orders.find(o=>o.id===firstOrderItem.orderId);
+        const firstFi=firstOrder?(firstOrder.items||[]).find(i=>normalize(i.name)===normalize(firstOrderItem.name)):null;
+        const confirmedAtRaw=firstFi?.dispatchConfirmedAt;
+        const confirmedAtMs=confirmedAtRaw?typeof confirmedAtRaw==="string"?new Date(confirmedAtRaw).getTime():confirmedAtRaw.toMillis?confirmedAtRaw.toMillis():confirmedAtRaw.seconds?confirmedAtRaw.seconds*1000:0:0;
+        const isGracePeriod=confirmedAtMs>0&&(Date.now()-confirmedAtMs<2*60*60*1000);
+        for(const orderId of orderIds){
+          const orderDoc=await C("orders").doc(orderId).get();
+          if(!orderDoc.exists)continue;
+          const data=orderDoc.data();
+          const isTransportOrder=!data.isDirect;
+          const updatedItems=(data.items||[]).map(item=>{
+            const rev=items.find(i=>i.orderId===orderId&&normalize(i.name)===normalize(item.name));
+            if(!rev)return item;
+            const newDispatched=0;const newBalance=(item.balanceQty||0)+rev.qty;
+            return {...item,dispatchedQty:0,balanceQty:newBalance,
+              dispatchConfirmed:false,dispatchConfirmedAt:null,lastDispatchedAt:null,
+              stagedForTransport:!isGracePeriod&&isTransportOrder?true:false,
+              stagedAt:!isGracePeriod&&isTransportOrder?new Date().toISOString():null,
+              stagedBy:!isGracePeriod&&isTransportOrder?user.email:null,
+              status:"Pending"};
+          });
+          await C("orders").doc(orderId).update({items:san(updatedItems),status:"Pending",updatedAt:ts()});
+        }
+        if(isGracePeriod){
+          showToast(`${partyName} — fully reversed (grace period) ✓`);
+        } else {
+          showToast(`${partyName} — entire order reversed ✓`);
+          try{
+            const dispDate=firstFi?.lastDispatchedAt||dispatchDateStr||todayStr;
+            const reportId="report_"+dispDate;
+            const reversedItems=items.map(i=>({name:i.name,qty:i.qty,voucherNo:i.voucherNo}));
+            const reportDoc=await C("dispatch_reports").doc(reportId).get();
+            const reversalEntry={partyName,items:reversedItems,reversedAt:new Date().toISOString(),reversedBy:user.email};
+            if(reportDoc.exists)await C("dispatch_reports").doc(reportId).update({reversals:[...(reportDoc.data().reversals||[]),reversalEntry],updatedAt:new Date().toISOString()});
+            else await C("dispatch_reports").doc(reportId).set({date:dispDate,entries:[],reversals:[reversalEntry],createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),createdBy:user.email});
+          }catch(e){/* best-effort */}
+        }
+        setReverseForm(null);
+      }catch(e){showToast("Error: "+e.message,"error");}
+      setReverseSaving(false);
+    },50);
+  };
+
   const reverseDispatch=async()=>{
     if(!reverseForm)return;
     setReverseSaving(true);
     try{
       const orderIds=[...new Set(reverseForm.items.map(i=>i.orderId))];
+      // Detect grace period — if dispatch was confirmed within 2 hours, treat as fully undone
+      const firstItem=reverseForm.items.find(i=>parseFloat(i.reverseQty)>0);
+      const firstOrder=firstItem?orders.find(o=>o.id===firstItem.orderId):null;
+      const firstOrderItem=firstOrder?(firstOrder.items||[]).find(i=>normalize(i.name)===normalize(firstItem.name)):null;
+      const confirmedAtRaw=firstOrderItem?.dispatchConfirmedAt;
+      const confirmedAtMs=confirmedAtRaw?typeof confirmedAtRaw==="string"?new Date(confirmedAtRaw).getTime():confirmedAtRaw.toMillis?confirmedAtRaw.toMillis():confirmedAtRaw.seconds?confirmedAtRaw.seconds*1000:0:0;
+      const isGracePeriod=confirmedAtMs>0&&(Date.now()-confirmedAtMs<2*60*60*1000); // within 2h
+
       for(const orderId of orderIds){
         const orderDoc=await C("orders").doc(orderId).get();
         if(!orderDoc.exists)continue;
         const data=orderDoc.data();
+        const isTransportOrder=!data.isDirect; // non-direct → goes back to transport prep
         const updatedItems=(data.items||[]).map(item=>{
           const rev=reverseForm.items.find(i=>i.orderId===orderId&&normalize(i.name)===normalize(item.name));
           if(!rev)return item;
@@ -6567,56 +6630,55 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
           const fullyReversed=rQty>=rev.qty;
           return {...item,
             dispatchedQty:newDispatched,balanceQty:newBalance,
-            dispatchConfirmed:fullyReversed?false:item.dispatchConfirmed,
-            dispatchConfirmedAt:fullyReversed?null:item.dispatchConfirmedAt,
-            lastDispatchedAt:newDispatched<=0?null:item.lastDispatchedAt,
+            dispatchConfirmed:isGracePeriod||fullyReversed?false:item.dispatchConfirmed,
+            dispatchConfirmedAt:isGracePeriod||fullyReversed?null:item.dispatchConfirmedAt,
+            lastDispatchedAt:isGracePeriod||newDispatched<=0?null:item.lastDispatchedAt,
+            // Restore to Transport Prep if non-direct order (not grace period clear)
+            stagedForTransport:!isGracePeriod&&isTransportOrder&&fullyReversed?true:false,
+            stagedAt:!isGracePeriod&&isTransportOrder&&fullyReversed?new Date().toISOString():null,
+            stagedBy:!isGracePeriod&&isTransportOrder&&fullyReversed?user.email:null,
             status:newDispatched<=0?"Pending":newBalance<=0?"Dispatched":"Partial"
           };
         });
         const anyActive=updatedItems.some(i=>i.status==="Dispatched"||i.status==="Partial");
         await C("orders").doc(orderId).update({items:san(updatedItems),status:anyActive?"Partial":"Pending",updatedAt:ts()});
       }
-      showToast(`${reverseForm.partyName} — dispatch reversed ✓`);
-      // Save reversal to dispatch report — under the ORIGINAL dispatch date, not today
-      try{
-        // Find the original dispatch date from the first reversed item's order
-        const firstItem=reverseForm.items.find(i=>parseFloat(i.reverseQty)>0);
-        const originalOrder=firstItem?orders.find(o=>o.id===firstItem.orderId):null;
-        const originalItem=originalOrder?(originalOrder.items||[]).find(i=>normalize(i.name)===normalize(firstItem.name)):null;
-        const originalDispatchDate=originalItem?.lastDispatchedAt||dispatchDateStr||todayStr;
-        const reportId="report_"+originalDispatchDate;
-        const reversedItems=reverseForm.items.filter(i=>parseFloat(i.reverseQty)>0).map(i=>({name:i.name,qty:parseFloat(i.reverseQty)||0,voucherNo:i.voucherNo}));
-        if(reversedItems.length>0){
+      if(isGracePeriod){
+        showToast(`${reverseForm.partyName} — reversed within grace period. Not recorded in report. ✓`);
+        // Grace period: remove from dispatch report entry entirely
+        try{
+          const originalDispatchDate=firstOrderItem?.lastDispatchedAt||dispatchDateStr||todayStr;
+          const reportId="report_"+originalDispatchDate;
           const reportDoc=await C("dispatch_reports").doc(reportId).get();
-          const reversalEntry={partyName:reverseForm.partyName,items:reversedItems,reversedAt:new Date().toISOString(),reversedBy:user.email};
           if(reportDoc.exists){
             const existing=reportDoc.data();
-            await C("dispatch_reports").doc(reportId).update({reversals:[...(existing.reversals||[]),reversalEntry],updatedAt:new Date().toISOString()});
-          }else{
-            await C("dispatch_reports").doc(reportId).set({date:originalDispatchDate,entries:[],reversals:[reversalEntry],createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),createdBy:user.email});
-          }
-        }
-      }catch(e){/* best-effort */}
-      // Sync dispatch report — update reversed quantities
-      try{
-        const reportId="report_"+dispatchDateStr;
-        const reportDoc=await C("dispatch_reports").doc(reportId).get();
-        if(reportDoc.exists){
-          const data=reportDoc.data();
-          const updatedEntries=(data.entries||[]).map(e=>{
-            if(normalize(e.partyName)!==normalize(reverseForm.partyName))return e;
-            const updItems=(e.items||[]).map(it=>{
-              const rev=reverseForm.items.find(r=>normalize(r.name)===normalize(it.name));
-              if(!rev)return it;
-              const rQty=parseFloat(rev.reverseQty)||0;
-              const newQty=Math.max(0,(it.qty||0)-rQty);
-              return newQty>0?{...it,qty:newQty}:null;
+            const updatedEntries=(existing.entries||[]).map(e=>{
+              if(normalize(e.partyName)!==normalize(reverseForm.partyName))return e;
+              const updItems=(e.items||[]).filter(it=>!reverseForm.items.some(r=>normalize(r.name)===normalize(it.name)&&(parseFloat(r.reverseQty)||0)>=r.qty));
+              return updItems.length>0?{...e,items:updItems}:null;
             }).filter(Boolean);
-            return updItems.length?{...e,items:updItems}:null;
-          }).filter(Boolean);
-          await C("dispatch_reports").doc(reportId).update({entries:updatedEntries,updatedAt:new Date().toISOString()});
-        }
-      }catch(e){/* best-effort */}
+            await C("dispatch_reports").doc(reportId).update({entries:updatedEntries,updatedAt:new Date().toISOString()});
+          }
+        }catch(e){/* best-effort */}
+      } else {
+        showToast(`${reverseForm.partyName} — dispatch reversed ✓${!firstOrder?.isDirect?" · Returned to Transport Prep":""}`);
+        // Save reversal entry to dispatch report under ORIGINAL dispatch date
+        try{
+          const originalDispatchDate=firstOrderItem?.lastDispatchedAt||dispatchDateStr||todayStr;
+          const reportId="report_"+originalDispatchDate;
+          const reversedItems=reverseForm.items.filter(i=>parseFloat(i.reverseQty)>0).map(i=>({name:i.name,qty:parseFloat(i.reverseQty)||0,voucherNo:i.voucherNo}));
+          if(reversedItems.length>0){
+            const reportDoc=await C("dispatch_reports").doc(reportId).get();
+            const reversalEntry={partyName:reverseForm.partyName,items:reversedItems,reversedAt:new Date().toISOString(),reversedBy:user.email};
+            if(reportDoc.exists){
+              const existing=reportDoc.data();
+              await C("dispatch_reports").doc(reportId).update({reversals:[...(existing.reversals||[]),reversalEntry],updatedAt:new Date().toISOString()});
+            }else{
+              await C("dispatch_reports").doc(reportId).set({date:originalDispatchDate,entries:[],reversals:[reversalEntry],createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),createdBy:user.email});
+            }
+          }
+        }catch(e){/* best-effort */}
+      }
       setReverseForm(null);
     }catch(e){showToast("Error: "+e.message,"error");}
     setReverseSaving(false);
@@ -6728,15 +6790,19 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
   const todayDispatched=todayDispatchedAll.map(g=>({...g,items:g.items.filter(i=>!i.confirmed)})).filter(g=>g.items.length>0);
   const dispatched48h=(()=>{
     const now=Date.now();
-    const WINDOW_24H=48*60*60*1000; // 48h window for reversal
+    const WINDOW_MS=48*60*60*1000; // 48h from start of dispatch date
     const map={};
     orders.forEach(o=>{
       (o.items||[]).forEach(item=>{
         if(!item.dispatchConfirmed)return;
-        // Handle both ISO string and Firestore Timestamp object
+        // Use lastDispatchedAt DATE (midnight) as window start — not the confirmed timestamp
+        const dispDate=item.lastDispatchedAt; // "YYYY-MM-DD"
+        if(!dispDate)return;
+        const windowStart=new Date(dispDate+"T00:00:00").getTime();
+        if(now-windowStart>WINDOW_MS)return; // outside 48h window from dispatch date
         const cat=item.dispatchConfirmedAt;
         const confirmedAt=cat?typeof cat==="string"?new Date(cat).getTime():cat.toMillis?cat.toMillis():cat.seconds?cat.seconds*1000:0:0;
-        if(!confirmedAt||now-confirmedAt>WINDOW_24H)return;
+
         const k=normalize(o.partyName);
         if(!map[k])map[k]={partyName:o.partyName,route:o.route,transport:o.transport,isDirect:o.isDirect,items:[]};
         const vol=calcVolume(item.name,item.dispatchedQty||0);
@@ -7752,8 +7818,12 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
             </div>
             <div style={{display:"flex",gap:"5px",alignItems:"center"}}>
               <span style={{fontSize:"10px",color:"#4ade80",background:"#052e16",border:"1px solid #166534",borderRadius:"99px",padding:"2px 8px"}}>✓ Delivered</span>
-              {canDispatch&&group.items.some(i=>i.canReverse)&&<button onClick={()=>openReverseForm(group.partyName,group.items.filter(i=>i.canReverse))}
-                style={{background:"#2e0a0a",border:"1px solid #7f1d1d",borderRadius:"6px",padding:"3px 9px",color:"#f87171",fontWeight:"700",fontSize:"11px",cursor:"pointer"}}>↩ Reverse (24h)</button>}
+              {canDispatch&&group.items.some(i=>i.canReverse)&&<>
+                <button onClick={()=>openReverseForm(group.partyName,group.items.filter(i=>i.canReverse))}
+                  style={{background:"#2e0a0a",border:"1px solid #7f1d1d",borderRadius:"6px",padding:"3px 9px",color:"#f87171",fontWeight:"700",fontSize:"11px",cursor:"pointer"}}>↩ Select Items</button>
+                <button onClick={()=>{if(confirm(`Reverse ENTIRE order for ${group.partyName}?`))reverseEntireOrder(group.partyName,group.items.filter(i=>i.canReverse));}} disabled={reverseSaving}
+                  style={{background:"#450a0a",border:"1px solid #dc2626",borderRadius:"6px",padding:"3px 9px",color:"#fca5a5",fontWeight:"700",fontSize:"11px",cursor:"pointer"}}>↩ Reverse All</button>
+              </>}
             </div>
           </div>
           <div style={{background:"#060d1a",borderTop:"1px solid #0f172a"}}>
