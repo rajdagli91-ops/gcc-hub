@@ -8372,1172 +8372,271 @@ function snapToGrid(v){return Math.round(v/GRID)*GRID;}
 
 function FGStockTab({role,user,showToast,sysUnits,canManage}){
   const isAdmin=role==="admin";
-
-  // ── Persisted state ──
-  const [racks,setRacks]=useState([]);
-  const [cellStock,setCellStock]=useState({});
-  const [loaded,setLoaded]=useState(false);
-  const [fgProducts,setFgProducts]=useState([]);     // [{name,size,unit,category,tinsPerCarton,packType}]
-  const [packConfig,setPackConfig]=useState([]);     // [{category,size,unit,tinsPerCarton,notes}]
-
-  // ── UI state ──
-  const [mode,setMode]=useState("view");
-  const [selectedCell,setSelectedCell]=useState(null);
-  const [selectedRack,setSelectedRack]=useState(null);
-  const [copiedRack,setCopiedRack]=useState(null);  // rack object snapshot
-  const [renamingRack,setRenamingRack]=useState(null);
-  const [renameVal,setRenameVal]=useState("");
-  const [editingRackColour,setEditingRackColour]=useState(null); // rack id
-  const [dragging,setDragging]=useState(null);
-  const [txnModal,setTxnModal]=useState(null);
-  const [txn,setTxn]=useState({productName:"",cartons:"",looseTins:"",notes:"",date:today()});
-  const [transferModal,setTransferModal]=useState(null); // {cell, product}
-  const [transferForm,setTransferForm]=useState({cartons:"",looseTins:"",destRackId:"",destLevel:"1"});
+  const [fgProducts,setFgProducts]=useState([]);
+  const [packConfig,setPackConfig]=useState([]);
+  const [fgStock,setFgStock]=useState([]); // from fg_stock_v2
+  const [search,setSearch]=useState("");
+  const [catFilter,setCatFilter]=useState("All");
+  const [subTab,setSubTab]=useState("catalogue"); // catalogue | stock | import
   const [saving,setSaving]=useState(false);
-  const [containerW,setContainerW]=useState(1100);
-  const containerRef=React.useRef(null);
-  const canvasRef=React.useRef(null);
-  const [showCatalogue,setShowCatalogue]=useState(false);
-  const [catSearch,setCatSearch]=useState("");
   const [importStatus,setImportStatus]=useState(null);
-  const [stockSearch,setStockSearch]=useState("");
-  const [drawing,setDrawing]=useState(null); // {startX,startY,curX,curY} — rack draw-to-create
+  const [editProduct,setEditProduct]=useState(null);
+  const [showAddForm,setShowAddForm]=useState(false);
+  const [addForm,setAddForm]=useState({name:"",size:"",unit:"L",category:"",tinsPerCarton:"",packType:"Single Pack"});
 
-  // New rack form
-  const [newRack,setNewRack]=useState({name:"",levels:4,color:"#c9956a",label:"",w:80});
-  const [expandedRack,setExpandedRack]=useState(null);
+  // Load data
+  useEffect(()=>{
+    const u1=C("fg_products").onSnapshot(s=>setFgProducts(s.docs.map(d=>({id:d.id,...d.data()}))),()=>{});
+    const u2=C("fg_stock_v2").onSnapshot(s=>setFgStock(s.docs.map(d=>({id:d.id,...d.data()}))),()=>{});
+    const u3=C("fg_pack_config").onSnapshot(s=>setPackConfig(s.docs.map(d=>({id:d.id,...d.data()}))),()=>{});
+    return ()=>{u1();u2();u3();};
+  },[]);
 
-  // ── Default pack config (matches confirmed table) ──
   const DEFAULT_PACK_CONFIG=[
-    {category:"Paint (Single)",  size:0.2,  unit:"L",  tinsPerCarton:24, notes:""},
-    {category:"Paint (Single)",  size:0.5,  unit:"L",  tinsPerCarton:8,  notes:""},
-    {category:"Paint (Single)",  size:1.0,  unit:"L",  tinsPerCarton:6,  notes:""},
-    {category:"Paint (Single)",  size:4.0,  unit:"L",  tinsPerCarton:4,  notes:""},
-    {category:"Paint (Single)",  size:20.0, unit:"L",  tinsPerCarton:1,  notes:"Loose, no carton"},
-    {category:"Paint (Two Pack)",size:0.2,  unit:"L",  tinsPerCarton:12, notes:""},
-    {category:"Paint (Two Pack)",size:0.5,  unit:"L",  tinsPerCarton:12, notes:""},
-    {category:"Paint (Two Pack)",size:1.0,  unit:"L",  tinsPerCarton:6,  notes:""},
-    {category:"Paint (Two Pack)",size:4.0,  unit:"L",  tinsPerCarton:1,  notes:"Stored as tins"},
-    {category:"Thinner",         size:0.25, unit:"L",  tinsPerCarton:60, notes:""},
-    {category:"Thinner",         size:0.5,  unit:"L",  tinsPerCarton:50, notes:""},
-    {category:"Thinner",         size:1.0,  unit:"L",  tinsPerCarton:32, notes:""},
-    {category:"Thinner",         size:3.0,  unit:"L",  tinsPerCarton:7,  notes:""},
-    {category:"Thinner",         size:5.0,  unit:"L",  tinsPerCarton:6,  notes:""},
-    {category:"Thinner",         size:20.0, unit:"L",  tinsPerCarton:2,  notes:""},
-    {category:"KPF",             size:0.5,  unit:"Kg", tinsPerCarton:12, notes:""},
-    {category:"KPF",             size:1.0,  unit:"Kg", tinsPerCarton:12, notes:""},
-    {category:"KPF",             size:2.0,  unit:"Kg", tinsPerCarton:6,  notes:""},
-    {category:"KPF",             size:5.0,  unit:"Kg", tinsPerCarton:4,  notes:""},
-    {category:"KPF",             size:15.0, unit:"Kg", tinsPerCarton:1,  notes:"Drum"},
-    {category:"KPF",             size:35.0, unit:"Kg", tinsPerCarton:1,  notes:"Drum"},
-    {category:"Car Patch",       size:0.2,  unit:"Kg", tinsPerCarton:30, notes:""},
-    {category:"Car Patch",       size:0.5,  unit:"Kg", tinsPerCarton:12, notes:""},
-    {category:"Car Patch",       size:1.0,  unit:"Kg", tinsPerCarton:12, notes:""},
-    {category:"Car Patch",       size:5.0,  unit:"Kg", tinsPerCarton:4,  notes:""},
-    {category:"VEE-Plast",       size:0.5,  unit:"Kg", tinsPerCarton:12, notes:""},
-    {category:"VEE-Plast",       size:1.0,  unit:"Kg", tinsPerCarton:18, notes:""},
-    {category:"VEE-Plast",       size:2.0,  unit:"Kg", tinsPerCarton:12, notes:""},
-    {category:"NC Putty",        size:0.2,  unit:"Kg", tinsPerCarton:24, notes:""},
-    {category:"NC Putty",        size:0.5,  unit:"Kg", tinsPerCarton:12, notes:""},
-    {category:"NC Putty",        size:1.0,  unit:"Kg", tinsPerCarton:6,  notes:""},
+    {category:"Paint (Single)",size:0.2,unit:"L",tinsPerCarton:24},{category:"Paint (Single)",size:0.5,unit:"L",tinsPerCarton:8},
+    {category:"Paint (Single)",size:1.0,unit:"L",tinsPerCarton:6},{category:"Paint (Single)",size:4.0,unit:"L",tinsPerCarton:4},
+    {category:"Paint (Single)",size:20.0,unit:"L",tinsPerCarton:1},{category:"Paint (Two Pack)",size:0.5,unit:"L",tinsPerCarton:12},
+    {category:"Paint (Two Pack)",size:1.0,unit:"L",tinsPerCarton:6},{category:"Paint (Two Pack)",size:4.0,unit:"L",tinsPerCarton:1},
+    {category:"Thinner",size:0.5,unit:"L",tinsPerCarton:50},{category:"Thinner",size:1.0,unit:"L",tinsPerCarton:24},
   ];
+  const pconf=packConfig.length>0?packConfig:DEFAULT_PACK_CONFIG;
 
-  // ── Parse size from product name — same logic as import script ──
-  const parseSizeFromName=(name)=>{
-    if(!name)return null;
-    const is2pack=/\(B\s*[\d.]+/i.test(name);
-    const m=name.match(/([\d][\d.\s]*)\s*(ml|l|L|kg|Kg|KG|k\b|ltr|Ltr)/i);
-    if(!m)return null;
-    try{
-      let val=parseFloat(m[1].replace(/\s/g,''));
-      let unit=m[2].toLowerCase();
-      if(unit==='ml'){val/=1000;unit='L';}
-      else if(unit==='l'||unit==='ltr')unit='L';
-      else unit='Kg';
-      if(unit==='L'&&(val>200||val<0.04))return null;
-      if(unit==='Kg'&&(val>35||val<0.04))return null;
-      return {size:val,unit,is2pack};
-    }catch{return null;}
-  };
+  // Stock totals per product
+  const stockByProduct={};
+  fgStock.forEach(s=>{
+    const k=normalize(s.productName||"");
+    if(!stockByProduct[k])stockByProduct[k]={tins:0,cartons:0,loose:0};
+    stockByProduct[k].tins+=(s.totalQty||0);
+    stockByProduct[k].cartons+=(s.cartons||0);
+    stockByProduct[k].loose+=(s.looseTins||0);
+  });
 
-  const lookupTinsPerCarton=(category,size,unit,cfg=null)=>{
-    const config=cfg||(packConfig.length>0?packConfig:DEFAULT_PACK_CONFIG);
-    const row=config.find(r=>r.category===category&&Math.abs(r.size-size)<0.001&&r.unit===unit);
-    return row?row.tinsPerCarton:null;
-  };
+  const categories=["All",...new Set(fgProducts.map(p=>p.category||"Other").filter(Boolean)).values()].sort();
 
-  const calcDisplay=(product,cartons,looseTins)=>{
-    const c=parseInt(cartons)||0, t=parseInt(looseTins)||0;
-    const tpc=product?.tinsPerCarton;
-    if(!tpc)return null;
-    const totalTins=c*tpc+t;
-    const totalQty=totalTins*product.size;
-    return {totalTins,totalQty,tpc,unit:product.unit};
-  };
+  const filtered=fgProducts.filter(p=>{
+    const matchCat=catFilter==="All"||(p.category||"Other")===catFilter;
+    const matchSearch=!search.trim()||normalize(p.name||"").includes(normalize(search));
+    return matchCat&&matchSearch;
+  }).sort((a,b)=>(a.name||"").localeCompare(b.name||""));
 
-  // Scale: fit the logical FLOOR_W into the actual container width
-  const [userZoom,setUserZoom]=useState(1.0);
-  const baseScale=Math.min(containerW/FLOOR_W, 1);
-  const scale=baseScale*userZoom; // total effective scale — used everywhere for rendering
-  const MIN_ZOOM=0.4, MAX_ZOOM=3.0;
-
-  // Measure container on mount
-  React.useEffect(()=>{
-    const obs=new ResizeObserver(entries=>{
-      if(entries[0])setContainerW(entries[0].contentRect.width||1100);
-    });
-    if(containerRef.current)obs.observe(containerRef.current);
-    return ()=>obs.disconnect();
-  },[]);
-
-  // Load rack config
-  React.useEffect(()=>{
-    const unsub=C("fg_config").doc("warehouse").onSnapshot(snap=>{
-      if(snap.exists&&snap.data().racks)setRacks(snap.data().racks);
-      else setRacks([]);
-      setLoaded(true);
-    },()=>setLoaded(true));
-    return unsub;
-  },[]);
-
-  // Load pack config from Firestore (falls back to DEFAULT_PACK_CONFIG if not set)
-  React.useEffect(()=>{
-    const unsub=C("fg_config").doc("packSizes").onSnapshot(snap=>{
-      if(snap.exists&&snap.data().config)setPackConfig(snap.data().config);
-    },()=>{});
-    return unsub;
-  },[]);
-
-  // Load product catalogue
-  React.useEffect(()=>{
-    const unsub=C("fg_products").orderBy("name").onSnapshot(snap=>{
-      setFgProducts(snap.docs.map(d=>({id:d.id,...d.data()})));
-    },()=>C("fg_products").onSnapshot(snap=>setFgProducts(snap.docs.map(d=>({id:d.id,...d.data()})))));
-    return unsub;
-  },[]);
-
-  // Load stock data
-  React.useEffect(()=>{
-    const unsub=C("fg_stock_v2").onSnapshot(snap=>{
-      const map={};
-      snap.docs.forEach(d=>{
-        const dat=d.data();
-        if(!map[dat.cell])map[dat.cell]=[];
-        map[dat.cell].push({id:d.id,...dat});
-      });
-      setCellStock(map);
-    },()=>{});
-    return unsub;
-  },[]);
-
-  const saveRacks=async(newRacks)=>{
-    await C("fg_config").doc("warehouse").set({racks:newRacks},{merge:true});
-    setRacks(newRacks);
-  };
-
-  // ── Drag (pointer events — works for mouse AND touch on tablets) ──
-  const onRackPointerMove=(e,rack)=>{
-    if(!dragging||dragging.rackId!==rack.id)return;
-    const deltaX=(e.clientX-dragging.startPX)/scale;
-    const deltaY=(e.clientY-dragging.startPY)/scale;
-    const rh=rack.h||RACK_CANVAS_H;
-    if(dragging.resizing==="se"){
-      // Resize: drag bottom-right corner changes w and h
-      const newW=Math.max(40,snapToGrid(dragging.origW+deltaX));
-      const newH=Math.max(36,snapToGrid(dragging.origH+deltaY));
-      setRacks(prev=>prev.map(r=>r.id===rack.id?{...r,w:newW,h:newH}:r));
-    }else if(dragging.resizing==="e"){
-      // Resize: drag right edge changes width only
-      const newW=Math.max(40,snapToGrid(dragging.origW+deltaX));
-      setRacks(prev=>prev.map(r=>r.id===rack.id?{...r,w:newW}:r));
-    }else{
-      // Move
-      const newX=Math.max(0,Math.min(FLOOR_W-rack.w,snapToGrid(dragging.origX+deltaX)));
-      const newY=Math.max(0,Math.min(FLOOR_H-rh,snapToGrid(dragging.origY+deltaY)));
-      setRacks(prev=>prev.map(r=>r.id===rack.id?{...r,x:newX,y:newY}:r));
-    }
-  };
-  const onRackPointerDown=(e,rack,resizing=null)=>{
-    if(!canManage||mode!=="editPillars")return; // only capture pointer in layout edit mode
-    e.stopPropagation();
-    e.currentTarget.setPointerCapture(e.pointerId);
-    setDragging({rackId:rack.id,origX:rack.x,origY:rack.y,
-      origW:rack.w,origH:rack.h||RACK_CANVAS_H,
-      startPX:e.clientX,startPY:e.clientY,resizing});
-    setSelectedRack(rack.id);
-    setSelectedCell(null);
-  };
-  const onRackPointerUp=async(e,rack)=>{
-    if(!dragging||dragging.rackId!==rack.id)return;
-    setDragging(null);
-    await saveRacks(racks);
-  };
-
-  // ── Draw-to-create in addRack mode ──
-  const [editStockEntry,setEditStockEntry]=useState(null); // {id, productName, totalQty, unit}
-  const [editStockForm,setEditStockForm]=useState({productName:"",totalQty:"",unit:""});
-  const [editStockSaving,setEditStockSaving]=useState(false);
-
-  const canEditStock=(p)=>{
-    if(isAdmin)return true;
-    if(!canManage)return false;
-    // Issuer: only within 24 hours of last modification
-    const ref=p.lastModifiedAt||p._createdAt;
-    if(!ref)return false;
-    const refMs=ref.toMillis?ref.toMillis():ref.seconds?ref.seconds*1000:null;
-    if(!refMs)return false;
-    return Date.now()-refMs < 24*60*60*1000;
-  };
-
-  const saveStockEdit=async()=>{
-    if(!editStockEntry||!editStockForm.productName.trim())return;
-    const qty=parseFloat(editStockForm.totalQty);
-    if(isNaN(qty)||qty<0)return showToast("Enter a valid quantity","error");
-    setEditStockSaving(true);
-    try{
-      if(qty===0){
-        await C("fg_stock_v2").doc(editStockEntry.id).delete();
-        showToast("Entry removed ✓");
-      }else{
-        await C("fg_stock_v2").doc(editStockEntry.id).update({
-          productName:editStockForm.productName.trim(),
-          totalQty:parseFloat(qty.toFixed(3)),
-          unit:editStockForm.unit,
-          lastModifiedAt:ts(),
-          lastModifiedBy:user?.email,
-        });
-        showToast("Stock entry updated ✓");
-      }
-      setEditStockEntry(null);
-    }catch(e){showToast("Error: "+e.message,"error");}
-    setEditStockSaving(false);
-  };
-  const [pillars,setPillars]=useState([]);
-  const [pillarDrag,setPillarDrag]=useState(null);
-  const [selectedPillar,setSelectedPillar]=useState(null);
-  const [structure,setStructure]=useState(DEFAULT_STRUCTURE);
-  const [structDrag,setStructDrag]=useState(null);
-  const [selectedStruct,setSelectedStruct]=useState(null);
-
-  React.useEffect(()=>{
-    const unsub=C("fg_config").doc("pillars").onSnapshot(snap=>{
-      if(snap.exists&&snap.data().items)setPillars(snap.data().items);
-      else setPillars([]);
-    },()=>{});
-    return unsub;
-  },[]);
-
-  React.useEffect(()=>{
-    const unsub=C("fg_config").doc("structure").onSnapshot(snap=>{
-      if(snap.exists&&snap.data().items)setStructure(snap.data().items);
-    },()=>{});
-    return unsub;
-  },[]);
-
-  const savePillars=async(newPillars)=>{
-    await C("fg_config").doc("pillars").set({items:newPillars},{merge:true});
-    setPillars(newPillars);
-  };
-
-  const saveStructure=async(s)=>{
-    await C("fg_config").doc("structure").set({items:s},{merge:true});
-    setStructure(s);
-  };
-  const onCanvasPointerDown=(e)=>{
-    if(!canvasRef.current)return;
-    const rect=canvasRef.current.getBoundingClientRect();
-    const x=snapToGrid((e.clientX-rect.left)/scale);
-    const y=snapToGrid((e.clientY-rect.top)/scale);
-    if(mode==="addRack"&&canManage){
-      setDrawing({startX:x,startY:y,curX:x,curY:y});
-      e.currentTarget.setPointerCapture(e.pointerId);
-    }else if(mode==="editPillars"&&isAdmin){
-      // Click on canvas floor places a new pillar
-      const PILLAR_SIZE=24;
-      const id=newId();
-      const snap={id,x:Math.max(0,x-PILLAR_SIZE/2),y:Math.max(0,y-PILLAR_SIZE/2),w:PILLAR_SIZE,h:PILLAR_SIZE};
-      savePillars([...pillars,snap]);
-      showToast("Pillar placed — drag to adjust, click to select");
-    }
-  };
-  const onCanvasPointerMove=(e)=>{
-    if(!drawing||!canvasRef.current)return;
-    const rect=canvasRef.current.getBoundingClientRect();
-    const curX=Math.max(0,Math.min(FLOOR_W,snapToGrid((e.clientX-rect.left)/scale)));
-    const curY=Math.max(0,Math.min(FLOOR_H,snapToGrid((e.clientY-rect.top)/scale)));
-    setDrawing(d=>({...d,curX,curY}));
-  };
-  const onCanvasPointerUp=(e)=>{
-    if(!drawing)return;
-    const w=Math.abs(drawing.curX-drawing.startX);
-    const h=Math.abs(drawing.curY-drawing.startY);
-    const x=Math.min(drawing.startX,drawing.curX);
-    const y=Math.min(drawing.startY,drawing.curY);
-    if(w>=20&&h>=20){
-      const id=newId();
-      const rack={id,name:newRack.name||"New Rack",levels:parseInt(newRack.levels)||4,
-        color:newRack.color,label:newRack.label,w,h,x,y};
-      saveRacks([...racks,rack]);
-      showToast(`${rack.name} placed ✓ — click to select, drag edges to resize`);
-      setMode("view");
-    }
-    setDrawing(null);
-  };
-
-  // ── Click on existing rack (not drag/resize) ──
-  const onFloorClick=(e)=>{
-    if(mode==="addRack")return; // handled by pointer events
-  };
-
-  const copyRack=(rackId)=>{
-    const rack=racks.find(r=>r.id===rackId);
-    if(!rack)return;
-    setCopiedRack(rack);
-    showToast(`Copied "${rack.name}" — press Paste to place a copy`);
-  };
-
-  const pasteRack=async()=>{
-    if(!copiedRack)return;
-    const OFFSET=40; // logical px offset so paste doesn't land exactly on top
-    const id=newId();
-    const pasted={
-      ...copiedRack,
-      id,
-      name:copiedRack.name+" (Copy)",
-      x:Math.min(FLOOR_W-(copiedRack.w||80), (copiedRack.x||0)+OFFSET),
-      y:Math.min(FLOOR_H-(copiedRack.h||RACK_CANVAS_H), (copiedRack.y||0)+OFFSET),
-    };
-    await saveRacks([...racks,pasted]);
-    setSelectedRack(id);
-    setRenamingRack(id);
-    setRenameVal(pasted.name);
-    showToast(`Pasted "${pasted.name}" — rename it now`);
-  };
-
-  const commitRename=async()=>{
-    if(!renamingRack||!renameVal.trim())return;
-    const updated=racks.map(r=>r.id===renamingRack?{...r,name:renameVal.trim()}:r);
-    await saveRacks(updated);
-    setRenamingRack(null);
-    showToast("Renamed ✓");
-  };
-
-  const deleteRack=async(rackId)=>{
-    if(!isAdmin||!confirm("Remove this rack from the floor plan? Stock data is preserved."))return;
-    await saveRacks(racks.filter(r=>r.id!==rackId));
-    setSelectedRack(null);setSelectedCell(null);
-    showToast("Rack removed","error");
-  };
-
-  // ── Stock transactions ──
-  const openTxn=(cell,mode)=>{
-    setTxnModal({cell,mode});
-    setTxn({productName:"",cartons:"",looseTins:"",consumeTins:"",notes:"",date:today()});
-  };
-  const saveTxn=async()=>{
-    const {cell,mode}=txnModal;
-    if(!txn.productName.trim())return showToast("Select or enter product name","error");
-    const prod=fgProducts.find(p=>normalize(p.name)===normalize(txn.productName));
-    const tpc=prod?.tinsPerCarton||null;
-    const sizePerTin=prod?.size||null;
-    const unit=prod?.unit||"L";
-    setSaving(true);
-    try{
-      const cellProds=cellStock[cell]||[];
-      const existing=cellProds.find(p=>normalize(p.productName)===normalize(txn.productName));
-
-      if(mode==="consume"){
-        // Consume in TINS — apply open-carton algorithm
-        const consumeTins=parseInt(txn.consumeTins)||0;
-        if(consumeTins<=0)return showToast("Enter number of tins to consume","error");
-        if(!existing)return showToast("No stock of this product here","error");
-        const curCartons=parseInt(existing.cartons)||0;
-        const curLoose=parseInt(existing.looseTins)||0;
-        const availTins=tpc?(curCartons*tpc+curLoose):Math.round(parseFloat(existing.totalQty||0)/(sizePerTin||1));
-        if(consumeTins>availTins)return showToast(`Only ${availTins} tins of ${txn.productName} here. Cannot consume ${consumeTins}.`,"error");
-        let newCartons=curCartons, newLoose=curLoose;
-        if(tpc){
-          // Step 1: consume from loose tins first
-          const fromLoose=Math.min(consumeTins,curLoose);
-          const stillNeeded=consumeTins-fromLoose;
-          newLoose=curLoose-fromLoose;
-          // Step 2: if still need more, break open cartons
-          if(stillNeeded>0){
-            const cartonsToBreak=Math.ceil(stillNeeded/tpc);
-            const leftoverLoose=cartonsToBreak*tpc-stillNeeded;
-            newCartons=curCartons-cartonsToBreak;
-            newLoose=newLoose+leftoverLoose;
-          }
-        }
-        const newTotalQty=tpc&&sizePerTin?parseFloat(((newCartons*tpc+newLoose)*sizePerTin).toFixed(3)):parseFloat((parseFloat(existing.totalQty||0)-(consumeTins*(sizePerTin||1))).toFixed(3));
-        const consumedQty=parseFloat((consumeTins*(sizePerTin||1)).toFixed(3));
-        if(newTotalQty<=0.001) await C("fg_stock_v2").doc(existing.id).delete();
-        else await C("fg_stock_v2").doc(existing.id).update({cartons:newCartons,looseTins:newLoose,totalQty:newTotalQty,tinsPerCarton:tpc,sizePerTin,lastModifiedAt:ts(),lastModifiedBy:user?.email});
-        await C("fg_transactions").add({cell,productName:txn.productName.trim(),type:"consume",consumeTins,cartons:newCartons,looseTins:newLoose,totalQty:consumedQty,unit,tinsPerCarton:tpc,sizePerTin,notes:txn.notes,date:txn.date,by:user?.email,_createdAt:ts()});
-        const msg=tpc?`Consumed ${consumeTins} tins → ${newCartons} cartons + ${newLoose} loose tins remaining ✓`:`Consumed ${consumeTins} tins ✓`;
-        showToast(msg);
-
-      }else{
-        // ADD — store cartons + loose tins explicitly
-        const cartons=parseInt(txn.cartons)||0;
-        const looseTins=parseInt(txn.looseTins)||0;
-        if(cartons===0&&looseTins===0)return showToast("Enter cartons or loose tins","error");
-        let totalQty;
-        if(tpc&&sizePerTin){
-          totalQty=parseFloat(((cartons*tpc+looseTins)*sizePerTin).toFixed(3));
-        }else{
-          totalQty=cartons*12+looseTins;
-          showToast("Product not in catalogue — qty is approximate","error");
-        }
-        if(existing){
-          const newCartons=(parseInt(existing.cartons)||0)+cartons;
-          const newLoose=(parseInt(existing.looseTins)||0)+looseTins;
-          const newQty=parseFloat((parseFloat(existing.totalQty||0)+totalQty).toFixed(3));
-          await C("fg_stock_v2").doc(existing.id).update({cartons:newCartons,looseTins:newLoose,totalQty:newQty,tinsPerCarton:tpc,sizePerTin,lastModifiedAt:ts(),lastModifiedBy:user?.email});
-        }else{
-          await C("fg_stock_v2").add({cell,productName:txn.productName.trim(),cartons,looseTins,totalQty,unit,tinsPerCarton:tpc,sizePerTin,_createdAt:ts(),lastModifiedAt:ts(),lastModifiedBy:user?.email});
-        }
-        await C("fg_transactions").add({cell,productName:txn.productName.trim(),type:"add",cartons,looseTins,totalQty,unit,tinsPerCarton:tpc,sizePerTin,notes:txn.notes,date:txn.date,by:user?.email,_createdAt:ts()});
-        showToast(`Added ${cartons>0?cartons+" cartons":""}${cartons>0&&looseTins>0?" + ":""}${looseTins>0?looseTins+" loose tins":""} = ${totalQty} ${unit} ✓`);
-      }
-      setTxnModal(null);
-    }catch(err){showToast("Error: "+err.message,"error");}
-    setSaving(false);
-  };
-
-  // ── Transfer stock between rack locations ──
-  const saveTransfer=async()=>{
-    const {cell,product}=transferModal;
-    const moveCartons=parseInt(transferForm.cartons)||0;
-    const moveLoose=parseInt(transferForm.looseTins)||0;
-    if(moveCartons===0&&moveLoose===0)return showToast("Enter cartons or loose tins to transfer","error");
-    if(!transferForm.destRackId)return showToast("Select destination rack","error");
-    const destCell=`${transferForm.destRackId}.${transferForm.destLevel}`;
-    if(destCell===cell)return showToast("Source and destination are the same","error");
-    const tpc=product.tinsPerCarton||parseInt(fgProducts.find(p=>normalize(p.name)===normalize(product.productName))?.tinsPerCarton)||0;
-    const sizePerTin=product.sizePerTin||fgProducts.find(p=>normalize(p.name)===normalize(product.productName))?.size||0;
-    const totalMoveQty=tpc&&sizePerTin?parseFloat(((moveCartons*tpc+moveLoose)*sizePerTin).toFixed(3)):moveCartons+moveLoose;
-    // Validate source has enough
-    const srcCartons=parseInt(product.cartons)||0;
-    const srcLoose=parseInt(product.looseTins)||0;
-    const availTins=tpc?(srcCartons*tpc+srcLoose):Math.round(parseFloat(product.totalQty||0)/(sizePerTin||1));
-    const needTins=tpc?(moveCartons*tpc+moveLoose):(moveCartons+moveLoose);
-    if(needTins>availTins)return showToast(`Only ${availTins} tins available at source. Cannot transfer ${needTins}.`,"error");
-    setSaving(true);
-    try{
-      // 1. Remove from source
-      const newSrcCartons=srcCartons-moveCartons;
-      const newSrcLoose=srcLoose-moveLoose;
-      const newSrcQty=parseFloat((parseFloat(product.totalQty||0)-totalMoveQty).toFixed(3));
-      if(newSrcQty<=0.001) await C("fg_stock_v2").doc(product.id).delete();
-      else await C("fg_stock_v2").doc(product.id).update({cartons:newSrcCartons,looseTins:newSrcLoose,totalQty:newSrcQty,lastModifiedAt:ts(),lastModifiedBy:user?.email});
-      // 2. Add to destination
-      const destProds=cellStock[destCell]||[];
-      const destExisting=destProds.find(p=>normalize(p.productName)===normalize(product.productName));
-      if(destExisting){
-        await C("fg_stock_v2").doc(destExisting.id).update({
-          cartons:(parseInt(destExisting.cartons)||0)+moveCartons,
-          looseTins:(parseInt(destExisting.looseTins)||0)+moveLoose,
-          totalQty:parseFloat((parseFloat(destExisting.totalQty||0)+totalMoveQty).toFixed(3)),
-          tinsPerCarton:tpc,sizePerTin,lastModifiedAt:ts(),lastModifiedBy:user?.email
-        });
-      }else{
-        await C("fg_stock_v2").add({cell:destCell,productName:product.productName,cartons:moveCartons,looseTins:moveLoose,totalQty:totalMoveQty,unit:product.unit,tinsPerCarton:tpc,sizePerTin,_createdAt:ts(),lastModifiedAt:ts(),lastModifiedBy:user?.email});
-      }
-      // 3. Log transaction
-      const destRack=racks.find(r=>r.id===transferForm.destRackId);
-      await C("fg_transactions").add({type:"transfer",productName:product.productName,fromCell:cell,toCell:destCell,cartons:moveCartons,looseTins:moveLoose,totalQty:totalMoveQty,unit:product.unit,tinsPerCarton:tpc,sizePerTin,date:today(),by:user?.email,_createdAt:ts()});
-      showToast(`Transferred ${moveCartons>0?moveCartons+" cartons":""}${moveCartons>0&&moveLoose>0?" + ":""}${moveLoose>0?moveLoose+" loose tins":""} → ${destRack?.name||"?"} Level ${transferForm.destLevel} ✓`);
-      setTransferModal(null);
-    }catch(err){showToast("Error: "+err.message,"error");}
-    setSaving(false);
-  };
-
-  // ── Import from Excel ──
+  // ── Import products from Excel ──
   const importProducts=async(file)=>{
-    try{ await loadXLSX(); }catch(e){showToast("Could not load Excel library","error");return;}
+    try{await loadXLSX();}catch(e){showToast("Could not load Excel library","error");return;}
     const XLSX=window.XLSX;
     const data=await new Promise(r=>{const fr=new FileReader();fr.onload=e=>r(e.target.result);fr.readAsArrayBuffer(file);});
     try{
       const wb=XLSX.read(data,{type:"array"});
-      // Accept either sheet name
       const ws=wb.Sheets["FG Product Catalogue"]||wb.Sheets[Object.keys(wb.Sheets)[0]];
       if(!ws){showToast("Could not find product data sheet","error");return;}
-      // range:1 skips just the header row (row 0), starts reading data from row 1
       const rows=XLSX.utils.sheet_to_json(ws,{header:1,range:1});
-      let added=0,skipped=0,errors=[];
-      const batch=[];
+      let added=0,skipped=0,errors=[];const batch=[];
       for(const row of rows){
         const [name,sizeRaw,unit,packType,category,tpc,status]=row;
         if(!name||String(name).trim().length<2)continue;
-        if(String(name).startsWith('⚠')||String(status||"").includes('FILL'))continue;
+        if(String(name).startsWith("⚠")||String(status||"").includes("FILL"))continue;
         if(!category||String(category).trim().length<2){errors.push(`${name}: no category`);skipped++;continue;}
         const size=parseFloat(String(sizeRaw).replace(/[^\d.]/g,""))||null;
         const tinsPerCarton=parseInt(String(tpc).replace(/[^\d]/g,""))||null;
         if(!tinsPerCarton){errors.push(`${name}: no tins/carton`);skipped++;continue;}
-        batch.push({
-          name:String(name).trim(),size,unit:String(unit||"L").trim(),
-          packType:String(packType||"Single Pack").trim(),
-          category:String(category).trim(),tinsPerCarton,importedAt:today()
-        });
+        batch.push({name:String(name).trim(),size,unit:String(unit||"L").trim(),packType:String(packType||"Single Pack").trim(),category:String(category).trim(),tinsPerCarton,importedAt:today()});
         added++;
       }
       const existing=new Set(fgProducts.map(p=>normalize(p.name)));
       const toAdd=batch.filter(p=>!existing.has(normalize(p.name)));
       for(const p of toAdd)await C("fg_products").add(p);
-      const msg=`✓ Imported ${toAdd.length} products${batch.length-toAdd.length>0?`, ${batch.length-toAdd.length} duplicates skipped`:""}${skipped>0?`, ${skipped} skipped (missing data)`:""}`;
       setImportStatus({added:toAdd.length,skipped,duplicate:batch.length-toAdd.length,errors:errors.slice(0,5)});
-      showToast(msg);
+      showToast(`Imported ${toAdd.length} products${batch.length-toAdd.length>0?`, ${batch.length-toAdd.length} duplicates skipped`:""}${skipped>0?`, ${skipped} skipped`:""}  ✓`);
     }catch(err){showToast("Import error: "+err.message,"error");}
   };
 
-  // ── Export blank template for adding new products ──
-  const exportAddTemplate=async()=>{
-    await loadXLSX();
+  // ── Import closing balance from Tally Excel ──
+  const importClosingBalance=async(file)=>{
+    try{await loadXLSX();}catch(e){showToast("Could not load Excel library","error");return;}
     const XLSX=window.XLSX;
-    const rows=[
-      ["Product Name","FG Category","Tins Per Carton","Size","Unit","Pack Type"],
-      ["--- INSTRUCTIONS: Fill Product Name, FG Category, Tins Per Carton. Size & Unit auto-parsed from name if blank ---","","","","",""],
-      ["EXAMPLE: SYN BLACK (POP) 1 L","Paint (Single)","6","1","L","Single Pack"],
-      ["EXAMPLE: THINNER EPOXY (1 L)","Thinner","32","1","L","Single Pack"],
-      ["EXAMPLE: NC PUTTY GREY (1 K)","NC Putty","6","1","Kg","Single Pack"],
-    ];
-    const ws=XLSX.utils.aoa_to_sheet(rows);
-    ws["!cols"]=[{wch:48},{wch:20},{wch:16},{wch:8},{wch:6},{wch:14}];
-    const wb=XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb,ws,"FG Product Catalogue");
-    XLSX.writeFile(wb,`GCC_FG_Add_Products_Template.xlsx`);
-    showToast("Template downloaded ✓ — fill and re-upload to import");
+    const data=await new Promise(r=>{const fr=new FileReader();fr.onload=e=>r(e.target.result);fr.readAsArrayBuffer(file);});
+    try{
+      const wb=XLSX.read(data,{type:"array"});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const rows=XLSX.utils.sheet_to_json(ws,{header:1});
+      let updated=0,notFound=[];
+      const headerRow=rows.findIndex(r=>r.some(c=>String(c||"").toLowerCase().includes("particulars")||String(c||"").toLowerCase().includes("closing")));
+      const dataRows=headerRow>=0?rows.slice(headerRow+1):rows.slice(1);
+      for(const row of dataRows){
+        const name=String(row[0]||"").trim();
+        if(!name||name.toLowerCase().includes("total")||name.toLowerCase().includes("grand"))continue;
+        const qty=parseFloat(String(row[1]||row[2]||"0").replace(/[^\d.-]/g,""))||0;
+        if(qty<=0)continue;
+        const prod=fgProducts.find(p=>normalize(p.name)===normalize(name)||normalize(name).includes(normalize(p.name)));
+        if(!prod){notFound.push(name);continue;}
+        const tpc=prod.tinsPerCarton||1;
+        const cartons=Math.floor(qty/tpc);
+        const looseTins=qty%tpc;
+        const existing=fgStock.filter(s=>normalize(s.productName||"")===normalize(prod.name));
+        for(const e of existing)await C("fg_stock_v2").doc(e.id).delete();
+        await C("fg_stock_v2").add({productName:prod.name,cartons,looseTins,totalQty:qty,unit:prod.unit||"L",tinsPerCarton:tpc,sizePerTin:prod.size||0,_createdAt:ts(),lastModifiedAt:ts(),lastModifiedBy:user?.email,cell:"CLOSING_BALANCE",importedFrom:"Tally"});
+        await C("fg_transactions").add({productName:prod.name,type:"closing_balance_import",cartons,looseTins,totalQty:qty,unit:prod.unit||"L",tinsPerCarton:tpc,sizePerTin:prod.size||0,date:today(),by:user?.email,_createdAt:ts()});
+        updated++;
+      }
+      showToast(`Closing balance imported: ${updated} products updated${notFound.length>0?`, ${notFound.length} not found in catalogue`:""} ✓`);
+      if(notFound.length>0)console.log("Not found in FG catalogue:",notFound);
+    }catch(err){showToast("Import error: "+err.message,"error");}
   };
 
-  // ── Export current catalogue (for editing) ──
-  const exportCatalogue=async()=>{
-    await loadXLSX();
-    const XLSX=window.XLSX;
-    const rows=[["Product Name","FG Category","Tins Per Carton","Size","Unit","Pack Type"],
-      ...fgProducts.map(p=>[p.name,p.category,p.tinsPerCarton,p.size,p.unit,p.packType||"Single Pack"])];
-    const ws=XLSX.utils.aoa_to_sheet(rows);
-    ws["!cols"]=[{wch:52},{wch:22},{wch:15},{wch:8},{wch:6},{wch:14}];
-    const wb=XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb,ws,"FG Product Catalogue");
-    XLSX.writeFile(wb,`GCC_FG_Products_${today()}.xlsx`);
-    showToast("Catalogue exported ✓");
+  // ── Download template ──
+  const downloadTemplate=async()=>{
+    await loadXLSX();const XLSX=window.XLSX;
+    const rows=[["Product Name","Size","Unit","Pack Type","Category","Tins Per Carton",""]];
+    const ws=XLSX.utils.aoa_to_sheet(rows);ws["!cols"]=[{wch:40},{wch:8},{wch:6},{wch:14},{wch:20},{wch:14}];
+    const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"FG Product Catalogue");
+    XLSX.writeFile(wb,"FG_Product_Catalogue_Template.xlsx");
   };
 
-  // ── Helpers ──
-  const getCellProds=(cell)=>cellStock[cell]||[];
-  const getCellTotal=(cell)=>getCellProds(cell).reduce((s,p)=>s+(parseFloat(p.totalQty)||0),0);
-  const selCellProds=selectedCell?getCellProds(selectedCell):[];
-  const selRackData=selectedRack?racks.find(r=>r.id===selectedRack):null;
-  // Compact rack height on canvas — fixed 52px regardless of level count
-  // Level detail is shown only in the right panel, not on the canvas itself
-  const RACK_CANVAS_H = 52;
+  const saveProduct=async(p)=>{
+    setSaving(true);
+    try{
+      if(p.id)await C("fg_products").doc(p.id).update({name:p.name,size:parseFloat(p.size)||0,unit:p.unit,category:p.category,tinsPerCarton:parseInt(p.tinsPerCarton)||0,packType:p.packType,lastModifiedAt:ts()});
+      else{await C("fg_products").add({name:p.name,size:parseFloat(p.size)||0,unit:p.unit,category:p.category,tinsPerCarton:parseInt(p.tinsPerCarton)||0,packType:p.packType,_createdAt:ts()});setShowAddForm(false);}
+      setEditProduct(null);showToast("Saved ✓");
+    }catch(e){showToast("Error: "+e.message,"error");}
+    setSaving(false);
+  };
 
-  if(!loaded)return <div style={{textAlign:"center",padding:"40px",color:"#475569"}}>Loading warehouse layout…</div>;
+  const deleteProduct=async(id)=>{
+    if(!confirm("Delete this product?"))return;
+    await C("fg_products").doc(id).delete();
+    showToast("Deleted","error");
+  };
 
-  return <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
-    {/* ── Stock Search — find where a product is stored ── */}
-    <div style={{position:"relative"}}>
-      <span style={{position:"absolute",left:"12px",top:"50%",transform:"translateY(-50%)",color:"#334155",fontSize:"15px",pointerEvents:"none"}}>🔍</span>
-      <input style={{...inp,paddingLeft:"38px",paddingRight:stockSearch?"36px":"12px",fontSize:"13px"}}
-        value={stockSearch} onChange={e=>setStockSearch(e.target.value)}
-        placeholder="Search product to find rack & level…"/>
-      {stockSearch&&<button onClick={()=>setStockSearch("")} style={{position:"absolute",right:"10px",top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#475569",fontSize:"18px",cursor:"pointer",lineHeight:1}}>×</button>}
+  const inp2={background:"#0b1220",border:"1px solid #1e293b",borderRadius:"6px",padding:"5px 8px",color:"#e2e8f0",fontSize:"12px",width:"100%"};
+
+  const SubTabs=[["catalogue","📋 Catalogue"],["stock","📦 Stock"],["import","⬆ Import"]];
+
+  return <div style={{padding:"12px"}}>
+    {/* Sub-tab bar */}
+    <div style={{display:"flex",gap:"4px",marginBottom:"14px",flexWrap:"wrap"}}>
+      {SubTabs.map(([k,l])=><button key={k} onClick={()=>setSubTab(k)} style={{background:subTab===k?"#0a1a2e":"#060d1a",border:`1px solid ${subTab===k?"#2563eb":"#1e293b"}`,borderRadius:"6px",padding:"6px 14px",color:subTab===k?"#93c5fd":"#475569",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>{l}</button>)}
     </div>
 
-    {/* Search results — show all cells containing the searched product */}
-    {stockSearch.trim().length>=2&&(()=>{
-      const q=normalize(stockSearch);
-      // Flatten all cell stock, filter by product name match, resolve rack names
-      const results=[];
-      Object.entries(cellStock).forEach(([cell,prods])=>{
-        const [rackId,lv]=cell.split(".");
-        const rack=racks.find(r=>r.id===rackId);
-        prods.forEach(p=>{
-          if(normalize(p.productName||"").includes(q)){
-            results.push({...p, cell, rackName:rack?.name||rackId, level:lv});
-          }
-        });
-      });
-      results.sort((a,b)=>a.rackName.localeCompare(b.rackName)||parseInt(b.level)-parseInt(a.level));
-      return <div style={{background:"#060d1a",border:"1px solid #1e293b",borderRadius:"12px",overflow:"hidden"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",borderBottom:"1px solid #1e293b"}}>
-          <span style={{fontSize:"12px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.07em"}}>
-            {results.length>0?`${results.length} location${results.length!==1?"s":""} found`:"No stock found for this product"}
-          </span>
-          <span style={{fontSize:"11px",color:"#334155"}}>Click a row to jump to that level</span>
-        </div>
-        {results.length===0
-          ?<div style={{padding:"16px",textAlign:"center",color:"#334155",fontSize:"12px",fontStyle:"italic"}}>
-            "{stockSearch}" is not currently in stock on any rack
-          </div>
-          :<table style={{width:"100%",borderCollapse:"collapse"}}>
-            <thead>
-              <tr style={{background:"#0b1220"}}>
-                {["Product","Rack","Level","Quantity"].map(h=><th key={h} style={{padding:"8px 14px",fontSize:"11px",fontWeight:"700",color:"#475569",textAlign:"left",textTransform:"uppercase",letterSpacing:"0.06em"}}>{h}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {results.map((r,i)=><tr key={r.id} onClick={()=>{setSelectedCell(r.cell);setExpandedRack(null);setSelectedRack(racks.find(x=>x.id===r.cell.split(".")[0])?.id||null);setStockSearch("");}}
-                style={{borderTop:"1px solid #0f172a",cursor:"pointer",background:i%2===0?"#080d18":"transparent"}}
-                onMouseEnter={e=>e.currentTarget.style.background="#0f1d35"}
-                onMouseLeave={e=>e.currentTarget.style.background=i%2===0?"#080d18":"transparent"}>
-                <td style={{padding:"10px 14px",fontSize:"13px",color:"#e2e8f0",fontWeight:"500"}}>{r.productName}</td>
-                <td style={{padding:"10px 14px",fontSize:"13px",color:"#93c5fd",fontWeight:"600"}}>{r.rackName}</td>
-                <td style={{padding:"10px 14px"}}><span style={{background:"#1e3a5f",border:"1px solid #2563eb40",borderRadius:"6px",padding:"3px 10px",fontSize:"12px",color:"#93c5fd",fontWeight:"700"}}>L{r.level}</span></td>
-                <td style={{padding:"10px 14px",fontSize:"14px",color:"#4ade80",fontWeight:"700"}}>{parseFloat(r.totalQty).toFixed(2)} <span style={{fontSize:"11px",color:"#166534"}}>{r.unit}</span></td>
-              </tr>)}
-            </tbody>
-          </table>}
-      </div>;
-    })()}
-
-    {/* ── Floor plan — full width ── */}
-    <div ref={containerRef}>
-      {/* Catalogue panel toggle */}
-      <div style={{display:"flex",gap:"8px",marginBottom:"12px",borderBottom:"1px solid #1e293b",paddingBottom:"12px",flexWrap:"wrap",alignItems:"center"}}>
-        <span style={{fontSize:"12px",color:"#475569"}}>{fgProducts.length} products in catalogue</span>
-        <Btn label={showCatalogue?"▲ Hide Catalogue":"📋 Product Catalogue"} onClick={()=>setShowCatalogue(v=>!v)} color="#3b82f6" outline small/>
-        {canManage&&<>
-          <Btn label="⬆ Import from Excel" onClick={()=>document.getElementById("fg-import-input").click()} color="#a855f7" outline small/>
-          <input id="fg-import-input" type="file" accept=".xlsx" style={{display:"none"}} onChange={async e=>{if(e.target.files[0]){await loadXLSX();await importProducts(e.target.files[0]);e.target.value="";}}}/>
-          <Btn label="📥 Download Add-Template" onClick={exportAddTemplate} color="#0ea5e9" outline small/>
-          {fgProducts.length>0&&<Btn label="⬇ Export Catalogue" onClick={exportCatalogue} color="#64748b" outline small/>}
-        </>}
+    {/* ── CATALOGUE TAB ── */}
+    {subTab==="catalogue"&&<div>
+      <div style={{display:"flex",gap:"8px",marginBottom:"12px",flexWrap:"wrap",alignItems:"center"}}>
+        <input style={{...inp2,flex:1,minWidth:"160px"}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍 Search products…"/>
+        <select style={{...inp2,width:"160px"}} value={catFilter} onChange={e=>setCatFilter(e.target.value)}>
+          {categories.map(c=><option key={c}>{c}</option>)}
+        </select>
+        {canManage&&<button onClick={()=>setShowAddForm(v=>!v)} style={{background:"#052e16",border:"1px solid #166534",borderRadius:"6px",padding:"6px 12px",color:"#4ade80",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>+ Add Product</button>}
+        <span style={{fontSize:"11px",color:"#475569"}}>{filtered.length} products</span>
       </div>
 
-      {/* Catalogue panel */}
-      {showCatalogue&&<div style={{background:"#060d1a",border:"1px solid #1e293b",borderRadius:"12px",padding:"14px",marginBottom:"14px"}}>
-        <div style={{display:"flex",gap:"8px",alignItems:"center",marginBottom:"10px",flexWrap:"wrap"}}>
-          <input style={{...inp,flex:1,minWidth:"180px"}} value={catSearch} onChange={e=>setCatSearch(e.target.value)} placeholder="Search products…"/>
-          {canManage&&<AddProductInline onAdd={async(p)=>{await C("fg_products").add({...p,importedAt:today()});showToast("Product added ✓");}} packConfig={packConfig.length>0?packConfig:null}/>}
-          {importStatus&&<div style={{fontSize:"11px",color:"#4ade80"}}>Last import: {importStatus.added} added{importStatus.duplicate>0?`, ${importStatus.duplicate} duplicates`:""}{ importStatus.skipped>0?`, ${importStatus.skipped} skipped`:""}</div>}
+      {showAddForm&&canManage&&<div style={{background:"#0b1220",border:"1px solid #166534",borderRadius:"10px",padding:"14px",marginBottom:"12px"}}>
+        <div style={{fontSize:"13px",fontWeight:"700",color:"#4ade80",marginBottom:"10px"}}>+ New Product</div>
+        <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr 1fr",gap:"8px",marginBottom:"10px"}}>
+          <div><div style={{fontSize:"10.5px",color:"#475569",marginBottom:"3px"}}>Product Name *</div><input style={inp2} value={addForm.name} onChange={e=>setAddForm(f=>({...f,name:e.target.value}))} placeholder="VEEBEE SYNTHETIC ENAMEL 4L"/></div>
+          <div><div style={{fontSize:"10.5px",color:"#475569",marginBottom:"3px"}}>Size</div><input style={inp2} type="number" value={addForm.size} onChange={e=>setAddForm(f=>({...f,size:e.target.value}))} placeholder="4"/></div>
+          <div><div style={{fontSize:"10.5px",color:"#475569",marginBottom:"3px"}}>Unit</div><select style={inp2} value={addForm.unit} onChange={e=>setAddForm(f=>({...f,unit:e.target.value}))}><option>L</option><option>kg</option><option>ml</option></select></div>
+          <div><div style={{fontSize:"10.5px",color:"#475569",marginBottom:"3px"}}>Tins/Carton</div><input style={inp2} type="number" value={addForm.tinsPerCarton} onChange={e=>setAddForm(f=>({...f,tinsPerCarton:e.target.value}))} placeholder="4"/></div>
+          <div><div style={{fontSize:"10.5px",color:"#475569",marginBottom:"3px"}}>Category</div><input style={inp2} value={addForm.category} onChange={e=>setAddForm(f=>({...f,category:e.target.value}))} placeholder="Paint (Single)"/></div>
+          <div><div style={{fontSize:"10.5px",color:"#475569",marginBottom:"3px"}}>Pack Type</div><select style={inp2} value={addForm.packType} onChange={e=>setAddForm(f=>({...f,packType:e.target.value}))}><option>Single Pack</option><option>Two Pack</option></select></div>
         </div>
-        {fgProducts.length===0?<div style={{textAlign:"center",padding:"20px",color:"#334155"}}>No products yet — import from Excel to populate</div>
-        :<div style={{maxHeight:"260px",overflowY:"auto"}}>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:"6px"}}>
-            {fgProducts.filter(p=>!catSearch||normalize(p.name).includes(normalize(catSearch))||normalize(p.category||"").includes(normalize(catSearch))).slice(0,80).map(p=><div key={p.id} style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"7px",padding:"7px 10px"}}>
-              <div style={{fontSize:"12px",color:"#e2e8f0",fontWeight:"500",marginBottom:"2px"}}>{p.name}</div>
-              <div style={{fontSize:"10.5px",color:"#475569"}}>{p.category} · {p.tinsPerCarton} tins/carton · {p.size}{p.unit}</div>
-            </div>)}
-          </div>
-        </div>}
+        <div style={{display:"flex",gap:"8px"}}>
+          <button onClick={()=>saveProduct({...addForm})} disabled={saving||!addForm.name.trim()} style={{background:"#052e16",border:"1px solid #166534",borderRadius:"6px",padding:"6px 16px",color:"#4ade80",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>{saving?"…":"💾 Save"}</button>
+          <button onClick={()=>setShowAddForm(false)} style={{background:"none",border:"1px solid #334155",borderRadius:"6px",padding:"6px 12px",color:"#475569",fontSize:"12px",cursor:"pointer"}}>Cancel</button>
+        </div>
       </div>}
 
-      {/* Toolbar */}
-      <div style={{display:"flex",gap:"8px",alignItems:"flex-start",marginBottom:"12px",flexWrap:"wrap"}}>
-        {canManage&&mode==="view"&&<button onClick={()=>setMode("addRack")} style={{background:"#0f2d1a",border:"1px solid #166534",borderRadius:"8px",padding:"7px 14px",color:"#4ade80",fontWeight:"700",fontSize:"12.5px",cursor:"pointer"}}>+ Add Rack</button>}
-        {mode==="addRack"&&<div style={{display:"flex",gap:"6px",alignItems:"center",flexWrap:"wrap",background:"#0a1a2e",border:"1px solid #1e3a5f",borderRadius:"10px",padding:"8px 12px"}}>
-          <input style={{...inp,width:"130px",padding:"5px 8px",fontSize:"12px"}} value={newRack.name} onChange={e=>setNewRack({...newRack,name:e.target.value})} placeholder="Rack name"/>
-          <select style={{...sl,padding:"5px 6px",fontSize:"12px",width:"90px"}} value={newRack.levels} onChange={e=>setNewRack({...newRack,levels:e.target.value})}>
-            {[2,3,4,5,6,7,8].map(n=><option key={n} value={n}>{n} levels</option>)}
-          </select>
-          {/* Colour swatches — just for visual distinction, no product labelling */}
-          <div style={{display:"flex",gap:"4px",alignItems:"center"}}>
-            {["#c9956a","#0ea5e9","#eab308","#22c55e","#f97316","#a78bfa","#f43f5e","#64748b"].map(col=>
-              <div key={col} onClick={()=>setNewRack({...newRack,color:col,label:""})}
-                style={{width:"18px",height:"18px",borderRadius:"50%",background:col,cursor:"pointer",
-                  border:newRack.color===col?"3px solid #fff":"2px solid transparent",flexShrink:0}}/>
-            )}
-          </div>
-          <span style={{fontSize:"12px",color:"#22d3ee",fontWeight:"700"}}>→ drag on canvas to draw</span>
-          <button onClick={()=>setMode("view")} style={{background:"none",border:"1px solid #334155",borderRadius:"5px",color:"#64748b",fontSize:"11px",padding:"4px 8px",cursor:"pointer"}}>Cancel</button>
-        </div>}
-        {selectedRack&&canManage&&mode==="view"&&<>
-          <button onClick={()=>copyRack(selectedRack)} style={{background:"#0f1d35",border:"1px solid #1e3a5f",borderRadius:"7px",padding:"6px 12px",color:"#93c5fd",fontSize:"12px",fontWeight:"700",cursor:"pointer"}}>📋 Copy</button>
-          <button onClick={()=>{const r=racks.find(x=>x.id===selectedRack);if(r){setRenamingRack(selectedRack);setRenameVal(r.name);}}} style={{background:"#0f1d35",border:"1px solid #1e3a5f",borderRadius:"7px",padding:"6px 12px",color:"#fcd34d",fontSize:"12px",fontWeight:"700",cursor:"pointer"}}>✏️ Rename</button>
-          <button onClick={()=>setEditingRackColour(editingRackColour===selectedRack?null:selectedRack)} style={{background:"#0f1d35",border:"1px solid #1e3a5f",borderRadius:"7px",padding:"6px 12px",color:"#a78bfa",fontSize:"12px",fontWeight:"700",cursor:"pointer"}}>🎨 Colour</button>
-          <button onClick={()=>deleteRack(selectedRack)} style={{background:"#2e0a0a",border:"1px solid #7f1d1d",borderRadius:"7px",padding:"6px 12px",color:"#f87171",fontSize:"12px",fontWeight:"700",cursor:"pointer"}}>🗑 Remove</button>
-          <button onClick={()=>{setSelectedRack(null);setSelectedCell(null);setExpandedRack(null);}} style={{background:"none",border:"1px solid #334155",borderRadius:"7px",padding:"6px 12px",color:"#475569",fontSize:"12px",cursor:"pointer"}}>✕</button>
-        </>}
-        {copiedRack&&canManage&&mode==="view"&&<button onClick={pasteRack} style={{background:"#0f2d1a",border:"1px solid #166534",borderRadius:"8px",padding:"7px 14px",color:"#4ade80",fontWeight:"700",fontSize:"12.5px",cursor:"pointer"}}>📌 Paste "{copiedRack.name}"</button>}
-        {/* Inline rename input */}
-        {renamingRack&&<div style={{display:"flex",gap:"6px",alignItems:"center",background:"#0a1a2e",border:"1px solid #fcd34d60",borderRadius:"10px",padding:"6px 10px"}}>
-          <input style={{...inp,width:"160px",padding:"5px 8px",fontSize:"13px",fontWeight:"700",borderColor:"#fcd34d60"}} value={renameVal} onChange={e=>setRenameVal(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")commitRename();if(e.key==="Escape"){setRenamingRack(null);}}} autoFocus/>
-          <button onClick={commitRename} style={{background:"#0f2d1a",border:"1px solid #166534",borderRadius:"5px",padding:"5px 10px",color:"#4ade80",fontSize:"12px",fontWeight:"700",cursor:"pointer"}}>✓</button>
-          <button onClick={()=>setRenamingRack(null)} style={{background:"none",border:"1px solid #334155",borderRadius:"5px",padding:"5px 8px",color:"#475569",fontSize:"11px",cursor:"pointer"}}>✕</button>
-        </div>}
-        {/* Inline colour picker */}
-        {editingRackColour&&<div style={{display:"flex",gap:"6px",alignItems:"center",background:"#1a0a2e",border:"1px solid #a78bfa60",borderRadius:"10px",padding:"6px 12px",flexWrap:"wrap"}}>
-          <span style={{fontSize:"11.5px",color:"#a78bfa",fontWeight:"700"}}>🎨 Colour:</span>
-          {["#c9956a","#0ea5e9","#eab308","#22c55e","#f97316","#a78bfa","#f43f5e","#64748b","#06b6d4","#ec4899","#fcd34d","#94a3b8"].map(col=>{
-            const isActive=racks.find(r=>r.id===editingRackColour)?.color===col;
-            return <div key={col} onClick={async()=>{const updated=racks.map(r=>r.id===editingRackColour?{...r,color:col}:r);await saveRacks(updated);}}
-              style={{width:"22px",height:"22px",borderRadius:"50%",background:col,cursor:"pointer",border:isActive?"3px solid #fff":"2px solid transparent",flexShrink:0}}/>;
-          })}
-          <button onClick={()=>setEditingRackColour(null)} style={{background:"none",border:"none",color:"#475569",fontSize:"14px",cursor:"pointer",marginLeft:"4px"}}>✕</button>
-        </div>}
-        {isAdmin&&mode==="view"&&<button onClick={()=>{setMode("editPillars");setSelectedPillar(null);setSelectedStruct(null);}} style={{background:"#1a0a1a",border:"1px solid #7c3aed",borderRadius:"8px",padding:"7px 14px",color:"#c4b5fd",fontWeight:"700",fontSize:"12.5px",cursor:"pointer"}}>🗺 Edit Layout</button>}
-        {mode==="editPillars"&&<div style={{display:"flex",gap:"8px",alignItems:"center",background:"#1a0a1a",border:"1px solid #7c3aed",borderRadius:"10px",padding:"8px 12px",flexWrap:"wrap"}}>
-          <span style={{fontSize:"12px",color:"#c4b5fd",fontWeight:"700"}}>🗺 Layout Edit — drag racks to move · corner handle to resize · click canvas for pillar · drag walls</span>
-          {selectedPillar&&<button onClick={async()=>{await savePillars(pillars.filter(p=>p.id!==selectedPillar));setSelectedPillar(null);showToast("Pillar removed","error");}} style={{background:"#2e0a0a",border:"1px solid #7f1d1d",borderRadius:"5px",padding:"4px 10px",color:"#f87171",fontSize:"11px",fontWeight:"700",cursor:"pointer"}}>🗑 Delete pillar</button>}
-          {selectedStruct&&<button onClick={async()=>{await saveStructure(DEFAULT_STRUCTURE);showToast("Layout reset to defaults");setSelectedStruct(null);}} style={{background:"#2e1a00",border:"1px solid #92400e",borderRadius:"5px",padding:"4px 10px",color:"#fcd34d",fontSize:"11px",fontWeight:"700",cursor:"pointer"}}>↺ Reset all to default</button>}
-          <button onClick={async()=>{setMode("view");setSelectedPillar(null);setSelectedStruct(null);await saveStructure(structure);await savePillars(pillars);showToast("Layout saved ✓");}} style={{background:"#0f2d1a",border:"1px solid #166534",borderRadius:"5px",padding:"4px 10px",color:"#4ade80",fontSize:"11px",fontWeight:"700",cursor:"pointer"}}>✓ Done & Save</button>
-        </div>}
-      </div>
-
-      {/* Canvas */}
-      {/* Zoom controls */}
-      <div style={{display:"flex",gap:"6px",alignItems:"center",marginBottom:"8px",flexWrap:"wrap"}}>
-        <span style={{fontSize:"11px",color:"#475569",fontWeight:"600"}}>Zoom:</span>
-        <button onClick={()=>setUserZoom(z=>Math.min(MAX_ZOOM,parseFloat((z+0.2).toFixed(1))))} style={{background:"#1e293b",border:"1px solid #334155",borderRadius:"5px",color:"#94a3b8",width:"28px",height:"28px",fontSize:"16px",cursor:"pointer",lineHeight:1}}>+</button>
-        <span style={{fontSize:"12px",color:"#475569",minWidth:"36px",textAlign:"center"}}>{Math.round(userZoom*100)}%</span>
-        <button onClick={()=>setUserZoom(z=>Math.max(MIN_ZOOM,parseFloat((z-0.2).toFixed(1))))} style={{background:"#1e293b",border:"1px solid #334155",borderRadius:"5px",color:"#94a3b8",width:"28px",height:"28px",fontSize:"16px",cursor:"pointer",lineHeight:1}}>−</button>
-        <button onClick={()=>setUserZoom(1.0)} style={{background:"#1e293b",border:"1px solid #334155",borderRadius:"6px",color:"#64748b",fontSize:"11px",padding:"4px 8px",cursor:"pointer"}}>Reset</button>
-        <span style={{fontSize:"10px",color:"#334155"}}>· Pinch to zoom · Scroll/drag to pan</span>
-      </div>
-
-      {/* Scrollable canvas wrapper — native scroll = free pan on mobile/tablet */}
-      <div style={{overflowX:"auto",overflowY:"auto",WebkitOverflowScrolling:"touch",
-        borderRadius:"10px",border:"2px solid #1e3a5f",maxHeight:"70vh",cursor:"default"}}
-        onWheel={e=>{if(e.ctrlKey||e.metaKey){e.preventDefault();const delta=e.deltaY>0?-0.1:0.1;setUserZoom(z=>Math.min(MAX_ZOOM,Math.max(MIN_ZOOM,parseFloat((z+delta).toFixed(1)))));}}}
-        onTouchStart={e=>{if(e.touches.length===2){const dx=e.touches[0].clientX-e.touches[1].clientX;const dy=e.touches[0].clientY-e.touches[1].clientY;e.currentTarget._pinchDist=Math.sqrt(dx*dx+dy*dy);e.currentTarget._pinchZoom=userZoom;}}}
-        onTouchMove={e=>{if(e.touches.length===2&&e.currentTarget._pinchDist){e.preventDefault();const dx=e.touches[0].clientX-e.touches[1].clientX;const dy=e.touches[0].clientY-e.touches[1].clientY;const dist=Math.sqrt(dx*dx+dy*dy);const ratio=dist/e.currentTarget._pinchDist;const newZ=Math.min(MAX_ZOOM,Math.max(MIN_ZOOM,e.currentTarget._pinchZoom*ratio));setUserZoom(parseFloat(newZ.toFixed(2)));}}} >
-
-      <div ref={canvasRef} onClick={onFloorClick}
-        onPointerDown={onCanvasPointerDown}
-        onPointerMove={onCanvasPointerMove}
-        onPointerUp={onCanvasPointerUp}
-        style={{position:"relative",width:`${FLOOR_W*scale}px`,height:`${FLOOR_H*scale}px`,
-          background:"#080d18",flexShrink:0,
-          cursor:mode==="addRack"?"crosshair":"default",
-          backgroundImage:"radial-gradient(circle,#1e293b 1px,transparent 1px)",
-          backgroundSize:`${GRID*scale}px ${GRID*scale}px`}}>
-
-        {/* ── Structural elements — drag+resize in editPillars mode, static otherwise ── */}
-        {structure.map(el=>{
-          const isEditMode=mode==="editPillars";
-          const isSel=selectedStruct===el.id;
-          const HANDLE=Math.max(8,10*scale);
-          return <div key={el.id}
-            style={{position:"absolute",left:el.x*scale,top:el.y*scale,
-              width:el.w*scale,height:el.h*scale,
-              background:el.fill,border:`${isSel?"2px solid #fcd34d":"1px solid #334155"}`,
-              borderRadius:"4px",display:"flex",alignItems:"center",justifyContent:"center",
-              pointerEvents:isEditMode?"auto":"none",
-              cursor:isEditMode?"move":"default",zIndex:isEditMode?4:1,overflow:"visible"}}
-            onClick={e=>{if(!isEditMode)return;e.stopPropagation();setSelectedStruct(isSel?null:el.id);setSelectedPillar(null);}}
-            onPointerDown={e=>{
-              if(!isEditMode||!isAdmin)return;
-              e.stopPropagation();
-              e.currentTarget.setPointerCapture(e.pointerId);
-              setStructDrag({id:el.id,origX:el.x,origY:el.y,origW:el.w,origH:el.h,startPX:e.clientX,startPY:e.clientY,resizing:null});
-            }}
-            onPointerMove={e=>{
-              if(!structDrag||structDrag.id!==el.id)return;
-              const dx=(e.clientX-structDrag.startPX)/scale;
-              const dy=(e.clientY-structDrag.startPY)/scale;
-              if(structDrag.resizing==="se"){
-                const nw=Math.max(40,snapToGrid(structDrag.origW+dx));
-                const nh=Math.max(30,snapToGrid(structDrag.origH+dy));
-                setStructure(prev=>prev.map(s=>s.id===el.id?{...s,w:nw,h:nh}:s));
-              }else{
-                const nx=Math.max(0,Math.min(FLOOR_W-el.w,snapToGrid(structDrag.origX+dx)));
-                const ny=Math.max(0,Math.min(FLOOR_H-el.h,snapToGrid(structDrag.origY+dy)));
-                setStructure(prev=>prev.map(s=>s.id===el.id?{...s,x:nx,y:ny}:s));
-              }
-            }}
-            onPointerUp={async e=>{
-              if(!structDrag||structDrag.id!==el.id)return;
-              setStructDrag(null);
-              await saveStructure(structure);
-            }}>
-            <span style={{fontSize:`${Math.max(9,12*scale)}px`,fontWeight:"700",color:el.textColor,textAlign:"center",pointerEvents:"none"}}>{el.label}</span>
-            {/* Resize handle — bottom-right corner, only when selected in edit mode */}
-            {isEditMode&&isSel&&<div
-              onPointerDown={e=>{e.stopPropagation();e.currentTarget.parentElement.setPointerCapture(e.pointerId);setStructDrag({id:el.id,origX:el.x,origY:el.y,origW:el.w,origH:el.h,startPX:e.clientX,startPY:e.clientY,resizing:"se"});}}
-              style={{position:"absolute",right:`-${HANDLE/2}px`,bottom:`-${HANDLE/2}px`,
-                width:`${HANDLE}px`,height:`${HANDLE}px`,
-                background:"#fcd34d",borderRadius:"50%",cursor:"se-resize",zIndex:10}}>
-            </div>}
-          </div>;
-        })}
-
-        {/* ── Drawing preview ── */}
-        {drawing&&(()=>{
-          const w=Math.abs(drawing.curX-drawing.startX);
-          const h=Math.abs(drawing.curY-drawing.startY);
-          const x=Math.min(drawing.startX,drawing.curX);
-          const y=Math.min(drawing.startY,drawing.curY);
-          return <div style={{position:"absolute",left:x*scale,top:y*scale,width:w*scale,height:h*scale,
-            border:`2px dashed ${newRack.color}`,background:newRack.color+"22",
-            borderRadius:"5px",pointerEvents:"none",display:"flex",alignItems:"center",justifyContent:"center"}}>
-            {w>30&&h>16&&<span style={{fontSize:"11px",color:newRack.color,fontWeight:"700"}}>{newRack.name||"New Rack"}</span>}
-          </div>;
-        })()}
-
-        {/* ── Draggable + Resizable racks ── */}
-        {racks.map(rack=>{
-          const isSelRack=selectedRack===rack.id||expandedRack===rack.id;
-          const rh=(rack.h||RACK_CANVAS_H)*scale;
-          const rw=rack.w*scale;
-          const levelsWithStock=Array.from({length:rack.levels},(_,i)=>i+1).filter(lv=>getCellTotal(`${rack.id}.${lv}`)>0).length;
-          const hasAnyStock=levelsWithStock>0;
-          const HANDLE=Math.max(8,10*scale); // resize handle size in px
-          return <div key={rack.id}
-            onPointerDown={e=>onRackPointerDown(e,rack)}
-            onPointerMove={e=>onRackPointerMove(e,rack)}
-            onPointerUp={e=>onRackPointerUp(e,rack)}
-            onClick={e=>{e.stopPropagation();if(!dragging){setExpandedRack(rack.id);setSelectedCell(null);setSelectedRack(rack.id);}}}
-            style={{position:"absolute",left:rack.x*scale,top:rack.y*scale,
-              width:rw,height:rh,
-              border:`${isSelRack?"3px solid #3b82f6":"2px solid "+rack.color+"80"}`,
-              borderRadius:"6px",overflow:"visible",
-              background:hasAnyStock?"#052e16":"#0b1220",
-              boxShadow:isSelRack?`0 0 14px ${rack.color}50`:`0 0 4px ${rack.color}20`,
-              cursor:canManage?"grab":"pointer",
-              userSelect:"none",touchAction:"none"}}>
-            {/* Content */}
-            <div style={{position:"absolute",inset:0,overflow:"hidden",borderRadius:"4px",
-              display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:`${1*scale}px`}}>
-              <div style={{position:"absolute",top:0,left:0,right:0,height:`${5*scale}px`,background:rack.color,borderRadius:"4px 4px 0 0"}}/>
-              <div style={{fontSize:`${Math.max(8,10*scale)}px`,fontWeight:"700",color:"#f1f5f9",
-                textAlign:"center",lineHeight:1.1,padding:`${7*scale}px ${4*scale}px 0`,
-                whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",width:"100%"}}>
-                {rack.name}
+      <div style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"10px",overflow:"hidden"}}>
+        <div style={{display:"grid",gridTemplateColumns:"3fr 1fr 1fr 1fr 1fr 80px",gap:"0",background:"#060d1a",padding:"7px 12px",fontSize:"11px",fontWeight:"700",color:"#475569",borderBottom:"1px solid #1e293b"}}>
+          <span>Product Name</span><span>Size</span><span>Category</span><span>Tins/Ctn</span><span>Pack</span><span>Actions</span>
+        </div>
+        {filtered.length===0&&<div style={{padding:"40px",textAlign:"center",color:"#334155"}}>No products found</div>}
+        {filtered.map((p,i)=>{
+          const stk=stockByProduct[normalize(p.name||"")];
+          const isEditing=editProduct?.id===p.id;
+          return <div key={p.id} style={{display:"grid",gridTemplateColumns:"3fr 1fr 1fr 1fr 1fr 80px",gap:"0",padding:"7px 12px",borderBottom:"1px solid #0f172a",background:i%2===0?"transparent":"#060d1a",alignItems:"center"}}>
+            {isEditing?<>
+              <input style={{...inp2,fontSize:"11.5px"}} value={editProduct.name} onChange={e=>setEditProduct(f=>({...f,name:e.target.value}))}/>
+              <input style={{...inp2,fontSize:"11.5px"}} type="number" value={editProduct.size} onChange={e=>setEditProduct(f=>({...f,size:e.target.value}))}/>
+              <input style={{...inp2,fontSize:"11.5px"}} value={editProduct.category} onChange={e=>setEditProduct(f=>({...f,category:e.target.value}))}/>
+              <input style={{...inp2,fontSize:"11.5px"}} type="number" value={editProduct.tinsPerCarton} onChange={e=>setEditProduct(f=>({...f,tinsPerCarton:e.target.value}))}/>
+              <select style={{...inp2,fontSize:"11.5px"}} value={editProduct.packType} onChange={e=>setEditProduct(f=>({...f,packType:e.target.value}))}><option>Single Pack</option><option>Two Pack</option></select>
+              <div style={{display:"flex",gap:"3px"}}>
+                <button onClick={()=>saveProduct(editProduct)} disabled={saving} style={{background:"#052e16",border:"1px solid #166534",borderRadius:"5px",padding:"2px 7px",color:"#4ade80",fontSize:"10.5px",fontWeight:"700",cursor:"pointer"}}>{saving?"…":"✓"}</button>
+                <button onClick={()=>setEditProduct(null)} style={{background:"none",border:"1px solid #334155",borderRadius:"5px",padding:"2px 7px",color:"#475569",fontSize:"10.5px",cursor:"pointer"}}>✕</button>
               </div>
-              <div style={{display:"flex",alignItems:"center",gap:`${3*scale}px`}}>
-                <span style={{fontSize:`${Math.max(7,9*scale)}px`,color:rack.color,fontWeight:"700",background:rack.color+"22",
-                  padding:`${1*scale}px ${3*scale}px`,borderRadius:"4px"}}>L{rack.levels}</span>
-                {hasAnyStock&&<span style={{fontSize:`${Math.max(7,8*scale)}px`,color:"#4ade80",fontWeight:"700"}}>
-                  {levelsWithStock}/{rack.levels}
-                </span>}
+            </>:<>
+              <div>
+                <div style={{fontSize:"12.5px",fontWeight:"600",color:"#e2e8f0"}}>{p.name}</div>
+                {stk&&stk.tins>0&&<div style={{fontSize:"10px",color:"#22c55e"}}>Stock: {stk.cartons>0?stk.cartons+" ctn":""}{ stk.loose>0?(stk.cartons>0?" + ":"")+stk.loose+" loose":""} ({stk.tins} tins)</div>}
               </div>
-            </div>
-            {/* Resize handles — only shown when selected */}
-            {isSelRack&&canManage&&<>
-              {/* Right-edge handle */}
-              <div onPointerDown={e=>{e.stopPropagation();onRackPointerDown(e,rack,"e");}}
-                style={{position:"absolute",right:`-${HANDLE/2}px`,top:`${rh/2-HANDLE}px`,
-                  width:`${HANDLE}px`,height:`${HANDLE*2}px`,
-                  background:"#3b82f6",borderRadius:"3px",cursor:"ew-resize",zIndex:10,
-                  display:"flex",alignItems:"center",justifyContent:"center"}}>
-                <div style={{width:"2px",height:"60%",background:"#fff",borderRadius:"1px",margin:"0 1px"}}/>
-                <div style={{width:"2px",height:"60%",background:"#fff",borderRadius:"1px",margin:"0 1px"}}/>
-              </div>
-              {/* Bottom-right corner handle */}
-              <div onPointerDown={e=>{e.stopPropagation();onRackPointerDown(e,rack,"se");}}
-                style={{position:"absolute",right:`-${HANDLE/2}px`,bottom:`-${HANDLE/2}px`,
-                  width:`${HANDLE}px`,height:`${HANDLE}px`,
-                  background:"#3b82f6",borderRadius:"50%",cursor:"se-resize",zIndex:10}}>
-              </div>
+              <span style={{fontSize:"12px",color:"#94a3b8"}}>{p.size||""}{p.unit||""}</span>
+              <span style={{fontSize:"11px",color:"#64748b"}}>{p.category||""}</span>
+              <span style={{fontSize:"12px",color:"#94a3b8"}}>{p.tinsPerCarton||""}</span>
+              <span style={{fontSize:"11px",color:"#64748b"}}>{(p.packType||"").replace(" Pack","")}</span>
+              {canManage&&<div style={{display:"flex",gap:"3px"}}>
+                <button onClick={()=>setEditProduct({...p})} style={{background:"none",border:"1px solid #1e293b",borderRadius:"5px",padding:"2px 7px",color:"#64748b",fontSize:"10px",cursor:"pointer"}}>✏</button>
+                <button onClick={()=>deleteProduct(p.id)} style={{background:"none",border:"1px solid #7f1d1d",borderRadius:"5px",padding:"2px 7px",color:"#f87171",fontSize:"10px",cursor:"pointer"}}>🗑</button>
+              </div>}
             </>}
           </div>;
         })}
-
-        {/* ── Pillars — non-interactive outside editPillars mode ── */}
-        {pillars.map(p=>{
-          const isEditMode=mode==="editPillars";
-          const isSel=selectedPillar===p.id;
-          return <div key={p.id}
-            style={{position:"absolute",left:p.x*scale,top:p.y*scale,
-              width:p.w*scale,height:p.h*scale,
-              background:isSel?"#6d28d9":"#4b5563",
-              border:`2px solid ${isSel?"#c4b5fd":"#6b7280"}`,
-              borderRadius:"3px",
-              boxShadow:isEditMode?"0 0 6px #7c3aed50":"none",
-              pointerEvents:isEditMode?"auto":"none", // KEY: invisible to clicks outside edit mode
-              cursor:isEditMode?"move":"default",
-              zIndex:isEditMode?5:1,
-            }}
-            onClick={e=>{if(!isEditMode)return;e.stopPropagation();setSelectedPillar(isSel?null:p.id);}}
-            onPointerDown={e=>{
-              if(!isEditMode||!isAdmin)return;
-              e.stopPropagation();
-              e.currentTarget.setPointerCapture(e.pointerId);
-              setPillarDrag({pillarId:p.id,origX:p.x,origY:p.y,startPX:e.clientX,startPY:e.clientY});
-            }}
-            onPointerMove={e=>{
-              if(!pillarDrag||pillarDrag.pillarId!==p.id)return;
-              const dx=(e.clientX-pillarDrag.startPX)/scale;
-              const dy=(e.clientY-pillarDrag.startPY)/scale;
-              const nx=Math.max(0,Math.min(FLOOR_W-p.w,snapToGrid(pillarDrag.origX+dx)));
-              const ny=Math.max(0,Math.min(FLOOR_H-p.h,snapToGrid(pillarDrag.origY+dy)));
-              setPillars(prev=>prev.map(pp=>pp.id===p.id?{...pp,x:nx,y:ny}:pp));
-            }}
-            onPointerUp={async e=>{
-              if(!pillarDrag||pillarDrag.pillarId!==p.id)return;
-              setPillarDrag(null);
-              await savePillars(pillars);
-            }}
-          />;
-        })}
-        {/* Count hint */}
-        <div style={{position:"absolute",bottom:"6px",right:"8px",fontSize:"10px",color:"#1e293b"}}>
-          {racks.length} rack{racks.length!==1?"s":""}{pillars.length>0?` · ${pillars.length} pillars`:""}
-        </div>
       </div>
-      </div>{/* end scroll wrapper */}
-      <div style={{display:"flex",gap:"12px",flexWrap:"wrap",marginTop:"8px"}}>
-        {[["Coloured top stripe","Product category colour"],["L4 badge","Number of levels"],["2/4 (green)","Levels with stock"],].map(([k,v])=><div key={k} style={{fontSize:"10px",color:"#334155"}}><span style={{color:"#475569",fontWeight:"600"}}>{k}</span>: {v}</div>)}
-        {canManage&&<span style={{fontSize:"10px",color:"#334155"}}>· Click rack to see levels · Use 🗺 Edit Layout to move/resize racks</span>}
-        {isAdmin&&<span style={{fontSize:"10px",color:"#6d28d9"}}>· 🗺 Edit Layout to reposition walls/pillars</span>}
-      </div>
-    </div>
-
-    {/* ── DETAIL PANEL — below canvas, full width ── */}
-    {(selectedCell||expandedRack||selRackData)&&<div style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"12px",padding:"14px"}}>
-      {expandedRack&&!selectedCell&&(()=>{
-        const rack=racks.find(r=>r.id===expandedRack);
-        if(!rack)return null;
-        return <>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"12px"}}>
-            <div style={{fontSize:"15px",fontWeight:"700",color:"#f1f5f9"}}>{rack.name} <span style={{fontSize:"12px",fontWeight:"400",color:"#475569"}}>— tap a level to view or update stock</span></div>
-            <button onClick={()=>{setExpandedRack(null);setSelectedRack(null);}} style={{background:"none",border:"none",color:"#334155",fontSize:"18px",cursor:"pointer",lineHeight:1}}>×</button>
-          </div>
-          {/* Horizontal row of level cards — works well on tablet */}
-          <div style={{display:"grid",gridTemplateColumns:`repeat(${rack.levels},1fr)`,gap:"8px"}}>
-            {Array.from({length:rack.levels},(_,i)=>rack.levels-i).map(lv=>{
-              const cellKey=`${rack.id}.${lv}`;
-              const prods=getCellProds(cellKey);
-              const total=getCellTotal(cellKey);
-              return <div key={lv} onClick={()=>{setSelectedCell(cellKey);setExpandedRack(null);}}
-                style={{background:total>0?"#052e16":"#080d18",border:`1px solid ${total>0?"#166534":"#1e293b"}`,
-                borderRadius:"10px",padding:"10px 12px",cursor:"pointer",transition:"background 0.1s",minWidth:0}}
-                onMouseEnter={e=>e.currentTarget.style.background=total>0?"#064d20":"#0b1220"}
-                onMouseLeave={e=>e.currentTarget.style.background=total>0?"#052e16":"#080d18"}>
-                <div style={{fontSize:"13px",fontWeight:"700",color:total>0?"#4ade80":"#475569",marginBottom:"4px"}}>Level {lv}</div>
-                {total>0
-                  ?<>{prods.slice(0,2).map(p=>{
-                    const hasCartons=p.cartons!=null;
-                    return <div key={p.id} style={{marginTop:"3px"}}>
-                      <div style={{fontSize:"10px",color:"#64748b",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.productName}</div>
-                      {hasCartons
-                        ?<div style={{fontSize:"12px",fontWeight:"700",color:"#4ade80"}}>{parseInt(p.cartons)||0}C{(parseInt(p.looseTins)||0)>0?` + ${parseInt(p.looseTins)}T`:""}</div>
-                        :<div style={{fontSize:"12px",fontWeight:"700",color:"#4ade80"}}>{parseFloat(p.totalQty).toFixed(1)} {p.unit}</div>}
-                    </div>;
-                  })}
-                  {prods.length>2&&<div style={{fontSize:"10px",color:"#475569"}}>+{prods.length-2} more</div>}
-                  </>
-                  :<div style={{fontSize:"11px",color:"#334155",fontStyle:"italic"}}>empty</div>}
-              </div>;
-            })}
-          </div>
-          {canManage&&<div style={{marginTop:"10px",fontSize:"11px",color:"#475569",textAlign:"center"}}>Tap any level card above to add or consume stock</div>}
-        </>;
-      })()}
-      {selectedCell&&<>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"12px"}}>
-          <div>
-            <div style={{fontSize:"11px",color:"#475569",fontWeight:"600",textTransform:"uppercase",letterSpacing:"0.08em"}}>Location</div>
-            <div style={{fontSize:"18px",fontWeight:"700",color:"#f1f5f9",marginTop:"2px"}}>
-              {selRackData?.name||"—"} · Level {selectedCell.split(".")[1]}
-            </div>
-            <button onClick={()=>{setSelectedCell(null);setExpandedRack(selRackData?.id);}} style={{background:"none",border:"none",color:"#3b82f6",fontSize:"11px",cursor:"pointer",padding:0,marginTop:"2px"}}>← Back to all levels</button>
-          </div>
-          {canManage&&<div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
-            <button onClick={()=>openTxn(selectedCell,"add")} style={{background:"#052e16",border:"1px solid #166534",borderRadius:"7px",color:"#4ade80",fontSize:"13px",fontWeight:"700",padding:"8px 16px",cursor:"pointer"}}>+ Add Stock</button>
-            {selCellProds.length>0&&<button onClick={()=>openTxn(selectedCell,"consume")} style={{background:"#2e0a0a",border:"1px solid #7f1d1d",borderRadius:"7px",color:"#f87171",fontSize:"13px",fontWeight:"700",padding:"8px 16px",cursor:"pointer"}}>− Consume</button>}
-            {selCellProds.length>0&&<button onClick={()=>{setTransferModal({cell:selectedCell,product:selCellProds[0]});setTransferForm({cartons:"",looseTins:"",destRackId:"",destLevel:"1"});}} style={{background:"#0a1a2e",border:"1px solid #2563eb",borderRadius:"7px",color:"#93c5fd",fontSize:"13px",fontWeight:"700",padding:"8px 16px",cursor:"pointer"}}>↔ Transfer</button>}
-          </div>}
-        </div>
-        {selCellProds.length===0
-          ?<div style={{textAlign:"center",padding:"16px 0",color:"#334155",fontSize:"12.5px",fontStyle:"italic"}}>Empty — nothing stored here yet</div>
-          :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:"8px"}}>
-            {selCellProds.map(p=>{
-              const isEditing=editStockEntry?.id===p.id;
-              const canEdit=canEditStock(p);
-              const modAge=p.lastModifiedAt||p._createdAt;
-              const modAgeMs=modAge?.toMillis?modAge.toMillis():modAge?.seconds?modAge.seconds*1000:null;
-              const hoursAgo=modAgeMs?Math.floor((Date.now()-modAgeMs)/3600000):null;
-              return <div key={p.id} style={{background:"#080d18",border:`1px solid ${isEditing?"#fcd34d60":"#1e293b"}`,borderRadius:"8px",padding:"10px 12px"}}>
-                {isEditing?<>
-                  <div style={{fontSize:"10px",color:"#fcd34d",fontWeight:"700",marginBottom:"6px",textTransform:"uppercase",letterSpacing:"0.07em"}}>✏️ Edit Entry</div>
-                  <input style={{...inp,fontSize:"12px",padding:"5px 8px",marginBottom:"6px",width:"100%"}} value={editStockForm.productName} onChange={e=>setEditStockForm({...editStockForm,productName:e.target.value})} placeholder="Product name"/>
-                  <div style={{display:"flex",gap:"6px",marginBottom:"8px"}}>
-                    <input style={{...inp,fontSize:"12px",padding:"5px 8px",flex:1}} type="number" min="0" step="0.001" value={editStockForm.totalQty} onChange={e=>setEditStockForm({...editStockForm,totalQty:e.target.value})} placeholder="Qty"/>
-                    <input style={{...inp,fontSize:"12px",padding:"5px 8px",width:"50px"}} value={editStockForm.unit} onChange={e=>setEditStockForm({...editStockForm,unit:e.target.value})} placeholder="L"/>
-                  </div>
-                  <div style={{fontSize:"10px",color:"#475569",marginBottom:"6px"}}>{isAdmin?"Admin: set any qty directly. Set 0 to delete entry. No transaction logged.":"Set qty to 0 to remove entry"}</div>
-                  <div style={{display:"flex",gap:"6px"}}>
-                    <button onClick={saveStockEdit} disabled={editStockSaving} style={{flex:1,background:"#0f2d1a",border:"1px solid #166534",borderRadius:"5px",color:"#4ade80",fontSize:"11px",fontWeight:"700",padding:"5px",cursor:"pointer"}}>{editStockSaving?"…":"✓ Save"}</button>
-                    <button onClick={()=>setEditStockEntry(null)} style={{flex:1,background:"none",border:"1px solid #334155",borderRadius:"5px",color:"#475569",fontSize:"11px",padding:"5px",cursor:"pointer"}}>✕ Cancel</button>
-                  </div>
-                </>:<>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"4px"}}>
-                    <div style={{fontSize:"12px",fontWeight:"600",color:"#e2e8f0",flex:1,marginRight:"6px"}}>{p.productName}</div>
-                    {canManage&&selCellProds.length>1&&<button onClick={()=>{setTransferModal({cell:selectedCell,product:p});setTransferForm({cartons:"",looseTins:"",destRackId:"",destLevel:"1"});}}
-                      style={{background:"none",border:"1px solid #1e3a5f",borderRadius:"4px",color:"#93c5fd",fontSize:"10px",padding:"2px 6px",cursor:"pointer",flexShrink:0}}>↔</button>}
-                    {canEdit&&<button onClick={()=>{setEditStockEntry(p);setEditStockForm({productName:p.productName,totalQty:String(p.totalQty),unit:p.unit||"L"});}}
-                      style={{background:"none",border:"1px solid #334155",borderRadius:"4px",color:"#64748b",fontSize:"10px",padding:"2px 6px",cursor:"pointer",flexShrink:0}}>✏️</button>}
-                  </div>
-                  <div style={{fontSize:"18px",fontWeight:"700",color:"#4ade80"}}>
-                    {p.cartons!=null
-                      ?<>{parseInt(p.cartons)||0}<span style={{fontSize:"11px",color:"#166534",marginLeft:"3px"}}>cartons</span>{(parseInt(p.looseTins)||0)>0&&<> + {parseInt(p.looseTins)}<span style={{fontSize:"11px",color:"#166534",marginLeft:"3px"}}>loose tins</span></>}</>
-                      :<>{parseFloat(p.totalQty).toFixed(2)}<span style={{fontSize:"11px",color:"#166534",marginLeft:"3px"}}>{p.unit}</span></>}
-                  </div>
-                  {p.cartons!=null&&p.tinsPerCarton&&p.sizePerTin&&<div style={{fontSize:"11px",color:"#475569",marginTop:"2px"}}>= {((parseInt(p.cartons||0)*p.tinsPerCarton+(parseInt(p.looseTins)||0))*p.sizePerTin).toFixed(2)} {p.unit} total</div>}
-                  {!isAdmin&&canEdit&&hoursAgo!==null&&<div style={{fontSize:"9px",color:"#334155",marginTop:"2px"}}>Editable for {23-hoursAgo}h more</div>}
-                </>}
-              </div>;
-            })}
-          </div>}
-      </>}
-      {!selectedCell&&!expandedRack&&selRackData&&<div style={{textAlign:"center",color:"#334155",fontSize:"12px"}}>Tap the rack again to see level detail</div>}
     </div>}
 
-    {/* ── TRANSFER MODAL ── */}
-    {transferModal&&(()=>{
-      const {cell,product}=transferModal;
-      const srcRackId=cell.split(".")[0];
-      const srcLevel=cell.split(".")[1];
-      const srcRack=racks.find(r=>r.id===srcRackId);
-      const destRack=racks.find(r=>r.id===transferForm.destRackId);
-      const tpc=product.tinsPerCarton||0;
-      const sizePerTin=product.sizePerTin||0;
-      const moveC=parseInt(transferForm.cartons)||0;
-      const moveL=parseInt(transferForm.looseTins)||0;
-      const srcC=parseInt(product.cartons)||0;
-      const srcL=parseInt(product.looseTins)||0;
-      const remainC=srcC-moveC;
-      const remainL=srcL-moveL;
-      const validMove=moveC+moveL>0&&remainC>=0&&remainL>=0;
-      return <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center"}}>
-        <div style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"14px",padding:"22px",width:"min(460px,96vw)",maxHeight:"90vh",overflowY:"auto"}}>
-          <div style={{fontSize:"15px",fontWeight:"700",color:"#93c5fd",marginBottom:"4px"}}>↔ Transfer Stock</div>
-          <div style={{fontSize:"12px",color:"#64748b",marginBottom:"14px"}}>{product.productName}</div>
-          {/* Source → Destination visual */}
-          <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"14px",flexWrap:"wrap"}}>
-            <div style={{background:"#080d18",border:"1px solid #1e293b",borderRadius:"8px",padding:"8px 12px",flex:1,textAlign:"center"}}>
-              <div style={{fontSize:"10px",color:"#475569",marginBottom:"2px"}}>FROM</div>
-              <div style={{fontSize:"13px",fontWeight:"700",color:"#f1f5f9"}}>{srcRack?.name||srcRackId} · L{srcLevel}</div>
-              <div style={{fontSize:"12px",color:"#4ade80"}}>{srcC}C + {srcL}T</div>
-            </div>
-            <div style={{fontSize:"20px",color:"#3b82f6"}}>→</div>
-            <div style={{background:"#080d18",border:`1px solid ${transferForm.destRackId?"#2563eb":"#1e293b"}`,borderRadius:"8px",padding:"8px 12px",flex:1,textAlign:"center"}}>
-              <div style={{fontSize:"10px",color:"#475569",marginBottom:"2px"}}>TO</div>
-              <div style={{fontSize:"13px",fontWeight:"700",color:transferForm.destRackId?"#93c5fd":"#334155"}}>{destRack?`${destRack.name} · L${transferForm.destLevel}`:"Select below →"}</div>
-            </div>
-          </div>
-          <div style={{fontSize:"11px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:"8px"}}>How much to move?</div>
-          <Grid2>
-            <Field label={`Cartons (max ${srcC})`}>
-              <input style={inp} type="number" min="0" max={srcC} step="1" value={transferForm.cartons} onChange={e=>setTransferForm({...transferForm,cartons:e.target.value})} placeholder="0"/>
-            </Field>
-            <Field label={`Loose Tins (max ${srcL})`}>
-              <input style={inp} type="number" min="0" max={srcL} step="1" value={transferForm.looseTins} onChange={e=>setTransferForm({...transferForm,looseTins:e.target.value})} placeholder="0"/>
-            </Field>
-          </Grid2>
-          {validMove&&<div style={{background:"#060d1a",border:"1px solid #1e293b",borderRadius:"7px",padding:"8px 12px",marginBottom:"12px",fontSize:"12px"}}>
-            <div style={{color:"#f87171"}}>Source remaining: {remainC} cartons + {remainL} loose tins</div>
-            <div style={{color:"#4ade80"}}>Destination gets: +{moveC} cartons + {moveL} loose tins</div>
-          </div>}
-          <Field label="Destination Rack">
-            <select style={sl} value={transferForm.destRackId} onChange={e=>setTransferForm({...transferForm,destRackId:e.target.value,destLevel:"1"})}>
-              <option value="">— Select rack —</option>
-              {racks.filter(r=>r.id!==srcRackId).map(r=><option key={r.id} value={r.id}>{r.name} ({r.levels} levels)</option>)}
-            </select>
-          </Field>
-          {destRack&&<Field label="Destination Level">
-            <select style={sl} value={transferForm.destLevel} onChange={e=>setTransferForm({...transferForm,destLevel:e.target.value})}>
-              {Array.from({length:destRack.levels},(_,i)=>destRack.levels-i).map(l=><option key={l} value={l}>Level {l}{getCellTotal(`${destRack.id}.${l}`)>0?" (has stock)":""}</option>)}
-            </select>
-          </Field>}
-          <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",marginTop:"12px"}}>
-            <Btn label="Cancel" onClick={()=>setTransferModal(null)} outline color="#475569" small/>
-            <Btn label={saving?"Saving…":"↔ Confirm Transfer"} onClick={saveTransfer} disabled={saving||!validMove||!transferForm.destRackId} color="#3b82f6" small/>
-          </div>
+    {/* ── STOCK TAB ── */}
+    {subTab==="stock"&&<div>
+      <div style={{display:"flex",gap:"8px",marginBottom:"12px",flexWrap:"wrap",alignItems:"center"}}>
+        <input style={{...inp2,flex:1,minWidth:"160px"}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍 Search stock…"/>
+        <select style={{...inp2,width:"160px"}} value={catFilter} onChange={e=>setCatFilter(e.target.value)}>
+          {categories.map(c=><option key={c}>{c}</option>)}
+        </select>
+      </div>
+      <div style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"10px",overflow:"hidden"}}>
+        <div style={{display:"grid",gridTemplateColumns:"3fr 1fr 1fr 1fr 1fr",background:"#060d1a",padding:"7px 12px",fontSize:"11px",fontWeight:"700",color:"#475569",borderBottom:"1px solid #1e293b"}}>
+          <span>Product</span><span>Category</span><span>Cartons</span><span>Loose Tins</span><span>Total Tins</span>
         </div>
-      </div>;
-    })()}
+        {filtered.length===0&&<div style={{padding:"40px",textAlign:"center",color:"#334155"}}>No stock found</div>}
+        {filtered.map((p,i)=>{
+          const stk=stockByProduct[normalize(p.name||"")];
+          if(!stk&&catFilter==="All"&&!search.trim())return null;
+          const tins=stk?.tins||0;
+          const cartons=stk?.cartons||0;
+          const loose=stk?.loose||0;
+          return <div key={p.id} style={{display:"grid",gridTemplateColumns:"3fr 1fr 1fr 1fr 1fr",padding:"7px 12px",borderBottom:"1px solid #0f172a",background:i%2===0?"transparent":"#060d1a",alignItems:"center"}}>
+            <span style={{fontSize:"12.5px",fontWeight:"600",color:tins>0?"#e2e8f0":"#334155"}}>{p.name}</span>
+            <span style={{fontSize:"11px",color:"#64748b"}}>{p.category||""}</span>
+            <span style={{fontSize:"12px",fontWeight:"700",color:cartons>0?"#4ade80":"#334155"}}>{cartons>0?cartons:"—"}</span>
+            <span style={{fontSize:"12px",color:loose>0?"#fcd34d":"#334155"}}>{loose>0?loose:"—"}</span>
+            <span style={{fontSize:"12px",fontWeight:"700",color:tins>0?"#93c5fd":"#334155"}}>{tins>0?tins:"—"}</span>
+          </div>;
+        })}
+      </div>
+    </div>}
 
-    {/* ── TRANSACTION MODAL ── */}
-    {txnModal&&(()=>{
-      const cellProds=getCellProds(txnModal.cell);
-      const selProd=txn.productName?fgProducts.find(p=>normalize(p.name)===normalize(txn.productName)):null;
-      const display=selProd?calcDisplay(selProd,txn.cartons,txn.looseTins):null;
-      const rackName=(()=>{const [rid,lv]=txnModal.cell.split(".");const r=racks.find(x=>x.id===rid);return `${r?.name||rid} · Level ${lv}`;})();
-      return <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center"}}>
-        <div style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"14px",padding:"22px",width:"min(460px,96vw)",maxHeight:"90vh",overflowY:"auto"}}>
-          <div style={{fontSize:"15px",fontWeight:"700",color:txnModal.mode==="add"?"#4ade80":"#f87171",marginBottom:"2px"}}>
-            {txnModal.mode==="add"?"+ Add Stock to":"− Consume from"} <span style={{color:"#93c5fd"}}>{rackName}</span>
-          </div>
-          {txnModal.mode==="consume"&&cellProds.length>0&&<div style={{background:"#080d18",border:"1px solid #1e293b",borderRadius:"8px",padding:"10px 12px",marginBottom:"12px",marginTop:"10px"}}>
-            <div style={{fontSize:"10px",fontWeight:"700",color:"#475569",textTransform:"uppercase",marginBottom:"6px"}}>Current stock here</div>
-            {cellProds.map(p=><div key={p.id} style={{display:"flex",justifyContent:"space-between",fontSize:"12.5px",padding:"3px 0"}}>
-              <span style={{color:"#e2e8f0"}}>{p.productName}</span>
-              <span style={{color:"#4ade80",fontWeight:"700"}}>{parseFloat(p.totalQty).toFixed(2)} {p.unit}</span>
-            </div>)}
-          </div>}
-          <Field label="Product *">
-            <input style={inp} value={txn.productName} onChange={e=>setTxn({...txn,productName:e.target.value})} placeholder="Type to search catalogue or enter manually…"/>
-            {/* Product quick-select from current cell (consume) or catalogue search */}
-            {txn.productName.length>=2&&fgProducts.filter(p=>normalize(p.name).includes(normalize(txn.productName))).slice(0,6).length>0&&<div style={{border:"1px solid #1e293b",borderRadius:"6px",background:"#080d18",marginTop:"4px"}}>
-              {fgProducts.filter(p=>normalize(p.name).includes(normalize(txn.productName))).slice(0,6).map(p=><div key={p.id} onClick={()=>setTxn({...txn,productName:p.name})} style={{padding:"6px 10px",cursor:"pointer",borderBottom:"1px solid #0f172a",fontSize:"12.5px",color:"#e2e8f0"}}
-                onMouseEnter={e=>e.currentTarget.style.background="#0f1d35"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-                <span>{p.name}</span>
-                {p.tinsPerCarton&&<span style={{float:"right",fontSize:"10.5px",color:"#475569"}}>{p.tinsPerCarton} tins/carton · {p.size}{p.unit}</span>}
-              </div>)}
-            </div>}
-            {txnModal.mode==="consume"&&cellProds.length>0&&<div style={{display:"flex",gap:"4px",flexWrap:"wrap",marginTop:"5px"}}>
-              {cellProds.map(p=><button key={p.id} onClick={()=>setTxn({...txn,productName:p.productName})} style={{background:txn.productName===p.productName?"#1e3a5f":"#0b1220",border:`1px solid ${txn.productName===p.productName?"#3b82f6":"#1e293b"}`,borderRadius:"5px",color:txn.productName===p.productName?"#93c5fd":"#475569",fontSize:"10.5px",padding:"2px 8px",cursor:"pointer"}}>{p.productName}</button>)}
-            </div>}
-          </Field>
-          {/* Carton config info */}
-          {selProd&&<div style={{background:"#052e16",border:"1px solid #166534",borderRadius:"7px",padding:"7px 12px",marginBottom:"10px",fontSize:"12px"}}>
-            <span style={{color:"#4ade80"}}>📦 {selProd.tinsPerCarton} tins/carton · {selProd.size}{selProd.unit} per tin</span>
-          </div>}
-          {txn.productName&&!selProd&&<div style={{background:"#1a0a00",border:"1px solid #92400e",borderRadius:"7px",padding:"7px 12px",marginBottom:"10px",fontSize:"12px",color:"#f59e0b"}}>
-            ⚠ Not in product catalogue — litre calculation will be approximate
-          </div>}
-
-          {txnModal.mode==="add"&&<>
-            <Grid2>
-              <Field label="Cartons">
-                <input style={inp} type="number" min="0" step="1" value={txn.cartons} onChange={e=>setTxn({...txn,cartons:e.target.value})} placeholder="0"/>
-              </Field>
-              <Field label="Loose Tins">
-                <input style={inp} type="number" min="0" step="1" value={txn.looseTins} onChange={e=>setTxn({...txn,looseTins:e.target.value})} placeholder="0"/>
-              </Field>
-            </Grid2>
-            {display&&(parseInt(txn.cartons)||0)+(parseInt(txn.looseTins)||0)>0&&<div style={{background:"#0a1a2e",border:"1px solid #1e3a5f",borderRadius:"8px",padding:"10px 14px",marginBottom:"12px",textAlign:"center"}}>
-              <div style={{fontSize:"13px",color:"#64748b"}}>{parseInt(txn.cartons)||0} cartons × {display.tpc} + {parseInt(txn.looseTins)||0} loose tins = <strong style={{color:"#f1f5f9"}}>{display.totalTins}</strong> tins</div>
-              <div style={{fontSize:"20px",fontWeight:"700",color:"#22c55e",marginTop:"4px"}}>= {display.totalQty.toFixed(2)} {display.unit}</div>
-            </div>}
-          </>}
-
-          {txnModal.mode==="consume"&&(()=>{
-            const consumeTins=parseInt(txn.consumeTins)||0;
-            // Preview the open-carton result
-            const curProd=getCellProds(txnModal.cell).find(p=>normalize(p.productName)===normalize(txn.productName));
-            const curCartons=parseInt(curProd?.cartons)||0;
-            const curLoose=parseInt(curProd?.looseTins)||0;
-            const tpc=selProd?.tinsPerCarton||parseInt(curProd?.tinsPerCarton)||0;
-            const availTins=tpc?(curCartons*tpc+curLoose):0;
-            let previewCartons=curCartons,previewLoose=curLoose;
-            let previewValid=false;
-            if(consumeTins>0&&tpc&&consumeTins<=availTins){
-              const fromLoose=Math.min(consumeTins,curLoose);
-              const stillNeeded=consumeTins-fromLoose;
-              previewLoose=curLoose-fromLoose;
-              if(stillNeeded>0){const ctb=Math.ceil(stillNeeded/tpc);previewCartons=curCartons-ctb;previewLoose+=ctb*tpc-stillNeeded;}
-              previewValid=true;
-            }
-            return <>
-              <Field label="Tins to consume *">
-                <input style={inp} type="number" min="1" step="1" value={txn.consumeTins} onChange={e=>setTxn({...txn,consumeTins:e.target.value})} placeholder={`max ${availTins} tins`}/>
-              </Field>
-              {tpc>0&&<div style={{fontSize:"11px",color:"#475569",marginBottom:"8px"}}>Available: {curCartons} cartons + {curLoose} loose tins = {availTins} tins</div>}
-              {previewValid&&<div style={{background:"#0a1a2e",border:"1px solid #1e3a5f",borderRadius:"8px",padding:"10px 14px",marginBottom:"12px"}}>
-                <div style={{fontSize:"11px",color:"#64748b",marginBottom:"4px"}}>After consuming {consumeTins} tins:</div>
-                <div style={{fontSize:"15px",fontWeight:"700",color:"#4ade80"}}>{previewCartons} cartons + {previewLoose} loose tins</div>
-                {selProd?.size&&<div style={{fontSize:"11px",color:"#166534",marginTop:"2px"}}>= {((previewCartons*tpc+previewLoose)*selProd.size).toFixed(2)} {selProd.unit} remaining</div>}
-              </div>}
-              {consumeTins>availTins&&availTins>0&&<div style={{fontSize:"11.5px",color:"#f87171",marginBottom:"8px"}}>⚠ Only {availTins} tins available</div>}
-            </>;
-          })()}
-
-          <Grid2>
-            <Field label="Date"><input type="date" style={inp} value={txn.date} onChange={e=>setTxn({...txn,date:e.target.value})}/></Field>
-            <Field label="Notes"><input style={inp} value={txn.notes} onChange={e=>setTxn({...txn,notes:e.target.value})} placeholder="Optional…"/></Field>
-          </Grid2>
-          <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",marginTop:"8px"}}>
-            <Btn label="Cancel" onClick={()=>setTxnModal(null)} outline color="#475569" small/>
-            <Btn label={saving?"Saving…":(txnModal.mode==="add"?"+ Add Stock":"− Consume")} onClick={saveTxn} disabled={saving} color={txnModal.mode==="add"?"#22c55e":"#ef4444"} small/>
-          </div>
+    {/* ── IMPORT TAB ── */}
+    {subTab==="import"&&<div style={{display:"flex",flexDirection:"column",gap:"14px",maxWidth:"600px"}}>
+      <div style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"10px",padding:"16px"}}>
+        <div style={{fontSize:"13px",fontWeight:"700",color:"#4ade80",marginBottom:"6px"}}>📋 Import FG Product Catalogue</div>
+        <div style={{fontSize:"11.5px",color:"#475569",marginBottom:"12px"}}>Upload Excel with columns: Product Name | Size | Unit | Pack Type | Category | Tins Per Carton</div>
+        <div style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>
+          <button onClick={downloadTemplate} style={{background:"#060d1a",border:"1px solid #334155",borderRadius:"6px",padding:"7px 14px",color:"#64748b",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>⬇ Download Template</button>
+          <label style={{background:"#052e16",border:"1px solid #166534",borderRadius:"6px",padding:"7px 14px",color:"#4ade80",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>
+            ⬆ Upload Catalogue <input type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={e=>{if(e.target.files[0]){importProducts(e.target.files[0]);e.target.value="";}}}/>
+          </label>
         </div>
-      </div>;
-    })()}
+        {importStatus&&<div style={{marginTop:"10px",fontSize:"11.5px",color:"#64748b"}}>
+          Added: {importStatus.added} · Duplicates skipped: {importStatus.duplicate} · Skipped: {importStatus.skipped}
+          {importStatus.errors?.length>0&&<div style={{color:"#f87171",marginTop:"4px"}}>{importStatus.errors.join("; ")}</div>}
+        </div>}
+      </div>
+
+      <div style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"10px",padding:"16px"}}>
+        <div style={{fontSize:"13px",fontWeight:"700",color:"#93c5fd",marginBottom:"6px"}}>📊 Import Closing Balance from Tally</div>
+        <div style={{fontSize:"11.5px",color:"#475569",marginBottom:"12px"}}>Upload Tally closing stock Excel (Column A: Product Name, Column B: Quantity). This overwrites current stock levels.</div>
+        <label style={{background:"#0a1a2e",border:"1px solid #2563eb",borderRadius:"6px",padding:"7px 14px",color:"#93c5fd",fontWeight:"700",fontSize:"12px",cursor:"pointer",display:"inline-block"}}>
+          ⬆ Upload Closing Balance <input type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={e=>{if(e.target.files[0]){importClosingBalance(e.target.files[0]);e.target.value="";}}}/>
+        </label>
+      </div>
+    </div>}
   </div>;
 }
 
