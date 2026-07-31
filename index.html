@@ -6568,8 +6568,8 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
           const orderDoc=await C("orders").doc(orderId).get();
           if(!orderDoc.exists)continue;
           const data=orderDoc.data();
-          const inSeq=getTransportSeq(data.partyName||"",data.transport||"")<999;
-          const goToPrep=(!data.isDirect||inSeq)&&!isGracePeriod;
+          const hasTransporter=data.transport&&normalize(data.transport||"")!=="direct"&&normalize(data.transport||"")!=="";
+          const goToPrep=(!data.isDirect||hasTransporter)&&!isGracePeriod;
           const updatedItems=(data.items||[]).map(item=>{
             const rev=items.find(i=>i.orderId===orderId&&normalize(i.name)===normalize(item.name));
             if(!rev)return item;
@@ -6621,9 +6621,9 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
         const orderDoc=await C("orders").doc(orderId).get();
         if(!orderDoc.exists)continue;
         const data=orderDoc.data();
-        // Go to Transport Prep if: non-direct order OR direct order that's in transport sequence
-        const inTransportSeq=getTransportSeq(data.partyName||"",data.transport||"")<999;
-        const goToTransportPrep=!data.isDirect||inTransportSeq;
+        // Go to Transport Prep if: has a transporter assigned (non-DIRECT) OR is non-direct order
+        const hasTransporter=data.transport&&normalize(data.transport||"")!=="direct"&&normalize(data.transport||"")!=="";
+        const goToTransportPrep=!isGracePeriod&&(!data.isDirect||hasTransporter);
         const updatedItems=(data.items||[]).map(item=>{
           const rev=reverseForm.items.find(i=>i.orderId===orderId&&normalize(i.name)===normalize(item.name));
           if(!rev)return item;
@@ -6632,7 +6632,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
           const newDispatched=Math.max(0,(item.dispatchedQty||0)-rQty);
           const newBalance=(item.balanceQty||0)+rQty;
           const fullyReversed=newDispatched<=0;
-          const shouldStage=!isGracePeriod&&fullyReversed&&goToTransportPrep;
+          const shouldStage=goToTransportPrep&&fullyReversed;
           return {...item,
             dispatchedQty:newDispatched,balanceQty:newBalance,
             dispatchConfirmed:isGracePeriod||fullyReversed?false:item.dispatchConfirmed,
