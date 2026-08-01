@@ -8375,12 +8375,37 @@ function FGStockTab({role,user,showToast,sysUnits,canManage}){
   const [fgStock,setFgStock]=useState([]); // from fg_stock_v2
   const [search,setSearch]=useState("");
   const [catFilter,setCatFilter]=useState("All");
-  const [subTab,setSubTab]=useState("catalogue"); // catalogue | stock | import
+  const [subTab,setSubTab]=useState("stock"); // stock first — show products immediately
+  const [groupByCategory,setGroupByCategory]=useState(false);
+  const [stockActionForm,setStockActionForm]=useState(null);
   const [saving,setSaving]=useState(false);
   const [importStatus,setImportStatus]=useState(null);
   const [editProduct,setEditProduct]=useState(null);
   const [showAddForm,setShowAddForm]=useState(false);
   const [addForm,setAddForm]=useState({name:"",size:"",unit:"L",category:"",tinsPerCarton:"",packType:"Single Pack"});
+
+  const saveStockAction=async()=>{
+    if(!stockActionForm||!stockActionForm.qty)return;
+    const prod=fgProducts.find(p=>p.id===stockActionForm.productId);
+    if(!prod)return;
+    setSaving(true);
+    try{
+      const qty=parseFloat(stockActionForm.qty)||0;
+      if(qty<=0){showToast("Enter a valid quantity","error");setSaving(false);return;}
+      const tpc=prod.tinsPerCarton||1;
+      const stk=fgStock.filter(s=>normalize(s.productName||"")===normalize(prod.name));
+      const currentTotal=stk.reduce((a,s)=>a+(s.totalQty||0),0);
+      const newTotal=stockActionForm.action==="add"?currentTotal+qty:Math.max(0,currentTotal-qty);
+      const cartons=Math.floor(newTotal/tpc);
+      const looseTins=newTotal%tpc;
+      for(const e of stk)await C("fg_stock_v2").doc(e.id).delete();
+      if(newTotal>0)await C("fg_stock_v2").add({productName:prod.name,cartons,looseTins,totalQty:newTotal,unit:prod.unit||"L",tinsPerCarton:tpc,sizePerTin:prod.size||0,_createdAt:ts(),lastModifiedAt:ts(),lastModifiedBy:user?.email,cell:"MANUAL"});
+      await C("fg_transactions").add({productName:prod.name,type:stockActionForm.action==="add"?"production":"sale",cartons:Math.floor(qty/tpc),looseTins:qty%tpc,totalQty:qty,unit:prod.unit||"L",tinsPerCarton:tpc,sizePerTin:prod.size||0,date:today(),by:user?.email,notes:stockActionForm.notes||"",_createdAt:ts()});
+      showToast(`${prod.name} — ${stockActionForm.action==="add"?"added":"sold"} ${qty} tins ✓`);
+      setStockActionForm(null);
+    }catch(e){showToast("Error: "+e.message,"error");}
+    setSaving(false);
+  };
 
   // Load data
   useEffect(()=>{
@@ -8529,7 +8554,7 @@ function FGStockTab({role,user,showToast,sysUnits,canManage}){
     setSaving(false);
   };
 
-  const SubTabs=[["catalogue","📋 Catalogue"],["stock","📦 Stock"],["import","⬆ Import"]];
+  const SubTabs=[["stock","📦 Stock"],["catalogue","📋 Catalogue"],["import","⬆ Import"]];
 
   return <div style={{padding:"12px"}}>
     {/* Sub-tab bar */}
@@ -8605,41 +8630,64 @@ function FGStockTab({role,user,showToast,sysUnits,canManage}){
     {/* ── STOCK TAB ── */}
     {subTab==="stock"&&<div>
       <div style={{display:"flex",gap:"8px",marginBottom:"12px",flexWrap:"wrap",alignItems:"center"}}>
-        <input style={{...inp2,flex:1,minWidth:"160px"}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍 Search stock…"/>
+        <input style={{...inp2,flex:1,minWidth:"160px"}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍 Search products…"/>
         <select style={{...inp2,width:"160px"}} value={catFilter} onChange={e=>setCatFilter(e.target.value)}>
           {categories.map(c=><option key={c}>{c}</option>)}
         </select>
+        <button onClick={()=>setGroupByCategory(v=>!v)} style={{background:groupByCategory?"#1e3a5f":"#060d1a",border:`1px solid ${groupByCategory?"#3b82f6":"#1e293b"}`,borderRadius:"6px",padding:"5px 12px",color:groupByCategory?"#93c5fd":"#475569",fontSize:"12px",fontWeight:"600",cursor:"pointer"}}>
+          {groupByCategory?"📂 Grouped":"📄 Flat"}
+        </button>
       </div>
-      <div style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"10px",overflow:"hidden"}}>
-        <div style={{display:"grid",gridTemplateColumns:"3fr 1fr 1fr 1fr 1fr 80px",background:"#060d1a",padding:"7px 12px",fontSize:"11px",fontWeight:"700",color:"#475569",borderBottom:"1px solid #1e293b"}}>
-          <span>Product</span><span>Category</span><span>Cartons</span><span>Loose Tins</span><span>Total Tins</span><span>Update</span>
-        </div>
-        {filtered.length===0&&<div style={{padding:"40px",textAlign:"center",color:"#334155"}}>No stock found</div>}
-        {filtered.map((p,i)=>{
+
+      {(()=>{
+        const rows=filtered;
+        // Group by category if enabled
+        const groups=groupByCategory
+          ?[...new Set(rows.map(p=>p.category||"Other"))].sort().map(cat=>({cat,products:rows.filter(p=>(p.category||"Other")===cat)}))
+          :[{cat:null,products:rows}];
+
+        const renderProductRow=(p,i)=>{
           const stk=stockByProduct[normalize(p.name||"")];
           const tins=stk?.tins||0;
           const cartons=stk?.cartons||0;
           const loose=stk?.loose||0;
-          const isUpdating=addStockForm?.productId===p.id;
+          const isActive=stockActionForm?.productId===p.id;
           return <div key={p.id}>
-            <div style={{display:"grid",gridTemplateColumns:"3fr 1fr 1fr 1fr 1fr 80px",padding:"7px 12px",borderBottom:"1px solid #0f172a",background:i%2===0?"transparent":"#060d1a",alignItems:"center"}}>
+            <div style={{display:"grid",gridTemplateColumns:"3fr 1fr 1fr 1fr 1fr 100px",padding:"7px 12px",borderBottom:"1px solid #0f172a",background:i%2===0?"transparent":"#060d1a",alignItems:"center"}}>
               <span style={{fontSize:"12.5px",fontWeight:"600",color:tins>0?"#e2e8f0":"#334155"}}>{p.name}</span>
               <span style={{fontSize:"11px",color:"#64748b"}}>{p.category||""}</span>
               <span style={{fontSize:"12px",fontWeight:"700",color:cartons>0?"#4ade80":"#334155"}}>{cartons>0?cartons:"—"}</span>
               <span style={{fontSize:"12px",color:loose>0?"#fcd34d":"#334155"}}>{loose>0?loose:"—"}</span>
               <span style={{fontSize:"12px",fontWeight:"700",color:tins>0?"#93c5fd":"#334155"}}>{tins>0?tins:"—"}</span>
-              {canManage&&<button onClick={()=>setAddStockForm(isUpdating?null:{productId:p.id,name:p.name,qty:String(tins||"")})} style={{background:isUpdating?"#1e3a5f":"#060d1a",border:`1px solid ${isUpdating?"#3b82f6":"#1e293b"}`,borderRadius:"5px",padding:"3px 8px",color:isUpdating?"#93c5fd":"#475569",fontSize:"11px",cursor:"pointer"}}>✏ Edit</button>}
+              {canManage&&<div style={{display:"flex",gap:"3px"}}>
+                <button onClick={()=>setStockActionForm(isActive&&stockActionForm.action==="add"?null:{productId:p.id,name:p.name,action:"add",qty:"",notes:""})}
+                  style={{background:isActive&&stockActionForm?.action==="add"?"#052e16":"#060d1a",border:"1px solid #166534",borderRadius:"4px",padding:"2px 7px",color:"#4ade80",fontSize:"10.5px",fontWeight:"700",cursor:"pointer"}}>+</button>
+                <button onClick={()=>setStockActionForm(isActive&&stockActionForm.action==="sale"?null:{productId:p.id,name:p.name,action:"sale",qty:"",notes:""})}
+                  style={{background:isActive&&stockActionForm?.action==="sale"?"#2e0a0a":"#060d1a",border:"1px solid #7f1d1d",borderRadius:"4px",padding:"2px 7px",color:"#f87171",fontSize:"10.5px",fontWeight:"700",cursor:"pointer"}}>−</button>
+              </div>}
             </div>
-            {isUpdating&&<div style={{padding:"8px 14px",background:"#0a1a2e",borderBottom:"1px solid #0f172a",display:"flex",gap:"8px",alignItems:"center"}}>
-              <span style={{fontSize:"11.5px",color:"#64748b"}}>New total tins:</span>
-              <input style={{...inp2,width:"90px"}} type="number" value={addStockForm.qty} onChange={e=>setAddStockForm(f=>({...f,qty:e.target.value}))} placeholder="e.g. 24" autoFocus/>
-              <span style={{fontSize:"10.5px",color:"#475569"}}>{p.tinsPerCarton?`(${Math.floor(parseFloat(addStockForm.qty||0)/p.tinsPerCarton)} ctn + ${parseFloat(addStockForm.qty||0)%p.tinsPerCarton} loose)`:""}</span>
-              <button onClick={saveManualStock} disabled={saving||!addStockForm.qty} style={{background:"#052e16",border:"1px solid #166534",borderRadius:"5px",padding:"4px 12px",color:"#4ade80",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>{saving?"…":"✓ Save"}</button>
-              <button onClick={()=>setAddStockForm(null)} style={{background:"none",border:"1px solid #334155",borderRadius:"5px",padding:"4px 8px",color:"#475569",fontSize:"12px",cursor:"pointer"}}>✕</button>
+            {isActive&&<div style={{padding:"8px 14px",background:"#0a1a2e",borderBottom:"1px solid #0f172a",display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap"}}>
+              <span style={{fontSize:"11.5px",color:stockActionForm.action==="add"?"#4ade80":"#f87171",fontWeight:"700"}}>{stockActionForm.action==="add"?"+ Add Stock":"− Record Sale"}</span>
+              <input style={{...inp2,width:"80px"}} type="number" min="0" value={stockActionForm.qty} onChange={e=>setStockActionForm(f=>({...f,qty:e.target.value}))} placeholder="Qty (tins)" autoFocus/>
+              <input style={{...inp2,flex:1,minWidth:"120px"}} value={stockActionForm.notes||""} onChange={e=>setStockActionForm(f=>({...f,notes:e.target.value}))} placeholder="Note (optional)"/>
+              {p.tinsPerCarton&&stockActionForm.qty&&<span style={{fontSize:"10.5px",color:"#475569",whiteSpace:"nowrap"}}>{Math.floor(parseFloat(stockActionForm.qty||0)/p.tinsPerCarton)} ctn + {parseFloat(stockActionForm.qty||0)%p.tinsPerCarton} loose</span>}
+              <button onClick={saveStockAction} disabled={saving||!stockActionForm.qty} style={{background:stockActionForm.action==="add"?"#052e16":"#2e0a0a",border:`1px solid ${stockActionForm.action==="add"?"#166534":"#7f1d1d"}`,borderRadius:"5px",padding:"4px 12px",color:stockActionForm.action==="add"?"#4ade80":"#f87171",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>{saving?"…":"✓ Save"}</button>
+              <button onClick={()=>setStockActionForm(null)} style={{background:"none",border:"1px solid #334155",borderRadius:"5px",padding:"4px 8px",color:"#475569",fontSize:"12px",cursor:"pointer"}}>✕</button>
             </div>}
           </div>;
-        })}
-      </div>
+        };
+
+        return <div style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"10px",overflow:"hidden"}}>
+          <div style={{display:"grid",gridTemplateColumns:"3fr 1fr 1fr 1fr 1fr 100px",background:"#060d1a",padding:"7px 12px",fontSize:"11px",fontWeight:"700",color:"#475569",borderBottom:"1px solid #1e293b"}}>
+            <span>Product</span><span>Category</span><span>Cartons</span><span>Loose Tins</span><span>Total Tins</span><span>Action</span>
+          </div>
+          {rows.length===0&&<div style={{padding:"40px",textAlign:"center",color:"#334155"}}>No products found</div>}
+          {groups.map(({cat,products})=><div key={cat||"all"}>
+            {cat&&<div style={{padding:"6px 14px",background:"#0b1a2e",borderBottom:"1px solid #0f172a",fontSize:"11px",fontWeight:"700",color:"#3b82f6"}}>📂 {cat} <span style={{color:"#334155",fontWeight:"400"}}>({products.length})</span></div>}
+            {products.map((p,i)=>renderProductRow(p,i))}
+          </div>)}
+        </div>;
+      })()}
     </div>}
 
     {/* ── IMPORT TAB ── */}
