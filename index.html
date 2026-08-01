@@ -6419,18 +6419,16 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
         const seqMap=deliverySequence.transport||{};
         const seqDirect=deliverySequence.direct||{};
         if(!isDirect){
-          // Check if transporter is in transport sequence
           const transInSeq=Object.keys(seqMap).some(k=>k===normalize(normalizedTransport));
           if(!transInSeq&&Object.keys(seqMap).length>0){
-            setTimeout(()=>showToast(`⚠ "${normalizedTransport}" is not in the transport sequence. Update it in Transport Prep → ⬆ Upload sequence.`,"error"),600);
+            setSeqWarning({msg:`"${normalizedTransport}" is not in the transport delivery sequence. Add it in Transport Prep → ⬆ Upload sequence.`,type:"transport"});
           }
         }else{
-          // Check if customer is in direct sequence for their route
           const routeKey=normalize(custForm.route.trim()||"all");
           const seqForRoute=seqDirect[routeKey]||seqDirect["all"]||{};
           const custInSeq=Object.keys(seqForRoute).some(k=>k===normalize(custForm.customer.trim()));
           if(!custInSeq&&Object.keys(seqForRoute).length>0){
-            setTimeout(()=>showToast(`⚠ "${custForm.customer.trim()}" is not in the ${custForm.route} delivery sequence. Update it in Direct Prep → ⬆ Upload sequence.`,"error"),600);
+            setSeqWarning({msg:`"${custForm.customer.trim()}" is not in the ${custForm.route} delivery sequence. Add it in Direct Prep → ⬆ Upload sequence.`,type:"direct"});
           }
         }
       }
@@ -6913,7 +6911,8 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
   const [directPrepArea,setDirectPrepArea]=useState("All");
   const [directQtyOverrides,setDirectQtyOverrides]=useState({});
   const [loadingSeq,setLoadingSeq]=useState(false);
-  const [addSeqEntry,setAddSeqEntry]=useState({name:"",seq:""}); // for adding single transport entry
+  const [addSeqEntry,setAddSeqEntry]=useState({name:"",seq:""});
+  const [seqWarning,setSeqWarning]=useState(null); // {msg, type} — dismissible sequence nudge // for adding single transport entry
 
   useEffect(()=>{
     C("settings").doc("deliverySequence").onSnapshot(s=>{if(s.exists)setDeliverySequence(s.data());},()=>{});
@@ -7375,6 +7374,19 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
     {/* Setup panel */}
     {subTab==="setup"&&<div style={{background:"#060d1a",border:"1px solid #7c3aed40",borderRadius:"12px",padding:"16px",marginBottom:"14px"}}>
       <div style={{fontSize:"13px",fontWeight:"700",color:"#c4b5fd",marginBottom:"12px"}}>⚙️ Customer Transport & Route Management</div>
+      {/* Sequence warning banner — dismissible */}
+      {seqWarning&&<div style={{background:"#1a0500",border:"1px solid #dc2626",borderRadius:"8px",padding:"10px 14px",marginBottom:"12px",display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:"12px"}}>
+        <div>
+          <div style={{fontSize:"12.5px",fontWeight:"700",color:"#fca5a5",marginBottom:"4px"}}>⚠ Delivery Sequence Needs Update</div>
+          <div style={{fontSize:"11.5px",color:"#f87171"}}>{seqWarning.msg}</div>
+        </div>
+        <div style={{display:"flex",gap:"6px",flexShrink:0}}>
+          <button onClick={()=>{setSeqWarning(null);setSubTab(seqWarning.type==="transport"?"transport_prep":"direct_prep");}}
+            style={{background:"#7f1d1d",border:"1px solid #dc2626",borderRadius:"6px",padding:"5px 10px",color:"#fca5a5",fontSize:"11px",fontWeight:"700",cursor:"pointer",whiteSpace:"nowrap"}}>Update Now</button>
+          <button onClick={()=>setSeqWarning(null)}
+            style={{background:"none",border:"1px solid #334155",borderRadius:"6px",padding:"5px 10px",color:"#475569",fontSize:"11px",fontWeight:"700",cursor:"pointer",whiteSpace:"nowrap"}}>Skip for Now</button>
+        </div>
+      </div>}
       <div style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"8px",padding:"10px 12px",marginBottom:"14px"}}>
         <div style={{fontSize:"11.5px",fontWeight:"700",color:"#94a3b8",marginBottom:"6px"}}>Bulk Import from Excel</div>
         <div style={{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap"}}>
