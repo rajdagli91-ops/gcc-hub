@@ -8505,6 +8505,8 @@ function FGStockTab({role,user,showToast,sysUnits,canManage}){
     showToast("Deleted","error");
   };
 
+  const inp2={background:"#0b1220",border:"1px solid #1e293b",borderRadius:"6px",padding:"5px 8px",color:"#e2e8f0",fontSize:"12px",width:"100%"};
+
   const [addStockForm,setAddStockForm]=useState(null); // {productId, name, qty:""}
 
   const saveManualStock=async()=>{
