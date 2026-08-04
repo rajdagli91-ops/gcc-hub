@@ -7015,11 +7015,15 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
         await C("settings").doc("customerTransport").set({map:{...existingCustMap,...newTransporters}},{merge:true});
       }
       const allCustMap={...existingCustMap,...newTransporters};
-      // All non-direct customers from setup routes whose transporter OR themselves are not in sequence
-      const allTransInSystem=[...new Set(Object.values(allCustMap).filter(c=>!c.isDirect&&c.transport&&!c._transportOnly).map(c=>c.transport))];
-      // Smart match: ignore spaces, dots — same as getTransportSeq partial matching
+      // Build clean transporter list: must have real customer, non-direct, real transport name (not "DIRECT", length>=3)
+      const allTransInSystem=[...new Set(
+        Object.values(allCustMap)
+          .filter(c=>c.customer&&c.customer.trim()&&!c._transportOnly&&c.transport&&normalize(c.transport||"")!=="direct"&&normalize(c.transport||"").length>=3)
+          .map(c=>c.transport.trim())
+      )].sort();
+      // Smart match: uses same normalize + partial logic as getTransportSeq
       const seqKeys=Object.keys(seqMap);
-      const isInSeq=(name)=>{const n=normalize(name||"");return seqKeys.some(k=>k===n||(k.length>=4&&(n.includes(k)||k.includes(n))));};
+      const isInSeq=(name)=>{const n=normalize(name||"");return n.length>0&&seqKeys.some(k=>k===n||(k.length>=4&&n.length>=4&&(n.includes(k)||k.includes(n))));};
       const missingTrans=allTransInSystem.filter(t=>!isInSeq(t));
       // Customers under missing transporters
       const custUnderMissingTrans=Object.values(allCustMap).filter(c=>c.customer&&!c._transportOnly&&!c.isDirect&&missingTrans.some(t=>normalize(t)===normalize(c.transport||"")));
