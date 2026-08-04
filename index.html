@@ -6912,7 +6912,9 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
   const [directQtyOverrides,setDirectQtyOverrides]=useState({});
   const [loadingSeq,setLoadingSeq]=useState(false);
   const [addSeqEntry,setAddSeqEntry]=useState({name:"",seq:""});
-  const [seqWarning,setSeqWarning]=useState(null); // {msg, type} — dismissible sequence nudge // for adding single transport entry
+  const [seqWarning,setSeqWarning]=useState(null);
+  const [missingFromSeq,setMissingFromSeq]=useState([]);
+  const [missingFromSeqDirect,setMissingFromSeqDirect]=useState({}); // {routeKey: [customerName,...]}
 
   useEffect(()=>{
     C("settings").doc("deliverySequence").onSnapshot(s=>{if(s.exists)setDeliverySequence(s.data());},()=>{});
@@ -6979,8 +6981,13 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
           const ws=XLSX2.utils.aoa_to_sheet(rows);ws["!cols"]=[{wch:40},{wch:20},{wch:40}];
           const wb=XLSX2.utils.book_new();XLSX2.utils.book_append_sheet(wb,ws,"Missing from Sequence");
           XLSX2.writeFile(wb,"VEEBEE_Direct_Missing_Customers.xlsx");
+          // Build per-route missing map for in-UI display
+          const perRoute={};
+          missingDirectCust.forEach(c=>{const rk=normalize(c.route||"all");if(!perRoute[rk])perRoute[rk]=[];perRoute[rk].push(c.customer);});
+          setMissingFromSeqDirect(perRoute);
           showToast(`Direct sequence uploaded · ⚠ ${missingDirectCust.length} customer${missingDirectCust.length!==1?"s":""} from Setup Routes not in sequence — downloaded list ⬇`,"error");
         }else{
+          setMissingFromSeqDirect({});
           showToast(`${Object.keys(seqMap).length} entries uploaded — all direct customers covered ✓`);
         }
       } else {
@@ -7021,8 +7028,10 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
         const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Missing from Sequence");
         XLSX.writeFile(wb,"VEEBEE_Transport_Missing_from_Sequence.xlsx");
         showToast(`${Object.keys(seqMap).length} uploaded · ⚠ ${missingTrans.length} transporter${missingTrans.length!==1?"s":""} (${custUnderMissingTrans.length} customer${custUnderMissingTrans.length!==1?"s":""}) missing from sequence — downloaded list ⬇`,"error");
+        setMissingFromSeq(missingTrans); // show in Transport Prep UI
       }else{
         showToast(`${Object.keys(seqMap).length} entries uploaded — all transporters & customers covered ✓`);
+        setMissingFromSeq([]);
       }
     }catch(e){showToast("Error: "+e.message,"error");}
     setLoadingSeq(false);
@@ -8002,7 +8011,24 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
         {routes.length===0&&<div style={{fontSize:"11.5px",color:"#334155"}}>No routes found. Add customers with routes in Setup Routes first.</div>}
       </div>}
 
-      {/* Orders for selected area */}
+      {/* Missing from sequence for selected area */}
+      {(()=>{
+        const selectedRouteKey=directPrepArea==="All"?null:normalize(directPrepArea);
+        const missingForArea=selectedRouteKey
+          ?(missingFromSeqDirect[selectedRouteKey]||[])
+          :Object.values(missingFromSeqDirect).flat();
+        if(!missingForArea.length)return null;
+        return <div style={{background:"#1a0500",border:"1px solid #dc2626",borderRadius:"8px",padding:"10px 14px",marginBottom:"10px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:"8px",marginBottom:"6px"}}>
+            <div style={{fontSize:"12px",fontWeight:"700",color:"#fca5a5"}}>⚠ {missingForArea.length} customer{missingForArea.length!==1?"s":""} not in sequence{selectedRouteKey?` for ${directPrepArea}`:""}</div>
+            <button onClick={()=>setMissingFromSeqDirect({})} style={{background:"none",border:"none",color:"#475569",fontSize:"14px",cursor:"pointer",lineHeight:1}}>✕</button>
+          </div>
+          <div style={{display:"flex",gap:"4px",flexWrap:"wrap"}}>
+            {missingForArea.map((name,i)=><span key={i} style={{background:"#2e0a0a",border:"1px solid #7f1d1d",borderRadius:"4px",padding:"2px 8px",fontSize:"11px",color:"#f87171"}}>{name}</span>)}
+          </div>
+          <div style={{fontSize:"10.5px",color:"#475569",marginTop:"6px"}}>Add these to your sequence Excel (sheet named "{directPrepArea==="All"?"route name":directPrepArea}") and re-upload.</div>
+        </div>;
+      })()}
       {(()=>{
         // Include direct orders + Bhiwandi (which can go either direct or transport)
         const isBhiwandi=a=>normRoute(a).includes("bhiwandi");
@@ -8151,6 +8177,18 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
           <input id="trn-seq-import" type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={async e=>{if(e.target.files[0]){await importDeliverySequence(e.target.files[0],"transport");e.target.value="";}}}/>
         </div>
       </div>
+
+      {/* Missing from sequence warning panel */}
+      {missingFromSeq.length>0&&<div style={{background:"#1a0500",border:"1px solid #dc2626",borderRadius:"8px",padding:"10px 14px",marginBottom:"10px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:"8px",marginBottom:"6px"}}>
+          <div style={{fontSize:"12px",fontWeight:"700",color:"#fca5a5"}}>⚠ {missingFromSeq.length} transporter{missingFromSeq.length!==1?"s":""} not in delivery sequence</div>
+          <button onClick={()=>setMissingFromSeq([])} style={{background:"none",border:"none",color:"#475569",fontSize:"14px",cursor:"pointer",lineHeight:1}}>✕</button>
+        </div>
+        <div style={{display:"flex",gap:"4px",flexWrap:"wrap"}}>
+          {missingFromSeq.map(t=><span key={t} style={{background:"#2e0a0a",border:"1px solid #7f1d1d",borderRadius:"4px",padding:"2px 8px",fontSize:"11px",color:"#f87171"}}>{t}</span>)}
+        </div>
+        <div style={{fontSize:"10.5px",color:"#475569",marginTop:"6px"}}>Add these to your sequence file and re-upload (⬆ Upload). They will sort last until added.</div>
+      </div>}
       {stagedTransportItems.length>0&&<div style={{display:"flex",gap:"5px",flexWrap:"wrap",alignItems:"center",marginBottom:"10px"}}>
           <span style={{fontSize:"10px",color:"#4ade80",display:"flex",alignItems:"center",gap:"4px"}}><span style={{width:"6px",height:"6px",borderRadius:"50%",background:"#4ade80",display:"inline-block"}}/>Live</span>
           <button onClick={moveStagedToDispatch} disabled={saving} style={{background:"#052e16",border:"1px solid #166534",borderRadius:"5px",padding:"4px 12px",color:"#4ade80",fontSize:"11.5px",fontWeight:"700",cursor:"pointer"}}>{saving?"…":"🚚 Move to Dispatch Today"}</button>
