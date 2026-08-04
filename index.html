@@ -6966,15 +6966,20 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
           routeSeqs[routeKey]=entries;
         });
         await C("settings").doc("deliverySequence").set({...existingDoc,direct:routeSeqs});
-        // Check customers in the same route not covered by sequence
+        // Check ALL direct customers in setup routes not covered by any uploaded sequence
+        const XLSX2=window.XLSX;
         const custInRoutes=Object.values(customerMap).filter(c=>c.customer&&!c._transportOnly&&c.isDirect);
         const missingDirectCust=custInRoutes.filter(c=>{
           const routeKey=normalize(c.route||"all");
           const seqForRoute=routeSeqs[routeKey]||routeSeqs["all"]||{};
           return !Object.keys(seqForRoute).some(k=>k===normalize(c.customer||""));
-        });
+        }).sort((a,b)=>a.customer.localeCompare(b.customer));
         if(missingDirectCust.length>0){
-          showToast(`Direct sequence uploaded · ⚠ ${missingDirectCust.length} customer${missingDirectCust.length!==1?"s":""} not in sequence: ${missingDirectCust.slice(0,3).map(c=>c.customer).join(", ")}${missingDirectCust.length>3?"…":""}. They will sort last.`,"error");
+          const rows=[["Customer Name","Route","(Not in sequence — add to Excel and re-upload)"],...missingDirectCust.map(c=>[c.customer,c.route,""])];
+          const ws=XLSX2.utils.aoa_to_sheet(rows);ws["!cols"]=[{wch:40},{wch:20},{wch:40}];
+          const wb=XLSX2.utils.book_new();XLSX2.utils.book_append_sheet(wb,ws,"Missing from Sequence");
+          XLSX2.writeFile(wb,"VEEBEE_Direct_Missing_Customers.xlsx");
+          showToast(`Direct sequence uploaded · ⚠ ${missingDirectCust.length} customer${missingDirectCust.length!==1?"s":""} from Setup Routes not in sequence — downloaded list ⬇`,"error");
         }else{
           showToast(`${Object.keys(seqMap).length} entries uploaded — all direct customers covered ✓`);
         }
@@ -6996,22 +7001,28 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
         await C("settings").doc("customerTransport").set({map:{...existingCustMap,...newTransporters}},{merge:true});
       }
       const allCustMap={...existingCustMap,...newTransporters};
-      // Transporters in system NOT in sequence
+      // All non-direct customers from setup routes whose transporter OR themselves are not in sequence
       const allTransInSystem=[...new Set(Object.values(allCustMap).filter(c=>!c.isDirect&&c.transport&&!c._transportOnly).map(c=>c.transport))];
       const missingTrans=allTransInSystem.filter(t=>!Object.keys(seqMap).some(k=>k===normalize(t)));
-      // Customers under sequenced transporters but themselves not in sequence — might be missed
+      // Customers under missing transporters
+      const custUnderMissingTrans=Object.values(allCustMap).filter(c=>c.customer&&!c._transportOnly&&!c.isDirect&&missingTrans.some(t=>normalize(t)===normalize(c.transport||"")));
+      // Customers under sequenced transporters but not individually sequenced
       const custUnderSeqTrans=Object.values(allCustMap).filter(c=>c.customer&&!c._transportOnly&&!c.isDirect&&Object.keys(seqMap).some(k=>k===normalize(c.transport||"")));
-      const missingCust=custUnderSeqTrans.filter(c=>!Object.keys(seqMap).some(k=>k===normalize(c.customer||"")));
-      const missingAll=[...missingTrans.map(t=>`⚠ Transporter: ${t}`),...missingCust.slice(0,10).map(c=>`ℹ Customer: ${c.customer} (under ${c.transport})`)];
-      if(missingAll.length>0){
-        const XLSX=window.XLSX;
-        const rows=[["Type","Name","Details"],...missingTrans.sort().map(t=>["Transporter",t,"Not in sequence"]),...missingCust.sort((a,b)=>a.customer.localeCompare(b.customer)).map(c=>["Customer",c.customer,`Under ${c.transport} — not individually sequenced`])];
-        const ws=XLSX.utils.aoa_to_sheet(rows);ws["!cols"]=[{wch:14},{wch:40},{wch:45}];
+      const missingIndivCust=custUnderSeqTrans.filter(c=>!Object.keys(seqMap).some(k=>k===normalize(c.customer||"")));
+      if(missingTrans.length>0||custUnderMissingTrans.length>0){
+        const rows=[
+          ["Type","Customer Name","Transporter","Note"],
+          ...missingTrans.sort().map(t=>["⚠ Transporter",t,"","Not in sequence — all its customers will sort last"]),
+          ...custUnderMissingTrans.sort((a,b)=>a.customer.localeCompare(b.customer)).map(c=>["  → Customer",c.customer,c.transport,"Under unsequenced transporter"]),
+          ...(missingIndivCust.length>0?[["","","",""]]:[]),
+          ...missingIndivCust.sort((a,b)=>a.customer.localeCompare(b.customer)).map(c=>["ℹ Customer",c.customer,c.transport,"Transporter sequenced but customer not individually listed"]),
+        ];
+        const ws=XLSX.utils.aoa_to_sheet(rows);ws["!cols"]=[{wch:16},{wch:40},{wch:32},{wch:50}];
         const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Missing from Sequence");
-        XLSX.writeFile(wb,"VEEBEE_Missing_from_Sequence.xlsx");
-        showToast(`${Object.keys(seqMap).length} uploaded · ⚠ ${missingTrans.length} transporter${missingTrans.length!==1?"s":""} + ${missingCust.length} customer${missingCust.length!==1?"s":""} not in sequence — see downloaded list`,"error");
+        XLSX.writeFile(wb,"VEEBEE_Transport_Missing_from_Sequence.xlsx");
+        showToast(`${Object.keys(seqMap).length} uploaded · ⚠ ${missingTrans.length} transporter${missingTrans.length!==1?"s":""} (${custUnderMissingTrans.length} customer${custUnderMissingTrans.length!==1?"s":""}) missing from sequence — downloaded list ⬇`,"error");
       }else{
-        showToast(`${Object.keys(seqMap).length} entries uploaded — sequence complete, all transporters covered ✓`);
+        showToast(`${Object.keys(seqMap).length} entries uploaded — all transporters & customers covered ✓`);
       }
     }catch(e){showToast("Error: "+e.message,"error");}
     setLoadingSeq(false);
