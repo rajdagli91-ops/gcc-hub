@@ -8021,7 +8021,10 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
         return <div style={{background:"#1a0500",border:"1px solid #dc2626",borderRadius:"8px",padding:"10px 14px",marginBottom:"10px"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:"8px",marginBottom:"6px"}}>
             <div style={{fontSize:"12px",fontWeight:"700",color:"#fca5a5"}}>⚠ {missingForArea.length} customer{missingForArea.length!==1?"s":""} not in sequence{selectedRouteKey?` for ${directPrepArea}`:""}</div>
+            <div style={{display:"flex",gap:"5px",alignItems:"center"}}>
+            <button onClick={async()=>{await loadXLSX();const XLSX=window.XLSX;const missingArr=directPrepArea==="All"?Object.entries(missingFromSeqDirect).flatMap(([r,names])=>names.map(n=>({name:n,route:r}))):Object.values(missingFromSeqDirect).flat().map(n=>({name:n,route:directPrepArea}));const rows=[["Customer Name","Route","(Add to sequence Excel and re-upload)"],...missingArr.sort((a,b)=>a.name.localeCompare(b.name)).map(({name,route})=>[name,route,""])];const ws=XLSX.utils.aoa_to_sheet(rows);ws["!cols"]=[{wch:40},{wch:24},{wch:40}];const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Missing Customers");XLSX.writeFile(wb,"VEEBEE_Missing_Direct_Customers.xlsx");}} style={{background:"#2e0a0a",border:"1px solid #7f1d1d",borderRadius:"5px",padding:"2px 8px",color:"#f87171",fontSize:"10.5px",fontWeight:"700",cursor:"pointer"}}>⬇ Download</button>
             <button onClick={()=>setMissingFromSeqDirect({})} style={{background:"none",border:"none",color:"#475569",fontSize:"14px",cursor:"pointer",lineHeight:1}}>✕</button>
+          </div>
           </div>
           <div style={{display:"flex",gap:"4px",flexWrap:"wrap"}}>
             {missingForArea.map((name,i)=><span key={i} style={{background:"#2e0a0a",border:"1px solid #7f1d1d",borderRadius:"4px",padding:"2px 8px",fontSize:"11px",color:"#f87171"}}>{name}</span>)}
@@ -8168,7 +8171,9 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
             await loadXLSX();const XLSX=window.XLSX;
             const rows=[["#","Name (Transporter / Customer)"]];
             const seqMap=deliverySequence.transport||{};
-            Object.values(seqMap).sort((a,b)=>a.seq-b.seq).forEach(({name,seq})=>rows.push([seq,name]));
+            // Handle both {name,seq} objects and fallback to key as name
+            Object.entries(seqMap).map(([key,v])=>typeof v==="object"?{name:v.name||key,seq:v.seq||0}:{name:key,seq:v||0})
+              .sort((a,b)=>a.seq-b.seq).forEach(({name,seq})=>rows.push([seq,name]));
             const ws=XLSX.utils.aoa_to_sheet(rows);ws["!cols"]=[{wch:6},{wch:40}];
             const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Transport Sequence");
             XLSX.writeFile(wb,"VEEBEE_Transport_Sequence.xlsx");
@@ -8182,7 +8187,10 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
       {missingFromSeq.length>0&&<div style={{background:"#1a0500",border:"1px solid #dc2626",borderRadius:"8px",padding:"10px 14px",marginBottom:"10px"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:"8px",marginBottom:"6px"}}>
           <div style={{fontSize:"12px",fontWeight:"700",color:"#fca5a5"}}>⚠ {missingFromSeq.length} transporter{missingFromSeq.length!==1?"s":""} not in delivery sequence</div>
-          <button onClick={()=>setMissingFromSeq([])} style={{background:"none",border:"none",color:"#475569",fontSize:"14px",cursor:"pointer",lineHeight:1}}>✕</button>
+          <div style={{display:"flex",gap:"5px",alignItems:"center"}}>
+            <button onClick={async()=>{await loadXLSX();const XLSX=window.XLSX;const rows=[["Transporter Name","(Add to sequence Excel and re-upload)"],...missingFromSeq.sort().map(t=>[t,""])];const ws=XLSX.utils.aoa_to_sheet(rows);ws["!cols"]=[{wch:40},{wch:40}];const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Missing Transporters");XLSX.writeFile(wb,"VEEBEE_Missing_Transporters.xlsx");}} style={{background:"#2e0a0a",border:"1px solid #7f1d1d",borderRadius:"5px",padding:"2px 8px",color:"#f87171",fontSize:"10.5px",fontWeight:"700",cursor:"pointer"}}>⬇ Download</button>
+            <button onClick={()=>setMissingFromSeq([])} style={{background:"none",border:"none",color:"#475569",fontSize:"14px",cursor:"pointer",lineHeight:1}}>✕</button>
+          </div>
         </div>
         <div style={{display:"flex",gap:"4px",flexWrap:"wrap"}}>
           {missingFromSeq.map(t=><span key={t} style={{background:"#2e0a0a",border:"1px solid #7f1d1d",borderRadius:"4px",padding:"2px 8px",fontSize:"11px",color:"#f87171"}}>{t}</span>)}
