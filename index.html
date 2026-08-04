@@ -6419,14 +6419,18 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
         const seqMap=deliverySequence.transport||{};
         const seqDirect=deliverySequence.direct||{};
         if(!isDirect){
-          const transInSeq=Object.keys(seqMap).some(k=>k===normalize(normalizedTransport));
+          const seqKeys=Object.keys(seqMap);
+          const isInSeqFn=(name)=>{const n=normalize(name||"");return seqKeys.some(k=>k===n||(k.length>=4&&(n.includes(k)||k.includes(n))));};
+          const transInSeq=isInSeqFn(normalizedTransport);
           if(!transInSeq&&Object.keys(seqMap).length>0){
             setSeqWarning({msg:`"${normalizedTransport}" is not in the transport delivery sequence. Add it in Transport Prep → ⬆ Upload sequence.`,type:"transport"});
           }
         }else{
           const routeKey=normalize(custForm.route.trim()||"all");
           const seqForRoute=seqDirect[routeKey]||seqDirect["all"]||{};
-          const custInSeq=Object.keys(seqForRoute).some(k=>k===normalize(custForm.customer.trim()));
+          const seqRouteKeys=Object.keys(seqForRoute);
+          const custNorm2=normalize(custForm.customer.trim());
+          const custInSeq=seqRouteKeys.some(k=>k===custNorm2||(k.length>=4&&(custNorm2.includes(k)||k.includes(custNorm2))));
           if(!custInSeq&&Object.keys(seqForRoute).length>0){
             setSeqWarning({msg:`"${custForm.customer.trim()}" is not in the ${custForm.route} delivery sequence. Add it in Direct Prep → ⬆ Upload sequence.`,type:"direct"});
           }
@@ -6974,7 +6978,10 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
         const missingDirectCust=custInRoutes.filter(c=>{
           const routeKey=normalize(c.route||"all");
           const seqForRoute=routeSeqs[routeKey]||routeSeqs["all"]||{};
-          return !Object.keys(seqForRoute).some(k=>k===normalize(c.customer||""));
+          const seqRouteKeys=Object.keys(seqForRoute);
+          const custNorm=normalize(c.customer||"");
+          // Smart match: ignore spaces, dots, case
+          return !seqRouteKeys.some(k=>k===custNorm||(k.length>=4&&(custNorm.includes(k)||k.includes(custNorm))));
         }).sort((a,b)=>a.customer.localeCompare(b.customer));
         if(missingDirectCust.length>0){
           const rows=[["Customer Name","Route","(Not in sequence — add to Excel and re-upload)"],...missingDirectCust.map(c=>[c.customer,c.route,""])];
@@ -7010,12 +7017,15 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
       const allCustMap={...existingCustMap,...newTransporters};
       // All non-direct customers from setup routes whose transporter OR themselves are not in sequence
       const allTransInSystem=[...new Set(Object.values(allCustMap).filter(c=>!c.isDirect&&c.transport&&!c._transportOnly).map(c=>c.transport))];
-      const missingTrans=allTransInSystem.filter(t=>!Object.keys(seqMap).some(k=>k===normalize(t)));
+      // Smart match: ignore spaces, dots — same as getTransportSeq partial matching
+      const seqKeys=Object.keys(seqMap);
+      const isInSeq=(name)=>{const n=normalize(name||"");return seqKeys.some(k=>k===n||(k.length>=4&&(n.includes(k)||k.includes(n))));};
+      const missingTrans=allTransInSystem.filter(t=>!isInSeq(t));
       // Customers under missing transporters
       const custUnderMissingTrans=Object.values(allCustMap).filter(c=>c.customer&&!c._transportOnly&&!c.isDirect&&missingTrans.some(t=>normalize(t)===normalize(c.transport||"")));
       // Customers under sequenced transporters but not individually sequenced
-      const custUnderSeqTrans=Object.values(allCustMap).filter(c=>c.customer&&!c._transportOnly&&!c.isDirect&&Object.keys(seqMap).some(k=>k===normalize(c.transport||"")));
-      const missingIndivCust=custUnderSeqTrans.filter(c=>!Object.keys(seqMap).some(k=>k===normalize(c.customer||"")));
+      const custUnderSeqTrans=Object.values(allCustMap).filter(c=>c.customer&&!c._transportOnly&&!c.isDirect&&isInSeq(c.transport||""));
+      const missingIndivCust=custUnderSeqTrans.filter(c=>!isInSeq(c.customer||""));
       if(missingTrans.length>0||custUnderMissingTrans.length>0){
         const rows=[
           ["Type","Customer Name","Transporter","Note"],
