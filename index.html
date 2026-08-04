@@ -7036,15 +7036,12 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
         const seqKeys=Object.keys(seqMap);
         const isInSeq=(name)=>{const n=normalize(name||"");return n.length>0&&seqKeys.some(k=>k===n||(k.length>=4&&n.length>=4&&(n.includes(k)||k.includes(n))));};
         const missingTrans=allTransInSystem.filter(t=>!isInSeq(t));
-        const custUnderMissingTrans=Object.values(allCustMap).filter(c=>c.customer&&!c._transportOnly&&!c.isDirect&&missingTrans.some(t=>normalize(t)===normalize(c.transport||"")));
-        const custUnderSeqTrans=Object.values(allCustMap).filter(c=>c.customer&&!c._transportOnly&&!c.isDirect&&isInSeq(c.transport||""));
-        const missingIndivCust=custUnderSeqTrans.filter(c=>!isInSeq(c.customer||""));
-        if(missingTrans.length>0||custUnderMissingTrans.length>0){
-          const rows=[["Type","Customer Name","Transporter","Note"],...missingTrans.sort().map(t=>["⚠ Transporter",t,"","Not in sequence"]),...custUnderMissingTrans.sort((a,b)=>a.customer.localeCompare(b.customer)).map(c=>["  → Customer",c.customer,c.transport,"Under unsequenced transporter"]),...(missingIndivCust.length>0?[["","","",""]]:[]),...missingIndivCust.sort((a,b)=>a.customer.localeCompare(b.customer)).map(c=>["ℹ Customer",c.customer,c.transport,"Transporter sequenced but customer not individually listed"])];
-          const ws=XLSX.utils.aoa_to_sheet(rows);ws["!cols"]=[{wch:16},{wch:40},{wch:32},{wch:50}];
-          const wb2=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb2,ws,"Missing from Sequence");
+        if(missingTrans.length>0){
+          const rows=[["Transporter Name","(Add to sequence Excel and re-upload)"],...missingTrans.sort().map(t=>[t,""])];
+          const ws=XLSX.utils.aoa_to_sheet(rows);ws["!cols"]=[{wch:40},{wch:40}];
+          const wb2=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb2,ws,"Missing Transporters");
           XLSX.writeFile(wb2,"VEEBEE_Transport_Missing_from_Sequence.xlsx");
-          showToast(`${Object.keys(seqMap).length} uploaded · ⚠ ${missingTrans.length} transporter${missingTrans.length!==1?"s":""} (${custUnderMissingTrans.length} customer${custUnderMissingTrans.length!==1?"s":""}) missing — downloaded list ⬇`,"error");
+          showToast(`${Object.keys(seqMap).length} uploaded · ⚠ ${missingTrans.length} transporter${missingTrans.length!==1?"s":""} missing — downloaded list ⬇`,"error");
           setMissingFromSeq(missingTrans);
         }else{
           showToast(`${Object.keys(seqMap).length} entries uploaded — all transporters covered ✓`);
