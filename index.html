@@ -6942,14 +6942,26 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
       const wb=XLSX.read(new Uint8Array(ab),{type:"array"});
       const seqMap={};
       let counter=0; // use real counter, not row index
+      // Smart column detection: sequence files may have (Name, SeqNo) OR (SeqNo, Name) column order.
+      // Whichever cell in the row is a pure number is treated as the sequence number; the other is the name.
+      const isPureNum=v=>{if(v===undefined||v===null||v==="")return false;const s=String(v).trim();return s!==""&&!isNaN(Number(s));};
+      const parseSeqRow=(row,cnt)=>{
+        const a=row[0],b=row[1];
+        const aNum=isPureNum(a),bNum=isPureNum(b);
+        if(aNum&&!bNum){return{name:String(b||"").trim(),seq:parseFloat(a)};} // SeqNo, Name
+        if(bNum&&!aNum){return{name:String(a||"").trim(),seq:parseFloat(b)};} // Name, SeqNo
+        // ambiguous (both numeric, both text, or both blank) — fall back to original Name-first assumption
+        return{name:String(a||"").trim(),seq:parseFloat(b)||cnt};
+      };
+      const isHeaderText=s=>{const t=s.toLowerCase();return t===""||t==="name"||t==="customer"||t==="transporter"||t==="s.no"||t==="sno"||t==="sr.no"||t==="seq"||t==="sequence";};
       wb.SheetNames.forEach(sheetName=>{
         const ws=wb.Sheets[sheetName];
         const rows=XLSX.utils.sheet_to_json(ws,{header:1});
         rows.forEach((row)=>{
-          const name=String(row[0]||"").trim();
-          if(!name||name.toLowerCase()==="name"||name.toLowerCase()==="customer"||name.toLowerCase()==="transporter")return;
+          const {name,seq:parsedSeq}=parseSeqRow(row,counter+1);
+          if(!name||isHeaderText(name)||isHeaderText(String(row[1]||"").trim()))return;
           counter++;
-          const seq=parseFloat(row[1])||counter; // col B if present, else auto-increment
+          const seq=parsedSeq||counter;
           seqMap[normalize(name)]={name,seq};
         });
       });
@@ -6963,10 +6975,10 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
           const rows=XLSX.utils.sheet_to_json(ws,{header:1});
           const entries={};
           rows.forEach(row=>{
-            const name=String(row[0]||"").trim();
-            if(!name||name.toLowerCase()==="name"||name.toLowerCase()==="customer"||name.toLowerCase()==="transporter")return;
+            const {name,seq:parsedSeq}=parseSeqRow(row,counter+1);
+            if(!name||isHeaderText(name)||isHeaderText(String(row[1]||"").trim()))return;
             counter++;
-            const seq=parseFloat(row[1])||counter;
+            const seq=parsedSeq||counter;
             entries[normalize(name)]={name,seq};
           });
           routeSeqs[routeKey]=entries;
