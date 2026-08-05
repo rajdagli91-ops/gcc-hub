@@ -5915,18 +5915,28 @@ function printDispatchList(groups,routeLabel,dateStr,fgProds){
   h+='<b style="font-size:11pt">VEEBEE — DISPATCH LIST<\/b>';
   h+='<span style="font-size:8pt"><b>'+dateStr+'<\/b> &nbsp;|&nbsp; Route: <b>'+routeLabel+'<\/b> &nbsp;|&nbsp; Customers: <b>'+groups.length+'<\/b>'+volSummary+'<\/span>';
   h+='<\/div>';
-  h+='<table><tr><th style="border:1px solid #000;background:#e8e8e8;text-align:left;width:4%">#<\/th><th style="border:1px solid #000;background:#e8e8e8;text-align:left;width:20%">Customer<\/th><th style="border:1px solid #000;background:#e8e8e8;text-align:left;width:38%">Product<\/th><th style="border:1px solid #000;background:#e8e8e8;text-align:center;width:7%">Qty<\/th><th style="border:1px solid #000;background:#e8e8e8;text-align:center;width:12%">Cartons<\/th><th style="border:1px solid #000;background:#e8e8e8;text-align:center;width:8%">Volume<\/th><th style="border:1px solid #000;background:#e8e8e8;text-align:left;width:11%">Order No<\/th><\/tr>';
-  groups.forEach(function(g,gi){
-    g.items.forEach(function(it,ii){
-      var vol=calcVol(it.name,it.qty)||'';
-      var ctn=calcCtn(it.name,it.qty);
-      var bg=gi%2===0?'#fff':'#f5f5f5';
-      h+='<tr style="background:'+bg+'">';
-      if(ii===0)h+='<td style="border:1px solid #000;font-weight:700;vertical-align:top" rowspan="'+g.items.length+'">'+(gi+1)+'<\/td><td style="border:1px solid #000;font-size:7.5pt;vertical-align:top" rowspan="'+g.items.length+'"><b>'+g.partyName+'<\/b><br><span style="color:#666;font-size:7pt">'+(g.isDirect?'Direct':g.transport)+'<\/span><\/td>';
-      h+='<td style="border:1px solid #000">'+it.name+'<\/td><td style="border:1px solid #000;text-align:center;font-weight:700">'+it.qty+'<\/td><td style="border:1px solid #000;text-align:center;color:#555;font-size:7.5pt">'+ctn+'<\/td><td style="border:1px solid #000;text-align:center;color:#333">'+vol+'<\/td><td style="border:1px solid #000;font-size:7pt;color:#555">'+it.voucherNo+'<\/td><\/tr>';
+  var tableHead='<tr><th style="border:1px solid #000;background:#e8e8e8;text-align:left;width:4%">#<\/th><th style="border:1px solid #000;background:#e8e8e8;text-align:left;width:20%">Customer<\/th><th style="border:1px solid #000;background:#e8e8e8;text-align:left;width:38%">Product<\/th><th style="border:1px solid #000;background:#e8e8e8;text-align:center;width:7%">Qty<\/th><th style="border:1px solid #000;background:#e8e8e8;text-align:center;width:12%">Cartons<\/th><th style="border:1px solid #000;background:#e8e8e8;text-align:center;width:8%">Volume<\/th><th style="border:1px solid #000;background:#e8e8e8;text-align:left;width:11%">Order No<\/th><\/tr>';
+  function buildSection(subGroups,label,color){
+    if(!subGroups.length)return '';
+    var out='<div style="font-weight:800;font-size:9pt;letter-spacing:0.03em;color:'+color+';border-bottom:2px solid '+color+';padding:5pt 2pt 2pt;margin-top:6pt">'+label+' ('+subGroups.length+')<\/div>';
+    out+='<table>'+tableHead;
+    subGroups.forEach(function(g,gi){
+      g.items.forEach(function(it,ii){
+        var vol=calcVol(it.name,it.qty)||'';
+        var ctn=calcCtn(it.name,it.qty);
+        var bg=gi%2===0?'#fff':'#f5f5f5';
+        out+='<tr style="background:'+bg+'">';
+        if(ii===0)out+='<td style="border:1px solid #000;font-weight:700;vertical-align:top" rowspan="'+g.items.length+'">'+(gi+1)+'<\/td><td style="border:1px solid #000;font-size:7.5pt;vertical-align:top" rowspan="'+g.items.length+'"><b>'+g.partyName+'<\/b><br><span style="color:#666;font-size:7pt">'+(g.isDirect?'Direct':g.transport)+'<\/span><\/td>';
+        out+='<td style="border:1px solid #000">'+it.name+'<\/td><td style="border:1px solid #000;text-align:center;font-weight:700">'+it.qty+'<\/td><td style="border:1px solid #000;text-align:center;color:#555;font-size:7.5pt">'+ctn+'<\/td><td style="border:1px solid #000;text-align:center;color:#333">'+vol+'<\/td><td style="border:1px solid #000;font-size:7pt;color:#555">'+it.voucherNo+'<\/td><\/tr>';
+      });
     });
-  });
-  h+='<\/table>';
+    out+='<\/table>';
+    return out;
+  }
+  var transportGroups=[],directGroups=[];
+  groups.forEach(function(g){(g.isDirect?directGroups:transportGroups).push(g);});
+  h+=buildSection(transportGroups,'🏢 TRANSPORTER ORDERS','#1e3a8a');
+  h+=buildSection(directGroups,'🚚 DIRECT ORDERS','#166534');
   h+='<div style="margin-top:6pt;font-size:7pt;display:flex;justify-content:space-between;border-top:1px solid #ccc;padding-top:3pt"><span>GCC Operations Hub<\/span><span>Prepared by: _________________________ &nbsp; Checked by: _________________________<\/span><\/div>';
   h+='<\/body><\/html>';
   var w=window.open('','_blank');w.document.write(h);w.document.close();setTimeout(function(){w.print();},400);
@@ -6877,7 +6887,29 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
     if(partialCust)return seqMap[partialCust].seq;
     return 999;
   };
-  const seqSortFn=(a,b)=>getTransportSeq(a.partyName,a.transport)-getTransportSeq(b.partyName,b.transport)||((a.partyName||"").localeCompare(b.partyName||""));
+  const getDirectSeq=(partyName,route)=>{
+    const routeMap=deliverySequence.direct||{};
+    const routeKey=normalize(route||"all");
+    const seqForRoute=routeMap[routeKey]||routeMap["all"]||{};
+    const keys=Object.keys(seqForRoute);
+    if(!keys.length)return 999;
+    const normParty=normalize(partyName||"");
+    if(seqForRoute[normParty])return seqForRoute[normParty].seq;
+    const partial=keys.find(k=>k.length>=4&&(normParty.includes(k)||k.includes(normParty)));
+    if(partial)return seqForRoute[partial].seq;
+    return 999;
+  };
+  // Order sequence: direct customers use their route's direct sequence; if unlisted there,
+  // fall back to the transporter sequence (covers direct orders riding along a transporter route).
+  const getOrderSeq=(g)=>{
+    if(g.isDirect){
+      const dSeq=getDirectSeq(g.partyName,g.route);
+      if(dSeq<999)return dSeq;
+      return getTransportSeq(g.partyName,g.transport);
+    }
+    return getTransportSeq(g.partyName,g.transport);
+  };
+  const seqSortFn=(a,b)=>getOrderSeq(a)-getOrderSeq(b)||((a.partyName||"").localeCompare(b.partyName||""));
 
   const filteredToday=(()=>{
     // Helper: order goes with transport if it's non-direct OR it appears in transport sequence
@@ -6889,8 +6921,15 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
       if(printRouteFilter.startsWith("direct:"))return g.isDirect&&g.route===printRouteFilter.slice(7);
       return true;
     });
-    return [...res].sort(seqSortFn);
+    // Segregate: all transporter orders first (in transporter sequence), then all direct orders (in direct sequence)
+    return [...res].sort((a,b)=>{
+      if(!!a.isDirect!==!!b.isDirect)return a.isDirect?1:-1;
+      return seqSortFn(a,b);
+    });
   })();
+  // ── Segregated for display: Transporter orders vs Direct orders, each in their own sequence ──
+  const todayTransportGroups=filteredToday.filter(g=>!g.isDirect);
+  const todayDirectGroups=filteredToday.filter(g=>g.isDirect);
 
   // ── Transporter grouping (for booking consolidated dispatches) ──
   const transporterGroups=(()=>{
@@ -7826,10 +7865,17 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
             const anyReversible=group.items.some(i=>i.canReverse);
             const pendingConfirm=group.items.filter(i=>!i.confirmed);
             const borderCol=allConfirmed?"#22c55e":"#f59e0b";
-            return <div key={group.partyName} style={{background:"#0b1220",border:"1px solid #1e293b",borderLeft:`3px solid ${borderCol}`,borderRadius:"10px",marginBottom:"6px",overflow:"hidden",opacity:allConfirmed?0.85:1}}>
+            const isFirstOfCategory=gi===0||!!filteredToday[gi-1].isDirect!==!!group.isDirect;
+            const catIdx=group.isDirect?gi-todayTransportGroups.length:gi;
+            return <React.Fragment key={group.partyName}>
+            {isFirstOfCategory&&<div style={{display:"flex",alignItems:"center",gap:"8px",margin:gi===0?"0 0 8px":"16px 0 8px",padding:"6px 2px",borderBottom:`2px solid ${group.isDirect?"#166534":"#1e3a5f"}`}}>
+              <span style={{fontSize:"12.5px",fontWeight:"800",color:group.isDirect?"#4ade80":"#93c5fd",letterSpacing:"0.04em"}}>{group.isDirect?"🚚 DIRECT ORDERS":"🏢 TRANSPORTER ORDERS"}</span>
+              <span style={{fontSize:"10.5px",color:"#475569",fontWeight:"700"}}>({group.isDirect?todayDirectGroups.length:todayTransportGroups.length})</span>
+            </div>}
+            <div style={{background:"#0b1220",border:"1px solid #1e293b",borderLeft:`3px solid ${borderCol}`,borderRadius:"10px",marginBottom:"6px",overflow:"hidden",opacity:allConfirmed?0.85:1}}>
             <div style={{padding:"9px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"6px"}}>
               <div>
-                <div style={{fontSize:"12.5px",fontWeight:"700",color:"#f1f5f9"}}>{gi+1}. {group.partyName}</div>
+                <div style={{fontSize:"12.5px",fontWeight:"700",color:"#f1f5f9"}}>{catIdx+1}. {group.partyName}</div>
                 <div style={{fontSize:"10.5px",color:"#475569",display:"flex",gap:"8px",marginTop:"1px"}}>
                   <span style={{color:group.isDirect?"#22c55e":"#93c5fd"}}>{group.isDirect?"🚚 Direct":"🏢 "+group.transport}</span>
                   <span>{group.route}</span>
@@ -7897,7 +7943,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
                 </div>;
               })}
             </div>
-          </div>;
+          </div></React.Fragment>;
           })}
         </div>}
     </div>}
