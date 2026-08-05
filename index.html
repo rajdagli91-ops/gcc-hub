@@ -374,7 +374,23 @@ function printTrialComparison(trials,project,qcParams){
   }).join('');
   var totRow='<tr style="background:#f0f0f0"><td style="border:1px solid #000;padding:4pt 5pt;font-weight:700">TOTAL BATCH</td>'+s.map(function(t){var tot=(t.ingredients||[]).reduce(function(a,r){return a+(parseFloat(r.quantity)||0);},0);return mktd(tot>0?tot.toFixed(2):'');}).join('')+'</tr>';
   var params=qcParams&&qcParams.length?qcParams:['Viscosity','Fineness','Sp. Gravity','pH','Non-Volatile %','Drying Time','Gloss','Adhesion','Flexibility','Appearance'];
-  var qcRows=params.map(function(p,ri){return '<tr style="background:'+(ri%2===0?'#fff':'#f9f9f9')+'"><td style="border:1px solid #000;padding:4pt 5pt;white-space:nowrap">'+(ri+1)+'. '+p+'</td>'+s.map(function(){return '<td style="border:1px solid #000;padding:12pt 4pt"> </td>';}).join('')+'</tr>';}).join('');
+  var pfColors={Pass:'#16a34a',Fail:'#dc2626',Marginal:'#b45309'};
+  var pfMarks={Pass:'\u2713',Fail:'\u2717',Marginal:'~'};
+  var qcRows=params.map(function(p,ri){
+    var cells=s.map(function(t){
+      var reps=t.testReports||[];
+      var rep=reps.length?reps[reps.length-1]:null;
+      var pr=rep&&rep.paramResults?rep.paramResults:null;
+      var val=pr&&pr[p]?String(pr[p]).trim():'';
+      var pf=pr&&pr[p+'__pf']?pr[p+'__pf']:'';
+      if(val||pf){
+        var pfHtml=pf?' <span style="font-weight:700;color:'+(pfColors[pf]||'#000')+'">('+(pfMarks[pf]||'')+' '+pf+')</span>':'';
+        return '<td style="border:1px solid #000;padding:5pt 4pt;text-align:center;font-size:8.5pt;font-weight:700">'+(val||'\u2014')+pfHtml+'</td>';
+      }
+      return '<td style="border:1px solid #000;padding:12pt 4pt;text-align:center"> </td>';
+    }).join('');
+    return '<tr style="background:'+(ri%2===0?'#fff':'#f9f9f9')+'"><td style="border:1px solid #000;padding:4pt 5pt;white-space:nowrap">'+(ri+1)+'. '+p+'</td>'+cells+'</tr>';
+  }).join('');
   var dt=(s[0]&&s[0].date)||(new Date().toISOString().slice(0,10));
   var pn=(project&&(project.projectName||project.name||project.productName))||'R&D';
   var css='*{box-sizing:border-box}body{font-family:Arial,sans-serif;margin:0;padding:3pt 5pt;font-size:9pt}@page{size:297mm 210mm landscape;margin:5mm}table{border-collapse:collapse;width:100%}.sh{border-bottom:2px solid #000;font-weight:700;padding:3pt 6pt;font-size:9pt;text-transform:uppercase}tr{page-break-inside:avoid}';
