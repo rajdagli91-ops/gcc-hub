@@ -8114,7 +8114,21 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
         const isBhiwandi=a=>normRoute(a).includes("bhiwandi");
         const dirGroups=customerGroups.filter(g=>{
           const areaMatch=directPrepArea==="All"||normRoute(g.route)===normRoute(directPrepArea);
-          if(g.isDirect)return areaMatch;
+          if(g.isDirect){
+            if(areaMatch)return true;
+            // Also include customers explicitly listed under this route's uploaded sequence,
+            // even if their system route differs (e.g. a Thane customer added to the Bombay sequence sheet)
+            if(directPrepArea!=="All"){
+              const seqMap=(deliverySequence.direct||{})[normalize(directPrepArea)]||{};
+              const seqKeys=Object.keys(seqMap);
+              if(seqKeys.length){
+                const np=normalize(g.partyName||"");
+                if(seqMap[np])return true;
+                if(seqKeys.some(k=>k.length>=4&&np.length>=4&&(np.includes(k)||k.includes(np))))return true;
+              }
+            }
+            return false;
+          }
           // Also include Bhiwandi transport orders so team can choose route
           if(isBhiwandi(g.route||""))return directPrepArea==="All"||normRoute(directPrepArea)==="All"||isBhiwandi(directPrepArea);
           return false;
@@ -8139,6 +8153,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
                   <span style={{fontSize:"11px",color:"#334155",marginRight:"6px",fontWeight:"700"}}>#{ci+1}</span>
                   <span style={{fontSize:"12.5px",fontWeight:"700",color:"#f1f5f9"}}>{cg.partyName}</span>
                   <span style={{fontSize:"10.5px",color:"#475569",marginLeft:"8px"}}>{cg.route}</span>
+                  {directPrepArea!=="All"&&normRoute(cg.route)!==normRoute(directPrepArea)&&<span style={{fontSize:"9.5px",fontWeight:"700",color:"#fbbf24",background:"#fbbf2418",border:"1px solid #fbbf2430",borderRadius:"99px",padding:"1px 7px",marginLeft:"6px"}}>↳ added to {directPrepArea} sequence</span>}
                 </div>
               <div style={{display:"flex",gap:"5px",flexWrap:"wrap",justifyContent:"flex-end"}}>
                   {/* Stage to Transport - available to issuer and admin for any direct order */}
