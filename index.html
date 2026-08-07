@@ -372,7 +372,8 @@ function printTrialComparison(trials,project,qcParams){
     }).join('');
     return '<tr style="background:'+(ri%2===0?'#fff':'#f9f9f9')+'"><td style="border:1px solid #000;padding:3pt 5pt;font-size:9pt">'+(ri+1)+'. '+mat+'</td>'+cells+'</tr>';
   }).join('');
-  var totRow='<tr style="background:#f0f0f0"><td style="border:1px solid #000;padding:4pt 5pt;font-weight:700">TOTAL BATCH</td>'+s.map(function(t){var tot=(t.ingredients||[]).reduce(function(a,r){return a+(parseFloat(r.quantity)||0);},0);return mktd(tot>0?tot.toFixed(2):'');}).join('')+'</tr>';
+  var totRow='<tr style="background:#f0f0f0"><td style="border:1px solid #000;padding:4pt 5pt;font-weight:700">TOTAL BATCH (as formulated)</td>'+s.map(function(t){var tot=(t.ingredients||[]).reduce(function(a,r){return a+(parseFloat(r.quantity)||0);},0);return mktd(tot>0?tot.toFixed(2):'');}).join('')+'</tr>';
+  var reqRow='<tr style="background:#fff3cd"><td style="border:1px solid #000;padding:4pt 5pt;font-weight:700">⚠ REQUIRED BATCH SIZE (exact)</td>'+s.map(function(t){return '<td style="border:1px solid #000;padding:4pt;text-align:center;font-size:10pt;font-weight:700">'+(t.batchSize?t.batchSize+' '+(t.batchSizeUnit||'kg'):'—')+'</td>';}).join('')+'</tr>';
   var params=qcParams&&qcParams.length?qcParams:['Viscosity','Fineness','Sp. Gravity','pH','Non-Volatile %','Drying Time','Gloss','Adhesion','Flexibility','Appearance'];
   var pfColors={Pass:'#16a34a',Fail:'#dc2626',Marginal:'#b45309'};
   var pfMarks={Pass:'\u2713',Fail:'\u2717',Marginal:'~'};
@@ -401,7 +402,7 @@ function printTrialComparison(trials,project,qcParams){
   h+='<td style="padding:3pt 7pt;border-right:1px solid #000;width:35%"><span style="font-size:7pt">DATE:<'+'/span> <b>'+dt+'<'+'/b><'+'/td>';
   h+='<td style="padding:3pt 7pt"><span style="font-size:7pt">SAMPLES:<'+'/span> <b>'+n+'<'+'/b><'+'/td><'+'/tr><'+'/table>';
   h+='<table style="margin-bottom:4pt"><tr><td colspan="'+(n+1)+'" class="sh">FORMULATION COMPARISON<'+'/td><'+'/tr>';
-  h+='<tr><th style="border:1px solid #000;padding:4pt;background:#e8e8e8;width:28%;text-align:left">Material<'+'/th>'+hdrs+'<'+'/tr>'+ingRows+totRow+'<'+'/table>';
+  h+='<tr><th style="border:1px solid #000;padding:4pt;background:#e8e8e8;width:28%;text-align:left">Material<'+'/th>'+hdrs+'<'+'/tr>'+ingRows+totRow+reqRow+'<'+'/table>';
   h+='<table><tr><td colspan="'+(n+1)+'" class="sh">QC PARAMETERS — RECORD RESULTS BELOW<'+'/td><'+'/tr>';
   h+='<tr><th style="border:1px solid #000;padding:4pt;background:#e8e8e8;width:28%;text-align:left">Parameter<'+'/th>'+shd+'<'+'/tr>'+qcRows+'<'+'/table>';
   h+='<div style="margin-top:4pt;font-size:7.5pt;display:flex;justify-content:space-between"><span>GCC Operations Hub<'+'/span><span>Tested by: ___________________ &nbsp; Date: ___________________<'+'/span><'+'/div><'+'/body><'+'/html>';
@@ -434,7 +435,11 @@ function printTrialSheet(trial,project,index){
   h+='<td style="padding:3pt 8pt;border-right:1px solid #000;border-top:1px solid #000"><span style="font-size:7pt">DATE</span> <b>'+( trial.date||'—')+'</b> &nbsp;&nbsp; <span style="font-size:7pt">BY</span> <b>'+(trial.triedBy||'—')+'</b></td>';
   h+='<td style="padding:3pt 8pt;border-top:1px solid #000"><span style="font-size:7pt">OUTCOME</span> <b>'+(trial.outcome||'Under Evaluation')+'</b>';
   if(trial.assignedTo)h+=' &nbsp;&nbsp; <span style="font-size:7pt">ASSIGNED TO</span> <b>'+trial.assignedTo+'</b>';
-  h+='</td></tr></table>';
+  h+='</td></tr>';
+  if(trial.batchSize){
+    h+='<tr><td colspan="2" style="padding:5pt 8pt;border-top:1px solid #000;background:#fff3cd"><span style="font-size:7pt;letter-spacing:0.05em">TOTAL TRIAL BATCH SIZE — MAKE EXACTLY THIS QUANTITY, NOT LESS OR MORE</span><br><b style="font-size:16pt">'+trial.batchSize+' '+(trial.batchSizeUnit||'kg')+'</b></td></tr>';
+  }
+  h+='</table>';
   if(ings.length){
     h+='<div class="sec">Formulation</div>';
     h+='<table><tr><th style="border:1px solid #000;padding:4pt 6pt;background:#e8e8e8;text-align:left;width:50%">Material</th><th style="border:1px solid #000;padding:4pt 6pt;background:#e8e8e8;text-align:center;width:25%">Quantity</th><th style="border:1px solid #000;padding:4pt 6pt;background:#e8e8e8;text-align:left">Notes</th></tr>'+ingRows;
@@ -2009,6 +2014,7 @@ function TrialCard({trial,index,onDelete,onUpdate,onCopy,isAdmin,sysUnits,onAddU
   const [editForm,setEditForm]=useState({
     trialName:trial.trialName||"",date:trial.date||today(),triedBy:trial.triedBy||"",
     outcome:trial.outcome||"Under Evaluation",
+    batchSize:trial.batchSize||"",batchSizeUnit:trial.batchSizeUnit||"kg",
     ingredients:trial.ingredients?.length?trial.ingredients:[blankIng()],
     process:trial.process||"",propertiesTested:trial.propertiesTested||"",
     observations:trial.observations||"",nextSteps:trial.nextSteps||"",
@@ -2055,7 +2061,7 @@ function TrialCard({trial,index,onDelete,onUpdate,onCopy,isAdmin,sysUnits,onAddU
         <div style={{background:"#1e293b",borderRadius:"8px",padding:"5px 10px",fontSize:"11px",fontWeight:"700",color:"#64748b",flexShrink:0}}>Trial {index+1}</div>
         <div>
           <div style={{fontSize:"13.5px",fontWeight:"600",color:"#e2e8f0"}}>{trial.trialName||`Trial ${index+1}`}</div>
-          <div style={{fontSize:"11px",color:"#475569",marginTop:"2px"}}>{trial.date}{trial.triedBy?` · ${trial.triedBy}`:""} · {trial.ingredients?.length||0} ingredients{reports.length>0?` · 📋 ${reports.length} report${reports.length!==1?"s":""}`:""}</div>
+          <div style={{fontSize:"11px",color:"#475569",marginTop:"2px"}}>{trial.date}{trial.triedBy?` · ${trial.triedBy}`:""} · {trial.ingredients?.length||0} ingredients{reports.length>0?` · 📋 ${reports.length} report${reports.length!==1?"s":""}`:""}{trial.batchSize?` · ⚖ ${trial.batchSize} ${trial.batchSizeUnit||"kg"} batch`:""}</div>
         </div>
       </div>
       <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
@@ -2091,6 +2097,14 @@ function TrialCard({trial,index,onDelete,onUpdate,onCopy,isAdmin,sysUnits,onAddU
         <select style={sl} value={editForm.outcome} onChange={e=>setEditForm({...editForm,outcome:e.target.value})}>
           {TRIAL_OUTCOMES.map(o=><option key={o}>{o}</option>)}
         </select>
+      </Field>
+      <Field label="Total Trial Batch Size — exact qty required, not less or more">
+        <div style={{display:"flex",gap:"6px"}}>
+          <input type="number" style={{...inp,flex:1}} value={editForm.batchSize} onChange={e=>setEditForm({...editForm,batchSize:e.target.value})} placeholder="e.g. 5"/>
+          <select style={{...sl,width:"90px"}} value={editForm.batchSizeUnit} onChange={e=>setEditForm({...editForm,batchSizeUnit:e.target.value})}>
+            <option value="kg">kg</option><option value="gms">gms</option><option value="L">L</option><option value="ml">ml</option>
+          </select>
+        </div>
       </Field>
       {/* Ingredients */}
       <div style={{marginBottom:"12px"}}>
@@ -2150,7 +2164,7 @@ function TrialCard({trial,index,onDelete,onUpdate,onCopy,isAdmin,sysUnits,onAddU
       </div>
       <Field label="Next Steps"><textarea style={{...ta,minHeight:"55px"}} value={editForm.nextSteps} onChange={e=>setEditForm({...editForm,nextSteps:e.target.value})}/></Field>
       <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",marginTop:"4px"}}>
-        <Btn label="Cancel" onClick={()=>{setEditing(false);setEditForm({trialName:trial.trialName||"",date:trial.date||today(),triedBy:trial.triedBy||"",outcome:trial.outcome||"Under Evaluation",ingredients:trial.ingredients?.length?trial.ingredients:[blankIng()],process:trial.process||"",propertiesTested:trial.propertiesTested||"",observations:trial.observations||"",nextSteps:trial.nextSteps||"",processSteps:trial.processSteps?.length?trial.processSteps:[{id:newId(),text:""}],assignedTo:trial.assignedTo||""});}} outline color="#475569" small/>
+        <Btn label="Cancel" onClick={()=>{setEditing(false);setEditForm({trialName:trial.trialName||"",date:trial.date||today(),triedBy:trial.triedBy||"",outcome:trial.outcome||"Under Evaluation",batchSize:trial.batchSize||"",batchSizeUnit:trial.batchSizeUnit||"kg",ingredients:trial.ingredients?.length?trial.ingredients:[blankIng()],process:trial.process||"",propertiesTested:trial.propertiesTested||"",observations:trial.observations||"",nextSteps:trial.nextSteps||"",processSteps:trial.processSteps?.length?trial.processSteps:[{id:newId(),text:""}],assignedTo:trial.assignedTo||""});}} outline color="#475569" small/>
         <Btn label={saving?"Saving…":"💾 Save Changes"} onClick={saveEdit} disabled={saving} color="#2563eb" small/>
       </div>
     </div>}
@@ -2241,7 +2255,7 @@ function ProjectWorkspace({project,isAdmin,showToast,sysUnits,sysRmCats,onAddRmC
   const [editObj,setEditObj]=useState(false);
   const [draft,setDraft]=useState({objective:project.objective||"",formulationBase:project.formulationBase||"",notes:project.notes||""});
   const [savingN,setSavingN]=useState(false);
-  const blank={trialName:"",date:today(),triedBy:"",outcome:"Under Evaluation",ingredients:[{id:"1",material:"",quantity:"",unit:"gms",notes:""}],process:"",processSteps:[{id:newId(),text:""}],propertiesTested:"",observations:"",nextSteps:"",testReports:[],assignedTo:"",qcParameters:["Viscosity","Fineness","Specific Gravity","pH","Non-Volatile %","Drying Time (min)","Gloss (60°)","Adhesion","Flexibility","Appearance"]};
+  const blank={trialName:"",date:today(),triedBy:"",outcome:"Under Evaluation",batchSize:"",batchSizeUnit:"kg",ingredients:[{id:"1",material:"",quantity:"",unit:"gms",notes:""}],process:"",processSteps:[{id:newId(),text:""}],propertiesTested:"",observations:"",nextSteps:"",testReports:[],assignedTo:"",qcParameters:["Viscosity","Fineness","Specific Gravity","pH","Non-Volatile %","Drying Time (min)","Gloss (60°)","Adhesion","Flexibility","Appearance"]};
   const [form,setForm]=useState(blank);
   const accent=PAINT_ACCENT[live.paintType]||"#cbd5e1";
   const sc=STATUS_COLORS[live.status]||"#94a3b8";
@@ -2348,6 +2362,16 @@ function ProjectWorkspace({project,isAdmin,showToast,sysUnits,sysRmCats,onAddRmC
         <Field label="Date"><input type="date" style={inp} value={form.date} onChange={e=>setForm({...form,date:e.target.value})}/></Field>
         <Field label="Tried By"><input style={inp} value={form.triedBy} onChange={e=>setForm({...form,triedBy:e.target.value})}/></Field>
       </Grid3>
+      <Grid2>
+        <Field label="Total Trial Batch Size — exact qty required, not less or more">
+          <div style={{display:"flex",gap:"6px"}}>
+            <input type="number" style={{...inp,flex:1}} value={form.batchSize} onChange={e=>setForm({...form,batchSize:e.target.value})} placeholder="e.g. 5"/>
+            <select style={{...sl,width:"90px"}} value={form.batchSizeUnit} onChange={e=>setForm({...form,batchSizeUnit:e.target.value})}>
+              <option value="kg">kg</option><option value="gms">gms</option><option value="L">L</option><option value="ml">ml</option>
+            </select>
+          </div>
+        </Field>
+      </Grid2>
       <Field label="Formulation — Ingredients"><IngredientTable rows={form.ingredients} onChange={rows=>setForm({...form,ingredients:rows})}/></Field>
       <Field label="Assign To (QC) — notifies on save">
         <select style={sl} value={form.assignedTo} onChange={e=>setForm({...form,assignedTo:e.target.value})}>
@@ -10022,28 +10046,31 @@ function BOMTab({role,roles,user,showToast,sysProducts,sysPackSizes,sysQcParams}
 
   // Download ALL BOMs at once — ONE real multi-sheet .xlsx workbook per product
   // (Current + every Archived version as separate sheets within that single file),
-  // all bundled together into one ZIP.
+  // organized into folders inside the ZIP by product Category (e.g. Decorative/, Industrial/).
   const exportAllBOMsZip=async()=>{
     if(!boms.length)return showToast("No BOMs to export","error");
     setExportingZip(true);
     try{
       await Promise.all([loadExcelJS(),loadJSZip()]);
       const zip=new window.JSZip();
-      const usedFile={};
+      const usedFile={}; // key = "groupFolder/fname" so numbering resets independently per folder
       for(const b of boms){
         const workbook=new window.ExcelJS.Workbook();
         addBOMSheetToWorkbook(workbook,`Current (v${b.currentVersion||1})`,b);
         const bVersions=versions.filter(v=>v.productId===b.id).sort((x,y)=>(y.currentVersion||0)-(x.currentVersion||0));
         bVersions.forEach(v=>addBOMSheetToWorkbook(workbook,`v${v.currentVersion||"?"} (Archived)`,v));
         const buffer=await workbook.xlsx.writeBuffer();
+        const groupFolder=(b.category||"Uncategorized").replace(/[\\\/\?\*\[\]:<>|]/g,"").replace(/\s+/g,"_")||"Uncategorized";
         let fname=(b.productName||"BOM").replace(/[\\\/\?\*\[\]:<>|]/g,"").replace(/\s+/g,"_");
-        if(usedFile[fname]!=null){usedFile[fname]++;fname=fname+"_"+usedFile[fname];} else usedFile[fname]=0;
-        zip.file(`${fname}.xlsx`,buffer);
+        const dedupKey=groupFolder+"/"+fname;
+        if(usedFile[dedupKey]!=null){usedFile[dedupKey]++;fname=fname+"_"+usedFile[dedupKey];} else usedFile[dedupKey]=0;
+        zip.folder(groupFolder).file(`${fname}.xlsx`,buffer);
       }
       const blob=await zip.generateAsync({type:"blob"});
       const a=document.createElement("a");a.href=URL.createObjectURL(blob);
       a.download=`GCC_All_BOMs_${today()}.zip`;a.click();
-      showToast(`✓ ${boms.length} products exported as ZIP — each file contains Current + Archived versions as separate sheets.`);
+      const groupCount=new Set(boms.map(b=>b.category||"Uncategorized")).size;
+      showToast(`✓ ${boms.length} products exported as ZIP — sorted into ${groupCount} category folder${groupCount!==1?"s":""}, each file with Current + Archived versions as separate sheets.`);
     }catch(e){showToast("Error: "+e.message,"error");}
     setExportingZip(false);
   };
