@@ -5975,8 +5975,8 @@ function DispatchHistoryReport({normT,showToast}){
   const [report,setReport]=useState(null);
   const [reports,setReports]=useState([]);
   const [loading,setLoading]=useState(false);
-  const [routeFilter,setRouteFilter]=useState("All");
-  const [transportFilter,setTransportFilter]=useState("All");
+  const [transportFilter,setTransportFilter]=useState("All"); // "All" | "<transporter name>" | "__direct__"
+  const [directRouteFilter,setDirectRouteFilter]=useState("All"); // active only when transportFilter==="__direct__"
 
   const loadSingle=async(date)=>{
     setLoading(true);
@@ -5993,22 +5993,28 @@ function DispatchHistoryReport({normT,showToast}){
 
   useEffect(()=>{if(mode==="single")loadSingle(reportDate);else loadRange();},[mode,reportDate,fromDate,toDate]);
 
+  const isDirectEntry=e=>!e.transport||["DIRECT","direct","Direct"].includes(e.transport);
   // Filter helpers
   const filterEntry=e=>{
-    if(routeFilter!=="All"&&e.route!==routeFilter)return false;
-    return true;
+    if(transportFilter==="All")return true;
+    if(transportFilter==="__direct__"){
+      if(!isDirectEntry(e))return false;
+      if(directRouteFilter!=="All"&&e.route!==directRouteFilter)return false;
+      return true;
+    }
+    return e.transport===transportFilter;
   };
 
   // Single mode data
   const entries=(report?.entries||[]).filter(filterEntry);
   const reversals=(report?.reversals||[]);
-  const allRoutesSingle=[...new Set((report?.entries||[]).map(e=>e.route).filter(Boolean))].sort();
   const allTransSingle=[...new Set((report?.entries||[]).map(e=>e.transport).filter(t=>t&&!["DIRECT","direct","Direct"].includes(t)))].sort();
+  const allDirectRoutesSingle=[...new Set((report?.entries||[]).filter(isDirectEntry).map(e=>e.route).filter(Boolean))].sort();
 
   // Range mode data
   const filteredReports=reports.map(r=>({...r,entries:(r.entries||[]).filter(filterEntry)})).filter(r=>r.entries.length>0||(r.reversals||[]).length>0);
-  const allRoutesRange=[...new Set(reports.flatMap(r=>(r.entries||[]).map(e=>e.route).filter(Boolean)))].sort();
   const allTransRange=[...new Set(reports.flatMap(r=>(r.entries||[]).map(e=>e.transport).filter(t=>t&&!["DIRECT","direct","Direct"].includes(t))))].sort();
+  const allDirectRoutesRange=[...new Set(reports.flatMap(r=>(r.entries||[]).filter(isDirectEntry).map(e=>e.route).filter(Boolean)))].sort();
 
   // Totals
   const calcTotals=(entriesList)=>{const vols={};let qty=0;entriesList.forEach(e=>(e.items||[]).forEach(it=>{qty+=it.qty||0;if(it.vol)vols[it.vol.unit]=(vols[it.vol.unit]||0)+it.vol.vol;}));return{qty,vols};};
@@ -6021,7 +6027,8 @@ function DispatchHistoryReport({normT,showToast}){
     const totals=calcTotals(entriesToPrint);
     let h='<!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{font-family:Arial,sans-serif;font-size:9pt;margin:0;padding:6pt}@page{size:A4 portrait;margin:8mm}table{border-collapse:collapse;width:100%;margin-bottom:6pt}td,th{padding:2pt 5pt;border:1px solid #000}th{background:#e8e8e8;font-weight:700}.sec{font-weight:700;font-size:9.5pt;border-bottom:1.5px solid #000;padding-bottom:2pt;margin:5pt 0 3pt}</style></head><body>';
     const dateLabel=mode==="single"?reportDate:`${fromDate} to ${toDate}`;
-    h+=`<div style="display:flex;justify-content:space-between;border-bottom:2px solid #000;margin-bottom:4pt;padding-bottom:3pt"><b style="font-size:12pt">VEEBEE — DISPATCH REPORT</b><span>${dateLabel}${routeFilter!=="All"?" · "+routeFilter:""}${transportFilter!=="All"?" · "+transportFilter:""}</span></div>`;
+    const filterLabel=transportFilter==="All"?"":transportFilter==="__direct__"?(" · Direct"+(directRouteFilter!=="All"?" — "+directRouteFilter:" (all routes)")):(" · "+transportFilter);
+    h+=`<div style="display:flex;justify-content:space-between;border-bottom:2px solid #000;margin-bottom:4pt;padding-bottom:3pt"><b style="font-size:12pt">VEEBEE — DISPATCH REPORT</b><span>${dateLabel}${filterLabel}</span></div>`;
     h+=`<div style="margin-bottom:4pt;font-size:9pt"><b>Total Qty: ${totals.qty}</b>${Object.entries(totals.vols).map(([u,v])=>" | "+v.toFixed(2)+" "+u).join("")}</div>`;
     h+='<div class="sec">Dispatched</div>';
     h+='<table><tr><th>Date</th><th>Customer</th><th>Route</th><th>Transport</th><th>Order No</th><th>Order Date</th><th>Product</th><th style="text-align:center">Qty</th><th style="text-align:center">Volume</th></tr>';
@@ -6032,22 +6039,34 @@ function DispatchHistoryReport({normT,showToast}){
     const w=window.open('','_blank');w.document.write(h);w.document.close();setTimeout(()=>w.print(),400);
   };
 
-  const allRoutes=mode==="single"?allRoutesSingle:allRoutesRange;
   const allTrans=mode==="single"?allTransSingle:allTransRange;
+  const allDirectRoutes=mode==="single"?allDirectRoutesSingle:allDirectRoutesRange;
 
   return <div>
     <div style={{fontSize:"13px",fontWeight:"700",color:"#a78bfa",marginBottom:"12px"}}>📊 Dispatch Report</div>
     <div style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"10px",padding:"12px 14px",marginBottom:"12px"}}>
       {/* Mode toggle */}
       <div style={{display:"flex",gap:"4px",background:"#080d18",border:"1px solid #1e293b",borderRadius:"7px",padding:"3px",marginBottom:"10px",width:"fit-content"}}>
-        {[["single","📅 Single Date"],["range","📆 Date Range"]].map(([v,l])=><button key={v} onClick={()=>{setMode(v);setRouteFilter("All");setTransportFilter("All");}} style={{background:mode===v?"#1e3a5f":"transparent",border:"none",borderRadius:"5px",padding:"5px 12px",color:mode===v?"#93c5fd":"#475569",fontWeight:"700",fontSize:"11.5px",cursor:"pointer"}}>{l}</button>)}
+        {[["single","📅 Single Date"],["range","📆 Date Range"]].map(([v,l])=><button key={v} onClick={()=>{setMode(v);setTransportFilter("All");setDirectRouteFilter("All");}} style={{background:mode===v?"#1e3a5f":"transparent",border:"none",borderRadius:"5px",padding:"5px 12px",color:mode===v?"#93c5fd":"#475569",fontWeight:"700",fontSize:"11.5px",cursor:"pointer"}}>{l}</button>)}
       </div>
       <div style={{display:"flex",gap:"10px",flexWrap:"wrap",alignItems:"flex-end"}}>
         {mode==="single"
-          ?<Field label="Date"><input type="date" style={{...inp,width:"150px"}} value={reportDate} onChange={e=>{setReportDate(e.target.value);setRouteFilter("All");setTransportFilter("All");}}/></Field>
+          ?<Field label="Date"><input type="date" style={{...inp,width:"150px"}} value={reportDate} onChange={e=>{setReportDate(e.target.value);setTransportFilter("All");setDirectRouteFilter("All");}}/></Field>
           :<><Field label="From"><input type="date" style={{...inp,width:"140px"}} value={fromDate} onChange={e=>setFromDate(e.target.value)}/></Field>
             <Field label="To"><input type="date" style={{...inp,width:"140px"}} value={toDate} onChange={e=>setToDate(e.target.value)}/></Field></>}
-        {allRoutes.length>0&&<Field label="Route"><select style={{...sl,minWidth:"120px"}} value={routeFilter} onChange={e=>setRouteFilter(e.target.value)}><option value="All">All Routes</option>{allRoutes.map(r=><option key={r}>{r}</option>)}</select></Field>}
+        {(allTrans.length>0||allDirectRoutes.length>0)&&<Field label="Transport">
+          <select style={{...sl,minWidth:"160px"}} value={transportFilter} onChange={e=>{setTransportFilter(e.target.value);setDirectRouteFilter("All");}}>
+            <option value="All">All (Transport + Direct)</option>
+            {allTrans.length>0&&<optgroup label="🏢 Transporter">{allTrans.map(t=><option key={t} value={t}>{t}</option>)}</optgroup>}
+            {allDirectRoutes.length>0&&<option value="__direct__">🚚 Direct — all routes</option>}
+          </select>
+        </Field>}
+        {transportFilter==="__direct__"&&allDirectRoutes.length>0&&<Field label="Direct Route">
+          <select style={{...sl,minWidth:"130px"}} value={directRouteFilter} onChange={e=>setDirectRouteFilter(e.target.value)}>
+            <option value="All">All Direct Routes</option>
+            {allDirectRoutes.map(r=><option key={r} value={r}>{r}</option>)}
+          </select>
+        </Field>}
         <button onClick={()=>mode==="single"?loadSingle(reportDate):loadRange()} disabled={loading} style={{background:"#0a1a2e",border:"1px solid #2563eb",borderRadius:"7px",padding:"7px 14px",color:"#93c5fd",fontWeight:"700",fontSize:"12px",cursor:"pointer",marginBottom:"1px"}}>{loading?"…":"🔄"}</button>
         {((mode==="single"&&entries.length>0)||(mode==="range"&&filteredReports.length>0))&&<button onClick={printReport} style={{background:"#052e16",border:"1px solid #166534",borderRadius:"7px",padding:"7px 14px",color:"#4ade80",fontWeight:"700",fontSize:"12px",cursor:"pointer",marginBottom:"1px"}}>🖨 Print</button>}
       </div>
