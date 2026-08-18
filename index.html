@@ -11968,6 +11968,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
   const [complaintSearch,setComplaintSearch]=useState("");
   const [leakageSearch,setLeakageSearch]=useState("");
   const [leakageFilter,setLeakageFilter]=useState("All");
+  const [leakageGroupBy,setLeakageGroupBy]=useState("list"); // "list"|"customer"
   const [projSearch,setProjSearch]=useState("");
   const [projFilter,setProjFilter]=useState("All");
   const [showHiddenProjects,setShowHiddenProjects]=useState(false);
@@ -12514,11 +12515,36 @@ function MainApp({user,role,roles=[],permissions=[]}){
           <div style={{display:"flex",gap:"8px",flexWrap:"wrap",alignItems:"center",flex:1}}>
             <input placeholder="Search customer, product…" value={leakageSearch} onChange={e=>setLeakageSearch(e.target.value)} style={{...inp,maxWidth:"200px",padding:"8px 12px",fontSize:"13px"}}/>
             {["All",...LEAKAGE_STATUS].map(s=><button key={s} onClick={()=>setLeakageFilter(s)} style={{background:leakageFilter===s?"#0c2a3a":"transparent",border:`1px solid ${leakageFilter===s?"#0891b2":"#1e293b"}`,color:leakageFilter===s?"#67e8f9":"#475569",borderRadius:"99px",padding:"5px 12px",fontSize:"11.5px",fontWeight:"600",transition:"all 0.15s",cursor:"pointer"}}>{s}</button>)}
+            <div style={{display:"flex",gap:"4px",background:"#080d18",border:"1px solid #1e293b",borderRadius:"7px",padding:"3px",marginLeft:"4px"}}>
+              <button onClick={()=>setLeakageGroupBy("list")} style={{background:leakageGroupBy==="list"?"#0c2a3a":"transparent",border:"none",borderRadius:"5px",padding:"5px 11px",color:leakageGroupBy==="list"?"#67e8f9":"#475569",fontWeight:"700",fontSize:"11.5px",cursor:"pointer"}}>📋 List</button>
+              <button onClick={()=>setLeakageGroupBy("customer")} style={{background:leakageGroupBy==="customer"?"#0c2a3a":"transparent",border:"none",borderRadius:"5px",padding:"5px 11px",color:leakageGroupBy==="customer"?"#67e8f9":"#475569",fontWeight:"700",fontSize:"11.5px",cursor:"pointer"}}>👥 By Customer</button>
+            </div>
           </div>
           {(hp("leakage_add")||isAdmin)&&<Btn label="+ Report Leakage" onClick={()=>{setLeakageForm({...EL,leakDate:today()});setShowAddLeakage(true);}} color="#0891b2"/>}
         </div>
         {fl.length===0?<div style={{textAlign:"center",padding:"50px 0"}}><div style={{fontSize:"36px",marginBottom:"10px"}}>💧</div><div style={{fontSize:"13px",color:"#475569"}}>No leakage reports found.</div></div>
-          :fl.map(c=><LeakageCard key={c.id} c={c} onClick={()=>setActiveLeakage(c)} onDelete={async(id)=>{if(!confirm("Delete?"))return;await C("leakage_reports").doc(id).delete();showToast("Deleted","error");}} role={role}/>)}
+          :leakageGroupBy==="list"
+          ?fl.map(c=><LeakageCard key={c.id} c={c} onClick={()=>setActiveLeakage(c)} onDelete={async(id)=>{if(!confirm("Delete?"))return;await C("leakage_reports").doc(id).delete();showToast("Deleted","error");}} role={role}/>)
+          :(()=>{
+            const byCust={};
+            fl.forEach(c=>{
+              const k=normalize(c.customerName||"—");
+              if(!byCust[k])byCust[k]={customerName:c.customerName||"—",reports:[]};
+              byCust[k].reports.push(c);
+            });
+            const groups=Object.values(byCust).sort((a,b)=>b.reports.length-a.reports.length||a.customerName.localeCompare(b.customerName));
+            return groups.map(g=>{
+              const unresolvedCount=g.reports.filter(c=>!["Credit Note Issued","Rejected","Closed"].includes(c.status)).length;
+              return <div key={g.customerName} style={{marginBottom:"14px"}}>
+                <div style={{display:"flex",alignItems:"center",gap:"8px",padding:"8px 4px",borderBottom:`2px solid ${g.reports.length>1?"#0891b2":"#1e293b"}`,marginBottom:"8px",flexWrap:"wrap"}}>
+                  <span style={{fontSize:"13px",fontWeight:"700",color:"#f1f5f9",fontFamily:"'DM Serif Display',serif"}}>{g.customerName}</span>
+                  <span style={{fontSize:"11px",fontWeight:"700",color:g.reports.length>1?"#67e8f9":"#64748b",background:g.reports.length>1?"#0c2a3a":"#0b1220",border:`1px solid ${g.reports.length>1?"#0891b2":"#1e293b"}`,borderRadius:"99px",padding:"2px 10px"}}>{g.reports.length>1?`💧 ${g.reports.length} leakage reports`:"1 report"}</span>
+                  {unresolvedCount>0&&<span style={{fontSize:"10.5px",fontWeight:"700",color:"#fbbf24",background:"#fbbf2418",border:"1px solid #fbbf2430",borderRadius:"99px",padding:"2px 9px"}}>{unresolvedCount} unresolved</span>}
+                </div>
+                {g.reports.map(c=><LeakageCard key={c.id} c={c} onClick={()=>setActiveLeakage(c)} onDelete={async(id)=>{if(!confirm("Delete?"))return;await C("leakage_reports").doc(id).delete();showToast("Deleted","error");}} role={role}/>)}
+              </div>;
+            });
+          })()}
         </>}
       </>}
 
