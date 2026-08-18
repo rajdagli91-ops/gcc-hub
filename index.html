@@ -1549,26 +1549,18 @@ function CustomerSearchInput({value,customers,onChange}){
 }
 function ComplaintCard({c,onClick,onDelete,role}){
   const sc=CS_COL[c.status]||"#94a3b8";
+  const cDate=c.complaintDate||c.dateCreated||"";
   return <div onClick={onClick} onMouseEnter={e=>e.currentTarget.style.background="#0f1f35"} onMouseLeave={e=>e.currentTarget.style.background="#0f172a"}
-    style={{background:"#0f172a",border:"1px solid #1e293b",borderLeft:`3px solid ${sc}`,borderRadius:"12px",padding:"15px 20px",cursor:"pointer",transition:"background 0.15s",boxShadow:"0 2px 10px rgba(0,0,0,0.3)",marginBottom:"10px"}}>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:"8px"}}>
-      <div style={{flex:1}}>
-        <div style={{fontSize:"14px",fontWeight:"700",color:"#f1f5f9",marginBottom:"3px",fontFamily:"'DM Serif Display',serif"}}>{c.customerName}</div>
-        <div style={{fontSize:"11.5px",color:"#64748b",marginBottom:"6px"}}>{c.productName} · Batch: {c.batchNo||"—"} · {c.monthYear||"—"}</div>
-        <div style={{fontSize:"12.5px",color:"#94a3b8",lineHeight:1.5,maxHeight:"36px",overflow:"hidden"}}>{c.complaint}</div>
-      </div>
-      <div style={{display:"flex",gap:"6px",alignItems:"flex-start",flexShrink:0,flexDirection:"column",alignItems:"flex-end"}}>
-        <Bdg label={c.status} color={sc}/>
-        {(role==="admin")&&<button onClick={e=>{e.stopPropagation();onDelete(c.id)}} style={{background:"none",border:"none",color:"#334155",fontSize:"14px",padding:"2px"}}>🗑</button>}
-      </div>
-    </div>
-    <div style={{display:"flex",gap:"10px",flexWrap:"wrap",marginTop:"4px"}}>
-      {c.invoiceNo&&<span style={{fontSize:"11px",color:"#475569"}}>🧾 {c.invoiceNo}</span>}
-      {c.addedBy&&<span style={{fontSize:"11px",color:"#475569"}}>👤 {c.addedBy}</span>}
+    style={{background:"#0f172a",border:"1px solid #1e293b",borderLeft:`3px solid ${sc}`,borderRadius:"10px",padding:"10px 16px",cursor:"pointer",transition:"background 0.15s",boxShadow:"0 2px 10px rgba(0,0,0,0.3)",marginBottom:"7px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:"10px",flexWrap:"wrap"}}>
+    <div style={{display:"flex",alignItems:"baseline",gap:"10px",flexWrap:"wrap",flex:1,minWidth:"0"}}>
+      <span style={{fontSize:"13.5px",fontWeight:"700",color:"#f1f5f9",fontFamily:"'DM Serif Display',serif"}}>{c.customerName}</span>
+      <span style={{fontSize:"12px",color:"#64748b"}}>{c.productName||"—"}</span>
+      <span style={{fontSize:"11px",color:"#475569"}}>📅 {cDate||"—"}</span>
       {c.assignedSalesman&&<span style={{fontSize:"11px",color:"#64748b"}}>🧑‍💼 {c.assignedSalesman.split("@")[0]}</span>}
-      {c.visitedCustomer==="yes"?<span style={{fontSize:"11px",fontWeight:"700",color:"#4ade80",background:"#052e1660",border:"1px solid #16653450",borderRadius:"99px",padding:"1px 8px"}}>✓ Visited{c.visitDate?" "+c.visitDate:""}</span>
-        :c.visitedCustomer==="scheduled"?<span style={{fontSize:"11px",fontWeight:"700",color:"#93c5fd",background:"#0a1a2e60",border:"1px solid #2563eb50",borderRadius:"99px",padding:"1px 8px"}}>📅 Visit scheduled</span>
-        :c.assignedSalesman?<span style={{fontSize:"11px",fontWeight:"700",color:"#fbbf24",background:"#fbbf2418",border:"1px solid #fbbf2430",borderRadius:"99px",padding:"1px 8px"}}>⏳ Not yet visited</span>:null}
+    </div>
+    <div style={{display:"flex",gap:"8px",alignItems:"center",flexShrink:0}}>
+      <Bdg label={c.status} color={sc}/>
+      {(role==="admin")&&<button onClick={e=>{e.stopPropagation();onDelete(c.id)}} style={{background:"none",border:"none",color:"#334155",fontSize:"14px",padding:"2px"}}>🗑</button>}
     </div>
   </div>;
 }
@@ -1625,7 +1617,7 @@ function ComplaintWorkspace({complaint,role,roles,showToast,user,allProfiles,all
     const diff=(new Date(d2)-new Date(d1))/(1000*60*60*24);
     return Math.round(diff);
   };
-  const complaintDate=live.dateCreated||live._createdAt?.toDate?.()?.toISOString?.()?.slice(0,10)||"—";
+  const complaintDate=live.complaintDate||live.dateCreated||live._createdAt?.toDate?.()?.toISOString?.()?.slice(0,10)||"—";
 
   const saveQC=async()=>{
     if(!qcResp.findings.trim()&&!qcResp.action.trim())return showToast("Enter findings or action","error");
@@ -4884,7 +4876,7 @@ function NoAccessScreen(){
 const EP={projectName:"",projectCode:"",paintType:"Emulsion",application:"",status:"Ongoing",objective:"",formulationBase:"",assignedTo:"",targetDate:"",notes:""};
 const ER={materialName:"",vendorName:"",category:"Resin / Binder",batchNo:"",lotNo:"",quantityReceived:"",dateReceived:"",specsToTest:"",assignedTo:"",testedBy:"",testResult:"Pending",testsPerformed:"",observations:"",remarks:""};
 const EB={category:"",productName:"",shade:"",batchSize:"",unit:"kg",dateIssued:today(),issuedBy:"",oldStockUsed:"",issueNotes:""};
-const EC={customerName:"",productName:"",batchNo:"",monthYear:"",invoiceNo:"",materialAvailable:"",complaint:"",applicationProcess:"",thinnerUsed:"",source:"salesman",assignedSalesman:"",visitedCustomer:"",visitDate:""};
+const EC={customerName:"",productName:"",batchNo:"",monthYear:"",invoiceNo:"",materialAvailable:"",complaint:"",applicationProcess:"",thinnerUsed:"",source:"salesman",assignedSalesman:"",visitedCustomer:"",visitDate:"",complaintDate:""};
 
 // ══════════════════════════════════════════════════════════
 // SAMPLE TESTING TAB — Customer / Competitor Samples
@@ -12271,7 +12263,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
               <button onClick={()=>setComplaintGroupBy("customer")} style={{background:complaintGroupBy==="customer"?"#1e3a5f":"transparent",border:"none",borderRadius:"5px",padding:"5px 11px",color:complaintGroupBy==="customer"?"#93c5fd":"#475569",fontWeight:"700",fontSize:"11.5px",cursor:"pointer"}}>👥 By Customer</button>
             </div>
           </div>
-          {(role==="sales"||role==="admin")&&<Btn label="+ Add Complaint" onClick={()=>setShowAddComplaint(true)} color="#ef4444"/>}
+          {(role==="sales"||role==="admin")&&<Btn label="+ Add Complaint" onClick={()=>{setComplaintForm({...EC,complaintDate:today()});setShowAddComplaint(true);}} color="#ef4444"/>}
           {complaintCustomers.length>0&&<span style={{fontSize:"11px",color:"#475569"}}>{complaintCustomers.length} customers from routes</span>}
         </div>
         {fc.length===0?<div style={{textAlign:"center",padding:"50px 0"}}><div style={{fontSize:"36px",marginBottom:"10px"}}>✅</div><div style={{fontSize:"13px",color:"#475569"}}>No complaints found.{role==="sales"?" Click + Add Complaint.":""}</div></div>
@@ -12485,6 +12477,9 @@ function MainApp({user,role,roles=[],permissions=[]}){
           <CustomerSearchInput value={complaintForm.customerName} customers={complaintCustomers} onChange={v=>setComplaintForm({...complaintForm,customerName:v})}/>
         </Field>
         <Field label="Product *"><input style={inp} value={complaintForm.productName} onChange={e=>setComplaintForm({...complaintForm,productName:e.target.value})} placeholder="Product name"/></Field>
+      </Grid2>
+      <Grid2>
+        <Field label="Date of Complaint"><input type="date" style={inp} value={complaintForm.complaintDate||today()} onChange={e=>setComplaintForm({...complaintForm,complaintDate:e.target.value})}/></Field>
       </Grid2>
       {/* User / Salesman — auto-filled for salesman source. For HO source, this is the same person picked above in "Assign to Salesman", so no separate field is shown. */}
       {complaintForm.source==="salesman"&&<Field label="User / Salesman">
