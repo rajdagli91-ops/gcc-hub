@@ -653,8 +653,8 @@ const userHasPerm=(roles,permissions,perm)=>{
     const rolePermsMap={
       admin:["batches_view","batches_issue","batches_qc","complaints_view_all","complaints_add","complaints_respond","leakage_view_all","leakage_add","leakage_respond","rd_view","rd_edit","calc_tools","shade_submit","shade_approve","bom_view","bom_edit","tasks_own","tasks_assign","stock_view","stock_consume","stock_manage","testimonials","settings_products","settings_advanced"],
       issuer:["batches_view","batches_issue","bom_view","bom_edit","complaints_view_all","leakage_view_all","leakage_add","tasks_own","stock_view","stock_consume","settings_products","calc_tools","shade_approve","enquiries_dispatch"],
-      qc:["batches_view","batches_qc","rd_view","rd_edit","calc_tools","shade_submit","complaints_view_all","complaints_respond","leakage_view_all","tasks_own","settings_advanced"],
-      sales:["complaints_add","complaints_view_all","leakage_view_all","leakage_add","tasks_own","testimonials","enquiries_update"],
+      qc:["batches_view","batches_qc","rd_view","rd_edit","calc_tools","shade_submit","complaints_view_all","complaints_respond","tasks_own","settings_advanced"],
+      sales:["complaints_add","complaints_view_all","leakage_add","tasks_own","testimonials","enquiries_update"],
       store:["stock_view","stock_consume","tasks_own","leakage_add"],
       ho:["enquiries_create","enquiries_view_all","leakage_view_all","leakage_respond","tasks_own"],
     };
@@ -12068,12 +12068,15 @@ function MainApp({user,role,roles=[],permissions=[]}){
           setComplaints(isSalesOnly?all.filter(c=>c.addedBy===user.email||c.assignedSalesman===user.email):all);})));
     }
     if(CAN_SEE.leakage.some(r=>roles.includes(r))){
-      const isSalesOnly=roles.includes("sales")&&!roles.includes("admin")&&!roles.includes("qc")&&!roles.includes("issuer")&&!roles.includes("ho");
+      // Only Admin, Issuer, HO (or anyone explicitly granted leakage_view_all) see every leakage report.
+      // Sales, Store, QC and everyone else only see leakage reports they personally added —
+      // a salesman cannot see another salesman's leakage reports.
+      const canViewAllLeakage=hp("leakage_view_all");
       subs.push(C("leakage_reports").orderBy("_createdAt","desc").onSnapshot(
         s=>{const all=s.docs.map(d=>({id:d.id,...d.data()}));
-          setLeakages(isSalesOnly?all.filter(c=>c.addedBy===user.email):all);},
+          setLeakages(canViewAllLeakage?all:all.filter(c=>c.addedBy===user.email));},
         ()=>C("leakage_reports").onSnapshot(s=>{const all=s.docs.map(d=>({id:d.id,...d.data()}));
-          setLeakages(isSalesOnly?all.filter(c=>c.addedBy===user.email):all);})));
+          setLeakages(canViewAllLeakage?all:all.filter(c=>c.addedBy===user.email));})));
     }
     if(CAN_SEE.rd.some(r=>roles.includes(r))){
       subs.push(C("rd_projects").orderBy("_createdAt","desc").onSnapshot(s=>setProjects(s.docs.map(d=>({id:d.id,...d.data()}))),()=>C("rd_projects").onSnapshot(s=>setProjects(s.docs.map(d=>({id:d.id,...d.data()}))))));
