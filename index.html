@@ -11964,6 +11964,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
   const [batchFYFilter,setBatchFYFilter]=useState("All"); // Default All so existing batches show
   const [complaintFilter,setComplaintFilter]=useState("All");
   const [complaintGroupBy,setComplaintGroupBy]=useState("list"); // "list"|"customer"
+  const [complaintsSubTab,setComplaintsSubTab]=useState("complaints"); // "complaints"|"leakage"
   const [complaintSearch,setComplaintSearch]=useState("");
   const [leakageSearch,setLeakageSearch]=useState("");
   const [leakageFilter,setLeakageFilter]=useState("All");
@@ -12296,7 +12297,6 @@ function MainApp({user,role,roles=[],permissions=[]}){
     {key:"dashboard",label:"📊 Dashboard"},
     {key:"batches",label:"📦 Batches"},
     {key:"complaints",label:"⚠️ Complaints"},
-    {key:"leakage",label:"💧 Leakage"},
     {key:"rd",label:"🧪 R&D & QC"},
     {key:"bom",label:"📋 BOM"},
     {key:"tasks",label:"✅ Tasks"},
@@ -12311,8 +12311,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
     const permMap={
       dashboard:true,
       batches:hp("batches_view"),
-      complaints:hp("complaints_view_all")||hp("complaints_add"),
-      leakage:hp("leakage_view_all")||hp("leakage_add"),
+      complaints:hp("complaints_view_all")||hp("complaints_add")||hp("leakage_view_all")||hp("leakage_add"),
       rd:hp("rd_view"),
       bom:hp("bom_view"),
       tasks:hp("tasks_own"),
@@ -12467,6 +12466,12 @@ function MainApp({user,role,roles=[],permissions=[]}){
 
       {/* COMPLAINTS */}
       {tab==="complaints"&&<>
+        <div style={{display:"flex",gap:"5px",background:"#080d18",border:"1px solid #1e293b",borderRadius:"9px",padding:"3px",marginBottom:"16px",width:"fit-content"}}>
+          <button onClick={()=>setComplaintsSubTab("complaints")} style={{background:complaintsSubTab==="complaints"?"#1e3a5f":"transparent",border:"none",borderRadius:"6px",padding:"7px 16px",color:complaintsSubTab==="complaints"?"#93c5fd":"#475569",fontWeight:"700",fontSize:"12.5px",cursor:"pointer"}}>⚠️ Complaints</button>
+          <button onClick={()=>setComplaintsSubTab("leakage")} style={{background:complaintsSubTab==="leakage"?"#0c2a3a":"transparent",border:"none",borderRadius:"6px",padding:"7px 16px",color:complaintsSubTab==="leakage"?"#67e8f9":"#475569",fontWeight:"700",fontSize:"12.5px",cursor:"pointer"}}>💧 Leakage</button>
+        </div>
+
+        {complaintsSubTab==="complaints"&&<>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"14px",flexWrap:"wrap",gap:"10px"}}>
           <div style={{display:"flex",gap:"8px",flexWrap:"wrap",alignItems:"center",flex:1}}>
             <input placeholder="Search customer, product…" value={complaintSearch} onChange={e=>setComplaintSearch(e.target.value)} style={{...inp,maxWidth:"200px",padding:"8px 12px",fontSize:"13px"}}/>
@@ -12502,10 +12507,9 @@ function MainApp({user,role,roles=[],permissions=[]}){
               </div>;
             });
           })()}
-      </>}
+        </>}
 
-      {/* LEAKAGE */}
-      {tab==="leakage"&&<>
+        {complaintsSubTab==="leakage"&&<>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"14px",flexWrap:"wrap",gap:"10px"}}>
           <div style={{display:"flex",gap:"8px",flexWrap:"wrap",alignItems:"center",flex:1}}>
             <input placeholder="Search customer, product…" value={leakageSearch} onChange={e=>setLeakageSearch(e.target.value)} style={{...inp,maxWidth:"200px",padding:"8px 12px",fontSize:"13px"}}/>
@@ -12515,6 +12519,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
         </div>
         {fl.length===0?<div style={{textAlign:"center",padding:"50px 0"}}><div style={{fontSize:"36px",marginBottom:"10px"}}>💧</div><div style={{fontSize:"13px",color:"#475569"}}>No leakage reports found.</div></div>
           :fl.map(c=><LeakageCard key={c.id} c={c} onClick={()=>setActiveLeakage(c)} onDelete={async(id)=>{if(!confirm("Delete?"))return;await C("leakage_reports").doc(id).delete();showToast("Deleted","error");}} role={role}/>)}
+        </>}
       </>}
 
       {/* R&D */}
