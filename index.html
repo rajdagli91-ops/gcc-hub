@@ -9,6 +9,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
@@ -73,6 +74,7 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 window._auth=firebase.auth();
 window._db=firebase.firestore();
+window._storage=firebase.storage();
 window._firebaseConfig=firebaseConfig;
 
 // Show any JS errors on screen instead of silent blank page
@@ -567,6 +569,7 @@ ${(entry.retests||[]).length?`<table style="margin-top:14pt">
 const {useState,useEffect,useRef} = React;
 const auth = window._auth;
 const db = window._db;
+const storage = window._storage;
 
 // ══════════════════════════════════════════════════════════
 // CONSTANTS
@@ -1352,13 +1355,20 @@ const compressImage=async(file,maxPx=900,quality=0.72)=>{
   });
 };
 
-const fileToBase64=async(file,userEmail)=>{
+const fileToBase64=async(file,userEmail,folder)=>{
   let dataUrl;
   if(file.type.startsWith("image/")){
     dataUrl=await compressImage(file);
   }else if(file.type.startsWith("video/")){
-    // Videos too large for Firestore — store metadata only, ask user to share via WhatsApp
-    return {name:file.name,type:file.type,size:file.size,url:null,isVideoStub:true,uploadedBy:userEmail,uploadedAt:today(),note:"Video too large to store inline — share via WhatsApp/email separately"};
+    // Videos are too large for Firestore (1MB doc limit) — upload the actual file to
+    // Firebase Cloud Storage instead, and store only the small download URL in Firestore.
+    if(file.size>150*1024*1024)throw new Error(`Video "${file.name}" is too large (${(file.size/1024/1024).toFixed(1)}MB). Max 150MB per video.`);
+    if(!storage)throw new Error("Cloud Storage not available — refresh the page and try again.");
+    const path=`complaint_media/${folder||"misc"}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9_.-]/g,"_")}`;
+    const ref=storage.ref(path);
+    const snap=await ref.put(file);
+    const url=await snap.ref.getDownloadURL();
+    return {name:file.name,type:file.type,size:file.size,url,uploadedBy:userEmail,uploadedAt:today(),storagePath:path};
   }else{
     // PDF/other — store as base64 if small enough
     if(file.size>800000)throw new Error(`File "${file.name}" is too large (${(file.size/1024/1024).toFixed(1)}MB). Max 800KB for non-image files. For photos, any size is fine.`);
@@ -1370,6 +1380,7 @@ const fileToBase64=async(file,userEmail)=>{
 
 function FileAttachment({folder,existingFiles=[],onFilesChange,readOnly=false,maxFiles=5}){
   const [uploading,setUploading]=useState(false);
+  const [uploadMsg,setUploadMsg]=useState("");
   const [error,setError]=useState("");
   const [zoomFile,setZoomFile]=useState(null);
   const user=auth.currentUser;
@@ -1381,10 +1392,15 @@ function FileAttachment({folder,existingFiles=[],onFilesChange,readOnly=false,ma
     if(existingFiles.length+files.length>maxFiles){setError(`Max ${maxFiles} files allowed`);return;}
     setUploading(true);setError("");
     try{
-      const processed=await Promise.all(files.map(f=>fileToBase64(f,user?.email||"")));
+      const processed=[];
+      for(const f of files){
+        if(f.type.startsWith("video/"))setUploadMsg(`Uploading video "${f.name}"… this can take a bit`);
+        else setUploadMsg("Processing…");
+        processed.push(await fileToBase64(f,user?.email||"",folder));
+      }
       onFilesChange([...existingFiles,...processed]);
-    }catch(err){setError(err.message||"Processing failed");}
-    setUploading(false);
+    }catch(err){setError(err.message||"Upload failed");}
+    setUploading(false);setUploadMsg("");
     e.target.value="";
   };
 
@@ -1392,11 +1408,11 @@ function FileAttachment({folder,existingFiles=[],onFilesChange,readOnly=false,ma
 
   return <div>
     {!readOnly&&existingFiles.length<maxFiles&&<div style={{marginBottom:"8px"}}>
-      <input ref={fileRef} type="file" accept="image/*,.pdf" multiple onChange={handleSelect} style={{display:"none"}}/>
+      <input ref={fileRef} type="file" accept="image/*,video/*,.pdf" multiple onChange={handleSelect} style={{display:"none"}}/>
       <button onClick={()=>fileRef.current?.click()} disabled={uploading}
         style={{background:"none",border:"1px dashed #334155",borderRadius:"7px",padding:"7px 14px",color:uploading?"#334155":"#64748b",cursor:uploading?"not-allowed":"pointer",fontSize:"12px",fontWeight:"600",display:"flex",alignItems:"center",gap:"6px"}}>
-        {uploading?"⏳ Processing…":"📎 Add Photo / PDF"}
-        <span style={{fontSize:"10px",color:"#334155"}}>({existingFiles.length}/{maxFiles}) — images auto-compressed</span>
+        {uploading?`⏳ ${uploadMsg||"Processing…"}`:"📎 Add Photo / Video / PDF"}
+        <span style={{fontSize:"10px",color:"#334155"}}>({existingFiles.length}/{maxFiles}) — images auto-compressed, videos up to 150MB</span>
       </button>
       {error&&<div style={{background:"#450a0a",border:"1px solid #7f1d1d",borderRadius:"7px",padding:"8px 12px",color:"#fca5a5",fontSize:"12px",marginTop:"6px"}}>❌ {error}</div>}
     </div>}
@@ -1404,7 +1420,8 @@ function FileAttachment({folder,existingFiles=[],onFilesChange,readOnly=false,ma
       {existingFiles.map((f,i)=>{
         const isImg=f.type?.startsWith("image/");
         const isPDF=f.type==="application/pdf";
-        const isVideoStub=f.isVideoStub;
+        const isVideo=f.type?.startsWith("video/")&&f.url;
+        const isVideoStub=f.isVideoStub; // legacy stubs from before real video upload existed
         return <div key={i} style={{position:"relative",background:"#0b1220",border:"1px solid #1e293b",borderRadius:"8px",overflow:"hidden",maxWidth:"180px"}}>
           {isImg&&f.url&&<div style={{position:"relative",cursor:"zoom-in"}} onClick={()=>setZoomFile(f)}>
             <img src={f.url} alt={f.name} style={{width:"160px",height:"120px",objectFit:"cover",display:"block"}}/>
@@ -1412,10 +1429,11 @@ function FileAttachment({folder,existingFiles=[],onFilesChange,readOnly=false,ma
               <span style={{fontSize:"14px"}}>🔍</span>
             </div>
           </div>}
+          {isVideo&&<video src={f.url} controls preload="metadata" style={{width:"160px",height:"120px",display:"block",background:"#000"}}/>}
           {isPDF&&f.url&&<a href={f.url} target="_blank" rel="noreferrer" style={{display:"flex",alignItems:"center",gap:"6px",padding:"10px 12px",color:"#93c5fd",fontSize:"12px",textDecoration:"none"}}>📄 {f.name.length>18?f.name.slice(0,18)+"…":f.name}</a>}
-          {isVideoStub&&<div style={{padding:"10px 12px",fontSize:"11px",color:"#f59e0b"}}>🎥 {f.name.length>16?f.name.slice(0,16)+"…":f.name}<br/><span style={{fontSize:"10px",color:"#475569"}}>Share separately</span></div>}
+          {isVideoStub&&<div style={{padding:"10px 12px",fontSize:"11px",color:"#f59e0b"}}>🎥 {f.name.length>16?f.name.slice(0,16)+"…":f.name}<br/><span style={{fontSize:"10px",color:"#475569"}}>Older upload — share separately</span></div>}
           <div style={{padding:"3px 8px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <span style={{fontSize:"9px",color:isImg?"#3b82f6":"#334155"}}>{isImg?"🔍 Tap to enlarge":(f.sizeKB?`${f.sizeKB}KB`:"")}</span>
+            <span style={{fontSize:"9px",color:isImg?"#3b82f6":"#334155"}}>{isImg?"🔍 Tap to enlarge":isVideo?(f.size?`${(f.size/1024/1024).toFixed(1)}MB`:"video"):(f.sizeKB?`${f.sizeKB}KB`:"")}</span>
             {!readOnly&&<button onClick={()=>removeFile(i)} style={{background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:"14px",padding:"0 2px",flexShrink:0}}>×</button>}
           </div>
         </div>;
@@ -1547,6 +1565,10 @@ function ComplaintCard({c,onClick,onDelete,role}){
     <div style={{display:"flex",gap:"10px",flexWrap:"wrap",marginTop:"4px"}}>
       {c.invoiceNo&&<span style={{fontSize:"11px",color:"#475569"}}>🧾 {c.invoiceNo}</span>}
       {c.addedBy&&<span style={{fontSize:"11px",color:"#475569"}}>👤 {c.addedBy}</span>}
+      {c.assignedSalesman&&<span style={{fontSize:"11px",color:"#64748b"}}>🧑‍💼 {c.assignedSalesman.split("@")[0]}</span>}
+      {c.visitedCustomer==="yes"?<span style={{fontSize:"11px",fontWeight:"700",color:"#4ade80",background:"#052e1660",border:"1px solid #16653450",borderRadius:"99px",padding:"1px 8px"}}>✓ Visited{c.visitDate?" "+c.visitDate:""}</span>
+        :c.visitedCustomer==="scheduled"?<span style={{fontSize:"11px",fontWeight:"700",color:"#93c5fd",background:"#0a1a2e60",border:"1px solid #2563eb50",borderRadius:"99px",padding:"1px 8px"}}>📅 Visit scheduled</span>
+        :c.assignedSalesman?<span style={{fontSize:"11px",fontWeight:"700",color:"#fbbf24",background:"#fbbf2418",border:"1px solid #fbbf2430",borderRadius:"99px",padding:"1px 8px"}}>⏳ Not yet visited</span>:null}
     </div>
   </div>;
 }
@@ -7011,6 +7033,8 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
   },[dispatchForm,selectedCustomerInProduct]);
   const [transportPrepView,setTransportPrepView]=useState("customer");
   const [directPrepArea,setDirectPrepArea]=useState("All");
+  const [directPrepView,setDirectPrepView]=useState("product"); // "product"|"route" — Preparation Summary grouping
+  const [showDirectPrepSummary,setShowDirectPrepSummary]=useState(true);
   const [directQtyOverrides,setDirectQtyOverrides]=useState({});
   const [loadingSeq,setLoadingSeq]=useState(false);
   const [addSeqEntry,setAddSeqEntry]=useState({name:"",seq:""});
@@ -8185,8 +8209,58 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
           return sa!==sb?sa-sb:(a.partyName||"").localeCompare(b.partyName||"");
         });
         if(sorted.length===0)return <div style={{textAlign:"center",padding:"40px",border:"2px dashed #1e293b",borderRadius:"10px",color:"#334155"}}>No pending direct orders{directPrepArea!=="All"?` for ${directPrepArea}`:""}</div>;
+        // Flat item list across all currently-shown direct customers, for the Preparation Summary panel
+        const allDirectItems=sorted.flatMap(cg=>cg.orders.flatMap(o=>(o.items||[]).filter(i=>i.balanceQty>0&&i.status!=="Dispatched").map(item=>({...item,qty:item.balanceQty,partyName:cg.partyName,route:cg.route}))));
+        const directVolTotals={};
+        allDirectItems.forEach(i=>{const v=calcVolume(i.name,i.qty);if(v)directVolTotals[v.unit]=(directVolTotals[v.unit]||0)+v.vol;});
         return <div>
-          <div style={{fontSize:"11px",color:"#475569",marginBottom:"8px"}}>{sorted.length} customer{sorted.length!==1?"s":""} · {sorted.reduce((a,g)=>a+g.orders.reduce((b,o)=>(o.items||[]).filter(i=>i.balanceQty>0&&i.status!=="Dispatched").length+b,0),0)} items{Object.keys(deliverySequence.direct||{}).length>0?" · sorted by delivery sequence":""}</div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"8px",marginBottom:"8px"}}>
+            <div style={{fontSize:"11px",color:"#475569"}}>{sorted.length} customer{sorted.length!==1?"s":""} · {allDirectItems.length} items{Object.keys(deliverySequence.direct||{}).length>0?" · sorted by delivery sequence":""}</div>
+            <button onClick={()=>setShowDirectPrepSummary(s=>!s)} style={{background:showDirectPrepSummary?"#1e293b":"#080d18",border:"1px solid #334155",borderRadius:"5px",padding:"3px 10px",color:showDirectPrepSummary?"#f1f5f9":"#475569",fontSize:"10.5px",fontWeight:"700",cursor:"pointer"}}>📋 {showDirectPrepSummary?"Hide":"Show"} Preparation Summary</button>
+          </div>
+          {showDirectPrepSummary&&<div style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"10px",padding:"10px 12px",marginBottom:"12px"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"8px",marginBottom:"8px"}}>
+              <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.07em"}}>Preparation Summary — {directPrepView==="product"?"By Product":"By Route"}</div>
+              <div style={{display:"flex",gap:"5px"}}>
+                <button onClick={()=>setDirectPrepView("product")} style={{background:directPrepView==="product"?"#1e293b":"#080d18",border:`1px solid ${directPrepView==="product"?"#475569":"#1e293b"}`,borderRadius:"5px",padding:"3px 9px",color:directPrepView==="product"?"#f1f5f9":"#475569",fontSize:"11px",fontWeight:"600",cursor:"pointer"}}>📦 Product</button>
+                <button onClick={()=>setDirectPrepView("route")} style={{background:directPrepView==="route"?"#1e293b":"#080d18",border:`1px solid ${directPrepView==="route"?"#475569":"#1e293b"}`,borderRadius:"5px",padding:"3px 9px",color:directPrepView==="route"?"#f1f5f9":"#475569",fontSize:"11px",fontWeight:"600",cursor:"pointer"}}>🗺 Route</button>
+              </div>
+            </div>
+            {Object.keys(directVolTotals).length>0&&<div style={{background:"#060d1a",border:"1px solid #1e3a5f",borderRadius:"6px",padding:"6px 12px",marginBottom:"8px",display:"flex",gap:"14px",flexWrap:"wrap",alignItems:"center"}}>
+              <span style={{fontSize:"10.5px",color:"#475569",fontWeight:"700"}}>Total Volume:</span>
+              {Object.entries(directVolTotals).map(([u,v])=><span key={u} style={{fontSize:"14px",fontWeight:"700",color:"#93c5fd"}}>{v.toFixed(2)} {u}</span>)}
+            </div>}
+            {directPrepView==="product"?(()=>{
+              const byP={};allDirectItems.forEach(i=>{if(!byP[i.name])byP[i.name]={name:i.name,total:0,customers:[]};byP[i.name].total+=i.qty;byP[i.name].customers.push(i);});
+              return Object.values(byP).sort((a,b)=>b.total-a.total).map(p=>{
+                const pVol=calcVolume(p.name,p.total);
+                return <div key={p.name} style={{background:"#080d18",border:"1px solid #1e293b",borderRadius:"8px",marginBottom:"6px",overflow:"hidden"}}>
+                  <div style={{padding:"7px 12px",display:"flex",justifyContent:"space-between",borderBottom:"1px solid #0f172a"}}>
+                    <span style={{fontSize:"12px",fontWeight:"700",color:"#f1f5f9",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name}</span>
+                    <div style={{display:"flex",gap:"8px",alignItems:"center",flexShrink:0}}>
+                      <span style={{fontSize:"13px",fontWeight:"700",color:"#fcd34d"}}>{p.total}</span>
+                      {pVol&&<span style={{fontSize:"11px",color:"#4ade80",background:"#052e16",border:"1px solid #166534",borderRadius:"4px",padding:"1px 6px"}}>{pVol.vol} {pVol.unit}</span>}
+                    </div>
+                  </div>
+                  {p.customers.map((c,ci)=><div key={ci} style={{display:"flex",justifyContent:"space-between",padding:"4px 12px",borderTop:ci===0?"none":"1px solid #0f172a",fontSize:"11px"}}>
+                    <span style={{color:"#94a3b8"}}>{c.partyName}</span><span style={{color:"#fcd34d",fontWeight:"600"}}>{c.qty}</span>
+                  </div>)}
+                </div>;
+              });
+            })():(()=>{
+              const byR={};allDirectItems.forEach(i=>{const k=normRoute(i.route||"—");if(!byR[k])byR[k]={route:i.route||"—",items:[],customers:new Set()};byR[k].items.push(i);byR[k].customers.add(i.partyName);});
+              return Object.values(byR).map(r=><div key={r.route} style={{background:"#080d18",border:"1px solid #1e293b",borderRadius:"8px",marginBottom:"6px",overflow:"hidden"}}>
+                <div style={{padding:"7px 12px",display:"flex",justifyContent:"space-between",borderBottom:"1px solid #0f172a"}}>
+                  <span style={{fontSize:"12px",fontWeight:"700",color:"#4ade80"}}>🗺 {r.route}</span>
+                  <span style={{fontSize:"10.5px",color:"#475569"}}>{r.customers.size} customer{r.customers.size!==1?"s":""} · {r.items.length} item{r.items.length!==1?"s":""}</span>
+                </div>
+                {r.items.map((it,ii)=><div key={ii} style={{display:"flex",justifyContent:"space-between",padding:"4px 12px",borderTop:ii===0?"none":"1px solid #0f172a",fontSize:"11px"}}>
+                  <span style={{color:"#64748b",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{it.partyName} · {it.name}</span>
+                  <span style={{color:"#fcd34d",fontWeight:"600",flexShrink:0}}>{it.qty}</span>
+                </div>)}
+              </div>);
+            })()}
+          </div>}
           {sorted.map((cg,ci)=>{
             const items=cg.orders.flatMap(o=>(o.items||[]).filter(i=>i.balanceQty>0&&i.status!=="Dispatched").map((item,idx)=>({...item,orderId:o.id,itemIdx:idx,voucherNo:o.voucherNo,orderDate:o.orderDate||""})));
             if(!items.length)return null;
@@ -11700,6 +11774,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
   const [batchCatFilter,setBatchCatFilter]=useState("All");
   const [batchFYFilter,setBatchFYFilter]=useState("All"); // Default All so existing batches show
   const [complaintFilter,setComplaintFilter]=useState("All");
+  const [complaintGroupBy,setComplaintGroupBy]=useState("list"); // "list"|"customer"
   const [complaintSearch,setComplaintSearch]=useState("");
   const [projSearch,setProjSearch]=useState("");
   const [projFilter,setProjFilter]=useState("All");
@@ -11855,7 +11930,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
     if(saving)return;setSaving(true);
     try{
       const isHO=complaintForm.source==="ho";
-      const reportedByUser=isHO?(complaintForm.reportedByUser||""):user.email;
+      const reportedByUser=isHO?(complaintForm.assignedSalesman||""):user.email;
       const doc={
         ...complaintForm,attachments:complaintFiles,
         reportedByUser,
@@ -11972,7 +12047,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
   const isSalesOnly=roles.includes("sales")&&!roles.some(r=>["admin","qc","issuer"].includes(r));
   const fc=complaints.filter(c=>{
     if(isSalesOnly&&c.addedBy!==user.email)return false;
-    const ms=complaintFilter==="All"||c.status===complaintFilter;
+    const ms=complaintFilter==="All"||(complaintFilter==="Open"?!["Resolved","Closed"].includes(c.status):c.status===complaintFilter);
     const q=complaintSearch.toLowerCase();
     return ms&&(!q||c.customerName?.toLowerCase().includes(q)||c.productName?.toLowerCase().includes(q)||c.batchNo?.toLowerCase().includes(q));
   });
@@ -12169,11 +12244,37 @@ function MainApp({user,role,roles=[],permissions=[]}){
           <div style={{display:"flex",gap:"8px",flexWrap:"wrap",alignItems:"center",flex:1}}>
             <input placeholder="Search customer, product…" value={complaintSearch} onChange={e=>setComplaintSearch(e.target.value)} style={{...inp,maxWidth:"200px",padding:"8px 12px",fontSize:"13px"}}/>
             {["All",...COMPLAINT_STATUS].map(s=><button key={s} onClick={()=>setComplaintFilter(s)} style={{background:complaintFilter===s?"#1e3a5f":"transparent",border:`1px solid ${complaintFilter===s?"#3b82f6":"#1e293b"}`,color:complaintFilter===s?"#93c5fd":"#475569",borderRadius:"99px",padding:"5px 12px",fontSize:"11.5px",fontWeight:"600",transition:"all 0.15s",cursor:"pointer"}}>{s}</button>)}
+            <div style={{display:"flex",gap:"4px",background:"#080d18",border:"1px solid #1e293b",borderRadius:"7px",padding:"3px",marginLeft:"4px"}}>
+              <button onClick={()=>setComplaintGroupBy("list")} style={{background:complaintGroupBy==="list"?"#1e3a5f":"transparent",border:"none",borderRadius:"5px",padding:"5px 11px",color:complaintGroupBy==="list"?"#93c5fd":"#475569",fontWeight:"700",fontSize:"11.5px",cursor:"pointer"}}>📋 List</button>
+              <button onClick={()=>setComplaintGroupBy("customer")} style={{background:complaintGroupBy==="customer"?"#1e3a5f":"transparent",border:"none",borderRadius:"5px",padding:"5px 11px",color:complaintGroupBy==="customer"?"#93c5fd":"#475569",fontWeight:"700",fontSize:"11.5px",cursor:"pointer"}}>👥 By Customer</button>
+            </div>
           </div>
           {(role==="sales"||role==="admin")&&<Btn label="+ Add Complaint" onClick={()=>setShowAddComplaint(true)} color="#ef4444"/>}
           {complaintCustomers.length>0&&<span style={{fontSize:"11px",color:"#475569"}}>{complaintCustomers.length} customers from routes</span>}
         </div>
-        {fc.length===0?<div style={{textAlign:"center",padding:"50px 0"}}><div style={{fontSize:"36px",marginBottom:"10px"}}>✅</div><div style={{fontSize:"13px",color:"#475569"}}>No complaints found.{role==="sales"?" Click + Add Complaint.":""}</div></div>:fc.map(c=><ComplaintCard key={c.id} c={c} onClick={()=>setActiveComplaint(c)} onDelete={async(id)=>{if(!confirm("Delete?"))return;await C("complaints").doc(id).delete();showToast("Deleted","error");}} role={role}/>)}
+        {fc.length===0?<div style={{textAlign:"center",padding:"50px 0"}}><div style={{fontSize:"36px",marginBottom:"10px"}}>✅</div><div style={{fontSize:"13px",color:"#475569"}}>No complaints found.{role==="sales"?" Click + Add Complaint.":""}</div></div>
+          :complaintGroupBy==="list"
+          ?fc.map(c=><ComplaintCard key={c.id} c={c} onClick={()=>setActiveComplaint(c)} onDelete={async(id)=>{if(!confirm("Delete?"))return;await C("complaints").doc(id).delete();showToast("Deleted","error");}} role={role}/>)
+          :(()=>{
+            const byCust={};
+            fc.forEach(c=>{
+              const k=normalize(c.customerName||"—");
+              if(!byCust[k])byCust[k]={customerName:c.customerName||"—",complaints:[]};
+              byCust[k].complaints.push(c);
+            });
+            const groups=Object.values(byCust).sort((a,b)=>b.complaints.length-a.complaints.length||a.customerName.localeCompare(b.customerName));
+            return groups.map(g=>{
+              const unresolvedCount=g.complaints.filter(c=>!["Resolved","Closed"].includes(c.status)).length;
+              return <div key={g.customerName} style={{marginBottom:"14px"}}>
+                <div style={{display:"flex",alignItems:"center",gap:"8px",padding:"8px 4px",borderBottom:`2px solid ${g.complaints.length>1?"#7f1d1d":"#1e293b"}`,marginBottom:"8px",flexWrap:"wrap"}}>
+                  <span style={{fontSize:"13px",fontWeight:"700",color:"#f1f5f9",fontFamily:"'DM Serif Display',serif"}}>{g.customerName}</span>
+                  <span style={{fontSize:"11px",fontWeight:"700",color:g.complaints.length>1?"#fca5a5":"#64748b",background:g.complaints.length>1?"#2e0a0a":"#0b1220",border:`1px solid ${g.complaints.length>1?"#7f1d1d":"#1e293b"}`,borderRadius:"99px",padding:"2px 10px"}}>{g.complaints.length>1?`⚠ ${g.complaints.length} complaints`:"1 complaint"}</span>
+                  {unresolvedCount>0&&<span style={{fontSize:"10.5px",fontWeight:"700",color:"#fbbf24",background:"#fbbf2418",border:"1px solid #fbbf2430",borderRadius:"99px",padding:"2px 9px"}}>{unresolvedCount} unresolved</span>}
+                </div>
+                {g.complaints.map(c=><ComplaintCard key={c.id} c={c} onClick={()=>setActiveComplaint(c)} onDelete={async(id)=>{if(!confirm("Delete?"))return;await C("complaints").doc(id).delete();showToast("Deleted","error");}} role={role}/>)}
+              </div>;
+            });
+          })()}
       </>}
 
       {/* R&D */}
@@ -12363,19 +12464,14 @@ function MainApp({user,role,roles=[],permissions=[]}){
         </Field>
         <Field label="Product *"><input style={inp} value={complaintForm.productName} onChange={e=>setComplaintForm({...complaintForm,productName:e.target.value})} placeholder="Product name"/></Field>
       </Grid2>
-      {/* User / Salesman — auto-filled for salesman source, manual for HO */}
-      <Field label="User / Salesman">
-        {complaintForm.source==="salesman"
-          ?<div style={{...inp,color:"#94a3b8",background:"#060d1a",display:"flex",alignItems:"center",gap:"8px"}}>
-            <span>👤</span>
-            <span style={{color:"#e2e8f0",fontWeight:"600"}}>{allProfiles[user.email]?.displayName||user.email.split("@")[0]}</span>
-            <span style={{fontSize:"10.5px",color:"#475569"}}>(you — auto-filled)</span>
-          </div>
-          :<select style={sl} value={complaintForm.reportedByUser||""} onChange={e=>setComplaintForm({...complaintForm,reportedByUser:e.target.value})}>
-            <option value="">— Select user —</option>
-            {Object.keys(allRoles).sort().map(e=><option key={e} value={e}>{allProfiles[e]?.displayName||e.split("@")[0]}</option>)}
-          </select>}
-      </Field>
+      {/* User / Salesman — auto-filled for salesman source. For HO source, this is the same person picked above in "Assign to Salesman", so no separate field is shown. */}
+      {complaintForm.source==="salesman"&&<Field label="User / Salesman">
+        <div style={{...inp,color:"#94a3b8",background:"#060d1a",display:"flex",alignItems:"center",gap:"8px"}}>
+          <span>👤</span>
+          <span style={{color:"#e2e8f0",fontWeight:"600"}}>{allProfiles[user.email]?.displayName||user.email.split("@")[0]}</span>
+          <span style={{fontSize:"10.5px",color:"#475569"}}>(you — auto-filled)</span>
+        </div>
+      </Field>}
       <Grid3>
         <Field label="Batch No"><input style={inp} value={complaintForm.batchNo} onChange={e=>setComplaintForm({...complaintForm,batchNo:e.target.value})} placeholder="e.g. GCC-2501-001"/></Field>
         <Field label="Month / Year"><input style={inp} value={complaintForm.monthYear} onChange={e=>setComplaintForm({...complaintForm,monthYear:e.target.value})} placeholder="e.g. Jan 2025"/></Field>
