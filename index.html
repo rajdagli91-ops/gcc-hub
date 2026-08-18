@@ -590,6 +590,11 @@ const PERMISSION_GROUPS=[
     {k:"complaints_add",      l:"Add complaints"},
     {k:"complaints_respond",  l:"Respond / close complaints"},
   ]},
+  {key:"leakage",label:"💧 Leakage", perms:[
+    {k:"leakage_view_all", l:"View all leakage reports"},
+    {k:"leakage_add",      l:"Add leakage reports"},
+    {k:"leakage_respond",  l:"Respond & issue credit note"},
+  ]},
   {key:"rd",       label:"🧪 R&D & QC",   perms:[
     {k:"rd_view",  l:"View R&D projects & RM tests"},
     {k:"rd_edit",  l:"Create / edit R&D projects"},
@@ -646,12 +651,12 @@ const userHasPerm=(roles,permissions,perm)=>{
   if(!permissions||!permissions.length){
     // Fall back to role-based check
     const rolePermsMap={
-      admin:["batches_view","batches_issue","batches_qc","complaints_view_all","complaints_add","complaints_respond","rd_view","rd_edit","calc_tools","shade_submit","shade_approve","bom_view","bom_edit","tasks_own","tasks_assign","stock_view","stock_consume","stock_manage","testimonials","settings_products","settings_advanced"],
-      issuer:["batches_view","batches_issue","bom_view","bom_edit","complaints_view_all","tasks_own","stock_view","stock_consume","settings_products","calc_tools","shade_approve","enquiries_dispatch"],
-      qc:["batches_view","batches_qc","rd_view","rd_edit","calc_tools","shade_submit","complaints_view_all","complaints_respond","tasks_own","settings_advanced"],
-      sales:["complaints_add","complaints_view_all","tasks_own","testimonials","enquiries_update"],
-      store:["stock_view","stock_consume","tasks_own"],
-      ho:["enquiries_create","enquiries_view_all","tasks_own"],
+      admin:["batches_view","batches_issue","batches_qc","complaints_view_all","complaints_add","complaints_respond","leakage_view_all","leakage_add","leakage_respond","rd_view","rd_edit","calc_tools","shade_submit","shade_approve","bom_view","bom_edit","tasks_own","tasks_assign","stock_view","stock_consume","stock_manage","testimonials","settings_products","settings_advanced"],
+      issuer:["batches_view","batches_issue","bom_view","bom_edit","complaints_view_all","leakage_view_all","leakage_add","tasks_own","stock_view","stock_consume","settings_products","calc_tools","shade_approve","enquiries_dispatch"],
+      qc:["batches_view","batches_qc","rd_view","rd_edit","calc_tools","shade_submit","complaints_view_all","complaints_respond","leakage_view_all","tasks_own","settings_advanced"],
+      sales:["complaints_add","complaints_view_all","leakage_view_all","leakage_add","tasks_own","testimonials","enquiries_update"],
+      store:["stock_view","stock_consume","tasks_own","leakage_add"],
+      ho:["enquiries_create","enquiries_view_all","leakage_view_all","leakage_respond","tasks_own"],
     };
     return (roles||[]).some(r=>r==="admin"||(rolePermsMap[r]||[]).includes(perm));
   }
@@ -666,6 +671,7 @@ const CAN_SEE = {
   dashboard:["admin","issuer","qc","sales","store","ho"],
   batches:  ["admin","issuer","qc"],
   complaints:["admin","issuer","qc","sales"],
+  leakage:  ["admin","issuer","qc","sales","store","ho"],
   rd:       ["admin","qc"],
   bom:      ["admin","issuer","qc"],
   tasks:    ["admin","issuer","qc","sales","store","ho"],
@@ -745,6 +751,10 @@ const BATCH_STATUS=["Issued","In Production","QC Pending","QC Pass","QC Fail","P
 const BS_COL={Issued:"#3b82f6","In Production":"#f59e0b","QC Pending":"#a855f7","QC Pass":"#22c55e","QC Fail":"#ef4444",Packed:"#38bdf8"};
 const COMPLAINT_STATUS=["Open","Assigned to Salesman","Under Review","QC Responded","Resolved","Closed"];
 const CS_COL={Open:"#ef4444","Under Review":"#f59e0b","QC Responded":"#3b82f6",Resolved:"#22c55e",Closed:"#64748b"};
+
+const LEAKAGE_STATUS=["Open","Under Review","Credit Note Issued","Rejected","Closed"];
+const LS_COL={Open:"#ef4444","Under Review":"#f59e0b","Credit Note Issued":"#22c55e",Rejected:"#64748b",Closed:"#3b82f6"};
+const EL={customerName:"",productName:"",batchNo:"",invoiceNo:"",leakDate:"",qtyLeaked:"",qtyUnit:"L",description:""};
 
 const STATUS_COLORS={"Ongoing":"#3b82f6","Completed":"#22c55e","On Hold":"#f59e0b","Cancelled":"#ef4444","Pending Approval":"#a855f7"};
 const RESULT_COLORS={"Pass":"#22c55e","Fail":"#ef4444","Conditional Pass":"#f59e0b","Pending":"#94a3b8","Retest Required":"#f97316"};
@@ -1562,6 +1572,167 @@ function ComplaintCard({c,onClick,onDelete,role}){
       <Bdg label={c.status} color={sc}/>
       {(role==="admin")&&<button onClick={e=>{e.stopPropagation();onDelete(c.id)}} style={{background:"none",border:"none",color:"#334155",fontSize:"14px",padding:"2px"}}>🗑</button>}
     </div>
+  </div>;
+}
+
+function LeakageCard({c,onClick,onDelete,role}){
+  const sc=LS_COL[c.status]||"#94a3b8";
+  return <div onClick={onClick} onMouseEnter={e=>e.currentTarget.style.background="#0f1f35"} onMouseLeave={e=>e.currentTarget.style.background="#0f172a"}
+    style={{background:"#0f172a",border:"1px solid #1e293b",borderLeft:`3px solid ${sc}`,borderRadius:"10px",padding:"10px 16px",cursor:"pointer",transition:"background 0.15s",boxShadow:"0 2px 10px rgba(0,0,0,0.3)",marginBottom:"7px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:"10px",flexWrap:"wrap"}}>
+    <div style={{display:"flex",alignItems:"baseline",gap:"10px",flexWrap:"wrap",flex:1,minWidth:"0"}}>
+      <span style={{fontSize:"13.5px",fontWeight:"700",color:"#f1f5f9",fontFamily:"'DM Serif Display',serif"}}>{c.customerName}</span>
+      <span style={{fontSize:"12px",color:"#64748b"}}>{c.productName||"—"}</span>
+      <span style={{fontSize:"11px",color:"#475569"}}>📅 {c.leakDate||c.dateCreated||"—"}</span>
+      {c.qtyLeaked&&<span style={{fontSize:"11px",fontWeight:"700",color:"#38bdf8"}}>💧 {c.qtyLeaked} {c.qtyUnit||""}</span>}
+      {c.batchNo&&<span style={{fontSize:"11px",color:"#475569"}}>Batch: {c.batchNo}</span>}
+    </div>
+    <div style={{display:"flex",gap:"8px",alignItems:"center",flexShrink:0}}>
+      <Bdg label={c.status} color={sc}/>
+      {(role==="admin")&&<button onClick={e=>{e.stopPropagation();onDelete(c.id)}} style={{background:"none",border:"none",color:"#334155",fontSize:"14px",padding:"2px"}}>🗑</button>}
+    </div>
+  </div>;
+}
+
+function LeakageWorkspace({leakage,role,showToast,user,isAdmin,canRespond}){
+  const [live,setLive]=useState(leakage);
+  useEffect(()=>setLive(leakage),[leakage]);
+  const [saving,setSaving]=useState(false);
+  const [showEdit,setShowEdit]=useState(false);
+  const [editForm,setEditForm]=useState({...leakage});
+  const [editFiles,setEditFiles]=useState(leakage.attachments||[]);
+  const [resp,setResp]=useState({
+    remarks:"",decision:live.status==="Open"?"Under Review":live.status,
+    creditNoteNo:live.creditNoteNo||"",creditNoteAmount:live.creditNoteAmount||"",creditNoteDate:live.creditNoteDate||today()
+  });
+
+  const sc=LS_COL[live.status]||"#94a3b8";
+  const responses=live.responses||[];
+
+  const saveResponse=async()=>{
+    if(!resp.remarks.trim()&&resp.decision==="Under Review")return showToast("Enter remarks","error");
+    setSaving(true);
+    try{
+      const entry={...resp,respondedBy:user.email,respondedAt:today()};
+      const updated=[...responses,entry];
+      const updateData={
+        responses:updated,status:resp.decision,
+        creditNoteNo:resp.decision==="Credit Note Issued"?resp.creditNoteNo:live.creditNoteNo||"",
+        creditNoteAmount:resp.decision==="Credit Note Issued"?resp.creditNoteAmount:live.creditNoteAmount||"",
+        creditNoteDate:resp.decision==="Credit Note Issued"?resp.creditNoteDate:live.creditNoteDate||"",
+      };
+      await C("leakage_reports").doc(live.id).update(updateData);
+      showToast(`Response saved${resp.decision==="Credit Note Issued"?" — Credit Note recorded ✓":" ✓"}`);
+      setResp({remarks:"",decision:resp.decision,creditNoteNo:"",creditNoteAmount:"",creditNoteDate:today()});
+    }catch(e){showToast("Error: "+e.message,"error");}
+    setSaving(false);
+  };
+
+  const saveEdit=async()=>{
+    setSaving(true);
+    try{
+      await C("leakage_reports").doc(live.id).update({
+        customerName:editForm.customerName,productName:editForm.productName,batchNo:editForm.batchNo,
+        invoiceNo:editForm.invoiceNo,leakDate:editForm.leakDate,qtyLeaked:editForm.qtyLeaked,qtyUnit:editForm.qtyUnit,
+        description:editForm.description,attachments:editFiles
+      });
+      showToast("Leakage report updated ✓");setShowEdit(false);
+    }catch(e){showToast("Error: "+e.message,"error");}
+    setSaving(false);
+  };
+
+  return <div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"12px",gap:"8px"}}>
+      <div>
+        <div style={{fontSize:"20px",fontWeight:"400",fontFamily:"'DM Serif Display',serif",color:"#f1f5f9"}}>{live.customerName}</div>
+        <div style={{fontSize:"12px",color:"#64748b",marginTop:"3px"}}>{live.productName} · Added by {live.addedBy}</div>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:"4px"}}>
+        <Bdg label={live.status} color={sc}/>
+        {isAdmin&&<button onClick={()=>{setEditForm({...live});setEditFiles(live.attachments||[]);setShowEdit(v=>!v);}} style={{background:"#0f1d35",border:"1px solid #1e3a5f",borderRadius:"6px",color:"#93c5fd",fontSize:"12px",fontWeight:"700",padding:"5px 12px",cursor:"pointer",marginTop:"4px"}}>
+          {showEdit?"▲ Cancel Edit":"✏️ Edit"}</button>}
+      </div>
+    </div>
+
+    {showEdit&&<div style={{background:"#0a1520",border:"1px solid #1e3a5f",borderRadius:"10px",padding:"16px",marginBottom:"14px"}}>
+      <div style={{fontSize:"11px",fontWeight:"700",color:"#93c5fd",textTransform:"uppercase",letterSpacing:"0.09em",marginBottom:"12px"}}>✏️ Edit Leakage Report</div>
+      <Grid3>
+        <Field label="Customer Name"><input style={inp} value={editForm.customerName} onChange={e=>setEditForm({...editForm,customerName:e.target.value})}/></Field>
+        <Field label="Product Name"><input style={inp} value={editForm.productName} onChange={e=>setEditForm({...editForm,productName:e.target.value})}/></Field>
+        <Field label="Batch No"><input style={inp} value={editForm.batchNo||""} onChange={e=>setEditForm({...editForm,batchNo:e.target.value})}/></Field>
+      </Grid3>
+      <Grid3>
+        <Field label="Invoice No"><input style={inp} value={editForm.invoiceNo||""} onChange={e=>setEditForm({...editForm,invoiceNo:e.target.value})}/></Field>
+        <Field label="Date of Leakage"><input type="date" style={inp} value={editForm.leakDate||""} onChange={e=>setEditForm({...editForm,leakDate:e.target.value})}/></Field>
+        <Field label="Quantity Leaked">
+          <div style={{display:"flex",gap:"6px"}}>
+            <input type="number" style={{...inp,flex:1}} value={editForm.qtyLeaked||""} onChange={e=>setEditForm({...editForm,qtyLeaked:e.target.value})}/>
+            <select style={{...sl,width:"80px"}} value={editForm.qtyUnit||"L"} onChange={e=>setEditForm({...editForm,qtyUnit:e.target.value})}>
+              <option value="L">L</option><option value="kg">kg</option><option value="tins">tins</option><option value="ml">ml</option>
+            </select>
+          </div>
+        </Field>
+      </Grid3>
+      <Field label="Description"><textarea style={{...ta,minHeight:"80px"}} value={editForm.description} onChange={e=>setEditForm({...editForm,description:e.target.value})}/></Field>
+      <Field label="📎 Attachments (add/remove photos/videos)">
+        <FileAttachment folder={`leakage/${live.id}`} existingFiles={editFiles} onFilesChange={setEditFiles} maxFiles={8}/>
+      </Field>
+      <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",marginTop:"8px"}}>
+        <Btn label="Cancel" onClick={()=>setShowEdit(false)} outline color="#475569" small/>
+        <Btn label={saving?"Saving…":"💾 Save Changes"} onClick={saveEdit} disabled={saving} color="#3b82f6" small/>
+      </div>
+    </div>}
+
+    <div style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"10px",padding:"14px 16px",marginBottom:"14px"}}>
+      <div style={{display:"flex",gap:"18px",flexWrap:"wrap",marginBottom:"10px",fontSize:"12px"}}>
+        <span>💧 Leaked: <strong style={{color:"#38bdf8"}}>{live.qtyLeaked||"—"} {live.qtyUnit||""}</strong></span>
+        <span>📅 Leak Date: <strong style={{color:"#e2e8f0"}}>{live.leakDate||"—"}</strong></span>
+        <span>Batch: <strong style={{color:"#e2e8f0"}}>{live.batchNo||"—"}</strong></span>
+        <span>Invoice: <strong style={{color:"#e2e8f0"}}>{live.invoiceNo||"—"}</strong></span>
+      </div>
+      <div style={{fontSize:"13px",color:"#cbd5e1",lineHeight:1.6,whiteSpace:"pre-wrap"}}>{live.description}</div>
+      {live.attachments?.length>0&&<div style={{marginTop:"10px"}}><FileAttachment folder={`leakage/${live.id}`} existingFiles={live.attachments} onFilesChange={()=>{}} readOnly maxFiles={8}/></div>}
+    </div>
+
+    {(live.status==="Credit Note Issued")&&<div style={{background:"#052e16",border:"1px solid #166534",borderRadius:"10px",padding:"12px 16px",marginBottom:"14px"}}>
+      <div style={{fontSize:"11px",fontWeight:"700",color:"#4ade80",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:"6px"}}>✓ Credit Note Issued</div>
+      <div style={{display:"flex",gap:"18px",flexWrap:"wrap",fontSize:"12.5px"}}>
+        <span>No: <strong style={{color:"#e2e8f0"}}>{live.creditNoteNo||"—"}</strong></span>
+        <span>Amount: <strong style={{color:"#e2e8f0"}}>₹{live.creditNoteAmount||"—"}</strong></span>
+        <span>Date: <strong style={{color:"#e2e8f0"}}>{live.creditNoteDate||"—"}</strong></span>
+      </div>
+    </div>}
+
+    {responses.length>0&&<div style={{marginBottom:"14px"}}>
+      <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:"8px"}}>Response History</div>
+      {responses.slice().reverse().map((r,i)=><div key={i} style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"8px",padding:"10px 14px",marginBottom:"6px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",marginBottom:"4px"}}>
+          <Bdg label={r.decision} color={LS_COL[r.decision]||"#94a3b8"}/>
+          <span style={{fontSize:"11px",color:"#475569"}}>{r.respondedBy?.split("@")[0]} · {r.respondedAt}</span>
+        </div>
+        {r.remarks&&<div style={{fontSize:"12.5px",color:"#cbd5e1"}}>{r.remarks}</div>}
+        {r.decision==="Credit Note Issued"&&<div style={{fontSize:"11.5px",color:"#4ade80",marginTop:"4px"}}>CN {r.creditNoteNo} · ₹{r.creditNoteAmount} · {r.creditNoteDate}</div>}
+      </div>)}
+    </div>}
+
+    {canRespond&&<div style={{background:"#0a1a2e",border:"1px solid #1e3a5f",borderRadius:"10px",padding:"14px 16px"}}>
+      <div style={{fontSize:"11px",fontWeight:"700",color:"#93c5fd",textTransform:"uppercase",letterSpacing:"0.09em",marginBottom:"10px"}}>📞 HO Response</div>
+      <Grid2>
+        <Field label="Decision">
+          <select style={sl} value={resp.decision} onChange={e=>setResp({...resp,decision:e.target.value})}>
+            {LEAKAGE_STATUS.filter(s=>s!=="Open").map(s=><option key={s}>{s}</option>)}
+          </select>
+        </Field>
+      </Grid2>
+      <Field label="Remarks"><textarea style={{...ta,minHeight:"70px"}} value={resp.remarks} onChange={e=>setResp({...resp,remarks:e.target.value})} placeholder="Findings, reason, action taken…"/></Field>
+      {resp.decision==="Credit Note Issued"&&<Grid3>
+        <Field label="Credit Note No"><input style={inp} value={resp.creditNoteNo} onChange={e=>setResp({...resp,creditNoteNo:e.target.value})}/></Field>
+        <Field label="Credit Note Amount (₹)"><input type="number" style={inp} value={resp.creditNoteAmount} onChange={e=>setResp({...resp,creditNoteAmount:e.target.value})}/></Field>
+        <Field label="Credit Note Date"><input type="date" style={inp} value={resp.creditNoteDate} onChange={e=>setResp({...resp,creditNoteDate:e.target.value})}/></Field>
+      </Grid3>}
+      <div style={{display:"flex",justifyContent:"flex-end",marginTop:"8px"}}>
+        <Btn label={saving?"Saving…":"💾 Save Response"} onClick={saveResponse} disabled={saving} color="#3b82f6"/>
+      </div>
+    </div>}
   </div>;
 }
 
@@ -11718,6 +11889,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
   const [batches,setBatches]=useState([]);
   const [complaints,setComplaints]=useState([]);
   const [complaintCustomers,setComplaintCustomers]=useState([]);
+  const [leakages,setLeakages]=useState([]);
 
   useEffect(()=>{
     // Fetch customer list from order setup routes — same source as Orders tab
@@ -11736,6 +11908,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
   // Modals/views
   const [activeBatch,setActiveBatch]=useState(null);
   const [activeComplaint,setActiveComplaint]=useState(null);
+  const [activeLeakage,setActiveLeakage]=useState(null);
   const [activeProject,setActiveProject]=useState(null);
   const [viewRM,setViewRM]=useState(null);
   const [showIssueBatch,setShowIssueBatch]=useState(false);
@@ -11763,6 +11936,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
     setCpSaving(false);
   };
   const [showAddComplaint,setShowAddComplaint]=useState(false);
+  const [showAddLeakage,setShowAddLeakage]=useState(false);
   const [showAddProject,setShowAddProject]=useState(false);
   const [showAddRM,setShowAddRM]=useState(false);
   const [editProject,setEditProject]=useState(null);
@@ -11771,6 +11945,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
   // Forms
   const [batchForm,setBatchForm]=useState(EB);
   const [complaintForm,setComplaintForm]=useState(EC);
+  const [leakageForm,setLeakageForm]=useState(EL);
   const [projForm,setProjForm]=useState(EP);
   // Users with R&D access (role default OR explicit permission override) — for Assigned To dropdown
   const rdUsers=Object.keys(allProfiles).filter(email=>
@@ -11790,6 +11965,8 @@ function MainApp({user,role,roles=[],permissions=[]}){
   const [complaintFilter,setComplaintFilter]=useState("All");
   const [complaintGroupBy,setComplaintGroupBy]=useState("list"); // "list"|"customer"
   const [complaintSearch,setComplaintSearch]=useState("");
+  const [leakageSearch,setLeakageSearch]=useState("");
+  const [leakageFilter,setLeakageFilter]=useState("All");
   const [projSearch,setProjSearch]=useState("");
   const [projFilter,setProjFilter]=useState("All");
   const [showHiddenProjects,setShowHiddenProjects]=useState(false);
@@ -11888,6 +12065,14 @@ function MainApp({user,role,roles=[],permissions=[]}){
         ()=>C("complaints").onSnapshot(s=>{const all=s.docs.map(d=>({id:d.id,...d.data()}));
           setComplaints(isSalesOnly?all.filter(c=>c.addedBy===user.email||c.assignedSalesman===user.email):all);})));
     }
+    if(CAN_SEE.leakage.some(r=>roles.includes(r))){
+      const isSalesOnly=roles.includes("sales")&&!roles.includes("admin")&&!roles.includes("qc")&&!roles.includes("issuer")&&!roles.includes("ho");
+      subs.push(C("leakage_reports").orderBy("_createdAt","desc").onSnapshot(
+        s=>{const all=s.docs.map(d=>({id:d.id,...d.data()}));
+          setLeakages(isSalesOnly?all.filter(c=>c.addedBy===user.email):all);},
+        ()=>C("leakage_reports").onSnapshot(s=>{const all=s.docs.map(d=>({id:d.id,...d.data()}));
+          setLeakages(isSalesOnly?all.filter(c=>c.addedBy===user.email):all);})));
+    }
     if(CAN_SEE.rd.some(r=>roles.includes(r))){
       subs.push(C("rd_projects").orderBy("_createdAt","desc").onSnapshot(s=>setProjects(s.docs.map(d=>({id:d.id,...d.data()}))),()=>C("rd_projects").onSnapshot(s=>setProjects(s.docs.map(d=>({id:d.id,...d.data()}))))));
       subs.push(C("rm_tests").orderBy("_createdAt","desc").onSnapshot(s=>setRmTests(s.docs.map(d=>({id:d.id,...d.data()}))),()=>C("rm_tests").onSnapshot(s=>setRmTests(s.docs.map(d=>({id:d.id,...d.data()}))))));
@@ -11898,6 +12083,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
   // Sync active items
   useEffect(()=>{if(activeBatch){const u=batches.find(b=>b.id===activeBatch.id);if(u)setActiveBatch(u);}},[batches]);
   useEffect(()=>{if(activeComplaint){const u=complaints.find(c=>c.id===activeComplaint.id);if(u)setActiveComplaint(u);}},[complaints]);
+  useEffect(()=>{if(activeLeakage){const u=leakages.find(c=>c.id===activeLeakage.id);if(u)setActiveLeakage(u);}},[leakages]);
   useEffect(()=>{if(activeProject){const u=projects.find(p=>p.id===activeProject.id);if(u)setActiveProject(u);}},[projects]);
   useEffect(()=>{if(viewRM){const u=rmTests.find(r=>r.id===viewRM.id);if(u)setViewRM(u);}},[rmTests]);
 
@@ -11939,6 +12125,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
   };
 
   const [complaintFiles,setComplaintFiles]=useState([]);
+  const [leakageFiles,setLeakageFiles]=useState([]);
   const saveComplaint=async()=>{
     if(!complaintForm.customerName.trim()||!complaintForm.complaint.trim())return showToast("Customer name and complaint required","error");
     if(saving)return;setSaving(true);
@@ -11966,6 +12153,24 @@ function MainApp({user,role,roles=[],permissions=[]}){
       }
       setComplaintFiles([]);
       setComplaintForm(EC);setShowAddComplaint(false);showToast("Complaint added ✓");
+    }catch(e){showToast("Error saving","error");}
+    setSaving(false);
+  };
+
+  const saveLeakage=async()=>{
+    if(!leakageForm.customerName.trim()||!leakageForm.description.trim())return showToast("Customer name and description required","error");
+    if(saving)return;setSaving(true);
+    try{
+      const doc={
+        ...leakageForm,attachments:leakageFiles,
+        status:"Open",addedBy:user.email,dateCreated:today(),_createdAt:ts(),responses:[],
+      };
+      await C("leakage_reports").add(doc);
+      const adminEmails=Object.keys(allRoles).filter(e=>(allRoles[e]||[]).includes("admin"));
+      const hoList=Object.keys(allRoles).filter(e=>(allRoles[e]||[]).includes("ho"));
+      await notify([...hoList,...adminEmails],{type:"leakage_new",msg:`💧 New leakage report: ${leakageForm.customerName} — ${leakageForm.qtyLeaked||"?"} ${leakageForm.qtyUnit||""} — from ${user.email.split("@")[0]}`,customer:leakageForm.customerName});
+      setLeakageFiles([]);
+      setLeakageForm(EL);setShowAddLeakage(false);showToast("Leakage report added ✓");
     }catch(e){showToast("Error saving","error");}
     setSaving(false);
   };
@@ -12065,6 +12270,12 @@ function MainApp({user,role,roles=[],permissions=[]}){
     const q=complaintSearch.toLowerCase();
     return ms&&(!q||c.customerName?.toLowerCase().includes(q)||c.productName?.toLowerCase().includes(q)||c.batchNo?.toLowerCase().includes(q));
   });
+  const canRespondLeakage=isAdmin||roles.includes("ho");
+  const fl=leakages.filter(c=>{
+    const ms=leakageFilter==="All"||(leakageFilter==="Open"?!["Credit Note Issued","Rejected","Closed"].includes(c.status):c.status===leakageFilter);
+    const q=leakageSearch.toLowerCase();
+    return ms&&(!q||c.customerName?.toLowerCase().includes(q)||c.productName?.toLowerCase().includes(q)||c.batchNo?.toLowerCase().includes(q));
+  });
   const isAdminRD=roles.includes("admin");
   const fp=projects.filter(p=>{
     // QC users (non-admin) cannot see projects hidden from QC
@@ -12085,6 +12296,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
     {key:"dashboard",label:"📊 Dashboard"},
     {key:"batches",label:"📦 Batches"},
     {key:"complaints",label:"⚠️ Complaints"},
+    {key:"leakage",label:"💧 Leakage"},
     {key:"rd",label:"🧪 R&D & QC"},
     {key:"bom",label:"📋 BOM"},
     {key:"tasks",label:"✅ Tasks"},
@@ -12100,6 +12312,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
       dashboard:true,
       batches:hp("batches_view"),
       complaints:hp("complaints_view_all")||hp("complaints_add"),
+      leakage:hp("leakage_view_all")||hp("leakage_add"),
       rd:hp("rd_view"),
       bom:hp("bom_view"),
       tasks:hp("tasks_own"),
@@ -12289,6 +12502,19 @@ function MainApp({user,role,roles=[],permissions=[]}){
               </div>;
             });
           })()}
+      </>}
+
+      {/* LEAKAGE */}
+      {tab==="leakage"&&<>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"14px",flexWrap:"wrap",gap:"10px"}}>
+          <div style={{display:"flex",gap:"8px",flexWrap:"wrap",alignItems:"center",flex:1}}>
+            <input placeholder="Search customer, product…" value={leakageSearch} onChange={e=>setLeakageSearch(e.target.value)} style={{...inp,maxWidth:"200px",padding:"8px 12px",fontSize:"13px"}}/>
+            {["All",...LEAKAGE_STATUS].map(s=><button key={s} onClick={()=>setLeakageFilter(s)} style={{background:leakageFilter===s?"#0c2a3a":"transparent",border:`1px solid ${leakageFilter===s?"#0891b2":"#1e293b"}`,color:leakageFilter===s?"#67e8f9":"#475569",borderRadius:"99px",padding:"5px 12px",fontSize:"11.5px",fontWeight:"600",transition:"all 0.15s",cursor:"pointer"}}>{s}</button>)}
+          </div>
+          {(hp("leakage_add")||isAdmin)&&<Btn label="+ Report Leakage" onClick={()=>{setLeakageForm({...EL,leakDate:today()});setShowAddLeakage(true);}} color="#0891b2"/>}
+        </div>
+        {fl.length===0?<div style={{textAlign:"center",padding:"50px 0"}}><div style={{fontSize:"36px",marginBottom:"10px"}}>💧</div><div style={{fontSize:"13px",color:"#475569"}}>No leakage reports found.</div></div>
+          :fl.map(c=><LeakageCard key={c.id} c={c} onClick={()=>setActiveLeakage(c)} onDelete={async(id)=>{if(!confirm("Delete?"))return;await C("leakage_reports").doc(id).delete();showToast("Deleted","error");}} role={role}/>)}
       </>}
 
       {/* R&D */}
@@ -12523,6 +12749,45 @@ function MainApp({user,role,roles=[],permissions=[]}){
         <Btn label="Cancel" onClick={()=>setShowAddComplaint(false)} outline color="#475569"/>
         <Btn label={saving?"Saving…":"Submit Complaint"} onClick={saveComplaint} disabled={saving} color="#ef4444"/>
       </div>
+    </Modal>
+
+    {/* Add New Leakage */}
+    <Modal open={showAddLeakage} onClose={()=>setShowAddLeakage(false)} title="💧 Report Leakage">
+      <Grid2>
+        <Field label="Customer Name *">
+          <CustomerSearchInput value={leakageForm.customerName} customers={complaintCustomers} onChange={v=>setLeakageForm({...leakageForm,customerName:v})}/>
+        </Field>
+        <Field label="Product *"><input style={inp} value={leakageForm.productName} onChange={e=>setLeakageForm({...leakageForm,productName:e.target.value})} placeholder="Product name"/></Field>
+      </Grid2>
+      <Grid3>
+        <Field label="Batch No"><input style={inp} value={leakageForm.batchNo} onChange={e=>setLeakageForm({...leakageForm,batchNo:e.target.value})} placeholder="e.g. GCC-2501-001"/></Field>
+        <Field label="Invoice No"><input style={inp} value={leakageForm.invoiceNo} onChange={e=>setLeakageForm({...leakageForm,invoiceNo:e.target.value})} placeholder="Invoice number"/></Field>
+        <Field label="Date of Leakage"><input type="date" style={inp} value={leakageForm.leakDate} onChange={e=>setLeakageForm({...leakageForm,leakDate:e.target.value})}/></Field>
+      </Grid3>
+      <Grid2>
+        <Field label="Quantity Leaked *">
+          <div style={{display:"flex",gap:"6px"}}>
+            <input type="number" style={{...inp,flex:1}} value={leakageForm.qtyLeaked} onChange={e=>setLeakageForm({...leakageForm,qtyLeaked:e.target.value})} placeholder="e.g. 2"/>
+            <select style={{...sl,width:"90px"}} value={leakageForm.qtyUnit} onChange={e=>setLeakageForm({...leakageForm,qtyUnit:e.target.value})}>
+              <option value="L">L</option><option value="kg">kg</option><option value="tins">tins</option><option value="ml">ml</option>
+            </select>
+          </div>
+        </Field>
+      </Grid2>
+      <Field label="Description *"><textarea style={{...ta,minHeight:"90px"}} value={leakageForm.description} onChange={e=>setLeakageForm({...leakageForm,description:e.target.value})} placeholder="Describe where/how the leakage was found, condition of the tin(s)…"/></Field>
+      <div style={{marginBottom:"14px"}}>
+        <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"6px"}}>📎 Attach Photos / Videos of the leaking tin(s)</div>
+        <FileAttachment folder={`leakage/${user?.email?.split("@")[0]||"user"}`} existingFiles={leakageFiles} onFilesChange={setLeakageFiles} maxFiles={6}/>
+      </div>
+      <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
+        <Btn label="Cancel" onClick={()=>setShowAddLeakage(false)} outline color="#475569"/>
+        <Btn label={saving?"Saving…":"Submit Report"} onClick={saveLeakage} disabled={saving} color="#0891b2"/>
+      </div>
+    </Modal>
+
+    {/* Leakage Workspace */}
+    <Modal wide open={!!activeLeakage} onClose={()=>setActiveLeakage(null)} title="Leakage Report Details">
+      {activeLeakage&&<LeakageWorkspace leakage={activeLeakage} role={role} showToast={showToast} user={user} isAdmin={isAdmin} canRespond={canRespondLeakage}/>}
     </Modal>
 
     {/* Complaint Workspace */}
