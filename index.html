@@ -12371,7 +12371,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
   }).sort((a,b)=>(b.dateIssued||"").localeCompare(a.dateIssued||""));
   const isSalesOnly=roles.includes("sales")&&!roles.some(r=>["admin","qc","issuer"].includes(r));
   const fc=complaints.filter(c=>{
-    if(isSalesOnly&&c.addedBy!==user.email)return false;
+    if(isSalesOnly&&c.addedBy!==user.email&&c.assignedSalesman!==user.email)return false;
     const ms=complaintFilter==="All"||(complaintFilter==="Open"?!["Resolved","Closed"].includes(c.status):c.status===complaintFilter);
     const q=complaintSearch.toLowerCase();
     return ms&&(!q||c.customerName?.toLowerCase().includes(q)||c.productName?.toLowerCase().includes(q)||c.batchNo?.toLowerCase().includes(q));
@@ -12816,13 +12816,13 @@ function MainApp({user,role,roles=[],permissions=[]}){
 
     {/* Add Complaint */}
     <Modal open={showAddComplaint} onClose={()=>setShowAddComplaint(false)} title="Add New Complaint">
-      {/* Source: did complaint come via salesman or HO? */}
-      <div style={{marginBottom:"14px"}}>
+      {/* Source: did complaint come via salesman or HO? Only relevant for HO/admin/QC/issuer — a pure salesman is always the one receiving it. */}
+      {!isSalesOnly&&<div style={{marginBottom:"14px"}}>
         <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"8px"}}>Where was this complaint received?</div>
         <div style={{display:"flex",gap:"8px"}}>
           {[["salesman","👤 Received by Salesman"],["ho","🏢 Received at HO"]].map(([v,l])=><button key={v} onClick={()=>setComplaintForm({...complaintForm,source:v})} style={{flex:1,padding:"9px",background:complaintForm.source===v?"#1e3a5f":"#080d18",border:`1px solid ${complaintForm.source===v?"#3b82f6":"#1e293b"}`,borderRadius:"8px",color:complaintForm.source===v?"#93c5fd":"#475569",fontWeight:"700",fontSize:"12.5px",cursor:"pointer"}}>{l}</button>)}
         </div>
-      </div>
+      </div>}
       {/* HO: assign to salesman */}
       {complaintForm.source==="ho"&&<div style={{background:"#0a1a2e",border:"1px solid #1e3a5f",borderRadius:"8px",padding:"10px 12px",marginBottom:"12px"}}>
         <Field label="Assign to Salesman (they will be notified to visit customer)">
