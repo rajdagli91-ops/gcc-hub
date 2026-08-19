@@ -752,8 +752,8 @@ const BS_COL={Issued:"#3b82f6","In Production":"#f59e0b","QC Pending":"#a855f7",
 const COMPLAINT_STATUS=["Open","Assigned to Salesman","Under Review","QC Responded","Resolved","Closed"];
 const CS_COL={Open:"#ef4444","Under Review":"#f59e0b","QC Responded":"#3b82f6",Resolved:"#22c55e",Closed:"#64748b"};
 
-const LEAKAGE_STATUS=["Open","Under Review","Credit Note Issued","Rejected","Closed"];
-const LS_COL={Open:"#ef4444","Under Review":"#f59e0b","Credit Note Issued":"#22c55e",Rejected:"#64748b",Closed:"#3b82f6"};
+const LEAKAGE_STATUS=["Open","Visit Customer Required","Rejected","Credit Note Approved","Credit Note Issued","Closed"];
+const LS_COL={Open:"#ef4444","Visit Customer Required":"#f59e0b",Rejected:"#64748b","Credit Note Approved":"#3b82f6","Credit Note Issued":"#22c55e",Closed:"#94a3b8"};
 const EL={customerName:"",productName:"",batchNo:"",invoiceNo:"",leakDate:"",qtyLeaked:"",qtyUnit:"L",description:""};
 
 const STATUS_COLORS={"Ongoing":"#3b82f6","Completed":"#22c55e","On Hold":"#f59e0b","Cancelled":"#ef4444","Pending Approval":"#a855f7"};
@@ -1593,36 +1593,64 @@ function LeakageCard({c,onClick,onDelete,role}){
   </div>;
 }
 
-function LeakageWorkspace({leakage,role,showToast,user,isAdmin,canRespond}){
+function LeakageWorkspace({leakage,role,roles,showToast,user,isAdmin,allRoles}){
   const [live,setLive]=useState(leakage);
   useEffect(()=>setLive(leakage),[leakage]);
   const [saving,setSaving]=useState(false);
   const [showEdit,setShowEdit]=useState(false);
   const [editForm,setEditForm]=useState({...leakage});
   const [editFiles,setEditFiles]=useState(leakage.attachments||[]);
-  const [resp,setResp]=useState({
-    remarks:"",decision:live.status==="Open"?"Under Review":live.status,
-    creditNoteNo:live.creditNoteNo||"",creditNoteAmount:live.creditNoteAmount||"",creditNoteDate:live.creditNoteDate||today()
-  });
+
+  const [adminDecision,setAdminDecision]=useState("Visit Customer Required");
+  const [adminRemarks,setAdminRemarks]=useState("");
+  const [adminAttachments,setAdminAttachments]=useState([]);
+  const [salesmanNote,setSalesmanNote]=useState("");
+  const [cnForm,setCnForm]=useState({creditNoteNo:live.creditNoteNo||"",creditNoteAmount:live.creditNoteAmount||"",creditNoteDate:live.creditNoteDate||today()});
 
   const sc=LS_COL[live.status]||"#94a3b8";
-  const responses=live.responses||[];
+  const isOwner=user.email===live.addedBy;
+  const canHOIssue=isAdmin||(roles||[]).includes("ho");
+  const daysBetween=(a,b)=>{if(!a||!b)return null;const d=Math.round((new Date(b)-new Date(a))/86400000);return d;};
 
-  const saveResponse=async()=>{
-    if(!resp.remarks.trim()&&resp.decision==="Under Review")return showToast("Enter remarks","error");
+  const saveAdminDecision=async()=>{
+    if(!adminRemarks.trim())return showToast("Enter remarks explaining the decision","error");
     setSaving(true);
     try{
-      const entry={...resp,respondedBy:user.email,respondedAt:today()};
-      const updated=[...responses,entry];
-      const updateData={
-        responses:updated,status:resp.decision,
-        creditNoteNo:resp.decision==="Credit Note Issued"?resp.creditNoteNo:live.creditNoteNo||"",
-        creditNoteAmount:resp.decision==="Credit Note Issued"?resp.creditNoteAmount:live.creditNoteAmount||"",
-        creditNoteDate:resp.decision==="Credit Note Issued"?resp.creditNoteDate:live.creditNoteDate||"",
-      };
-      await C("leakage_reports").doc(live.id).update(updateData);
-      showToast(`Response saved${resp.decision==="Credit Note Issued"?" — Credit Note recorded ✓":" ✓"}`);
-      setResp({remarks:"",decision:resp.decision,creditNoteNo:"",creditNoteAmount:"",creditNoteDate:today()});
+      const entry={decision:adminDecision,remarks:adminRemarks,decidedBy:user.email,decidedAt:today(),attachments:adminAttachments};
+      const mergedAttachments=[...(live.attachments||[]),...adminAttachments];
+      await C("leakage_reports").doc(live.id).update({adminDecision:entry,status:adminDecision,salesmanNote:null,attachments:mergedAttachments});
+      if(adminDecision==="Credit Note Approved"&&allRoles){
+        const hoList=Object.keys(allRoles).filter(e=>(allRoles[e]||[]).includes("ho"));
+        await notify(hoList,{type:"leakage_cn_approved",msg:`💧 Credit Note approved for ${live.customerName} (${live.qtyLeaked||"?"} ${live.qtyUnit||""}) — please issue`,customer:live.customerName});
+      }
+      showToast(`Decision saved: ${adminDecision} ✓`);
+      setAdminRemarks("");setAdminAttachments([]);
+    }catch(e){showToast("Error: "+e.message,"error");}
+    setSaving(false);
+  };
+
+  const saveSalesmanNote=async()=>{
+    if(!salesmanNote.trim())return showToast("Enter your notes","error");
+    setSaving(true);
+    try{
+      const entry={note:salesmanNote,addedBy:user.email,addedAt:today()};
+      await C("leakage_reports").doc(live.id).update({salesmanNote:entry,status:"Closed"});
+      showToast("Notes saved — marked Closed ✓");
+      setSalesmanNote("");
+    }catch(e){showToast("Error: "+e.message,"error");}
+    setSaving(false);
+  };
+
+  const markCreditNoteIssued=async()=>{
+    if(!cnForm.creditNoteNo.trim())return showToast("Enter Credit Note number","error");
+    setSaving(true);
+    try{
+      await C("leakage_reports").doc(live.id).update({
+        status:"Credit Note Issued",
+        creditNoteNo:cnForm.creditNoteNo,creditNoteAmount:cnForm.creditNoteAmount,creditNoteDate:cnForm.creditNoteDate,
+        creditNoteIssuedAt:today(),creditNoteIssuedBy:user.email
+      });
+      showToast("Credit Note marked as issued ✓");
     }catch(e){showToast("Error: "+e.message,"error");}
     setSaving(false);
   };
@@ -1639,6 +1667,8 @@ function LeakageWorkspace({leakage,role,showToast,user,isAdmin,canRespond}){
     }catch(e){showToast("Error: "+e.message,"error");}
     setSaving(false);
   };
+
+  const cnTurnaround=live.adminDecision?.decidedAt&&live.creditNoteIssuedAt?daysBetween(live.adminDecision.decidedAt,live.creditNoteIssuedAt):null;
 
   return <div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"12px",gap:"8px"}}>
@@ -1674,6 +1704,9 @@ function LeakageWorkspace({leakage,role,showToast,user,isAdmin,canRespond}){
       </Grid3>
       <Field label="Description"><textarea style={{...ta,minHeight:"80px"}} value={editForm.description} onChange={e=>setEditForm({...editForm,description:e.target.value})}/></Field>
       <Field label="📎 Attachments (add/remove photos/videos)">
+        <div style={{background:"#0a1520",border:"1px solid #1e3a5f30",borderRadius:"7px",padding:"7px 11px",marginBottom:"7px",fontSize:"11px",color:"#93c5fd",lineHeight:1.5}}>
+          Ideally include: batch number photo, clear leakage photo, invoice photo.
+        </div>
         <FileAttachment folder={`leakage/${live.id}`} existingFiles={editFiles} onFilesChange={setEditFiles} maxFiles={8}/>
       </Field>
       <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",marginTop:"8px"}}>
@@ -1693,44 +1726,82 @@ function LeakageWorkspace({leakage,role,showToast,user,isAdmin,canRespond}){
       {live.attachments?.length>0&&<div style={{marginTop:"10px"}}><FileAttachment folder={`leakage/${live.id}`} existingFiles={live.attachments} onFilesChange={()=>{}} readOnly maxFiles={8}/></div>}
     </div>
 
-    {(live.status==="Credit Note Issued")&&<div style={{background:"#052e16",border:"1px solid #166534",borderRadius:"10px",padding:"12px 16px",marginBottom:"14px"}}>
+    {/* ── Admin decision, once made ── */}
+    {live.adminDecision&&<div style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"10px",padding:"12px 16px",marginBottom:"14px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",marginBottom:"6px"}}>
+        <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.07em"}}>Admin Decision</div>
+        <Bdg label={live.adminDecision.decision} color={LS_COL[live.adminDecision.decision]||"#94a3b8"}/>
+      </div>
+      <div style={{fontSize:"12.5px",color:"#cbd5e1",marginBottom:"4px"}}>{live.adminDecision.remarks}</div>
+      <div style={{fontSize:"11px",color:"#475569"}}>{live.adminDecision.decidedBy?.split("@")[0]} · {live.adminDecision.decidedAt}</div>
+    </div>}
+
+    {/* ── Salesman notes, once submitted ── */}
+    {live.salesmanNote&&<div style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"10px",padding:"12px 16px",marginBottom:"14px"}}>
+      <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:"6px"}}>🧑‍💼 Salesman Notes</div>
+      <div style={{fontSize:"12.5px",color:"#cbd5e1",marginBottom:"4px"}}>{live.salesmanNote.note}</div>
+      <div style={{fontSize:"11px",color:"#475569"}}>{live.salesmanNote.addedBy?.split("@")[0]} · {live.salesmanNote.addedAt}</div>
+    </div>}
+
+    {/* ── Credit Note issued summary + turnaround time ── */}
+    {live.status==="Credit Note Issued"&&<div style={{background:"#052e16",border:"1px solid #166534",borderRadius:"10px",padding:"12px 16px",marginBottom:"14px"}}>
       <div style={{fontSize:"11px",fontWeight:"700",color:"#4ade80",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:"6px"}}>✓ Credit Note Issued</div>
-      <div style={{display:"flex",gap:"18px",flexWrap:"wrap",fontSize:"12.5px"}}>
+      <div style={{display:"flex",gap:"18px",flexWrap:"wrap",fontSize:"12.5px",marginBottom:cnTurnaround!=null?"6px":"0"}}>
         <span>No: <strong style={{color:"#e2e8f0"}}>{live.creditNoteNo||"—"}</strong></span>
         <span>Amount: <strong style={{color:"#e2e8f0"}}>₹{live.creditNoteAmount||"—"}</strong></span>
         <span>Date: <strong style={{color:"#e2e8f0"}}>{live.creditNoteDate||"—"}</strong></span>
+        <span>Issued by: <strong style={{color:"#e2e8f0"}}>{live.creditNoteIssuedBy?.split("@")[0]||"—"}</strong></span>
+      </div>
+      {cnTurnaround!=null&&<div style={{fontSize:"11.5px",color:"#94a3b8"}}>⏱ Took <strong style={{color:"#4ade80"}}>{cnTurnaround} day{cnTurnaround!==1?"s":""}</strong> from approval to credit note being issued</div>}
+    </div>}
+
+    {/* ── Admin Response: decide Reject / Issue Credit Note / Visit Customer — editable until finalized ── */}
+    {isAdmin&&!["Closed","Credit Note Issued"].includes(live.status)&&<div style={{background:"#0a1a2e",border:"1px solid #1e3a5f",borderRadius:"10px",padding:"14px 16px",marginBottom:"14px"}}>
+      <div style={{fontSize:"11px",fontWeight:"700",color:"#93c5fd",textTransform:"uppercase",letterSpacing:"0.09em",marginBottom:"10px"}}>👤 Admin Response{live.adminDecision?" — update decision":""}</div>
+      <Grid3>
+        <Field label="Decision">
+          <select style={sl} value={adminDecision} onChange={e=>setAdminDecision(e.target.value)}>
+            <option value="Visit Customer Required">Visit Customer</option>
+            <option value="Credit Note Approved">Issue Credit Note</option>
+            <option value="Rejected">Reject</option>
+          </select>
+        </Field>
+      </Grid3>
+      <Field label="Remarks *"><textarea style={{...ta,minHeight:"70px"}} value={adminRemarks} onChange={e=>setAdminRemarks(e.target.value)} placeholder="Reasoning behind this decision…"/></Field>
+      <Field label="📎 Add More Photos / Videos (optional — if the salesman hasn't uploaded enough evidence)">
+        <div style={{background:"#0c2a3a",border:"1px solid #0891b230",borderRadius:"7px",padding:"7px 11px",marginBottom:"7px",fontSize:"11px",color:"#67e8f9",lineHeight:1.5}}>
+          Ideally get: batch number photo, clear leakage photo, invoice photo.
+        </div>
+        <FileAttachment folder={`leakage/${live.id}/admin`} existingFiles={adminAttachments} onFilesChange={setAdminAttachments} maxFiles={6}/>
+      </Field>
+      <div style={{display:"flex",justifyContent:"flex-end",marginTop:"8px"}}>
+        <Btn label={saving?"Saving…":"💾 Save Decision"} onClick={saveAdminDecision} disabled={saving} color="#3b82f6"/>
       </div>
     </div>}
 
-    {responses.length>0&&<div style={{marginBottom:"14px"}}>
-      <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:"8px"}}>Response History</div>
-      {responses.slice().reverse().map((r,i)=><div key={i} style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"8px",padding:"10px 14px",marginBottom:"6px"}}>
-        <div style={{display:"flex",justifyContent:"space-between",marginBottom:"4px"}}>
-          <Bdg label={r.decision} color={LS_COL[r.decision]||"#94a3b8"}/>
-          <span style={{fontSize:"11px",color:"#475569"}}>{r.respondedBy?.split("@")[0]} · {r.respondedAt}</span>
-        </div>
-        {r.remarks&&<div style={{fontSize:"12.5px",color:"#cbd5e1"}}>{r.remarks}</div>}
-        {r.decision==="Credit Note Issued"&&<div style={{fontSize:"11.5px",color:"#4ade80",marginTop:"4px"}}>CN {r.creditNoteNo} · ₹{r.creditNoteAmount} · {r.creditNoteDate}</div>}
-      </div>)}
+    {/* ── Salesman Notes form: shown to the reporting salesman (or admin) when Rejected or Visit Customer Required, and not yet submitted ── */}
+    {(isOwner||isAdmin)&&!live.salesmanNote&&["Rejected","Visit Customer Required"].includes(live.status)&&<div style={{background:"#1a1206",border:"1px solid #78350f",borderRadius:"10px",padding:"14px 16px",marginBottom:"14px"}}>
+      <div style={{fontSize:"11px",fontWeight:"700",color:"#fbbf24",textTransform:"uppercase",letterSpacing:"0.09em",marginBottom:"8px"}}>
+        {live.status==="Visit Customer Required"?"🧑‍💼 Add Notes After Visiting Customer":"🧑‍💼 Add Your Notes"}
+      </div>
+      <Field label={live.status==="Visit Customer Required"?"What did you find on visit?":"Your notes / acknowledgement"}>
+        <textarea style={{...ta,minHeight:"80px"}} value={salesmanNote} onChange={e=>setSalesmanNote(e.target.value)} placeholder={live.status==="Visit Customer Required"?"Findings from the customer visit…":"Notes on this rejection…"}/>
+      </Field>
+      <div style={{display:"flex",justifyContent:"flex-end",marginTop:"8px"}}>
+        <Btn label={saving?"Saving…":"💾 Submit Notes"} onClick={saveSalesmanNote} disabled={saving} color="#f59e0b"/>
+      </div>
     </div>}
 
-    {canRespond&&<div style={{background:"#0a1a2e",border:"1px solid #1e3a5f",borderRadius:"10px",padding:"14px 16px"}}>
-      <div style={{fontSize:"11px",fontWeight:"700",color:"#93c5fd",textTransform:"uppercase",letterSpacing:"0.09em",marginBottom:"10px"}}>📞 HO Response</div>
-      <Grid2>
-        <Field label="Decision">
-          <select style={sl} value={resp.decision} onChange={e=>setResp({...resp,decision:e.target.value})}>
-            {LEAKAGE_STATUS.filter(s=>s!=="Open").map(s=><option key={s}>{s}</option>)}
-          </select>
-        </Field>
-      </Grid2>
-      <Field label="Remarks"><textarea style={{...ta,minHeight:"70px"}} value={resp.remarks} onChange={e=>setResp({...resp,remarks:e.target.value})} placeholder="Findings, reason, action taken…"/></Field>
-      {resp.decision==="Credit Note Issued"&&<Grid3>
-        <Field label="Credit Note No"><input style={inp} value={resp.creditNoteNo} onChange={e=>setResp({...resp,creditNoteNo:e.target.value})}/></Field>
-        <Field label="Credit Note Amount (₹)"><input type="number" style={inp} value={resp.creditNoteAmount} onChange={e=>setResp({...resp,creditNoteAmount:e.target.value})}/></Field>
-        <Field label="Credit Note Date"><input type="date" style={inp} value={resp.creditNoteDate} onChange={e=>setResp({...resp,creditNoteDate:e.target.value})}/></Field>
-      </Grid3>}
+    {/* ── HO action: shown when Admin has approved a credit note, until it's actually issued ── */}
+    {canHOIssue&&live.status==="Credit Note Approved"&&<div style={{background:"#052e16",border:"1px solid #166534",borderRadius:"10px",padding:"14px 16px",marginBottom:"14px"}}>
+      <div style={{fontSize:"11px",fontWeight:"700",color:"#4ade80",textTransform:"uppercase",letterSpacing:"0.09em",marginBottom:"10px"}}>📞 HO — Issue Credit Note</div>
+      <Grid3>
+        <Field label="Credit Note No *"><input style={inp} value={cnForm.creditNoteNo} onChange={e=>setCnForm({...cnForm,creditNoteNo:e.target.value})}/></Field>
+        <Field label="Credit Note Amount (₹)"><input type="number" style={inp} value={cnForm.creditNoteAmount} onChange={e=>setCnForm({...cnForm,creditNoteAmount:e.target.value})}/></Field>
+        <Field label="Credit Note Date"><input type="date" style={inp} value={cnForm.creditNoteDate} onChange={e=>setCnForm({...cnForm,creditNoteDate:e.target.value})}/></Field>
+      </Grid3>
       <div style={{display:"flex",justifyContent:"flex-end",marginTop:"8px"}}>
-        <Btn label={saving?"Saving…":"💾 Save Response"} onClick={saveResponse} disabled={saving} color="#3b82f6"/>
+        <Btn label={saving?"Saving…":"✓ Mark Credit Note Issued"} onClick={markCreditNoteIssued} disabled={saving} color="#22c55e"/>
       </div>
     </div>}
   </div>;
@@ -12275,7 +12346,6 @@ function MainApp({user,role,roles=[],permissions=[]}){
     const q=complaintSearch.toLowerCase();
     return ms&&(!q||c.customerName?.toLowerCase().includes(q)||c.productName?.toLowerCase().includes(q)||c.batchNo?.toLowerCase().includes(q));
   });
-  const canRespondLeakage=isAdmin||roles.includes("ho");
   const fl=leakages.filter(c=>{
     const ms=leakageFilter==="All"||(leakageFilter==="Open"?!["Credit Note Issued","Rejected","Closed"].includes(c.status):c.status===leakageFilter);
     const q=leakageSearch.toLowerCase();
@@ -12811,6 +12881,9 @@ function MainApp({user,role,roles=[],permissions=[]}){
       <Field label="Description *"><textarea style={{...ta,minHeight:"90px"}} value={leakageForm.description} onChange={e=>setLeakageForm({...leakageForm,description:e.target.value})} placeholder="Describe where/how the leakage was found, condition of the tin(s)…"/></Field>
       <div style={{marginBottom:"14px"}}>
         <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"6px"}}>📎 Attach Photos / Videos of the leaking tin(s)</div>
+        <div style={{background:"#0c2a3a",border:"1px solid #0891b230",borderRadius:"7px",padding:"8px 12px",marginBottom:"8px",fontSize:"11.5px",color:"#67e8f9",lineHeight:1.6}}>
+          Please include: <strong>1)</strong> clear photo of the batch number, <strong>2)</strong> clear photo of the leakage itself, and <strong>3)</strong> photo of the invoice if possible.
+        </div>
         <FileAttachment folder={`leakage/${user?.email?.split("@")[0]||"user"}`} existingFiles={leakageFiles} onFilesChange={setLeakageFiles} maxFiles={6}/>
       </div>
       <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
@@ -12821,7 +12894,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
 
     {/* Leakage Workspace */}
     <Modal wide open={!!activeLeakage} onClose={()=>setActiveLeakage(null)} title="Leakage Report Details">
-      {activeLeakage&&<LeakageWorkspace leakage={activeLeakage} role={role} showToast={showToast} user={user} isAdmin={isAdmin} canRespond={canRespondLeakage}/>}
+      {activeLeakage&&<LeakageWorkspace leakage={activeLeakage} role={role} roles={roles} showToast={showToast} user={user} isAdmin={isAdmin} allRoles={allRoles}/>}
     </Modal>
 
     {/* Complaint Workspace */}
