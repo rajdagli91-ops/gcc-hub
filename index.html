@@ -1629,14 +1629,16 @@ function LeakageWorkspace({leakage,role,roles,showToast,user,isAdmin,allRoles}){
     setSaving(false);
   };
 
+  const [salesmanAttachments,setSalesmanAttachments]=useState([]);
   const saveSalesmanNote=async()=>{
     if(!salesmanNote.trim())return showToast("Enter your notes","error");
     setSaving(true);
     try{
-      const entry={note:salesmanNote,addedBy:user.email,addedAt:today()};
-      await C("leakage_reports").doc(live.id).update({salesmanNote:entry,status:"Closed"});
+      const entry={note:salesmanNote,addedBy:user.email,addedAt:today(),attachments:salesmanAttachments};
+      const mergedAttachments=[...(live.attachments||[]),...salesmanAttachments];
+      await C("leakage_reports").doc(live.id).update({salesmanNote:entry,status:"Closed",attachments:mergedAttachments});
       showToast("Notes saved — marked Closed ✓");
-      setSalesmanNote("");
+      setSalesmanNote("");setSalesmanAttachments([]);
     }catch(e){showToast("Error: "+e.message,"error");}
     setSaving(false);
   };
@@ -1764,6 +1766,7 @@ function LeakageWorkspace({leakage,role,roles,showToast,user,isAdmin,allRoles}){
             <option value="Visit Customer Required">Visit Customer</option>
             <option value="Credit Note Approved">Issue Credit Note</option>
             <option value="Rejected">Reject</option>
+            <option value="Closed">Close (No Credit Note)</option>
           </select>
         </Field>
       </Grid3>
@@ -1787,6 +1790,9 @@ function LeakageWorkspace({leakage,role,roles,showToast,user,isAdmin,allRoles}){
       <Field label={live.status==="Visit Customer Required"?"What did you find on visit?":"Your notes / acknowledgement"}>
         <textarea style={{...ta,minHeight:"80px"}} value={salesmanNote} onChange={e=>setSalesmanNote(e.target.value)} placeholder={live.status==="Visit Customer Required"?"Findings from the customer visit…":"Notes on this rejection…"}/>
       </Field>
+      {live.status==="Visit Customer Required"&&<Field label="📎 Add Photos / Videos from the visit (optional)">
+        <FileAttachment folder={`leakage/${live.id}/visit`} existingFiles={salesmanAttachments} onFilesChange={setSalesmanAttachments} maxFiles={6}/>
+      </Field>}
       <div style={{display:"flex",justifyContent:"flex-end",marginTop:"8px"}}>
         <Btn label={saving?"Saving…":"💾 Submit Notes"} onClick={saveSalesmanNote} disabled={saving} color="#f59e0b"/>
       </div>
@@ -1817,6 +1823,20 @@ function ComplaintWorkspace({complaint,role,roles,showToast,user,allProfiles,all
   const [showEdit,setShowEdit]=useState(false);
   const [editForm,setEditForm]=useState({...complaint});
   const [editFiles,setEditFiles]=useState(complaint.attachments||[]);
+  const [assignSel,setAssignSel]=useState("");
+  const [assigning,setAssigning]=useState(false);
+
+  const assignSalesman=async()=>{
+    if(!assignSel)return showToast("Select a salesman","error");
+    setAssigning(true);
+    try{
+      await C("complaints").doc(live.id).update({assignedSalesman:assignSel,status:"Assigned to Salesman",visitedCustomer:"",visitDate:""});
+      await notify(assignSel,{type:"complaint_assigned",msg:`🔴 Complaint from ${live.customerName} assigned to you — please visit and update`,customer:live.customerName});
+      showToast("Salesman assigned ✓");
+      setAssignSel("");
+    }catch(e){showToast("Error: "+e.message,"error");}
+    setAssigning(false);
+  };
 
   const saveEdit=async()=>{
     setSaving(true);
@@ -1998,11 +2018,21 @@ function ComplaintWorkspace({complaint,role,roles,showToast,user,allProfiles,all
     </div>}
 
     {/* Assigned salesman + field visit section */}
-    {(live.assignedSalesman||live.visitedCustomer||live.fieldVisit)&&<div style={{background:"#0b1220",border:"1px solid #2563eb30",borderRadius:"10px",padding:"12px 16px",marginBottom:"12px"}}>
+    {(live.assignedSalesman||live.visitedCustomer||live.fieldVisit||isAdmin||roles.includes("ho"))&&<div style={{background:"#0b1220",border:"1px solid #2563eb30",borderRadius:"10px",padding:"12px 16px",marginBottom:"12px"}}>
       <div style={{fontSize:"11px",fontWeight:"700",color:"#93c5fd",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"10px"}}>👤 Salesman Assignment & Field Visit</div>
       {live.assignedSalesman&&<div style={{display:"flex",gap:"16px",flexWrap:"wrap",marginBottom:"8px",fontSize:"12.5px",color:"#94a3b8"}}>
         <span><strong style={{color:"#e2e8f0"}}>Assigned to:</strong> {allProfiles?.[live.assignedSalesman]?.displayName||live.assignedSalesman.split("@")[0]}</span>
         {live.visitedCustomer&&<span><strong style={{color:"#e2e8f0"}}>Visit status:</strong> {live.visitedCustomer==="yes"?"✓ Visited"+(live.visitDate?" on "+live.visitDate:""):live.visitedCustomer==="scheduled"?"📅 Scheduled":live.visitedCustomer==="no"?"⏳ Not yet visited":live.visitedCustomer}</span>}
+      </div>}
+      {!live.assignedSalesman&&(isAdmin||roles.includes("ho"))&&<div style={{background:"#0a1a2e",border:"1px solid #1e3a5f",borderRadius:"8px",padding:"10px 12px",marginBottom:"8px"}}>
+        <div style={{fontSize:"11px",color:"#64748b",marginBottom:"6px"}}>No salesman assigned yet — assign one now to trigger a customer visit:</div>
+        <div style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>
+          <select style={{...sl,flex:1,minWidth:"160px"}} value={assignSel} onChange={e=>setAssignSel(e.target.value)}>
+            <option value="">— Select salesman —</option>
+            {Object.keys(allRoles).filter(e=>(allRoles[e]||[]).includes("sales")).map(e=><option key={e} value={e}>{allProfiles[e]?.displayName||e.split("@")[0]}</option>)}
+          </select>
+          <Btn label={assigning?"Assigning…":"Assign"} onClick={assignSalesman} disabled={assigning} color="#3b82f6" small/>
+        </div>
       </div>}
       {live.fieldVisit&&<div style={{background:"#080d18",border:"1px solid #1e293b",borderRadius:"8px",padding:"10px 12px",marginBottom:"8px"}}>
         <div style={{fontSize:"10px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:"5px"}}>Field Visit Notes — {live.fieldVisit.by?.split("@")[0]} · {live.fieldVisit.date}</div>
