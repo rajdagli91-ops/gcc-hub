@@ -655,7 +655,7 @@ const userHasPerm=(roles,permissions,perm)=>{
       issuer:["batches_view","batches_issue","bom_view","bom_edit","complaints_view_all","leakage_view_all","leakage_add","tasks_own","stock_view","stock_consume","settings_products","calc_tools","shade_approve","enquiries_dispatch"],
       qc:["batches_view","batches_qc","rd_view","rd_edit","calc_tools","shade_submit","complaints_view_all","complaints_respond","tasks_own","settings_advanced"],
       sales:["complaints_add","complaints_view_all","leakage_add","tasks_own","testimonials","enquiries_update"],
-      store:["stock_view","stock_consume","tasks_own","leakage_add"],
+      store:["stock_view","stock_consume","tasks_own","leakage_add","orders_view","orders_dispatch"],
       ho:["enquiries_create","enquiries_view_all","leakage_view_all","leakage_respond","tasks_own"],
     };
     return (roles||[]).some(r=>r==="admin"||(rolePermsMap[r]||[]).includes(perm));
@@ -677,7 +677,7 @@ const CAN_SEE = {
   tasks:    ["admin","issuer","qc","sales","store","ho"],
   testimonials:["admin","sales"],
   stock:    ["admin","store","qc","issuer"],
-  orders:   ["admin","issuer","ho"],
+  orders:   ["admin","issuer","ho","store"],
   users:    ["admin"],
   settings: ["admin","issuer","qc"],
   enquiries:["admin","sales","ho","issuer"]
@@ -749,6 +749,32 @@ const CATEGORY_UNITS={"Emulsion":"L","Enamel":"L","Primer":"L","Distemper":"kg",
 
 const BATCH_STATUS=["Issued","In Production","QC Pending","QC Pass","QC Fail","Packed"];
 const BS_COL={Issued:"#3b82f6","In Production":"#f59e0b","QC Pending":"#a855f7","QC Pass":"#22c55e","QC Fail":"#ef4444",Packed:"#38bdf8"};
+// ── Language / Hindi translation support ──
+// This covers the main navigation and the most common actions used across every module
+// (Save, Cancel, Add, Search, etc). Module-specific field labels remain in English for now —
+// this is the foundation to extend translation coverage screen-by-screen over time.
+const TR={
+  en:{
+    dashboard:"📊 Dashboard",batches:"📦 Batches",complaints:"⚠️ Complaints",rd:"🧪 R&D & QC",bom:"📋 BOM",
+    tasks:"✅ Tasks",stock:"🏪 Stock",orders:"🛒 Orders",testimonials:"⭐ Testimonials",enquiries:"📞 Enquiries",
+    users:"👥 Users",settings:"⚙️ Settings",
+    save:"Save",cancel:"Cancel",add:"Add",edit:"Edit",delete:"Delete",submit:"Submit",search:"Search",
+    close:"Close",confirm:"Confirm",back:"Back",next:"Next",yes:"Yes",no:"No",loading:"Loading…",
+    signOut:"Sign Out",changePw:"Change PW",guide:"Guide",notifications:"Notifications",noResults:"No results found",
+    status:"Status",date:"Date",customer:"Customer",product:"Product",quantity:"Quantity",all:"All",
+  },
+  hi:{
+    dashboard:"📊 डैशबोर्ड",batches:"📦 बैच",complaints:"⚠️ शिकायतें",rd:"🧪 आर एंड डी और क्यूसी",bom:"📋 बीओएम",
+    tasks:"✅ कार्य",stock:"🏪 स्टॉक",orders:"🛒 ऑर्डर",testimonials:"⭐ प्रशंसापत्र",enquiries:"📞 पूछताछ",
+    users:"👥 उपयोगकर्ता",settings:"⚙️ सेटिंग्स",
+    save:"सेव करें",cancel:"रद्द करें",add:"जोड़ें",edit:"संपादित करें",delete:"हटाएं",submit:"जमा करें",search:"खोजें",
+    close:"बंद करें",confirm:"पुष्टि करें",back:"वापस",next:"आगे",yes:"हां",no:"नहीं",loading:"लोड हो रहा है…",
+    signOut:"साइन आउट",changePw:"पासवर्ड बदलें",guide:"गाइड",notifications:"सूचनाएं",noResults:"कोई परिणाम नहीं मिला",
+    status:"स्थिति",date:"तारीख",customer:"ग्राहक",product:"उत्पाद",quantity:"मात्रा",all:"सभी",
+  }
+};
+const getLang=()=>localStorage.getItem("gcc_lang")||"en";
+
 const COMPLAINT_STATUS=["Open","Assigned to Salesman","Under Review","QC Responded","Resolved","Closed"];
 const CS_COL={Open:"#ef4444","Under Review":"#f59e0b","QC Responded":"#3b82f6",Resolved:"#22c55e",Closed:"#64748b"};
 
@@ -12023,6 +12049,9 @@ function ShadeCorrectionCalc({showToast,user,isAdmin,canApprove,canSubmit}){
 function MainApp({user,role,roles=[],permissions=[]}){
   const isAdmin=roles.includes("admin");
   const hp=(perm)=>userHasPerm(roles,permissions,perm); // check permission helper
+  const [lang,setLang]=useState(getLang());
+  const t=(k)=>TR[lang]?.[k]||TR.en[k]||k;
+  useEffect(()=>{localStorage.setItem("gcc_lang",lang);},[lang]);
   // Global: pressing Escape clears any focused search/text input
   useEffect(()=>{
     const handler=(e)=>{
@@ -12495,18 +12524,18 @@ function MainApp({user,role,roles=[],permissions=[]}){
   });
 
   const tabs=[
-    {key:"dashboard",label:"📊 Dashboard"},
-    {key:"batches",label:"📦 Batches"},
-    {key:"complaints",label:"⚠️ Complaints"},
-    {key:"rd",label:"🧪 R&D & QC"},
-    {key:"bom",label:"📋 BOM"},
-    {key:"tasks",label:"✅ Tasks"},
-    {key:"stock",label:"🏪 Stock"},
-    {key:"orders",label:"🛒 Orders"},
-    {key:"testimonials",label:"⭐ Testimonials"},
-    {key:"enquiries",label:"📞 Enquiries"},
-    {key:"users",label:"👥 Users"},
-    {key:"settings",label:"⚙️ Settings"},
+    {key:"dashboard",label:t("dashboard")},
+    {key:"batches",label:t("batches")},
+    {key:"complaints",label:t("complaints")},
+    {key:"rd",label:t("rd")},
+    {key:"bom",label:t("bom")},
+    {key:"tasks",label:t("tasks")},
+    {key:"stock",label:t("stock")},
+    {key:"orders",label:t("orders")},
+    {key:"testimonials",label:t("testimonials")},
+    {key:"enquiries",label:t("enquiries")},
+    {key:"users",label:t("users")},
+    {key:"settings",label:t("settings")},
   ].filter(t=>{
     if(isAdmin)return true;
     const permMap={
@@ -12519,7 +12548,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
       testimonials:hp("testimonials"),
       enquiries:hp("enquiries_create")||hp("enquiries_view_all")||hp("enquiries_update")||hp("enquiries_dispatch"),
       stock:hp("stock_view"),
-      orders:roles.includes("issuer")||roles.includes("ho")||hp("orders_view")||hp("orders_dispatch")||hp("orders_import"),
+      orders:roles.includes("issuer")||roles.includes("ho")||roles.includes("store")||hp("orders_view")||hp("orders_dispatch")||hp("orders_import"),
       users:isAdmin,
       settings:hp("settings_products")||hp("settings_advanced"),
     };
@@ -12581,10 +12610,12 @@ function MainApp({user,role,roles=[],permissions=[]}){
                     })}
                   </div>}
                 </div>
+                {/* 🌐 Language toggle */}
+                <button onClick={()=>setLang(l=>l==="en"?"hi":"en")} title="Switch language / भाषा बदलें" style={{background:"none",border:"1px solid #1e3a5f",borderRadius:"7px",padding:"4px 10px",color:"#93c5fd",fontSize:"11px",fontWeight:"600",cursor:"pointer"}}>🌐 {lang==="en"?"हिं":"EN"}</button>
                 {/* 📖 Guide button */}
-                <button onClick={()=>window.open("gcc_hub_guide.html","_blank")} title="Open User Guide" style={{background:"none",border:"1px solid #1e3a5f",borderRadius:"7px",padding:"4px 10px",color:"#93c5fd",fontSize:"11px",fontWeight:"600",cursor:"pointer"}}>📖 Guide</button>
-                <button onClick={()=>setShowChangePw(true)} style={{background:"none",border:"1px solid #1e3a5f",borderRadius:"7px",padding:"4px 10px",color:"#93c5fd",fontSize:"11px",fontWeight:"600",cursor:"pointer"}}>🔑 Change PW</button>
-                <button onClick={()=>auth.signOut()} style={{background:"none",border:"1px solid #1e293b",borderRadius:"7px",padding:"4px 12px",color:"#475569",fontSize:"11px",fontWeight:"600",cursor:"pointer"}}>Sign Out</button>
+                <button onClick={()=>window.open("gcc_hub_guide.html","_blank")} title="Open User Guide" style={{background:"none",border:"1px solid #1e3a5f",borderRadius:"7px",padding:"4px 10px",color:"#93c5fd",fontSize:"11px",fontWeight:"600",cursor:"pointer"}}>📖 {t("guide")}</button>
+                <button onClick={()=>setShowChangePw(true)} style={{background:"none",border:"1px solid #1e3a5f",borderRadius:"7px",padding:"4px 10px",color:"#93c5fd",fontSize:"11px",fontWeight:"600",cursor:"pointer"}}>🔑 {t("changePw")}</button>
+                <button onClick={()=>auth.signOut()} style={{background:"none",border:"1px solid #1e293b",borderRadius:"7px",padding:"4px 12px",color:"#475569",fontSize:"11px",fontWeight:"600",cursor:"pointer"}}>{t("signOut")}</button>
               </div>
             </div>
           </div>
@@ -12667,12 +12698,20 @@ function MainApp({user,role,roles=[],permissions=[]}){
 
       {/* COMPLAINTS */}
       {tab==="complaints"&&<>
-        <div style={{display:"flex",gap:"5px",background:"#080d18",border:"1px solid #1e293b",borderRadius:"9px",padding:"3px",marginBottom:"16px",width:"fit-content"}}>
-          <button onClick={()=>setComplaintsSubTab("complaints")} style={{background:complaintsSubTab==="complaints"?"#1e3a5f":"transparent",border:"none",borderRadius:"6px",padding:"7px 16px",color:complaintsSubTab==="complaints"?"#93c5fd":"#475569",fontWeight:"700",fontSize:"12.5px",cursor:"pointer"}}>⚠️ Complaints</button>
-          <button onClick={()=>setComplaintsSubTab("leakage")} style={{background:complaintsSubTab==="leakage"?"#0c2a3a":"transparent",border:"none",borderRadius:"6px",padding:"7px 16px",color:complaintsSubTab==="leakage"?"#67e8f9":"#475569",fontWeight:"700",fontSize:"12.5px",cursor:"pointer"}}>💧 Leakage</button>
-        </div>
+        {(()=>{
+          const hasComplaintsAccess=CAN_SEE.complaints.some(r=>roles.includes(r));
+          const hasLeakageAccess=CAN_SEE.leakage.some(r=>roles.includes(r));
+          const showToggle=hasComplaintsAccess&&hasLeakageAccess;
+          const eff=hasComplaintsAccess?complaintsSubTab:"leakage";
+          return <>
+            {showToggle&&<div style={{display:"flex",gap:"5px",background:"#080d18",border:"1px solid #1e293b",borderRadius:"9px",padding:"3px",marginBottom:"16px",width:"fit-content"}}>
+              <button onClick={()=>setComplaintsSubTab("complaints")} style={{background:eff==="complaints"?"#1e3a5f":"transparent",border:"none",borderRadius:"6px",padding:"7px 16px",color:eff==="complaints"?"#93c5fd":"#475569",fontWeight:"700",fontSize:"12.5px",cursor:"pointer"}}>⚠️ Complaints</button>
+              <button onClick={()=>setComplaintsSubTab("leakage")} style={{background:eff==="leakage"?"#0c2a3a":"transparent",border:"none",borderRadius:"6px",padding:"7px 16px",color:eff==="leakage"?"#67e8f9":"#475569",fontWeight:"700",fontSize:"12.5px",cursor:"pointer"}}>💧 Leakage</button>
+            </div>}
+          </>;
+        })()}
 
-        {complaintsSubTab==="complaints"&&<>
+        {(CAN_SEE.complaints.some(r=>roles.includes(r))?complaintsSubTab:"leakage")==="complaints"&&<>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"14px",flexWrap:"wrap",gap:"10px"}}>
           <div style={{display:"flex",gap:"8px",flexWrap:"wrap",alignItems:"center",flex:1}}>
             <input placeholder="Search customer, product…" value={complaintSearch} onChange={e=>setComplaintSearch(e.target.value)} style={{...inp,maxWidth:"200px",padding:"8px 12px",fontSize:"13px"}}/>
@@ -12710,7 +12749,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
           })()}
         </>}
 
-        {complaintsSubTab==="leakage"&&<>
+        {(CAN_SEE.complaints.some(r=>roles.includes(r))?complaintsSubTab:"leakage")==="leakage"&&<>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"14px",flexWrap:"wrap",gap:"10px"}}>
           <div style={{display:"flex",gap:"8px",flexWrap:"wrap",alignItems:"center",flex:1}}>
             <input placeholder="Search customer, product…" value={leakageSearch} onChange={e=>setLeakageSearch(e.target.value)} style={{...inp,maxWidth:"200px",padding:"8px 12px",fontSize:"13px"}}/>
