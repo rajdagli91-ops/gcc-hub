@@ -4285,7 +4285,9 @@ function OldStockCard({s,canEdit,onToggle,onDelete}){
 // ══════════════════════════════════════════════════════════
 // FY ARCHIVE — Export & Delete Financial Year Data
 // ══════════════════════════════════════════════════════════
-function FYArchiveTab({showToast}){
+function FYArchiveTab({showToast,isAdmin,isHO,isIssuer}){
+  const hideRDQC=!isAdmin; // R&D & QC data (R&D Projects, RM Tests, Sample Testing) is Admin-only — never shown to HO or Issuer
+  const canDelete=isAdmin||isIssuer; // Only Admin and Issuer can delete — HO is view/export only
   const curFY=getFY();
   const [selFY,setSelFY]=useState(String(curFY-1));
   const [counts,setCounts]=useState(null);
@@ -4293,6 +4295,20 @@ function FYArchiveTab({showToast}){
   const [exporting,setExporting]=useState(false);
   const [deleting,setDeleting]=useState(false);
   const [step,setStep]=useState("idle");
+  // BOM and Old/Rejected Material are never deletable, by anyone. R&D & QC data (R&D Projects,
+  // RM Tests, Sample Tests) can never be deleted OR downloaded by HO — Admin can delete everything
+  // else, including RM Tests and Sample Tests.
+  const ALL_CATEGORY_DEFS=[
+    {key:"batches",label:"📦 Packed Batches",color:"#3b82f6",col:"batches",idsKey:"batchIds",hoAllowed:true},
+    {key:"complaints",label:"⚠️ Complaints (Resolved/Closed)",color:"#ef4444",col:"complaints",idsKey:"complaintIds",hoAllowed:true},
+    {key:"leakage",label:"💧 Leakage (Closed only)",color:"#0891b2",col:"leakage_reports",idsKey:"leakageIds",hoAllowed:true},
+    {key:"rmConsumption",label:"📉 RM Consumption",color:"#a855f7",col:"rm_stock_transactions",idsKey:"rmConsumptionIds",hoAllowed:true},
+    {key:"rmTests",label:"🧫 RM Tests (completed)",color:"#06b6d4",col:"rm_tests",idsKey:"rmTestIds",hoAllowed:false},
+    {key:"sampleTests",label:"🔭 Sample Tests (completed)",color:"#ec4899",col:"sample_tests",idsKey:"sampleTestIds",hoAllowed:false},
+  ];
+  const CATEGORY_DEFS=isIssuer&&!isAdmin?ALL_CATEGORY_DEFS.filter(c=>c.hoAllowed):ALL_CATEGORY_DEFS;
+  const [selectedCats,setSelectedCats]=useState(()=>Object.fromEntries(ALL_CATEGORY_DEFS.map(c=>[c.key,true])));
+  const toggleCat=(key)=>setSelectedCats(s=>({...s,[key]:!s[key]}));
 
   const fyRange=(fy)=>{
     const fy_=parseInt(fy);
@@ -4310,14 +4326,15 @@ function FYArchiveTab({showToast}){
   const loadCounts=async(fy)=>{
     setLoading(true);setCounts(null);
     try{
-      const [bSnap,cSnap,osSnap,rdSnap,txSnap,rmtSnap,stSnap]=await Promise.all([
+      const [bSnap,cSnap,osSnap,rdSnap,txSnap,rmtSnap,stSnap,lkSnap]=await Promise.all([
         C("batches").get(),
         C("complaints").get(),
         C("old_stock").get(),
         C("rd_projects").get(),
         C("rm_stock_transactions").get(),
         C("rm_tests").get(),
-        C("sample_tests").get()
+        C("sample_tests").get(),
+        C("leakage_reports").get()
       ]);
       const {from,to}=fyRange(fy);
       // Only archive/delete batches that are fully PACKED — a batch still in Issued/In
@@ -4326,7 +4343,16 @@ function FYArchiveTab({showToast}){
       const allFYBatches=bSnap.docs.filter(d=>getBFY(d.data())===fy);
       const pendingBatchCount=allFYBatches.filter(d=>d.data().status!=="Packed").length;
       const batches=allFYBatches.filter(d=>d.data().status==="Packed");
-      const complaints=cSnap.docs.filter(d=>inFY(d.data().dateCreated,fy));
+      // Complaints: only Resolved/Closed are eligible — an Open (or any in-progress) complaint
+      // must never be deleted, regardless of how old it is.
+      const allFYComplaints=cSnap.docs.filter(d=>inFY(d.data().dateCreated,fy));
+      const pendingComplaintCount=allFYComplaints.filter(d=>!["Resolved","Closed"].includes(d.data().status)).length;
+      const complaints=allFYComplaints.filter(d=>["Resolved","Closed"].includes(d.data().status));
+      // Leakage: only Closed is eligible — anything still open, awaiting a visit, awaiting a
+      // credit note, etc. must never be deleted.
+      const allFYLeakage=lkSnap.docs.filter(d=>inFY(d.data().leakDate||d.data().dateCreated,fy));
+      const pendingLeakageCount=allFYLeakage.filter(d=>d.data().status!=="Closed").length;
+      const leakage=allFYLeakage.filter(d=>d.data().status==="Closed");
       // Only archive/delete OLD STOCK that has actually been USED — pending/Available stock
       // must NEVER be touched, regardless of how old it is, since it's still usable inventory.
       const oldStock=osSnap.docs.filter(d=>{
@@ -4338,8 +4364,9 @@ function FYArchiveTab({showToast}){
       const rdProjects=rdSnap.docs.filter(d=>inFY(d.data().startDate||d.data()._createdAt?.toDate?.()?.toISOString?.()?.slice(0,10),fy));
       const rmConsumption=txSnap.docs.filter(d=>{const dat=d.data();return dat.type==="consumption"&&inFY(dat.date,fy);});
       // Only archive/delete RM Tests & Sample Tests with a FINAL result (Pass/Fail/Conditional
-      // Pass). "Pending" (no result yet) or "Retest Required" means the test is still open and
-      // must be kept, same logic as pending batches above.
+      // Pass) — deletable by Admin only. "Pending"/"Retest Required" tests are still open and
+      // must be kept, same logic as pending batches above. HO never sees these at all (filtered
+      // out of CATEGORY_DEFS and the export, separately).
       const isFinalResult=(r)=>["Pass","Fail","Conditional Pass"].includes(r);
       const allFYRmTests=rmtSnap.docs.filter(d=>inFY(d.data().dateReceived||d.data()._createdAt?.toDate?.()?.toISOString?.()?.slice(0,10),fy));
       const pendingRmTestCount=allFYRmTests.filter(d=>!isFinalResult(d.data().testResult)).length;
@@ -4348,16 +4375,17 @@ function FYArchiveTab({showToast}){
       const pendingSampleTestCount=allFYSampleTests.filter(d=>!isFinalResult(d.data().testResult||d.data().result)).length;
       const sampleTests=allFYSampleTests.filter(d=>isFinalResult(d.data().testResult||d.data().result));
       setCounts({
-        batches:batches.length, complaints:complaints.length, oldStock:oldStock.length,
+        batches:batches.length, complaints:complaints.length, leakage:leakage.length, oldStock:oldStock.length,
         rdProjects:rdProjects.length, rmConsumption:rmConsumption.length,
         rmTests:rmTests.length, sampleTests:sampleTests.length,
-        pendingBatchCount, pendingRmTestCount, pendingSampleTestCount,
-        batchIds:batches.map(d=>d.id), complaintIds:complaints.map(d=>d.id), oldStockIds:oldStock.map(d=>d.id),
+        pendingBatchCount, pendingComplaintCount, pendingLeakageCount, pendingRmTestCount, pendingSampleTestCount,
+        batchIds:batches.map(d=>d.id), complaintIds:complaints.map(d=>d.id), leakageIds:leakage.map(d=>d.id), oldStockIds:oldStock.map(d=>d.id),
         rmConsumptionIds:rmConsumption.map(d=>d.id),
         rmTestIds:rmTests.map(d=>d.id), sampleTestIds:sampleTests.map(d=>d.id),
         // R&D never deleted — no rdIds in delete
         batchDocs:batches.map(d=>({id:d.id,...d.data()})),
         complaintDocs:complaints.map(d=>({id:d.id,...d.data()})),
+        leakageDocs:leakage.map(d=>({id:d.id,...d.data()})),
         oldStockDocs:oldStock.map(d=>({id:d.id,...d.data()})),
         rdDocs:rdProjects.map(d=>({id:d.id,...d.data()})),
         rmConsumptionDocs:rmConsumption.map(d=>({id:d.id,...d.data()})),
@@ -4384,12 +4412,15 @@ function FYArchiveTab({showToast}){
         [`GCC Operations Hub — FY ${label} Archive`],[`Exported: ${new Date().toLocaleDateString("en-IN")}`],[""],
         ["Data Type","Count","Action on Archive"],
         ["Batches",counts.batches,"Deleted after export"],
-        ["Complaints",counts.complaints,"Deleted after export"],
-        ["Old/Rejected Stock (Used only — pending stock never touched)",counts.oldStock,"Deleted after export"],
-        ["R&D Projects",counts.rdProjects,"Exported only — NOT deleted"],
+        ["Complaints (Resolved/Closed only)",counts.complaints,"Deleted after export"],
+        ["Leakage Reports (Closed only)",counts.leakage,"Deleted after export"],
+        ["Old/Rejected Material",counts.oldStock,"Exported only — NOT deleted"],
         ["RM Consumption Transactions",counts.rmConsumption,"Deleted after export"],
-        ["RM Tests",counts.rmTests,"Deleted after export"],
-        ["Sample Testing",counts.sampleTests,"Deleted after export"],
+        ...(hideRDQC?[]:[
+          ["R&D Projects",counts.rdProjects,"Exported only — NOT deleted"],
+          ["RM Tests (completed)",counts.rmTests,"Deleted after export"],
+          ["Sample Testing (completed)",counts.sampleTests,"Deleted after export"],
+        ]),
       ];
       const wsSum=XLSX.utils.aoa_to_sheet(sumRows);wsSum["!cols"]=[{wch:36},{wch:10},{wch:30}];
       XLSX.utils.book_append_sheet(wb,wsSum,"Summary");
@@ -4406,17 +4437,25 @@ function FYArchiveTab({showToast}){
       const wsComp=XLSX.utils.aoa_to_sheet(cRows);wsComp["!cols"]=[{wch:24},{wch:28},{wch:12},{wch:14},{wch:16},{wch:40},{wch:14},{wch:28}];
       XLSX.utils.book_append_sheet(wb,wsComp,"Complaints");
 
+      // ── Leakage Reports ──
+      const lkRows=[["Customer","Product","Batch No","Invoice No","Leak Date","Qty Leaked","Unit","Admin Decision","Credit Note No","Credit Note Amount","Added By"]];
+      counts.leakageDocs.forEach(l=>{lkRows.push([l.customerName||"",l.productName||"",l.batchNo||"",l.invoiceNo||"",l.leakDate||"",l.qtyLeaked||"",l.qtyUnit||"",l.adminDecision?.decision||"",l.creditNoteNo||"",l.creditNoteAmount||"",l.addedBy||""]);});
+      const wsLk=XLSX.utils.aoa_to_sheet(lkRows);wsLk["!cols"]=[{wch:24},{wch:28},{wch:12},{wch:14},{wch:12},{wch:10},{wch:8},{wch:18},{wch:14},{wch:14},{wch:28}];
+      XLSX.utils.book_append_sheet(wb,wsLk,"Leakage Reports");
+
       // ── Old Stock ──
       const osRows=[["Product","Category","Qty","Unit","Status","Batch Ref","Date Added","Notes"]];
       counts.oldStockDocs.forEach(s=>{osRows.push([s.productName||"",s.category||"",s.qty||"",s.unit||"",s.status||"",s.batchRef||"",s.dateAdded||"",s.notes||""]);});
       const wsOS=XLSX.utils.aoa_to_sheet(osRows);wsOS["!cols"]=[{wch:28},{wch:16},{wch:10},{wch:8},{wch:12},{wch:14},{wch:14},{wch:40}];
       XLSX.utils.book_append_sheet(wb,wsOS,"Old Stock");
 
-      // ── R&D Projects (full details) ──
-      const rdRows=[["Project Name","Category","Paint Type","Status","Start Date","End Date","Created By","Trials Count","Notes"]];
-      counts.rdDocs.forEach(p=>{rdRows.push([p.name||p.productName||"",p.category||"",p.paintType||"",p.status||"",p.startDate||"",p.endDate||"",p.createdBy||"",(p.trials||[]).length,p.notes||"",]);});
-      const wsRD=XLSX.utils.aoa_to_sheet(rdRows);wsRD["!cols"]=[{wch:32},{wch:16},{wch:16},{wch:14},{wch:14},{wch:14},{wch:24},{wch:12},{wch:40}];
-      XLSX.utils.book_append_sheet(wb,wsRD,"R&D Projects");
+      // ── R&D Projects (full details) — HO never sees R&D data, exported or otherwise ──
+      if(!hideRDQC){
+        const rdRows=[["Project Name","Category","Paint Type","Status","Start Date","End Date","Created By","Trials Count","Notes"]];
+        counts.rdDocs.forEach(p=>{rdRows.push([p.name||p.productName||"",p.category||"",p.paintType||"",p.status||"",p.startDate||"",p.endDate||"",p.createdBy||"",(p.trials||[]).length,p.notes||"",]);});
+        const wsRD=XLSX.utils.aoa_to_sheet(rdRows);wsRD["!cols"]=[{wch:32},{wch:16},{wch:16},{wch:14},{wch:14},{wch:14},{wch:24},{wch:12},{wch:40}];
+        XLSX.utils.book_append_sheet(wb,wsRD,"R&D Projects");
+      }
 
       // ── RM Consumption ──
       const rmRows=[["Date","Material","Unit","Qty Consumed","Stock After","Added By","Notes"]];
@@ -4424,26 +4463,28 @@ function FYArchiveTab({showToast}){
       const wsRM=XLSX.utils.aoa_to_sheet(rmRows);wsRM["!cols"]=[{wch:14},{wch:28},{wch:8},{wch:12},{wch:12},{wch:24},{wch:32}];
       XLSX.utils.book_append_sheet(wb,wsRM,"RM Consumption");
 
-      // ── RM Tests ──
-      const rmtRows=[["Material","Vendor","Category","Batch/Lot No","Qty Received","Date Received","Specification","Tests Performed","Observations","Result","Tested By","Remarks","Retests"]];
-      counts.rmTestDocs.forEach(t=>{rmtRows.push([t.materialName||"",t.vendorName||"",t.category||"",t.batchNo||t.lotNo||"",t.quantityReceived||"",t.dateReceived||"",t.specsToTest||"",t.testsPerformed||"",t.observations||"",t.testResult||"",t.testedBy||"",t.remarks||"",(t.retests||[]).length]);});
-      const wsRMT=XLSX.utils.aoa_to_sheet(rmtRows);wsRMT["!cols"]=[{wch:22},{wch:20},{wch:14},{wch:14},{wch:12},{wch:12},{wch:32},{wch:24},{wch:24},{wch:14},{wch:18},{wch:28},{wch:8}];
-      XLSX.utils.book_append_sheet(wb,wsRMT,"RM Tests");
+      // ── RM Tests & Sample Testing — never exported to HO (R&D & QC data is off-limits) ──
+      if(!hideRDQC){
+        const rmtRows=[["Material","Vendor","Category","Batch/Lot No","Qty Received","Date Received","Specification","Tests Performed","Observations","Result","Tested By","Remarks","Retests"]];
+        counts.rmTestDocs.forEach(t=>{rmtRows.push([t.materialName||"",t.vendorName||"",t.category||"",t.batchNo||t.lotNo||"",t.quantityReceived||"",t.dateReceived||"",t.specsToTest||"",t.testsPerformed||"",t.observations||"",t.testResult||"",t.testedBy||"",t.remarks||"",(t.retests||[]).length]);});
+        const wsRMT=XLSX.utils.aoa_to_sheet(rmtRows);wsRMT["!cols"]=[{wch:22},{wch:20},{wch:14},{wch:14},{wch:12},{wch:12},{wch:32},{wch:24},{wch:24},{wch:14},{wch:18},{wch:28},{wch:8}];
+        XLSX.utils.book_append_sheet(wb,wsRMT,"RM Tests");
 
-      // ── Sample Testing ──
-      const stRows=[["Sample Name","Customer/Source","Category","Date Received","Specification","Tests Performed","Observations","Result","Tested By","Remarks"]];
-      counts.sampleTestDocs.forEach(s=>{stRows.push([s.sampleName||s.materialName||"",s.customerName||s.source||"",s.category||"",s.dateReceived||s.date||"",s.specsToTest||"",s.testsPerformed||"",s.observations||"",s.testResult||s.result||"",s.testedBy||"",s.remarks||""]);});
-      const wsST=XLSX.utils.aoa_to_sheet(stRows);wsST["!cols"]=[{wch:22},{wch:20},{wch:14},{wch:12},{wch:32},{wch:24},{wch:24},{wch:14},{wch:18},{wch:28}];
-      XLSX.utils.book_append_sheet(wb,wsST,"Sample Testing");
+        const stRows=[["Sample Name","Customer/Source","Category","Date Received","Specification","Tests Performed","Observations","Result","Tested By","Remarks"]];
+        counts.sampleTestDocs.forEach(s=>{stRows.push([s.sampleName||s.materialName||"",s.customerName||s.source||"",s.category||"",s.dateReceived||s.date||"",s.specsToTest||"",s.testsPerformed||"",s.observations||"",s.testResult||s.result||"",s.testedBy||"",s.remarks||""]);});
+        const wsST=XLSX.utils.aoa_to_sheet(stRows);wsST["!cols"]=[{wch:22},{wch:20},{wch:14},{wch:12},{wch:32},{wch:24},{wch:24},{wch:14},{wch:18},{wch:28}];
+        XLSX.utils.book_append_sheet(wb,wsST,"Sample Testing");
+      }
 
       XLSX.writeFile(wb,`GCC_FY_${label.replace("-","_")}_Archive.xlsx`);
-      showToast(`FY ${label} archive exported ✓ — ${counts.rdProjects} R&D projects included (not deleted)`);
+      showToast(`FY ${label} archive exported ✓${hideRDQC?"":` — ${counts.rdProjects} R&D projects included (not deleted)`}`);
     }catch(e){showToast("Export failed: "+e.message,"error");}
     setExporting(false);
   };
 
   const deleteFY=async()=>{
     if(!counts)return;
+    if(!canDelete){showToast("You don't have permission to delete data","error");return;}
     setDeleting(true);
     try{
       const deleteAll=async(ids,col)=>{
@@ -4453,17 +4494,15 @@ function FYArchiveTab({showToast}){
           await wb_.commit();
         }
       };
-      // R&D projects are NEVER deleted. Old Stock: only "Used" items were ever included in
-      // counts.oldStockIds (see loadCounts) — pending/Available stock is never in this list.
-      await Promise.all([
-        deleteAll(counts.batchIds,"batches"),
-        deleteAll(counts.complaintIds,"complaints"),
-        deleteAll(counts.oldStockIds,"old_stock"),
-        deleteAll(counts.rmConsumptionIds,"rm_stock_transactions"),
-        deleteAll(counts.rmTestIds,"rm_tests"),
-        deleteAll(counts.sampleTestIds,"sample_tests"),
-      ]);
-      showToast(`FY ${getFYLabel(parseInt(selFY))} data deleted ✓ (R&D projects + pending stock kept)`);
+      // BOM, Testimonials, pending orders, and anything not explicitly ticked below are NEVER
+      // touched by this tool. R&D & QC data (R&D projects, RM Tests, Sample Tests) is Admin-only
+      // and never reachable by HO at all — CATEGORY_DEFS is already filtered to hoAllowed-only
+      // categories for HO. Only the already-finished records within a selected category (Packed
+      // batches, Resolved/Closed complaints, Closed leakage, tests with a final result) are ever deleted.
+      const active=CATEGORY_DEFS.filter(c=>selectedCats[c.key]);
+      await Promise.all(active.map(c=>deleteAll(counts[c.idsKey]||[],c.col)));
+      const deletedLabel=active.map(c=>c.label).join(", ")||"nothing";
+      showToast(`FY ${getFYLabel(parseInt(selFY))} data deleted ✓ (${deletedLabel})`);
       setStep("done");loadCounts(selFY);
     }catch(e){showToast("Delete failed: "+e.message,"error");}
     setDeleting(false);
@@ -4472,10 +4511,11 @@ function FYArchiveTab({showToast}){
   const fy_=parseInt(selFY);
   const label=getFYLabel(fy_);
   const isPrevFY=fy_<curFY;
-  const totalCount=(counts?.batches||0)+(counts?.complaints||0)+(counts?.oldStock||0)+(counts?.rmConsumption||0)+(counts?.rmTests||0)+(counts?.sampleTests||0);
+  const totalCount=(counts?.batches||0)+(counts?.complaints||0)+(counts?.leakage||0)+(counts?.oldStock||0)+(counts?.rmConsumption||0)+(counts?.rmTests||0)+(counts?.sampleTests||0);
+  const selectedCount=counts?CATEGORY_DEFS.filter(c=>selectedCats[c.key]).reduce((a,c)=>a+(counts[c.key]||0),0):0;
 
   return <div>
-    <InfoBox color="#f59e0b">⚠️ Archive completed financial years. R&D projects are NEVER deleted. Current FY: <strong style={{color:"#fcd34d"}}>FY {getFYLabel(curFY)}</strong></InfoBox>
+    <InfoBox color="#f59e0b">⚠️ Archive completed financial years. BOM, R&D projects, Testimonials, Old/Rejected Material, and pending orders are NEVER deleted by this tool. Current FY: <strong style={{color:"#fcd34d"}}>FY {getFYLabel(curFY)}</strong></InfoBox>
 
     <div style={{display:"flex",gap:"12px",alignItems:"flex-end",flexWrap:"wrap",marginBottom:"16px"}}>
       <Field label="Select Financial Year">
@@ -4489,7 +4529,7 @@ function FYArchiveTab({showToast}){
     {loading&&<div style={{fontSize:"13px",color:"#475569",padding:"10px 0"}}>⏳ Loading data counts…</div>}
     {counts&&isPrevFY&&step!=="done"&&<>
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"10px",marginBottom:"16px"}}>
-        {[["📦 Packed Batches",counts.batches,"#3b82f6","Deleted"],["⚠️ Complaints",counts.complaints,"#ef4444","Deleted"],["🔄 Used Old Stock",counts.oldStock,"#f59e0b","Deleted"],["🧪 R&D Projects",counts.rdProjects,"#22c55e","Kept ✓"],["📉 RM Consumption",counts.rmConsumption,"#a855f7","Deleted"],["🧫 RM Tests (completed)",counts.rmTests,"#06b6d4","Deleted"],["🔭 Sample Tests (completed)",counts.sampleTests,"#ec4899","Deleted"]].map(([lbl,count,color,action])=>(
+        {[["📦 Packed Batches",counts.batches,"#3b82f6","Deleted"],["⚠️ Complaints",counts.complaints,"#ef4444","Deleted"],["💧 Leakage (Closed)",counts.leakage,"#0891b2","Deleted"],["🔄 Old/Rejected Material",counts.oldStock,"#f59e0b","Kept ✓"],["📉 RM Consumption",counts.rmConsumption,"#a855f7","Deleted"],...(hideRDQC?[]:[["🧪 R&D Projects",counts.rdProjects,"#22c55e","Kept ✓"],["🧫 RM Tests (completed)",counts.rmTests,"#06b6d4","Deleted"],["🔭 Sample Tests (completed)",counts.sampleTests,"#ec4899","Deleted"]])].map(([lbl,count,color,action])=>(
           <div key={lbl} style={{background:"#0b1220",border:`1px solid ${color}30`,borderRadius:"10px",padding:"12px 14px",textAlign:"center"}}>
             <div style={{fontSize:"22px",fontWeight:"700",color}}>{count}</div>
             <div style={{fontSize:"11px",color:"#64748b",marginTop:"2px"}}>{lbl}</div>
@@ -4500,22 +4540,43 @@ function FYArchiveTab({showToast}){
 
       <div style={{background:"#052e16",border:"1px solid #166534",borderRadius:"10px",padding:"16px",marginBottom:"12px"}}>
         <div style={{fontSize:"13px",fontWeight:"700",color:"#22c55e",marginBottom:"6px"}}>Step 1: Export FY {label} Data</div>
-        <div style={{fontSize:"12px",color:"#86efac",marginBottom:"12px"}}>Downloads Packed Batches, Complaints, Used Old Stock, R&D Projects, RM Consumption, completed RM Tests and Sample Testing as separate Excel sheets. R&D projects are exported but <strong>never deleted</strong> from the system. <strong>Pending/unfinished items are never included or touched</strong> — only stock marked "Used", batches marked "Packed", and tests with a final Pass/Fail/Conditional Pass result are archived.</div>
-        {(counts.pendingBatchCount>0||counts.pendingRmTestCount>0||counts.pendingSampleTestCount>0)&&<div style={{fontSize:"11.5px",color:"#fcd34d",background:"#1a1500",border:"1px solid #92400e40",borderRadius:"8px",padding:"8px 12px",marginBottom:"12px"}}>
-          ⚠ Excluded from this archive (kept in the system, unfinished): {counts.pendingBatchCount>0&&`${counts.pendingBatchCount} batch(es) not yet Packed`}{counts.pendingBatchCount>0&&(counts.pendingRmTestCount>0||counts.pendingSampleTestCount>0)?", ":""}{counts.pendingRmTestCount>0&&`${counts.pendingRmTestCount} RM test(s) awaiting result`}{counts.pendingRmTestCount>0&&counts.pendingSampleTestCount>0?", ":""}{counts.pendingSampleTestCount>0&&`${counts.pendingSampleTestCount} sample test(s) awaiting result`}.
+        <div style={{fontSize:"12px",color:"#86efac",marginBottom:"12px"}}>Downloads Packed Batches, Complaints (Resolved/Closed), Leakage (Closed), Old/Rejected Material, RM Consumption{hideRDQC?"":", R&D Projects, completed RM Tests, and completed Sample Testing"} as separate Excel sheets. Old/Rejected Material{hideRDQC?"":" and R&D Projects are"}{hideRDQC?" is":""} exported but <strong>never deleted</strong> from the system.{hideRDQC?" R&D & QC data (R&D Projects, RM Tests, Sample Testing) is Admin-only — not exported, not deleted.":""} <strong>Pending/unfinished items are never included or touched</strong> — only stock actions that are already finished are ever deleted.</div>
+        {(counts.pendingBatchCount>0||counts.pendingComplaintCount>0||counts.pendingLeakageCount>0||(!hideRDQC&&(counts.pendingRmTestCount>0||counts.pendingSampleTestCount>0)))&&<div style={{fontSize:"11.5px",color:"#fcd34d",background:"#1a1500",border:"1px solid #92400e40",borderRadius:"8px",padding:"8px 12px",marginBottom:"12px"}}>
+          ⚠ Excluded from deletion (kept in the system, unfinished): {[
+            counts.pendingBatchCount>0&&`${counts.pendingBatchCount} batch(es) not yet Packed`,
+            counts.pendingComplaintCount>0&&`${counts.pendingComplaintCount} complaint(s) still open`,
+            counts.pendingLeakageCount>0&&`${counts.pendingLeakageCount} leakage report(s) not yet Closed`,
+            !hideRDQC&&counts.pendingRmTestCount>0&&`${counts.pendingRmTestCount} RM test(s) awaiting result`,
+            !hideRDQC&&counts.pendingSampleTestCount>0&&`${counts.pendingSampleTestCount} sample test(s) awaiting result`,
+          ].filter(Boolean).join(", ")}.
         </div>}
         <Btn label={exporting?"Exporting…":`📥 Download FY ${label} Archive (Excel)`} onClick={exportFY} disabled={exporting||totalCount+counts.rdProjects===0} color="#22c55e"/>
         {totalCount+counts.rdProjects===0&&<div style={{fontSize:"12px",color:"#334155",marginTop:"6px"}}>No data found for FY {label}.</div>}
       </div>
 
-      {totalCount>0&&<div style={{background:"#450a0a",border:"1px solid #7f1d1d",borderRadius:"10px",padding:"16px"}}>
-        <div style={{fontSize:"13px",fontWeight:"700",color:"#ef4444",marginBottom:"6px"}}>Step 2: Delete FY {label} Data</div>
-        <div style={{fontSize:"12px",color:"#fca5a5",marginBottom:"12px"}}>Permanently deletes {counts.batches} packed batches, {counts.complaints} complaints, {counts.oldStock} used old stock, {counts.rmConsumption} RM consumption records, {counts.rmTests} completed RM tests, {counts.sampleTests} completed sample tests. <strong>R&D projects ({counts.rdProjects}), pending/Available old stock, unpacked batches, and tests awaiting a result are NOT deleted.</strong></div>
-        {step==="idle"&&<Btn label={`🗑 Delete FY ${label} Data (excl. R&D & pending stock)`} onClick={()=>setStep("confirm")} color="#ef4444" outline/>}
+      {totalCount>0&&canDelete&&<div style={{background:"#450a0a",border:"1px solid #7f1d1d",borderRadius:"10px",padding:"16px"}}>
+        <div style={{fontSize:"13px",fontWeight:"700",color:"#ef4444",marginBottom:"6px"}}>Step 2: {isAdmin?"Choose What to Delete":"Delete FY Data"}</div>
+        {isAdmin
+          ?<div style={{fontSize:"12px",color:"#fca5a5",marginBottom:"12px"}}>Tick which categories to permanently delete for FY {label}. Only finished records are ever offered — <strong>BOM, Testimonials, Old/Rejected Material, pending orders, open complaints, non-Closed leakage, unpacked batches, and tests awaiting a result are never deletable here.</strong></div>
+          :<div style={{fontSize:"12px",color:"#fca5a5",marginBottom:"12px"}}>Deletes {counts.batches} packed batches, {counts.complaints} closed complaints, {counts.leakage} closed leakage reports, {counts.rmConsumption} RM consumption records for FY {label}. <strong>R&D & QC data (R&D Projects, RM Tests, Sample Testing), Old/Rejected Material, BOM, Testimonials, pending orders, open complaints, and non-Closed leakage are never touched.</strong></div>}
+        {step==="idle"&&<>
+          {isAdmin&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginBottom:"14px"}}>
+            {CATEGORY_DEFS.map(c=><label key={c.key} style={{display:"flex",alignItems:"center",gap:"8px",background:"#0b1220",border:`1px solid ${selectedCats[c.key]?c.color+"60":"#1e293b"}`,borderRadius:"8px",padding:"9px 12px",cursor:(counts[c.key]||0)===0?"default":"pointer",opacity:(counts[c.key]||0)===0?0.4:1}}>
+              <input type="checkbox" checked={!!selectedCats[c.key]} disabled={(counts[c.key]||0)===0} onChange={()=>toggleCat(c.key)} style={{width:"15px",height:"15px",accentColor:c.color,flexShrink:0}}/>
+              <span style={{fontSize:"12.5px",color:"#e2e8f0",flex:1}}>{c.label}</span>
+              <span style={{fontSize:"12px",fontWeight:"700",color:c.color}}>{counts[c.key]||0}</span>
+            </label>)}
+          </div>}
+          <Btn label={isAdmin?`🗑 Delete Selected (${selectedCount} record${selectedCount!==1?"s":""})`:`🗑 Delete FY ${label} Data (${selectedCount} records)`} onClick={()=>setStep("confirm")} disabled={selectedCount===0} color="#ef4444" outline/>
+        </>}
         {step==="confirm"&&<div>
+          <div style={{fontSize:"12px",color:"#fca5a5",marginBottom:"10px"}}>You're about to permanently delete: <strong style={{color:"#fff"}}>{CATEGORY_DEFS.filter(c=>selectedCats[c.key]).map(c=>`${counts[c.key]} ${c.label}`).join(", ")}</strong>.</div>
           <div style={{fontSize:"13px",fontWeight:"700",color:"#ef4444",marginBottom:"10px"}}>⚠️ Type the FY label to confirm deletion:</div>
           <ConfirmDelete expected={label} onConfirm={deleteFY} onCancel={()=>setStep("idle")} saving={deleting}/>
         </div>}
+      </div>}
+      {totalCount>0&&!canDelete&&<div style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"10px",padding:"16px",fontSize:"12.5px",color:"#64748b"}}>
+        🔒 Only Admin and Issuer can delete data. You can export the FY {label} archive above for your records.
       </div>}
     </>}
     {step==="done"&&<div style={{background:"#052e16",border:"1px solid #166534",borderRadius:"10px",padding:"20px",textAlign:"center"}}>
@@ -4549,7 +4610,7 @@ function SettingsTab({showToast, initialProducts, initialQcParams, initialPackSi
     ["units","📏 Units",             isAdmin],
     ["painttypes","🖌 Paint Types",  isAdmin||isQC],
     ["rmcats","🧫 RM Categories",    isAdmin],
-    ["fyarchive","📁 FY Archive",    isAdmin],
+    ["fyarchive","📁 FY Archive",    isAdmin||roles.includes("issuer")],
   ].filter(([,,allowed])=>allowed);
   const [subTab,setSubTab]=useState(()=>allSubTabs[0]?.[0]||"products");
   const [saving,setSaving]=useState(false);
@@ -5124,7 +5185,7 @@ function SettingsTab({showToast, initialProducts, initialQcParams, initialPackSi
       </div>
     </div>}
 
-    {subTab==="fyarchive"&&<FYArchiveTab showToast={showToast}/>}
+    {subTab==="fyarchive"&&<FYArchiveTab showToast={showToast} isAdmin={isAdmin} isHO={roles.includes("ho")} isIssuer={roles.includes("issuer")}/>}
 
     <div style={{marginTop:"20px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"10px"}}>
       <div style={{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap"}}>
