@@ -6566,6 +6566,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
   const [orders,setOrders]=useState([]);
   const [customerMap,setCustomerMap]=useState({});
   const [routes,setRoutes]=useState([]);
+  const [extraTransporters,setExtraTransporters]=useState([]); // transporters added manually (e.g. via Site Delivery) not yet used by any customer
   // Normalize key for transporter comparison — strips dots, spaces, lowercases
   const normTKey=s=>String(s||"").toLowerCase().replace(/[.\s]+/g,"");
   // Normalize route for comparison — strips case, spaces, dots, hyphens
@@ -6589,6 +6590,10 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
     Object.values(customerMap).filter(c=>!c.isDirect&&c.transport).forEach(c=>{
       const k=normTKey(c.transport);
       if(!seen[k])seen[k]=(c.transport||"").trim().toUpperCase(); // keep first seen, normalised to upper
+    });
+    (extraTransporters||[]).forEach(t=>{
+      const k=normTKey(t);
+      if(!seen[k])seen[k]=(t||"").trim().toUpperCase();
     });
     return Object.values(seen).sort();
   })();
@@ -6689,17 +6694,30 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
   const [quickAddCustomer,setQuickAddCustomer]=useState(null);
   const [siteDeliveryEdit,setSiteDeliveryEdit]=useState(null); // order id currently being edited
   const [sdForm,setSdForm]=useState({route:"",transport:"",isDirect:false});
+  const [sdRouteMode,setSdRouteMode]=useState("existing"); // "existing"|"new"
+  const [sdTransMode,setSdTransMode]=useState("existing"); // "existing"|"new"
   const canManageSiteDelivery=isAdmin||roles.includes("issuer")||roles.includes("ho");
   const saveSiteDelivery=async(orderId)=>{
     if(!sdForm.route.trim())return showToast("Enter the delivery route/area","error");
+    if(!sdForm.isDirect&&!sdForm.transport.trim())return showToast("Select or enter a transporter, or choose Direct","error");
     try{
+      const routeVal=sdForm.route.trim();
+      const transVal=sdForm.isDirect?"DIRECT":sdForm.transport.trim().toUpperCase().replace(/\.+/g,"").replace(/\s+/g," ");
+      // If this route/transporter isn't in the master list yet, add it now so future dropdowns,
+      // reports, and sequence uploads all stay consistent — no stray one-off spellings.
+      const routeExists=routes.some(r=>normalize(r)===normalize(routeVal));
+      const transExists=sdForm.isDirect||transporterNames.some(t=>normTKey(t)===normTKey(transVal));
+      if(!routeExists||!transExists){
+        const snap=await C("settings").doc("customerTransport").get();
+        const d=snap.exists?snap.data():{map:{},routes:[],extraTransporters:[]};
+        const newRoutes=routeExists?(d.routes||[]):[...(d.routes||[]),routeVal].sort();
+        const newExtra=transExists?(d.extraTransporters||[]):[...(d.extraTransporters||[]),transVal].sort();
+        await C("settings").doc("customerTransport").set({...d,routes:newRoutes,extraTransporters:newExtra,updatedAt:ts()},{merge:true});
+      }
       await C("orders").doc(orderId).update({
-        siteDelivery:true,
-        siteRoute:sdForm.route.trim(),
-        siteTransport:sdForm.isDirect?"DIRECT":(sdForm.transport.trim()||"DIRECT"),
-        siteIsDirect:sdForm.isDirect,
+        siteDelivery:true,siteRoute:routeVal,siteTransport:transVal,siteIsDirect:sdForm.isDirect,
       });
-      showToast("Site delivery override saved ✓");
+      showToast(`Site delivery override saved ✓${(!routeExists||!transExists)?" — new route/transport added to master list":""}`);
       setSiteDeliveryEdit(null);
     }catch(e){showToast("Error: "+e.message,"error");}
   };
@@ -6730,7 +6748,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
       s=>{setOrders(s.docs.map(d=>applySiteOverride({id:d.id,...d.data()})));setLoading(false);},
       ()=>{C("orders").onSnapshot(s=>{setOrders(s.docs.map(d=>applySiteOverride({id:d.id,...d.data()})));setLoading(false);});});
     const u2=C("settings").doc("customerTransport").onSnapshot(snap=>{
-      if(snap.exists){const d=snap.data();setCustomerMap(d.map||{});setRoutes(d.routes||[]);}
+      if(snap.exists){const d=snap.data();setCustomerMap(d.map||{});setRoutes(d.routes||[]);setExtraTransporters(d.extraTransporters||[]);}
     },()=>{});
     const u3=C("fg_products").onSnapshot(s=>{setFgProducts(s.docs.map(d=>({id:d.id,...d.data()})));},()=>{});
     return ()=>{u1();u2();u3();};
@@ -8124,7 +8142,11 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
                     {order.siteDelivery&&<span style={{background:"#3b0764",border:"1px solid #7c3aed",borderRadius:"5px",padding:"0px 7px",color:"#c4b5fd",fontSize:"10px",fontWeight:"700"}}>📍 Site Delivery → {order.route} / {order.transport}</span>}
                     {canManageSiteDelivery&&<button onClick={()=>{
                       if(siteDeliveryEdit===order.id){setSiteDeliveryEdit(null);return;}
-                      setSdForm({route:order.siteRoute||order.originalRoute||order.route||"",transport:order.siteTransport||order.originalTransport||order.transport||"",isDirect:!!order.siteIsDirect});
+                      const r=order.siteRoute||order.originalRoute||order.route||"";
+                      const t=order.siteTransport||order.originalTransport||order.transport||"";
+                      setSdForm({route:r,transport:t,isDirect:!!order.siteIsDirect});
+                      setSdRouteMode(r&&!routes.some(x=>normalize(x)===normalize(r))?"new":"existing");
+                      setSdTransMode(t&&t!=="DIRECT"&&!transporterNames.some(x=>normTKey(x)===normTKey(t))?"new":"existing");
                       setSiteDeliveryEdit(order.id);
                     }} style={{background:"none",border:"1px solid #334155",borderRadius:"5px",padding:"1px 8px",color:"#64748b",fontSize:"10px",fontWeight:"600",cursor:"pointer"}}>
                       {order.siteDelivery?"✏️ Edit":"📍 Mark Site Delivery"}
@@ -8134,12 +8156,34 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
                     <div style={{fontSize:"10.5px",color:"#a78bfa",marginBottom:"7px"}}>This order ships to a different location than {order.originalRoute||order.route}'s usual route ({order.originalTransport||order.transport}). Set the actual delivery route/transport for THIS order only — it won't change {group.partyName}'s default route for future orders.</div>
                     <Grid2>
                       <Field label="Actual Delivery Route/Area *">
-                        <input style={inp} list="qa-route-list" value={sdForm.route} onChange={e=>setSdForm({...sdForm,route:e.target.value})} placeholder="e.g. NASHIK — site delivery"/>
+                        {sdRouteMode==="existing"?<select style={sl} value={routes.includes(sdForm.route)?sdForm.route:""} onChange={e=>{
+                          if(e.target.value==="__new__"){setSdRouteMode("new");setSdForm({...sdForm,route:""});}
+                          else setSdForm({...sdForm,route:e.target.value});
+                        }}>
+                          <option value="">— Select route —</option>
+                          {routes.map(r=><option key={r} value={r}>{r}</option>)}
+                          <option value="__new__">➕ Add New Route…</option>
+                        </select>:<div style={{display:"flex",gap:"6px"}}>
+                          <input style={{...inp,flex:1}} value={sdForm.route} onChange={e=>setSdForm({...sdForm,route:e.target.value})} placeholder="Type new route/area name" autoFocus/>
+                          <button onClick={()=>{setSdRouteMode("existing");setSdForm({...sdForm,route:""});}} style={{background:"none",border:"1px solid #334155",borderRadius:"6px",padding:"0 10px",color:"#64748b",fontSize:"11px",cursor:"pointer"}}>↩</button>
+                        </div>}
                       </Field>
                       <Field label="Transport for this delivery">
-                        <input style={inp} list="qa-trans-list" value={sdForm.transport} onChange={e=>setSdForm({...sdForm,transport:e.target.value,isDirect:e.target.value.toUpperCase()==="DIRECT"})} placeholder="e.g. LOCAL TEMPO or DIRECT" disabled={sdForm.isDirect}/>
+                        {sdForm.isDirect?<div style={{...inp,color:"#4ade80",background:"#052e1615",display:"flex",alignItems:"center"}}>🚚 Direct (own vehicle)</div>
+                          :sdTransMode==="existing"?<select style={sl} value={transporterNames.includes(sdForm.transport)?sdForm.transport:""} onChange={e=>{
+                            if(e.target.value==="__new__"){setSdTransMode("new");setSdForm({...sdForm,transport:""});}
+                            else setSdForm({...sdForm,transport:e.target.value});
+                          }}>
+                            <option value="">— Select transporter —</option>
+                            {transporterNames.map(t=><option key={t} value={t}>{t}</option>)}
+                            <option value="__new__">➕ Add New Transporter…</option>
+                          </select>:<div style={{display:"flex",gap:"6px"}}>
+                            <input style={{...inp,flex:1}} value={sdForm.transport} onChange={e=>setSdForm({...sdForm,transport:e.target.value})} placeholder="Type new transporter name" autoFocus/>
+                            <button onClick={()=>{setSdTransMode("existing");setSdForm({...sdForm,transport:""});}} style={{background:"none",border:"1px solid #334155",borderRadius:"6px",padding:"0 10px",color:"#64748b",fontSize:"11px",cursor:"pointer"}}>↩</button>
+                          </div>}
                       </Field>
                     </Grid2>
+                    <div style={{fontSize:"10px",color:"#475569",marginBottom:"8px"}}>A newly typed route or transporter is added to the master list on save, so it shows up consistently in future dropdowns, sequences, and reports.</div>
                     <div style={{display:"flex",gap:"6px",marginBottom:"8px"}}>
                       <button onClick={()=>setSdForm({...sdForm,isDirect:true,transport:"DIRECT"})} style={{flex:1,background:sdForm.isDirect?"#052e16":"#080d18",border:`1px solid ${sdForm.isDirect?"#166534":"#1e293b"}`,borderRadius:"5px",color:sdForm.isDirect?"#4ade80":"#475569",fontWeight:"700",fontSize:"11px",padding:"4px",cursor:"pointer"}}>🚚 Direct</button>
                       <button onClick={()=>setSdForm({...sdForm,isDirect:false,transport:sdForm.transport==="DIRECT"?"":sdForm.transport})} style={{flex:1,background:!sdForm.isDirect?"#0a1a2e":"#080d18",border:`1px solid ${!sdForm.isDirect?"#2563eb":"#1e293b"}`,borderRadius:"5px",color:!sdForm.isDirect?"#93c5fd":"#475569",fontWeight:"700",fontSize:"11px",padding:"4px",cursor:"pointer"}}>🏢 Transporter</button>
