@@ -566,7 +566,7 @@ ${(entry.retests||[]).length?`<table style="margin-top:14pt">
 }
 </script>
 <script type="text/babel">
-const {useState,useEffect,useRef} = React;
+const {useState,useEffect,useRef,useMemo,useCallback} = React;
 const auth = window._auth;
 const db = window._db;
 const storage = window._storage;
@@ -1611,6 +1611,7 @@ function LeakageCard({c,onClick,onDelete,role}){
       <span style={{fontSize:"11px",color:"#475569"}}>📅 {c.leakDate||c.dateCreated||"—"}</span>
       {c.qtyLeaked&&<span style={{fontSize:"11px",fontWeight:"700",color:"#38bdf8"}}>💧 {c.qtyLeaked} {c.qtyUnit||""}</span>}
       {c.batchNo&&<span style={{fontSize:"11px",color:"#475569"}}>Batch: {c.batchNo}</span>}
+      {c.assignedSalesman&&<span style={{fontSize:"11px",color:"#64748b"}}>🧑‍💼 {c.assignedSalesman.split("@")[0]}</span>}
     </div>
     <div style={{display:"flex",gap:"8px",alignItems:"center",flexShrink:0}}>
       <Bdg label={c.status} color={sc}/>
@@ -1619,7 +1620,7 @@ function LeakageCard({c,onClick,onDelete,role}){
   </div>;
 }
 
-function LeakageWorkspace({leakage,role,roles,showToast,user,isAdmin,allRoles}){
+function LeakageWorkspace({leakage,role,roles,showToast,user,isAdmin,allRoles,allProfiles}){
   const [live,setLive]=useState(leakage);
   useEffect(()=>setLive(leakage),[leakage]);
   const [saving,setSaving]=useState(false);
@@ -1630,24 +1631,32 @@ function LeakageWorkspace({leakage,role,roles,showToast,user,isAdmin,allRoles}){
   const [adminDecision,setAdminDecision]=useState("Visit Customer Required");
   const [adminRemarks,setAdminRemarks]=useState("");
   const [adminAttachments,setAdminAttachments]=useState([]);
+  const [visitAssignee,setVisitAssignee]=useState(live.assignedSalesman||"");
   const [salesmanNote,setSalesmanNote]=useState("");
   const [cnForm,setCnForm]=useState({creditNoteNo:live.creditNoteNo||"",creditNoteAmount:live.creditNoteAmount||"",creditNoteDate:live.creditNoteDate||today()});
 
   const sc=LS_COL[live.status]||"#94a3b8";
   const isOwner=user.email===live.addedBy;
+  const isAssignee=user.email===live.assignedSalesman;
   const canHOIssue=isAdmin||(roles||[]).includes("ho");
   const daysBetween=(a,b)=>{if(!a||!b)return null;const d=Math.round((new Date(b)-new Date(a))/86400000);return d;};
 
   const saveAdminDecision=async()=>{
     if(!adminRemarks.trim())return showToast("Enter remarks explaining the decision","error");
+    if(adminDecision==="Visit Customer Required"&&!visitAssignee)return showToast("Select a salesman to visit the customer","error");
     setSaving(true);
     try{
       const entry={decision:adminDecision,remarks:adminRemarks,decidedBy:user.email,decidedAt:today(),attachments:adminAttachments};
       const mergedAttachments=[...(live.attachments||[]),...adminAttachments];
-      await C("leakage_reports").doc(live.id).update({adminDecision:entry,status:adminDecision,salesmanNote:null,attachments:mergedAttachments});
+      const updateData={adminDecision:entry,status:adminDecision,salesmanNote:null,attachments:mergedAttachments};
+      if(adminDecision==="Visit Customer Required")updateData.assignedSalesman=visitAssignee;
+      await C("leakage_reports").doc(live.id).update(updateData);
       if(adminDecision==="Credit Note Approved"&&allRoles){
         const hoList=Object.keys(allRoles).filter(e=>(allRoles[e]||[]).includes("ho"));
         await notify(hoList,{type:"leakage_cn_approved",msg:`💧 Credit Note approved for ${live.customerName} (${live.qtyLeaked||"?"} ${live.qtyUnit||""}) — please issue`,customer:live.customerName});
+      }
+      if(adminDecision==="Visit Customer Required"&&visitAssignee){
+        await notify(visitAssignee,{type:"leakage_visit_assigned",msg:`💧 Please visit ${live.customerName} regarding their leakage report and add your notes`,customer:live.customerName});
       }
       showToast(`Decision saved: ${adminDecision} ✓`);
       setAdminRemarks("");setAdminAttachments([]);
@@ -1674,11 +1683,11 @@ function LeakageWorkspace({leakage,role,roles,showToast,user,isAdmin,allRoles}){
     setSaving(true);
     try{
       await C("leakage_reports").doc(live.id).update({
-        status:"Credit Note Issued",
+        status:"Closed",
         creditNoteNo:cnForm.creditNoteNo,creditNoteAmount:cnForm.creditNoteAmount,creditNoteDate:cnForm.creditNoteDate,
         creditNoteIssuedAt:today(),creditNoteIssuedBy:user.email
       });
-      showToast("Credit Note marked as issued ✓");
+      showToast("Credit Note marked as issued — leakage closed ✓");
     }catch(e){showToast("Error: "+e.message,"error");}
     setSaving(false);
   };
@@ -1772,7 +1781,7 @@ function LeakageWorkspace({leakage,role,roles,showToast,user,isAdmin,allRoles}){
     </div>}
 
     {/* ── Credit Note issued summary + turnaround time ── */}
-    {live.status==="Credit Note Issued"&&<div style={{background:"#052e16",border:"1px solid #166534",borderRadius:"10px",padding:"12px 16px",marginBottom:"14px"}}>
+    {live.creditNoteNo&&<div style={{background:"#052e16",border:"1px solid #166534",borderRadius:"10px",padding:"12px 16px",marginBottom:"14px"}}>
       <div style={{fontSize:"11px",fontWeight:"700",color:"#4ade80",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:"6px"}}>✓ Credit Note Issued</div>
       <div style={{display:"flex",gap:"18px",flexWrap:"wrap",fontSize:"12.5px",marginBottom:cnTurnaround!=null?"6px":"0"}}>
         <span>No: <strong style={{color:"#e2e8f0"}}>{live.creditNoteNo||"—"}</strong></span>
@@ -1796,6 +1805,12 @@ function LeakageWorkspace({leakage,role,roles,showToast,user,isAdmin,allRoles}){
           </select>
         </Field>
       </Grid3>
+      {adminDecision==="Visit Customer Required"&&<Field label="Assign Salesman for Visit *">
+        <select style={sl} value={visitAssignee} onChange={e=>setVisitAssignee(e.target.value)}>
+          <option value="">— Select salesman —</option>
+          {Object.keys(allRoles||{}).filter(e=>(allRoles[e]||[]).includes("sales")).map(e=><option key={e} value={e}>{allProfiles?.[e]?.displayName||e.split("@")[0]}</option>)}
+        </select>
+      </Field>}
       <Field label="Remarks *"><textarea style={{...ta,minHeight:"70px"}} value={adminRemarks} onChange={e=>setAdminRemarks(e.target.value)} placeholder="Reasoning behind this decision…"/></Field>
       <Field label="📎 Add More Photos / Videos (optional — if the salesman hasn't uploaded enough evidence)">
         <div style={{background:"#0c2a3a",border:"1px solid #0891b230",borderRadius:"7px",padding:"7px 11px",marginBottom:"7px",fontSize:"11px",color:"#67e8f9",lineHeight:1.5}}>
@@ -1808,8 +1823,13 @@ function LeakageWorkspace({leakage,role,roles,showToast,user,isAdmin,allRoles}){
       </div>
     </div>}
 
-    {/* ── Salesman Notes form: shown to the reporting salesman (or admin) when Rejected or Visit Customer Required, and not yet submitted ── */}
-    {(isOwner||isAdmin)&&!live.salesmanNote&&["Rejected","Visit Customer Required"].includes(live.status)&&<div style={{background:"#1a1206",border:"1px solid #78350f",borderRadius:"10px",padding:"14px 16px",marginBottom:"14px"}}>
+    {/* ── Assigned salesman info banner (Visit Customer Required) ── */}
+    {live.status==="Visit Customer Required"&&live.assignedSalesman&&<div style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"10px",padding:"10px 16px",marginBottom:"14px",fontSize:"12.5px",color:"#94a3b8"}}>
+      🧑‍💼 <strong style={{color:"#e2e8f0"}}>{allProfiles?.[live.assignedSalesman]?.displayName||live.assignedSalesman.split("@")[0]}</strong> assigned to visit this customer
+    </div>}
+
+    {/* ── Salesman Notes form: shown to the assigned salesman (or admin) when Rejected or Visit Customer Required, and not yet submitted ── */}
+    {(isOwner||isAdmin||isAssignee)&&!live.salesmanNote&&["Rejected","Visit Customer Required"].includes(live.status)&&<div style={{background:"#1a1206",border:"1px solid #78350f",borderRadius:"10px",padding:"14px 16px",marginBottom:"14px"}}>
       <div style={{fontSize:"11px",fontWeight:"700",color:"#fbbf24",textTransform:"uppercase",letterSpacing:"0.09em",marginBottom:"8px"}}>
         {live.status==="Visit Customer Required"?"🧑‍💼 Add Notes After Visiting Customer":"🧑‍💼 Add Your Notes"}
       </div>
@@ -7217,8 +7237,8 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
   const STATUS_COLOR={Pending:"#f59e0b",Partial:"#3b82f6",Dispatched:"#22c55e","Pre-closed":"#475569"};
 
   // ── Group orders by customer for pending view ──
-  const pendingOrders=orders.filter(o=>["Pending","Partial"].includes(o.status)&&(o.items||[]).some(i=>i.balanceQty>0&&i.status!=="Dispatched"&&!i.stagedForTransport));
-  const customerGroups=(()=>{
+  const pendingOrders=useMemo(()=>orders.filter(o=>["Pending","Partial"].includes(o.status)&&(o.items||[]).some(i=>i.balanceQty>0&&i.status!=="Dispatched"&&!i.stagedForTransport)),[orders]);
+  const customerGroups=useMemo(()=>{
     const map={};
     const filtered=pendingOrders.filter(o=>{
       if(routeFilter==="Unknown"){if(o.route!=="Unknown"&&o.route)return false;}
@@ -7238,10 +7258,10 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
       const bMin=b.orders.map(o=>o.orderDate||'9999').sort()[0];
       return aMin.localeCompare(bMin); // oldest order date first
     });
-  })();
+  },[pendingOrders,routeFilter,deliveryFilter,search]);
 
   // ── Unconfirmed dispatches — all items dispatched but not yet confirmed ──
-  const todayDispatchedAll=(()=>{
+  const todayDispatchedAll=useMemo(()=>{
     const map={};
     orders.forEach(o=>{
       (o.items||[]).forEach((item)=>{
@@ -7254,11 +7274,11 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
       });
     });
     return Object.values(map).sort((a,b)=>a.partyName.localeCompare(b.partyName));
-  })();
+  },[orders]);
 
   // Split: unconfirmed → Today's Dispatch; confirmed (48h) → Dispatched tab
-  const todayDispatched=todayDispatchedAll.map(g=>({...g,items:g.items.filter(i=>!i.confirmed)})).filter(g=>g.items.length>0);
-  const dispatched48h=(()=>{
+  const todayDispatched=useMemo(()=>todayDispatchedAll.map(g=>({...g,items:g.items.filter(i=>!i.confirmed)})).filter(g=>g.items.length>0),[todayDispatchedAll]);
+  const dispatched48h=useMemo(()=>{
     const now=Date.now();
     const WINDOW_MS=48*60*60*1000; // 48h from start of dispatch date
     const map={};
@@ -7280,7 +7300,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
       });
     });
     return Object.values(map).sort((a,b)=>a.partyName.localeCompare(b.partyName));
-  })();
+  },[orders]);
   const dispatched48hDates=[...new Set(dispatched48h.flatMap(g=>g.items.map(i=>i.dispatchDate||todayStr)))].sort().reverse();
   const filteredDispatched48h=(()=>{
     let res=dispatched48h;
@@ -7750,7 +7770,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
           await Promise.all(batches.map(b=>b.commit()));
           showToast(`All ${orders.length} orders cleared ✓`);
         }} style={{background:"#2e0a0a",border:"1px solid #7f1d1d",borderRadius:"7px",padding:"6px 12px",color:"#f87171",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>🗑 Clear All Orders</button>}
-        {(isAdmin||roles.includes("issuer"))&&<button onClick={()=>setSubTab(t=>t==="setup"?"pending":"setup")} style={{background:"#1a0a2e",border:"1px solid #7c3aed",borderRadius:"7px",padding:"6px 12px",color:"#c4b5fd",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>⚙️ Setup Routes</button>}
+        {(isAdmin||roles.includes("issuer")||roles.includes("ho"))&&<button onClick={()=>setSubTab(t=>t==="setup"?"pending":"setup")} style={{background:"#1a0a2e",border:"1px solid #7c3aed",borderRadius:"7px",padding:"6px 12px",color:"#c4b5fd",fontWeight:"700",fontSize:"12px",cursor:"pointer"}}>⚙️ Setup Routes</button>}
       </div>
     </div>
 
@@ -12296,14 +12316,14 @@ function MainApp({user,role,roles=[],permissions=[]}){
     }
     if(CAN_SEE.leakage.some(r=>roles.includes(r))){
       // Only Admin, Issuer, HO (or anyone explicitly granted leakage_view_all) see every leakage report.
-      // Sales, Store, QC and everyone else only see leakage reports they personally added —
-      // a salesman cannot see another salesman's leakage reports.
+      // Sales, Store, QC and everyone else only see leakage reports they personally added,
+      // or that were assigned to them for a customer visit — never another salesman's reports.
       const canViewAllLeakage=hp("leakage_view_all");
       subs.push(C("leakage_reports").orderBy("_createdAt","desc").onSnapshot(
         s=>{const all=s.docs.map(d=>({id:d.id,...d.data()}));
-          setLeakages(canViewAllLeakage?all:all.filter(c=>c.addedBy===user.email));},
+          setLeakages(canViewAllLeakage?all:all.filter(c=>c.addedBy===user.email||c.assignedSalesman===user.email));},
         ()=>C("leakage_reports").onSnapshot(s=>{const all=s.docs.map(d=>({id:d.id,...d.data()}));
-          setLeakages(canViewAllLeakage?all:all.filter(c=>c.addedBy===user.email));})));
+          setLeakages(canViewAllLeakage?all:all.filter(c=>c.addedBy===user.email||c.assignedSalesman===user.email));})));
     }
     if(CAN_SEE.rd.some(r=>roles.includes(r))){
       subs.push(C("rd_projects").orderBy("_createdAt","desc").onSnapshot(s=>setProjects(s.docs.map(d=>({id:d.id,...d.data()}))),()=>C("rd_projects").onSnapshot(s=>setProjects(s.docs.map(d=>({id:d.id,...d.data()}))))));
@@ -13060,7 +13080,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
 
     {/* Leakage Workspace */}
     <Modal wide open={!!activeLeakage} onClose={()=>setActiveLeakage(null)} title="Leakage Report Details">
-      {activeLeakage&&<LeakageWorkspace leakage={activeLeakage} role={role} roles={roles} showToast={showToast} user={user} isAdmin={isAdmin} allRoles={allRoles}/>}
+      {activeLeakage&&<LeakageWorkspace leakage={activeLeakage} role={role} roles={roles} showToast={showToast} user={user} isAdmin={isAdmin} allRoles={allRoles} allProfiles={allProfiles}/>}
     </Modal>
 
     {/* Complaint Workspace */}
