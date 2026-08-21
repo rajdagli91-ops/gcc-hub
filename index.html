@@ -6544,6 +6544,20 @@ function ProductGroupRow({pg,dispatchForm,setDispatchForm,canDispatch,onCustomer
   </div>;
 }
 
+// A "site delivery" order ships to a different location (e.g. customer's own customer/project site)
+// than the customer's normal registered route/transporter. When siteDelivery is flagged on an order,
+// this override applies for THAT ORDER ONLY — the customer's default route/transporter is untouched
+// for all their other orders.
+const applySiteOverride=(o)=>{
+  if(!o.siteDelivery)return o;
+  return {...o,
+    originalRoute:o.route,originalTransport:o.transport,originalIsDirect:o.isDirect,
+    route:o.siteRoute||o.route,
+    transport:o.siteIsDirect?"DIRECT":(o.siteTransport||o.transport),
+    isDirect:!!o.siteIsDirect,
+  };
+};
+
 function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
   const canImport=isAdmin||roles.includes("issuer")||roles.includes("ho")||hp("orders_import");
   const canDispatch=isAdmin||roles.includes("issuer")||hp("orders_dispatch"); // HO excluded
@@ -6673,6 +6687,29 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
   };
   const [fgProducts,setFgProducts]=useState([]);
   const [quickAddCustomer,setQuickAddCustomer]=useState(null);
+  const [siteDeliveryEdit,setSiteDeliveryEdit]=useState(null); // order id currently being edited
+  const [sdForm,setSdForm]=useState({route:"",transport:"",isDirect:false});
+  const canManageSiteDelivery=isAdmin||roles.includes("issuer")||roles.includes("ho");
+  const saveSiteDelivery=async(orderId)=>{
+    if(!sdForm.route.trim())return showToast("Enter the delivery route/area","error");
+    try{
+      await C("orders").doc(orderId).update({
+        siteDelivery:true,
+        siteRoute:sdForm.route.trim(),
+        siteTransport:sdForm.isDirect?"DIRECT":(sdForm.transport.trim()||"DIRECT"),
+        siteIsDirect:sdForm.isDirect,
+      });
+      showToast("Site delivery override saved ✓");
+      setSiteDeliveryEdit(null);
+    }catch(e){showToast("Error: "+e.message,"error");}
+  };
+  const clearSiteDelivery=async(orderId)=>{
+    try{
+      await C("orders").doc(orderId).update({siteDelivery:false,siteRoute:"",siteTransport:"",siteIsDirect:false});
+      showToast("Site delivery override removed — reverted to normal route ✓");
+      setSiteDeliveryEdit(null);
+    }catch(e){showToast("Error: "+e.message,"error");}
+  };
   const [newItemsPrompt,setNewItemsPrompt]=useState(null);
   const [newItemForms,setNewItemForms]=useState({});
   const [confirmingDispatch,setConfirmingDispatch]=useState(null);
@@ -6690,8 +6727,8 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
 
   useEffect(()=>{
     const u1=C("orders").orderBy("orderDate","asc").onSnapshot(
-      s=>{setOrders(s.docs.map(d=>({id:d.id,...d.data()})));setLoading(false);},
-      ()=>{C("orders").onSnapshot(s=>{setOrders(s.docs.map(d=>({id:d.id,...d.data()})));setLoading(false);});});
+      s=>{setOrders(s.docs.map(d=>applySiteOverride({id:d.id,...d.data()})));setLoading(false);},
+      ()=>{C("orders").onSnapshot(s=>{setOrders(s.docs.map(d=>applySiteOverride({id:d.id,...d.data()})));setLoading(false);});});
     const u2=C("settings").doc("customerTransport").onSnapshot(snap=>{
       if(snap.exists){const d=snap.data();setCustomerMap(d.map||{});setRoutes(d.routes||[]);}
     },()=>{});
@@ -7140,8 +7177,8 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
       return true;
     });
     filtered.forEach(o=>{
-      const k=normalize(o.partyName);
-      if(!map[k])map[k]={partyName:o.partyName,route:o.route,transport:o.transport,isDirect:o.isDirect,orders:[]};
+      const k=normalize(o.partyName)+"::"+normalize(o.route||"")+"::"+normalize(o.transport||"");
+      if(!map[k])map[k]={partyName:o.partyName,route:o.route,transport:o.transport,isDirect:o.isDirect,siteDelivery:o.siteDelivery,orders:[]};
       map[k].orders.push(o);
     });
     return Object.values(map).sort((a,b)=>{
@@ -7157,8 +7194,8 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
     orders.forEach(o=>{
       (o.items||[]).forEach((item)=>{
         if(!item.dispatchConfirmed&&item.lastDispatchedAt&&(item.dispatchedQty||0)>0&&!item.stagedForTransport){
-          const k=normalize(o.partyName);
-          if(!map[k])map[k]={partyName:o.partyName,route:o.route,transport:o.transport,isDirect:o.isDirect,items:[]};
+          const k=normalize(o.partyName)+"::"+normalize(o.route||"")+"::"+normalize(o.transport||"");
+          if(!map[k])map[k]={partyName:o.partyName,route:o.route,transport:o.transport,isDirect:o.isDirect,siteDelivery:o.siteDelivery,items:[]};
           const vol=calcVolume(item.name,item.dispatchedQty||0);
           map[k].items.push({name:item.name,qty:item.dispatchedQty||0,vol,voucherNo:o.voucherNo,orderId:o.id,confirmed:false,canReverse:false,confirmedAt:null,dispatchDate:item.lastDispatchedAt});
         }
@@ -7184,8 +7221,8 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
         const cat=item.dispatchConfirmedAt;
         const confirmedAt=cat?typeof cat==="string"?new Date(cat).getTime():cat.toMillis?cat.toMillis():cat.seconds?cat.seconds*1000:0:0;
 
-        const k=normalize(o.partyName);
-        if(!map[k])map[k]={partyName:o.partyName,route:o.route,transport:o.transport,isDirect:o.isDirect,items:[]};
+        const k=normalize(o.partyName)+"::"+normalize(o.route||"")+"::"+normalize(o.transport||"");
+        if(!map[k])map[k]={partyName:o.partyName,route:o.route,transport:o.transport,isDirect:o.isDirect,siteDelivery:o.siteDelivery,items:[]};
         const vol=calcVolume(item.name,item.dispatchedQty||0);
         map[k].items.push({name:item.name,qty:item.dispatchedQty||0,vol,voucherNo:o.voucherNo,orderId:o.id,confirmed:true,canReverse:true,confirmedAt,dispatchDate:item.lastDispatchedAt||null});
       });
@@ -8019,7 +8056,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
             const borderColor=isUnknown?"#ef4444":hasPartial?"#3b82f6":"#f59e0b";
             const isQA=quickAddCustomer===group.partyName;
 
-            return <div key={group.partyName} style={{background:"#0b1220",border:`1px solid ${isExp?"#2563eb60":isUnknown?"#ef444430":"#1e293b"}`,borderLeft:`3px solid ${borderColor}`,borderRadius:"10px",marginBottom:"8px",overflow:"hidden"}}>
+            return <div key={group.partyName+"::"+(group.route||"")+"::"+(group.transport||"")} style={{background:"#0b1220",border:`1px solid ${isExp?"#2563eb60":isUnknown?"#ef444430":"#1e293b"}`,borderLeft:`3px solid ${borderColor}`,borderRadius:"10px",marginBottom:"8px",overflow:"hidden"}}>
               {/* Customer header */}
               <div onClick={()=>{setExpandedCustomer(isExp?null:group.partyName);setDispatchForm({});}}
                 style={{padding:"11px 14px",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",gap:"8px",flexWrap:"wrap"}}>
@@ -8080,11 +8117,41 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
               {/* Expanded: all orders for this customer */}
               {isExp&&<div style={{padding:"0 14px 14px",borderTop:"1px solid #0f172a"}}>
                 {group.orders.map(order=><div key={order.id} style={{marginTop:"10px"}}>
-                  <div style={{fontSize:"11px",color:"#64748b",marginBottom:"4px",display:"flex",gap:"10px"}}>
+                  <div style={{fontSize:"11px",color:"#64748b",marginBottom:"4px",display:"flex",gap:"10px",alignItems:"center",flexWrap:"wrap"}}>
                     <span style={{fontWeight:"700",color:"#94a3b8"}}>📄 {order.voucherNo}</span>
                     <span>{order.orderDate}</span>
                     <span style={{background:order.status==="Partial"?"#1e3a5f":"#1a0a00",border:`1px solid ${order.status==="Partial"?"#2563eb":"#f59e0b"}40`,borderRadius:"5px",padding:"0px 7px",color:order.status==="Partial"?"#93c5fd":"#fcd34d",fontSize:"10px"}}>{order.status}</span>
+                    {order.siteDelivery&&<span style={{background:"#3b0764",border:"1px solid #7c3aed",borderRadius:"5px",padding:"0px 7px",color:"#c4b5fd",fontSize:"10px",fontWeight:"700"}}>📍 Site Delivery → {order.route} / {order.transport}</span>}
+                    {canManageSiteDelivery&&<button onClick={()=>{
+                      if(siteDeliveryEdit===order.id){setSiteDeliveryEdit(null);return;}
+                      setSdForm({route:order.siteRoute||order.originalRoute||order.route||"",transport:order.siteTransport||order.originalTransport||order.transport||"",isDirect:!!order.siteIsDirect});
+                      setSiteDeliveryEdit(order.id);
+                    }} style={{background:"none",border:"1px solid #334155",borderRadius:"5px",padding:"1px 8px",color:"#64748b",fontSize:"10px",fontWeight:"600",cursor:"pointer"}}>
+                      {order.siteDelivery?"✏️ Edit":"📍 Mark Site Delivery"}
+                    </button>}
                   </div>
+                  {siteDeliveryEdit===order.id&&<div style={{background:"#0a0620",border:"1px solid #7c3aed40",borderRadius:"8px",padding:"10px 12px",marginBottom:"8px"}}>
+                    <div style={{fontSize:"10.5px",color:"#a78bfa",marginBottom:"7px"}}>This order ships to a different location than {order.originalRoute||order.route}'s usual route ({order.originalTransport||order.transport}). Set the actual delivery route/transport for THIS order only — it won't change {group.partyName}'s default route for future orders.</div>
+                    <Grid2>
+                      <Field label="Actual Delivery Route/Area *">
+                        <input style={inp} list="qa-route-list" value={sdForm.route} onChange={e=>setSdForm({...sdForm,route:e.target.value})} placeholder="e.g. NASHIK — site delivery"/>
+                      </Field>
+                      <Field label="Transport for this delivery">
+                        <input style={inp} list="qa-trans-list" value={sdForm.transport} onChange={e=>setSdForm({...sdForm,transport:e.target.value,isDirect:e.target.value.toUpperCase()==="DIRECT"})} placeholder="e.g. LOCAL TEMPO or DIRECT" disabled={sdForm.isDirect}/>
+                      </Field>
+                    </Grid2>
+                    <div style={{display:"flex",gap:"6px",marginBottom:"8px"}}>
+                      <button onClick={()=>setSdForm({...sdForm,isDirect:true,transport:"DIRECT"})} style={{flex:1,background:sdForm.isDirect?"#052e16":"#080d18",border:`1px solid ${sdForm.isDirect?"#166534":"#1e293b"}`,borderRadius:"5px",color:sdForm.isDirect?"#4ade80":"#475569",fontWeight:"700",fontSize:"11px",padding:"4px",cursor:"pointer"}}>🚚 Direct</button>
+                      <button onClick={()=>setSdForm({...sdForm,isDirect:false,transport:sdForm.transport==="DIRECT"?"":sdForm.transport})} style={{flex:1,background:!sdForm.isDirect?"#0a1a2e":"#080d18",border:`1px solid ${!sdForm.isDirect?"#2563eb":"#1e293b"}`,borderRadius:"5px",color:!sdForm.isDirect?"#93c5fd":"#475569",fontWeight:"700",fontSize:"11px",padding:"4px",cursor:"pointer"}}>🏢 Transporter</button>
+                    </div>
+                    <div style={{display:"flex",justifyContent:"space-between",gap:"6px"}}>
+                      {order.siteDelivery?<button onClick={()=>clearSiteDelivery(order.id)} style={{background:"none",border:"1px solid #7f1d1d",borderRadius:"6px",padding:"5px 12px",color:"#fca5a5",fontWeight:"700",fontSize:"11px",cursor:"pointer"}}>✕ Remove Override</button>:<span/>}
+                      <div style={{display:"flex",gap:"6px"}}>
+                        <button onClick={()=>setSiteDeliveryEdit(null)} style={{background:"none",border:"1px solid #334155",borderRadius:"6px",padding:"5px 12px",color:"#64748b",fontWeight:"700",fontSize:"11px",cursor:"pointer"}}>Cancel</button>
+                        <button onClick={()=>saveSiteDelivery(order.id)} style={{background:"#3b0764",border:"1px solid #7c3aed",borderRadius:"6px",padding:"5px 14px",color:"#c4b5fd",fontWeight:"700",fontSize:"11px",cursor:"pointer"}}>✓ Save Override</button>
+                      </div>
+                    </div>
+                  </div>}
                   <div style={{background:"#060d1a",border:"1px solid #1e293b",borderRadius:"7px",overflow:"auto"}}>
                     <div style={{display:"grid",gridTemplateColumns:"2.5fr 80px 80px 75px auto",gap:"5px",background:"#0b1220",padding:"5px 10px",fontSize:"9.5px",fontWeight:"700",color:"#475569",textTransform:"uppercase",letterSpacing:"0.05em",minWidth:"460px"}}>
                       <span>Product</span><span style={{textAlign:"center"}}>Balance</span><span style={{textAlign:"center"}}>Dispatched</span><span style={{textAlign:"center"}}>Status</span><span style={{textAlign:"center"}}>{canDispatch?"Dispatch":""}</span>
@@ -8197,7 +8264,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
             const borderCol=allConfirmed?"#22c55e":"#f59e0b";
             const isFirstOfCategory=gi===0||!!filteredToday[gi-1].isDirect!==!!group.isDirect;
             const catIdx=group.isDirect?gi-todayTransportGroups.length:gi;
-            return <React.Fragment key={group.partyName}>
+            return <React.Fragment key={group.partyName+"::"+(group.route||"")+"::"+(group.transport||"")}>
             {isFirstOfCategory&&<div style={{display:"flex",alignItems:"center",gap:"8px",margin:gi===0?"0 0 8px":"16px 0 8px",padding:"6px 2px",borderBottom:`2px solid ${group.isDirect?"#166534":"#1e3a5f"}`}}>
               <span style={{fontSize:"12.5px",fontWeight:"800",color:group.isDirect?"#4ade80":"#93c5fd",letterSpacing:"0.04em"}}>{group.isDirect?"🚚 DIRECT ORDERS":"🏢 TRANSPORTER ORDERS"}</span>
               <span style={{fontSize:"10.5px",color:"#475569",fontWeight:"700"}}>({group.isDirect?todayDirectGroups.length:todayTransportGroups.length})</span>
@@ -8332,7 +8399,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
       </div>
       {filteredDispatched48h.length===0
         ?<div style={{textAlign:"center",padding:"50px",border:"2px dashed #1e293b",borderRadius:"10px",color:"#334155"}}>No confirmed dispatches{dispatched48hDateFilter!=="all"?` for ${dispatched48hDateFilter}`:" in the last 48 hours"}.</div>
-        :filteredDispatched48h.map((group,gi)=><div key={group.partyName} style={{background:"#0b1220",border:"1px solid #1e293b",borderLeft:"3px solid #3b82f6",borderRadius:"10px",marginBottom:"7px",overflow:"hidden",opacity:0.85}}>
+        :filteredDispatched48h.map((group,gi)=><div key={group.partyName+"::"+(group.route||"")+"::"+(group.transport||"")} style={{background:"#0b1220",border:"1px solid #1e293b",borderLeft:"3px solid #3b82f6",borderRadius:"10px",marginBottom:"7px",overflow:"hidden",opacity:0.85}}>
           <div style={{padding:"9px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"6px"}}>
             <div>
               <div style={{fontSize:"12.5px",fontWeight:"700",color:"#f1f5f9"}}>{gi+1}. {group.partyName}</div>
@@ -8484,7 +8551,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
           {sorted.map((cg,ci)=>{
             const items=cg.orders.flatMap(o=>(o.items||[]).filter(i=>i.balanceQty>0&&i.status!=="Dispatched").map((item,idx)=>({...item,orderId:o.id,itemIdx:idx,voucherNo:o.voucherNo,orderDate:o.orderDate||""})));
             if(!items.length)return null;
-            return <div key={cg.partyName} style={{background:"#0b1220",border:"1px solid #1e293b",borderLeft:"3px solid #22c55e",borderRadius:"8px",marginBottom:"6px",overflow:"hidden"}}>
+            return <div key={cg.partyName+"::"+(cg.route||"")} style={{background:"#0b1220",border:"1px solid #1e293b",borderLeft:"3px solid #22c55e",borderRadius:"8px",marginBottom:"6px",overflow:"hidden"}}>
               <div style={{padding:"8px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"6px",borderBottom:"1px solid #0f172a"}}>
                 <div>
                   <span style={{fontSize:"11px",color:"#334155",marginRight:"6px",fontWeight:"700"}}>#{ci+1}</span>
@@ -8600,7 +8667,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
                 const seq=getDirectSeq(c.partyName,c.route);
                 const items=allDirectItems.filter(i=>i.partyName===c.partyName);
                 if(!items.length)return null;
-                return <div key={c.partyName} style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"8px",marginBottom:"6px",overflow:"hidden"}}>
+                return <div key={c.partyName+"::"+(c.route||"")} style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"8px",marginBottom:"6px",overflow:"hidden"}}>
                   <div style={{padding:"7px 12px",fontSize:"12px",fontWeight:"700",color:"#f1f5f9",borderBottom:"1px solid #0f172a",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                     <span>{seq<999&&<span style={{fontSize:"10px",color:"#4ade80",marginRight:"5px"}}>#{seq}</span>}{c.partyName}</span>
                     <span style={{fontSize:"10px",color:"#4ade80"}}>🚚 {c.route}</span>
@@ -8715,7 +8782,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
               if(!byCustomer[i.partyName])byCustomer[i.partyName]={partyName:i.partyName,transport:i.transport,route:i.route,items:[]};
               byCustomer[i.partyName].items.push(i);
             });
-            return Object.values(byCustomer).sort(seqSortFn).map(cg=><div key={cg.partyName} style={{background:"#0b1220",border:"1px solid #7c3aed40",borderLeft:"3px solid #a78bfa",borderRadius:"8px",marginBottom:"6px",overflow:"hidden"}}>
+            return Object.values(byCustomer).sort(seqSortFn).map(cg=><div key={cg.partyName+"::"+(cg.route||"")} style={{background:"#0b1220",border:"1px solid #7c3aed40",borderLeft:"3px solid #a78bfa",borderRadius:"8px",marginBottom:"6px",overflow:"hidden"}}>
               <div style={{padding:"7px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:"6px",flexWrap:"wrap"}}>
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{fontSize:"12px",fontWeight:"700",color:"#f1f5f9",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
@@ -8817,7 +8884,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
               const sorted=Object.values(byC).sort(seqSortFn);
               return sorted.map((c,ci)=>{
                 const seq=getTransportSeq(c.partyName,c.transport);
-                return <div key={c.partyName} style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"8px",marginBottom:"6px",overflow:"hidden"}}>
+                return <div key={c.partyName+"::"+(c.route||"")} style={{background:"#0b1220",border:"1px solid #1e293b",borderRadius:"8px",marginBottom:"6px",overflow:"hidden"}}>
                   <div style={{padding:"7px 12px",fontSize:"12px",fontWeight:"700",color:"#f1f5f9",borderBottom:"1px solid #0f172a",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                     <span>{seq<999&&<span style={{fontSize:"10px",color:"#a78bfa",marginRight:"5px"}}>#{seq}</span>}{c.partyName}</span>
                     <span style={{fontSize:"10px",color:"#93c5fd"}}>🏢 {c.transport}</span>
