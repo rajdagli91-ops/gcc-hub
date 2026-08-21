@@ -12,9 +12,12 @@
   *{box-sizing:border-box;}
   body{margin:0;background:var(--bg);color:var(--text);font-family:'Segoe UI',Arial,sans-serif;line-height:1.6;}
   .wrap{max-width:920px;margin:0 auto;padding:32px 24px 80px;}
+  .topbar{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;}
   h1{font-size:28px;margin-bottom:4px;}
-  .sub{color:var(--dim);font-size:14px;margin-bottom:28px;}
-  nav{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:16px 20px;margin-bottom:32px;}
+  .sub{color:var(--dim);font-size:14px;margin-bottom:8px;}
+  .langBtn{background:none;border:1px solid #1e3a5f;border-radius:7px;padding:7px 16px;color:var(--accent2);font-size:13px;font-weight:700;cursor:pointer;flex-shrink:0;margin-top:2px;}
+  .langBtn:hover{background:#0a1a2e;}
+  nav{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:16px 20px;margin:20px 0 32px;}
   nav b{display:block;margin-bottom:10px;color:var(--accent2);font-size:12px;letter-spacing:.06em;text-transform:uppercase;}
   nav a{display:inline-block;color:var(--muted);text-decoration:none;font-size:13.5px;padding:4px 10px 4px 0;}
   nav a:hover{color:var(--accent2);}
@@ -43,63 +46,117 @@
   .note{background:#0a1520;border-left:3px solid var(--accent);border-radius:6px;padding:10px 14px;font-size:13px;color:var(--muted);margin:12px 0;}
   .warn{background:#1a0a00;border-left:3px solid var(--amber);border-radius:6px;padding:10px 14px;font-size:13px;color:var(--muted);margin:12px 0;}
   .top{position:fixed;bottom:20px;right:20px;background:var(--panel);border:1px solid var(--border);border-radius:99px;padding:8px 16px;font-size:12px;color:var(--accent2);text-decoration:none;}
+  [lang-block]{display:none;}
+  [lang-block].active{display:block;}
+  html[data-lang="hi"] body{font-family:'Nirmala UI','Noto Sans Devanagari','Segoe UI',Arial,sans-serif;}
 </style>
 </head>
 <body>
 <div class="wrap">
 
-<h1>📘 GCC Operations Hub — User Guide</h1>
-<p class="sub">VEEBEE / Gujarat Colours & Coatings — internal operations reference. Last updated to reflect the current build.</p>
+<div class="topbar">
+  <div>
+    <h1 lang-block data-lang-en class="active">📘 GCC Operations Hub — User Guide</h1>
+    <h1 lang-block data-lang-hi>📘 जीसीसी ऑपरेशन्स हब — उपयोगकर्ता गाइड</h1>
+    <p class="sub" lang-block data-lang-en class="active">VEEBEE / Gujarat Colours &amp; Coatings — internal operations reference. Last updated to reflect the current build.</p>
+    <p class="sub" lang-block data-lang-hi>VEEBEE / गुजरात कलर्स एंड कोटिंग्स — आंतरिक संचालन संदर्भ। नवीनतम अपडेट के अनुसार।</p>
+  </div>
+  <button class="langBtn" onclick="toggleLang()"><span id="langBtnLabel">🌐 हिंदी में देखें</span></button>
+</div>
 
 <nav>
-  <b>Jump to a section</b>
-  <a href="#orders">🛒 Orders</a>
-  <a href="#siteDelivery">📍 Site Delivery</a>
-  <a href="#dispatch">🚚 Dispatch Today</a>
-  <a href="#prep">📦 Direct / Transport Prep</a>
-  <a href="#sequence">🔢 Delivery Sequences</a>
-  <a href="#reports">📊 Reports</a>
-  <a href="#complaints">⚠️ Complaints</a>
-  <a href="#leakage">💧 Leakage</a>
-  <a href="#rd">🧪 R&D & Trials</a>
-  <a href="#bom">📋 BOM</a>
-  <a href="#stock">🏪 Stock</a>
-  <a href="#roles">👥 Roles & Permissions</a>
-  <a href="#lang">🌐 Hindi / भाषा</a>
+  <b lang-block data-lang-en class="active">Jump to a section</b>
+  <b lang-block data-lang-hi>सेक्शन पर जाएं</b>
+  <span lang-block data-lang-en class="active">
+    <a href="#orders">🛒 Orders</a>
+    <a href="#siteDelivery">📍 Site Delivery</a>
+    <a href="#dispatch">🚚 Dispatch Today</a>
+    <a href="#prep">📦 Direct / Transport Prep</a>
+    <a href="#sequence">🔢 Delivery Sequences</a>
+    <a href="#reports">📊 Reports</a>
+    <a href="#complaints">⚠️ Complaints</a>
+    <a href="#leakage">💧 Leakage</a>
+    <a href="#rd">🧪 R&amp;D &amp; Trials</a>
+    <a href="#bom">📋 BOM</a>
+    <a href="#stock">🏪 Stock</a>
+    <a href="#roles">👥 Roles &amp; Permissions</a>
+    <a href="#lang">🌐 Hindi / भाषा</a>
+  </span>
+  <span lang-block data-lang-hi>
+    <a href="#orders">🛒 ऑर्डर</a>
+    <a href="#siteDelivery">📍 साइट डिलीवरी</a>
+    <a href="#dispatch">🚚 आज का डिस्पैच</a>
+    <a href="#prep">📦 डायरेक्ट / ट्रांसपोर्ट प्रेप</a>
+    <a href="#sequence">🔢 डिलीवरी सीक्वेंस</a>
+    <a href="#reports">📊 रिपोर्ट्स</a>
+    <a href="#complaints">⚠️ शिकायतें</a>
+    <a href="#leakage">💧 लीकेज</a>
+    <a href="#rd">🧪 आर एंड डी और ट्रायल</a>
+    <a href="#bom">📋 बीओएम</a>
+    <a href="#stock">🏪 स्टॉक</a>
+    <a href="#roles">👥 भूमिकाएं और अनुमतियां</a>
+    <a href="#lang">🌐 हिंदी / भाषा</a>
+  </span>
 </nav>
 
 <section id="orders">
+<div lang-block data-lang-en class="active">
 <h2>🛒 Orders</h2>
 <p>Central hub for every pending customer order, imported from Tally.</p>
-
 <h3>Importing orders</h3>
 <div class="step"><div class="step-n">1</div><p>Export your pending sales order report from Tally as .xlsx.</p></div>
 <div class="step"><div class="step-n">2</div><p>Go to <b>Orders → Setup</b> and click <b>Import Orders</b>, choose the file.</p></div>
 <div class="step"><div class="step-n">3</div><p>If any customer isn't in the route/transporter master list yet, you'll be asked to fill in their route and transporter before the import finishes.</p></div>
 <div class="step"><div class="step-n">4</div><p>Orders already dispatched are never reset. Partially dispatched orders keep their dispatched quantity — only the remaining balance updates from Tally.</p></div>
 <div class="step"><div class="step-n">5</div><p>Any order no longer present in the new file (i.e. closed in Tally) is automatically marked <span class="badge b-blue">Pre-closed</span>.</p></div>
-
 <h3>Transport / customer master list</h3>
 <p>Under <b>Orders → Setup</b>, you can manually add or edit a customer's route, transporter, and whether they're Direct or via a named transporter. You can also bulk-import this list from a spreadsheet.</p>
 <div class="note">When importing the transport master list, the header row is now detected automatically by its content (Customer/Particulars/Party, Transport/Transporter, Route/Type/Area) — it no longer needs to be in a fixed position.</div>
+</div>
+<div lang-block data-lang-hi>
+<h2>🛒 ऑर्डर</h2>
+<p>Tally से इम्पोर्ट किए गए हर पेंडिंग ऑर्डर का केंद्रीय स्थान।</p>
+<h3>ऑर्डर इम्पोर्ट करना</h3>
+<div class="step"><div class="step-n">1</div><p>Tally से अपनी पेंडिंग सेल्स ऑर्डर रिपोर्ट .xlsx फॉर्मेट में एक्सपोर्ट करें।</p></div>
+<div class="step"><div class="step-n">2</div><p><b>Orders → Setup</b> में जाएं और <b>Import Orders</b> पर क्लिक करके फाइल चुनें।</p></div>
+<div class="step"><div class="step-n">3</div><p>अगर कोई ग्राहक अभी तक route/transporter मास्टर लिस्ट में नहीं है, तो इम्पोर्ट पूरा होने से पहले उनका route और transporter भरने के लिए कहा जाएगा।</p></div>
+<div class="step"><div class="step-n">4</div><p>पहले से डिस्पैच हो चुके ऑर्डर कभी रीसेट नहीं होते। आंशिक रूप से डिस्पैच हुए ऑर्डर की डिस्पैच की गई मात्रा बनी रहती है — केवल बाकी बैलेंस Tally से अपडेट होता है।</p></div>
+<div class="step"><div class="step-n">5</div><p>नई फाइल में न मिलने वाला कोई भी ऑर्डर (यानी Tally में बंद) अपने आप <span class="badge b-blue">Pre-closed</span> के रूप में चिह्नित हो जाता है।</p></div>
+<h3>ट्रांसपोर्ट / ग्राहक मास्टर लिस्ट</h3>
+<p><b>Orders → Setup</b> में आप किसी ग्राहक का route, transporter, और वह Direct है या किसी नामित transporter के जरिए — यह मैन्युअली जोड़ या संपादित कर सकते हैं। आप इस लिस्ट को स्प्रेडशीट से बल्क-इम्पोर्ट भी कर सकते हैं।</p>
+<div class="note">ट्रांसपोर्ट मास्टर लिस्ट इम्पोर्ट करते समय, हेडर रो अब उसकी सामग्री के आधार पर अपने आप पहचानी जाती है (Customer/Particulars/Party, Transport/Transporter, Route/Type/Area) — इसे किसी तय स्थान पर होने की जरूरत नहीं है।</div>
+</div>
 </section>
 
 <section id="siteDelivery">
+<div lang-block data-lang-en class="active">
 <h2>📍 Site Delivery</h2>
 <p>Sometimes an order is billed to one customer but physically delivered somewhere else — a project site, or a location on a completely different route. Site Delivery lets you override the route/transporter for <b>one specific order</b> without changing the customer's normal account details.</p>
-
 <h3>How to flag an order</h3>
 <div class="step"><div class="step-n">1</div><p>In <b>Orders → Pending</b>, expand the customer's card to see their individual orders.</p></div>
 <div class="step"><div class="step-n">2</div><p>Click <span class="badge b-purple">📍 Mark Site Delivery</span> next to the order's voucher number.</p></div>
 <div class="step"><div class="step-n">3</div><p>Search and select (or type a new) <b>Actual Delivery Route/Area</b> and <b>Transport</b>. New entries are automatically added to the master route/transporter list.</p></div>
 <div class="step"><div class="step-n">4</div><p>Save. The order now shows a purple <span class="badge b-purple">📍 Site Delivery → [route] / [transport]</span> badge and moves under the new route everywhere in the system — Dispatch Today, Direct/Transport Prep, sequencing, printed lists, and reports.</p></div>
-
 <div class="note">Only that one order is affected. The customer's other orders and their default account route remain untouched. Click <b>✕ Remove Override</b> at any time to revert it.</div>
 <div class="warn">This survives Tally re-import — the flag, route, and transporter stay locked in for that order even after you re-upload the full order file, as long as the order is still pending.</div>
 <p>Who can flag a site delivery: <b>Admin, Issuer, HO.</b></p>
+</div>
+<div lang-block data-lang-hi>
+<h2>📍 साइट डिलीवरी</h2>
+<p>कभी-कभी किसी ऑर्डर का बिल एक ग्राहक के नाम पर होता है, लेकिन डिलीवरी कहीं और होती है — किसी प्रोजेक्ट साइट पर, या पूरी तरह अलग route पर। Site Delivery आपको सिर्फ <b>उस एक ऑर्डर</b> के लिए route/transporter बदलने देता है, बिना ग्राहक के सामान्य खाते की जानकारी बदले।</p>
+<h3>ऑर्डर को कैसे फ्लैग करें</h3>
+<div class="step"><div class="step-n">1</div><p><b>Orders → Pending</b> में, ग्राहक के कार्ड को खोलकर उनके अलग-अलग ऑर्डर देखें।</p></div>
+<div class="step"><div class="step-n">2</div><p>ऑर्डर के voucher number के पास <span class="badge b-purple">📍 Mark Site Delivery</span> पर क्लिक करें।</p></div>
+<div class="step"><div class="step-n">3</div><p><b>Actual Delivery Route/Area</b> और <b>Transport</b> खोजें और चुनें (या नया टाइप करें)। नई एंट्रीज़ अपने आप मास्टर route/transporter लिस्ट में जुड़ जाती हैं।</p></div>
+<div class="step"><div class="step-n">4</div><p>सेव करें। ऑर्डर पर अब बैंगनी <span class="badge b-purple">📍 Site Delivery → [route] / [transport]</span> बैज दिखेगा, और यह सिस्टम में हर जगह नए route के अंतर्गत चला जाएगा — Dispatch Today, Direct/Transport Prep, sequencing, प्रिंटेड लिस्ट, और रिपोर्ट्स में।</p></div>
+<div class="note">सिर्फ वही एक ऑर्डर प्रभावित होता है। ग्राहक के बाकी ऑर्डर और उनका डिफ़ॉल्ट खाता route वैसा ही रहता है। किसी भी समय <b>✕ Remove Override</b> पर क्लिक करके इसे वापस कर सकते हैं।</div>
+<div class="warn">यह Tally re-import के बाद भी बना रहता है — जब तक ऑर्डर पेंडिंग है, फ्लैग, route, और transporter उसी ऑर्डर के लिए बने रहते हैं, भले ही आप पूरी ऑर्डर फाइल दोबारा अपलोड करें।</div>
+<p>Site Delivery कौन फ्लैग कर सकता है: <b>Admin, Issuer, HO.</b></p>
+</div>
 </section>
 
 <section id="dispatch">
+<div lang-block data-lang-en class="active">
 <h2>🚚 Dispatch Today</h2>
 <p>Shows everything dispatched today, split into two sections:</p>
 <ul>
@@ -107,10 +164,21 @@
   <li><span class="badge b-green">🚚 DIRECT ORDERS</span> — sequenced by your uploaded per-route direct delivery sequence</li>
 </ul>
 <p>Each section numbers independently, so the sequence number matches what your loading team sees on the ground. Print the dispatch list from here — it keeps the same two-section layout on paper.</p>
+</div>
+<div lang-block data-lang-hi>
+<h2>🚚 आज का डिस्पैच</h2>
+<p>आज डिस्पैच हुई हर चीज़ को दो हिस्सों में दिखाता है:</p>
+<ul>
+  <li><span class="badge b-blue">🏢 TRANSPORTER ORDERS</span> — आपकी अपलोड की गई transporter सीक्वेंस के अनुसार क्रमबद्ध</li>
+  <li><span class="badge b-green">🚚 DIRECT ORDERS</span> — आपकी अपलोड की गई प्रति-route direct डिलीवरी सीक्वेंस के अनुसार क्रमबद्ध</li>
+</ul>
+<p>हर हिस्सा अलग से नंबर होता है, ताकि सीक्वेंस नंबर आपकी लोडिंग टीम को ज़मीन पर दिखने वाली चीज़ से मेल खाए। यहीं से dispatch list प्रिंट करें — प्रिंट में भी वही दो-हिस्सों वाला लेआउट बना रहता है।</p>
+</div>
 </section>
 
 <section id="prep">
-<h2>📦 Direct Prep & Transport Prep</h2>
+<div lang-block data-lang-en class="active">
+<h2>📦 Direct Prep &amp; Transport Prep</h2>
 <p>Both tabs show a <b>Preparation Summary</b> panel alongside the order list, with three views:</p>
 <table>
 <tr><th>View</th><th>Shows</th></tr>
@@ -118,19 +186,40 @@
 <tr><td>📦 Product</td><td>Total quantity needed per product across all customers, with volume and per-customer split</td></tr>
 <tr><td>🗺 Route / 🏢 Transporter</td><td>Grouped by route or transporter — most useful when viewing "All"</td></tr>
 </table>
-
 <h3>Direct Prep route tabs</h3>
 <p>Selecting a route (e.g. Bombay) shows customers on that route <i>and</i> any customer explicitly added to that route's uploaded sequence file, even if their registered route is different — this is separate from Site Delivery, and is meant for cases where a delivery sequence sheet intentionally groups customers across routes for a single trip. Look for the amber <span class="badge b-amber">↳ added to [route] sequence</span> tag.</p>
 <p>If a customer appears in more than one route's sequence file, they'll show up under every matching route tab.</p>
+</div>
+<div lang-block data-lang-hi>
+<h2>📦 डायरेक्ट प्रेप और ट्रांसपोर्ट प्रेप</h2>
+<p>दोनों टैब में ऑर्डर लिस्ट के साथ एक <b>Preparation Summary</b> पैनल दिखता है, जिसमें तीन व्यू हैं:</p>
+<table>
+<tr><th>व्यू</th><th>क्या दिखाता है</th></tr>
+<tr><td>👥 Customer</td><td>ऑर्डर लिस्ट जैसा ही ब्रेकडाउन, सीक्वेंस नंबर, कार्टन/लूज़ काउंट के साथ</td></tr>
+<tr><td>📦 Product</td><td>सभी ग्राहकों में प्रत्येक प्रोडक्ट की कुल आवश्यक मात्रा, वॉल्यूम और प्रति-ग्राहक विभाजन के साथ</td></tr>
+<tr><td>🗺 Route / 🏢 Transporter</td><td>route या transporter के अनुसार समूहीकृत — "All" देखते समय सबसे उपयोगी</td></tr>
+</table>
+<h3>Direct Prep के route टैब</h3>
+<p>कोई route चुनने पर (जैसे Bombay), उस route के ग्राहक <i>और</i> उस route की अपलोड की गई सीक्वेंस फाइल में जोड़ा गया कोई भी ग्राहक दिखता है, भले ही उनका रजिस्टर्ड route अलग हो — यह Site Delivery से अलग है, और तब उपयोगी है जब एक delivery सीक्वेंस शीट जानबूझकर एक ही ट्रिप के लिए अलग-अलग routes के ग्राहकों को जोड़ती है। एम्बर रंग का <span class="badge b-amber">↳ added to [route] sequence</span> टैग देखें।</p>
+<p>अगर कोई ग्राहक एक से ज्यादा route की सीक्वेंस फाइल में है, तो वह हर मैचिंग route टैब में दिखेगा।</p>
+</div>
 </section>
 
 <section id="sequence">
+<div lang-block data-lang-en class="active">
 <h2>🔢 Delivery Sequences</h2>
 <p>Upload a sequence file per transporter, and a separate one per direct-delivery route, from <b>Orders → Setup</b>. Format: two columns — a sequence number and a name — in either column order (the system auto-detects which is which).</p>
 <div class="note">After uploading, "Missing from Sequence" downloads a clean list of only the transporters (or customers, for Direct) that aren't yet in your file — nothing else clutters the download.</div>
+</div>
+<div lang-block data-lang-hi>
+<h2>🔢 डिलीवरी सीक्वेंस</h2>
+<p><b>Orders → Setup</b> से प्रत्येक transporter के लिए, और प्रत्येक direct-delivery route के लिए अलग से एक सीक्वेंस फाइल अपलोड करें। फॉर्मेट: दो कॉलम — एक सीक्वेंस नंबर और एक नाम — किसी भी क्रम में (सिस्टम अपने आप पहचान लेता है कि कौन सा कॉलम क्या है)।</p>
+<div class="note">अपलोड करने के बाद, "Missing from Sequence" सिर्फ उन transporters (या Direct के लिए ग्राहकों) की साफ़ लिस्ट डाउनलोड करता है जो अभी आपकी फाइल में नहीं हैं — डाउनलोड में कुछ और नहीं आता।</div>
+</div>
 </section>
 
 <section id="reports">
+<div lang-block data-lang-en class="active">
 <h2>📊 Reports</h2>
 <p>Under <b>Orders → Reports</b>, filter by:</p>
 <ul>
@@ -138,36 +227,57 @@
   <li><b>Direct Route</b> — appears only when Direct is selected, narrows to one route (e.g. Bombay)</li>
 </ul>
 <p>Print an individual delivery list per transporter or per direct route this way, instead of one mixed list.</p>
+</div>
+<div lang-block data-lang-hi>
+<h2>📊 रिपोर्ट्स</h2>
+<p><b>Orders → Reports</b> में, इनसे फ़िल्टर करें:</p>
+<ul>
+  <li><b>Transport</b> — <code>All</code>, कोई खास नामित transporter, या <code>🚚 Direct — all routes</code> चुनें</li>
+  <li><b>Direct Route</b> — यह सिर्फ Direct चुनने पर दिखता है, एक route तक सीमित करता है (जैसे Bombay)</li>
+</ul>
+<p>इस तरह एक मिश्रित लिस्ट की बजाय प्रति-transporter या प्रति-direct route अलग delivery लिस्ट प्रिंट करें।</p>
+</div>
 </section>
 
 <section id="complaints">
+<div lang-block data-lang-en class="active">
 <h2>⚠️ Complaints</h2>
-
 <h3>Logging a complaint</h3>
 <p>Salesmen logging their own complaint skip the "Where was this received" question entirely — it's assumed to be them. Admin/QC/Issuer/HO still choose between <b>Received by Salesman</b> or <b>Received at HO</b>.</p>
 <p>For HO-received complaints, you can leave <b>Assign to Salesman</b> as <i>"— Assign later —"</i> and come back to it afterward.</p>
-
 <h3>Assigning (or re-assigning) a salesman later</h3>
 <p>Open any complaint with no salesman assigned yet — Admin/HO will see an inline <b>Assign</b> panel right in the complaint's detail view. Picking a salesman here notifies them immediately and works exactly like assigning at creation time.</p>
-
 <h3>Field visit</h3>
 <p>Once assigned, the salesman sees a <b>📍 Add Field Visit Details</b> button with a Visited Customer? dropdown (Yes / Not yet / Scheduled), visit notes, and photo upload.</p>
-
 <h3>List view</h3>
 <p>Each complaint is a single compact row: <b>Customer · Product · Date · Assigned Salesman · Status</b>. Toggle <b>👥 By Customer</b> to group repeat complaints — a red badge flags any customer with more than one complaint on file.</p>
 <p><b>"Open"</b> filter means "not yet Resolved or Closed" — it includes every in-progress stage, not just the literal "Open" status.</p>
-
 <h3>Visibility</h3>
 <p>A salesman sees complaints they logged <i>and</i> any complaint assigned to them by someone else — but never another salesman's complaints.</p>
+</div>
+<div lang-block data-lang-hi>
+<h2>⚠️ शिकायतें</h2>
+<h3>शिकायत दर्ज करना</h3>
+<p>अपनी खुद की शिकायत दर्ज करने वाले सेल्समैन के लिए "यह कहां प्राप्त हुई" वाला सवाल नहीं आता — यह मान लिया जाता है कि वे खुद हैं। Admin/QC/Issuer/HO अभी भी <b>Received by Salesman</b> या <b>Received at HO</b> में से चुनते हैं।</p>
+<p>HO पर प्राप्त शिकायतों के लिए, आप <b>Assign to Salesman</b> को <i>"— Assign later —"</i> छोड़ सकते हैं और बाद में वापस आ सकते हैं।</p>
+<h3>सेल्समैन को बाद में असाइन करना (या फिर से असाइन करना)</h3>
+<p>ऐसी किसी भी शिकायत को खोलें जिसमें अभी तक सेल्समैन असाइन नहीं हुआ — Admin/HO को शिकायत के डिटेल व्यू में ही एक <b>Assign</b> पैनल दिखेगा। यहां से सेल्समैन चुनने पर उन्हें तुरंत सूचना मिलती है, और यह बिल्कुल वैसे ही काम करता है जैसे शुरुआत में असाइन करना।</p>
+<h3>फील्ड विज़िट</h3>
+<p>असाइन होने के बाद, सेल्समैन को <b>📍 Add Field Visit Details</b> बटन दिखता है, जिसमें Visited Customer? ड्रॉपडाउन (Yes / Not yet / Scheduled), विज़िट नोट्स, और फोटो अपलोड होता है।</p>
+<h3>लिस्ट व्यू</h3>
+<p>हर शिकायत एक ही कॉम्पैक्ट रो में दिखती है: <b>Customer · Product · Date · Assigned Salesman · Status</b>। बार-बार आने वाली शिकायतों को समूहित करने के लिए <b>👥 By Customer</b> टॉगल करें — जिस ग्राहक की एक से ज्यादा शिकायत है उस पर लाल बैज दिखता है।</p>
+<p><b>"Open"</b> फ़िल्टर का मतलब है "अभी तक Resolved या Closed नहीं" — इसमें केवल असली "Open" स्टेटस नहीं, बल्कि हर प्रगति-में-चल-रहा चरण शामिल है।</p>
+<h3>दृश्यता (Visibility)</h3>
+<p>एक सेल्समैन को वे शिकायतें दिखती हैं जो उसने खुद दर्ज कीं, <i>और</i> कोई भी शिकायत जो किसी और ने उसे असाइन की — लेकिन किसी दूसरे सेल्समैन की शिकायतें कभी नहीं।</p>
+</div>
 </section>
 
 <section id="leakage">
+<div lang-block data-lang-en class="active">
 <h2>💧 Leakage</h2>
 <p>Found under the <b>⚠️ Complaints</b> tab, as a sub-tab next to Complaints (users with only Leakage access go straight there).</p>
-
 <h3>Reporting a leak</h3>
 <p>Customer, product, batch no, invoice no, date, quantity leaked (with unit), description, and photo/video evidence. On-screen reminder: get a photo of the <b>batch number</b>, the <b>leak itself</b>, and the <b>invoice</b> if possible.</p>
-
 <h3>The decision flow</h3>
 <div class="card">
 <b>1. Admin Response</b> — Admin reviews and picks one:
@@ -179,13 +289,8 @@
 </ul>
 Admin can also attach more photos here if the original upload wasn't enough, and can change the decision anytime until the case is finalized.
 </div>
-<div class="card">
-<b>2. Salesman follow-up</b> (Visit Customer / Reject only) — adds notes (and photos, for a visit). Submitting auto-closes the case.
-</div>
-<div class="card">
-<b>3. HO issues the credit note</b> (Credit Note Approved only) — enters CN number, amount, date, and clicks <b>✓ Mark Credit Note Issued</b>. The system silently timestamps this, so the workspace shows <i>"Took X days from approval to credit note being issued"</i> — a turnaround-time record for HO.
-</div>
-
+<div class="card"><b>2. Salesman follow-up</b> (Visit Customer / Reject only) — adds notes (and photos, for a visit). Submitting auto-closes the case.</div>
+<div class="card"><b>3. HO issues the credit note</b> (Credit Note Approved only) — enters CN number, amount, date, and clicks <b>✓ Mark Credit Note Issued</b>. The system silently timestamps this, so the workspace shows <i>"Took X days from approval to credit note being issued"</i> — a turnaround-time record for HO.</div>
 <h3>Who sees what</h3>
 <table>
 <tr><th>Role</th><th>Can view</th></tr>
@@ -193,30 +298,81 @@ Admin can also attach more photos here if the original upload wasn't enough, and
 <tr><td>Sales, Store, QC</td><td>Only reports they personally added</td></tr>
 </table>
 <p>List view supports the same <b>📋 List / 👥 By Customer</b> toggle as Complaints, with a teal badge for customers with repeat leakage issues.</p>
+</div>
+<div lang-block data-lang-hi>
+<h2>💧 लीकेज</h2>
+<p><b>⚠️ Complaints</b> टैब के अंदर, Complaints के बगल में एक सब-टैब के रूप में मिलेगा (जिन उपयोगकर्ताओं के पास सिर्फ Leakage एक्सेस है, वे सीधे यहीं आते हैं)।</p>
+<h3>लीक की रिपोर्ट करना</h3>
+<p>ग्राहक, प्रोडक्ट, बैच नंबर, इनवॉइस नंबर, तारीख, लीक हुई मात्रा (यूनिट के साथ), विवरण, और फोटो/वीडियो प्रमाण। स्क्रीन पर याद दिलाया जाता है: <b>बैच नंबर</b>, <b>लीक</b>, और अगर संभव हो तो <b>इनवॉइस</b> की फोटो लें।</p>
+<h3>निर्णय प्रक्रिया</h3>
+<div class="card">
+<b>1. Admin Response</b> — Admin समीक्षा करके इनमें से एक चुनता है:
+<ul>
+  <li><span class="badge b-amber">Visit Customer</span> — सेल्समैन को विज़िट के बाद भरने के लिए एक नोट्स फॉर्म मिलता है (फोटो अपलोड के साथ)</li>
+  <li><span class="badge b-blue">Issue Credit Note</span> — HO को इसे जारी करने के लिए सूचना मिलती है</li>
+  <li><span class="badge b-red">Reject</span> — सेल्समैन को स्वीकार करने के लिए एक नोट्स फॉर्म मिलता है</li>
+  <li><span class="badge b-green">Close (No Credit Note)</span> — बिना किसी आगे की कार्रवाई के सीधे बंद कर देता है</li>
+</ul>
+अगर पहली अपलोड पर्याप्त न हो तो Admin यहां और फोटो भी जोड़ सकता है, और जब तक केस फाइनल न हो, कभी भी निर्णय बदल सकता है।
+</div>
+<div class="card"><b>2. सेल्समैन का फॉलो-अप</b> (सिर्फ Visit Customer / Reject के लिए) — नोट्स जोड़ता है (और विज़िट के लिए फोटो)। सबमिट करने पर केस अपने आप बंद हो जाता है।</div>
+<div class="card"><b>3. HO क्रेडिट नोट जारी करता है</b> (सिर्फ Credit Note Approved के लिए) — CN नंबर, राशि, तारीख डालकर <b>✓ Mark Credit Note Issued</b> पर क्लिक करता है। सिस्टम चुपचाप इसका समय दर्ज करता है, इसलिए वर्कस्पेस में <i>"Took X days from approval to credit note being issued"</i> दिखता है — HO के लिए एक टर्नअराउंड-टाइम रिकॉर्ड।</div>
+<h3>किसे क्या दिखता है</h3>
+<table>
+<tr><th>भूमिका</th><th>देख सकते हैं</th></tr>
+<tr><td>Admin, Issuer, HO</td><td>हर लीकेज रिपोर्ट</td></tr>
+<tr><td>Sales, Store, QC</td><td>सिर्फ वे रिपोर्ट जो उन्होंने खुद जोड़ी हैं</td></tr>
+</table>
+<p>लिस्ट व्यू में Complaints जैसा ही <b>📋 List / 👥 By Customer</b> टॉगल है, बार-बार लीकेज वाले ग्राहकों के लिए टील रंग के बैज के साथ।</p>
+</div>
 </section>
 
 <section id="rd">
-<h2>🧪 R&D & Trials</h2>
+<div lang-block data-lang-en class="active">
+<h2>🧪 R&amp;D &amp; Trials</h2>
 <h3>Total Trial Batch Size</h3>
 <p>When logging or editing a trial, set an exact <b>Total Trial Batch Size</b> (quantity + unit). It prints in bold on the individual Trial Sheet and as its own row on the Trial Comparison Sheet, so the team makes exactly that much — not more, not less.</p>
 <h3>Test report results on the comparison sheet</h3>
 <p>If a trial already has a completed Test Report, the Trial Comparison print pulls in the actual results (with a Pass/Fail/Marginal tag) automatically. Trials without a report yet print a blank line for the team to fill by hand.</p>
 <h3>BOM — Download All (ZIP)</h3>
 <p>Bundles every product's BOM into one ZIP, sorted into folders by product Category (Decorative/, Industrial/, Automotive/…), each file containing the Current version plus all Archived versions as separate sheets.</p>
+</div>
+<div lang-block data-lang-hi>
+<h2>🧪 आर एंड डी और ट्रायल</h2>
+<h3>कुल ट्रायल बैच साइज़</h3>
+<p>कोई ट्रायल दर्ज या संपादित करते समय, एक सटीक <b>Total Trial Batch Size</b> (मात्रा + यूनिट) सेट करें। यह अलग Trial Sheet पर बोल्ड में और Trial Comparison Sheet पर अपनी अलग रो के रूप में प्रिंट होता है, ताकि टीम ठीक उतना ही बनाए — न कम, न ज्यादा।</p>
+<h3>तुलना शीट पर टेस्ट रिपोर्ट के परिणाम</h3>
+<p>अगर किसी ट्रायल की Test Report पहले से पूरी हो चुकी है, तो Trial Comparison प्रिंट में असली परिणाम अपने आप आ जाते हैं (Pass/Fail/Marginal टैग के साथ)। जिन ट्रायल की रिपोर्ट अभी नहीं है, उनके लिए टीम के हाथ से भरने हेतु खाली लाइन प्रिंट होती है।</p>
+<h3>BOM — Download All (ZIP)</h3>
+<p>हर प्रोडक्ट का BOM एक ही ZIP में, प्रोडक्ट Category के अनुसार फोल्डर में बांटकर (Decorative/, Industrial/, Automotive/…), हर फाइल में Current वर्जन के साथ सभी Archived वर्जन अलग शीट के रूप में।</p>
+</div>
 </section>
 
 <section id="bom">
+<div lang-block data-lang-en class="active">
 <h2>📋 BOM</h2>
 <p>Each product's Bill of Materials, with full version history. Archived versions are kept as separate sheets when exporting, so nothing is lost when a formulation changes.</p>
+</div>
+<div lang-block data-lang-hi>
+<h2>📋 बीओएम</h2>
+<p>हर प्रोडक्ट का Bill of Materials, पूरे वर्जन इतिहास के साथ। एक्सपोर्ट करते समय Archived वर्जन अलग शीट के रूप में रखे जाते हैं, ताकि फॉर्मूला बदलने पर कुछ भी न खोए।</p>
+</div>
 </section>
 
 <section id="stock">
+<div lang-block data-lang-en class="active">
 <h2>🏪 Stock</h2>
 <p>Raw material stock levels, daily consumption logging, and import/export tools. Store role has view + consume access by default.</p>
+</div>
+<div lang-block data-lang-hi>
+<h2>🏪 स्टॉक</h2>
+<p>कच्चे माल के स्टॉक स्तर, दैनिक खपत लॉगिंग, और इम्पोर्ट/एक्सपोर्ट टूल्स। Store भूमिका को डिफ़ॉल्ट रूप से view + consume एक्सेस मिलता है।</p>
+</div>
 </section>
 
 <section id="roles">
-<h2>👥 Roles & Permissions</h2>
+<div lang-block data-lang-en class="active">
+<h2>👥 Roles &amp; Permissions</h2>
 <table>
 <tr><th>Role</th><th>Leakage</th><th>Orders</th><th>Complaints</th></tr>
 <tr><td>Admin</td><td>Full access</td><td>Full</td><td>Full</td></tr>
@@ -227,19 +383,61 @@ Admin can also attach more photos here if the original upload wasn't enough, and
 <tr><td>Store</td><td>Add + view own only</td><td>View + dispatch</td><td>None</td></tr>
 </table>
 <div class="warn">If a user has <b>custom permissions</b> set individually in <b>Settings → Users</b> (rather than just their role default), new permissions from recent updates won't apply to them automatically. Check their checkboxes there if something seems missing.</div>
+</div>
+<div lang-block data-lang-hi>
+<h2>👥 भूमिकाएं और अनुमतियां</h2>
+<table>
+<tr><th>भूमिका</th><th>Leakage</th><th>Orders</th><th>Complaints</th></tr>
+<tr><td>Admin</td><td>पूरी एक्सेस</td><td>पूरी</td><td>पूरी</td></tr>
+<tr><td>Issuer</td><td>सभी देख सकते हैं + जोड़ सकते हैं</td><td>पूरी</td><td>सिर्फ देख सकते हैं</td></tr>
+<tr><td>HO</td><td>सभी देख सकते हैं + respond/issue CN</td><td>पूरी</td><td>सेल्समैन असाइन कर सकते हैं</td></tr>
+<tr><td>QC</td><td>कोई नहीं</td><td>कोई नहीं</td><td>देख सकते हैं + respond</td></tr>
+<tr><td>Sales</td><td>जोड़ सकते हैं + सिर्फ अपनी देख सकते हैं</td><td>कोई नहीं</td><td>जोड़ सकते हैं + असाइन की गई देख सकते हैं</td></tr>
+<tr><td>Store</td><td>जोड़ सकते हैं + सिर्फ अपनी देख सकते हैं</td><td>देख सकते हैं + dispatch</td><td>कोई नहीं</td></tr>
+</table>
+<div class="warn">अगर किसी उपयोगकर्ता की <b>Settings → Users</b> में अलग से <b>कस्टम अनुमतियां</b> सेट हैं (सिर्फ उनकी भूमिका के डिफ़ॉल्ट की बजाय), तो हाल के अपडेट की नई अनुमतियां उन पर अपने आप लागू नहीं होंगी। अगर कुछ कमी लगे तो वहां उनके चेकबॉक्स जांच लें।</div>
+</div>
 </section>
 
 <section id="lang">
+<div lang-block data-lang-en class="active">
 <h2>🌐 Hindi Language / हिंदी भाषा</h2>
-<p>Click the <span class="badge b-blue">🌐 EN / हिं</span> button in the top-right corner (next to Guide) to switch the interface language. Your choice is remembered on this device.</p>
+<p>Click the <span class="badge b-blue">🌐 EN / हिं</span> button in the top-right corner of the main app (next to Guide) to switch the interface language. Your choice is remembered on this device. This guide has its own separate language button at the top of the page.</p>
 <div class="note">
-Currently translated: the main navigation tabs and common actions (Save, Cancel, Add, Search, etc). Screen-specific labels and form fields inside each module are still in English — this is being extended module by module. If a particular screen is a priority for your team, let us know and it'll be translated next.
-<br><br>
-वर्तमान में अनुवादित: मुख्य नेविगेशन टैब और सामान्य क्रियाएं (सेव करें, रद्द करें, जोड़ें, खोजें, आदि)। प्रत्येक मॉड्यूल के अंदर के विशिष्ट लेबल और फॉर्म फ़ील्ड अभी भी अंग्रेज़ी में हैं — इसे धीरे-धीरे बढ़ाया जा रहा है।
+Currently translated in the main app: the main navigation tabs and common actions (Save, Cancel, Add, Search, etc). Screen-specific labels and form fields inside each module are still in English — this is being extended module by module. This guide, however, is fully available in both languages.
+</div>
+</div>
+<div lang-block data-lang-hi>
+<h2>🌐 हिंदी भाषा</h2>
+<p>इंटरफ़ेस की भाषा बदलने के लिए मुख्य ऐप में ऊपर-दाईं ओर (Guide के बगल में) <span class="badge b-blue">🌐 EN / हिं</span> बटन पर क्लिक करें। आपकी पसंद इस डिवाइस पर याद रखी जाती है। इस गाइड का अपना अलग भाषा बटन पेज के ऊपर है।</p>
+<div class="note">
+मुख्य ऐप में अभी अनुवादित: मुख्य नेविगेशन टैब और सामान्य क्रियाएं (Save, Cancel, Add, Search, आदि)। हर मॉड्यूल के अंदर के विशिष्ट लेबल और फॉर्म फ़ील्ड अभी भी अंग्रेज़ी में हैं — इसे धीरे-धीरे बढ़ाया जा रहा है। हालांकि, यह गाइड पूरी तरह दोनों भाषाओं में उपलब्ध है।
+</div>
 </div>
 </section>
 
 </div>
 <a class="top" href="#top" onclick="window.scrollTo(0,0);return false;">↑ Top</a>
+
+<script>
+function applyLang(lang){
+  document.documentElement.setAttribute('data-lang', lang);
+  document.querySelectorAll('[lang-block]').forEach(function(el){
+    var isMatch = el.hasAttribute('data-lang-'+lang);
+    el.classList.toggle('active', isMatch);
+  });
+  document.getElementById('langBtnLabel').textContent = lang==='en' ? '🌐 हिंदी में देखें' : '🌐 View in English';
+  try{ localStorage.setItem('gcc_lang', lang); }catch(e){}
+}
+function toggleLang(){
+  var cur = document.documentElement.getAttribute('data-lang') || 'en';
+  applyLang(cur==='en' ? 'hi' : 'en');
+}
+(function(){
+  var saved='en';
+  try{ saved = localStorage.getItem('gcc_lang') || 'en'; }catch(e){}
+  applyLang(saved);
+})();
+</script>
 </body>
 </html>
