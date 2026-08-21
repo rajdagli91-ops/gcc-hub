@@ -2,389 +2,244 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>GCC Operations Hub — User Guide</title>
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Source+Sans+3:wght@300;400;600;700&family=Noto+Sans+Devanagari:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
-:root{--navy:#0D3569;--orange:#F5A31A;--muted:#64748b;--text:#1e293b;--light:#f8fafc;--border:#e2e8f0}
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Source Sans 3',sans-serif;color:var(--text);background:#fff;font-size:15px;line-height:1.6;padding-top:44px}
-.lang-bar{position:fixed;top:0;left:0;right:0;z-index:9999;background:var(--navy);display:flex;align-items:center;justify-content:flex-end;padding:5px 20px;gap:8px;box-shadow:0 2px 8px rgba(0,0,0,0.4)}
-.lang-bar-label{font-size:11px;color:rgba(255,255,255,0.5);font-weight:600;letter-spacing:0.05em;margin-right:4px}
-.lang-btn{padding:4px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;border:1px solid rgba(255,255,255,0.25);background:transparent;color:rgba(255,255,255,0.65);font-family:inherit;transition:all 0.15s}
-.lang-btn:hover{background:var(--orange);color:#000;border-color:var(--orange)}
-.t-hi,.t-mr{display:none}
-.t-en{display:inline}
-@page{size:A4 portrait;margin:15mm 12mm 15mm 20mm}
-@media print{.lang-bar,.no-print{display:none!important}.page-break{page-break-before:always}.avoid-break{page-break-inside:avoid}body{padding-top:0;font-size:13px}}
-.cover{min-height:100vh;background:var(--navy);display:flex;flex-direction:column;justify-content:center;padding:80px 60px}
-.cover h1{font-family:'Playfair Display',serif;font-size:48px;font-weight:900;color:#fff;line-height:1.1;margin-bottom:8px}
-.cover h1 span{color:var(--orange)}
-.cover-sub{font-size:17px;color:rgba(255,255,255,0.6);margin-bottom:36px}
-.cover-divider{width:60px;height:3px;background:var(--orange);margin-bottom:28px}
-.cover-meta{font-size:13px;color:rgba(255,255,255,0.4)}
-.cover-meta strong{color:rgba(255,255,255,0.7)}
-.cover-badge{display:inline-block;background:rgba(245,163,26,0.2);border:1px solid rgba(245,163,26,0.4);color:var(--orange);font-size:11px;font-weight:700;letter-spacing:0.15em;text-transform:uppercase;padding:6px 14px;border-radius:99px;margin-bottom:24px}
-.cover-roles{display:flex;gap:10px;flex-wrap:wrap;margin-top:36px}
-.role-pill{padding:7px 16px;border-radius:99px;font-size:13px;font-weight:700}
-.toc{padding:50px 60px;background:var(--light);border-bottom:1px solid var(--border)}
-.toc h2{font-family:'Playfair Display',serif;font-size:26px;color:var(--navy);margin-bottom:20px}
-.toc-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.toc-item{display:flex;align-items:center;gap:12px;padding:11px 14px;background:#fff;border:1px solid var(--border);border-radius:8px;text-decoration:none;color:var(--text)}
-.toc-num{font-size:11px;color:var(--muted);width:20px;font-weight:600}
-.toc-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
-.sec-hdr{padding:44px 60px 26px;border-bottom:3px solid var(--border)}
-.sec-hdr h2{font-family:'Playfair Display',serif;font-size:32px;color:var(--navy);margin-bottom:6px}
-.sec-hdr p{color:var(--muted);font-size:15px;max-width:600px}
-.role-tag{display:inline-flex;align-items:center;gap:8px;padding:4px 13px;border-radius:99px;font-size:12px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:10px}
-.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}
-.chip{padding:3px 10px;border-radius:6px;font-size:12px;font-weight:600}
-.chip.on{background:#dcfce7;border:1px solid #bbf7d0;color:#166534}
-.chip.off{background:#fff1f2;border:1px solid #fecdd3;color:#be123c;text-decoration:line-through;opacity:0.7}
-.content{padding:36px 60px}
-.step-sec{margin-bottom:36px}
-.step-sec h3{font-size:17px;font-weight:700;color:var(--navy);margin-bottom:14px;padding-bottom:7px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
-.sico{width:27px;height:27px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
-.steps{list-style:none;display:flex;flex-direction:column;gap:8px}
-.steps li{display:flex;gap:13px;align-items:flex-start;padding:11px 14px;background:var(--light);border-radius:8px;border:1px solid var(--border)}
-.sn{width:23px;height:23px;border-radius:50%;background:var(--navy);color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px}
-.steps li span{flex:1}
-.steps li span strong{color:var(--navy)}
-code{background:#e2e8f0;padding:1px 6px;border-radius:4px;font-size:12px;color:#c0392b}
-.ibox{padding:12px 15px;border-radius:8px;margin:13px 0;display:flex;gap:10px;align-items:flex-start}
-.ibox.tip{background:#eff6ff;border-left:4px solid #3b82f6}
-.ibox.warn{background:#fffbeb;border-left:4px solid #f59e0b}
-.ibox.note{background:#f0fdf4;border-left:4px solid #22c55e}
-.ibox-icon{font-size:16px;flex-shrink:0;margin-top:2px}
-.ibox-body{font-size:13px;color:#475569}
-.ibox-body strong{display:block;margin-bottom:3px}
-.mbadge{display:inline-block;padding:2px 7px;border-radius:99px;font-size:9px;font-weight:700}
-.gloss{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin:13px 0}
-.gi{padding:13px;background:var(--light);border-radius:8px;border:1px solid var(--border)}
-.gt{font-weight:700;color:var(--navy);margin-bottom:3px;font-size:14px}
-.gd{font-size:13px;color:var(--muted)}
-.qrc{background:var(--navy);color:#fff;padding:22px 26px;border-radius:11px;margin:18px 0}
-.qrc h4{font-family:'Playfair Display',serif;font-size:19px;margin-bottom:13px;color:var(--orange)}
-.qrg{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.qri{background:rgba(255,255,255,0.07);border-radius:7px;padding:9px 11px}
-.qri strong{display:block;font-size:12px;margin-bottom:2px;color:var(--orange)}
-.qri span{font-size:11px;color:rgba(255,255,255,0.6)}
-.sclbl{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:5px;display:flex;align-items:center;gap:5px}
-.guide-footer{background:var(--navy);color:rgba(255,255,255,0.5);padding:26px 60px;font-size:12px;display:flex;justify-content:space-between;align-items:center}
+  :root{
+    --bg:#060b16; --panel:#0b1220; --panel2:#0f172a; --border:#1e293b;
+    --text:#e2e8f0; --muted:#94a3b8; --dim:#64748b; --accent:#3b82f6; --accent2:#93c5fd;
+    --green:#4ade80; --amber:#fbbf24; --red:#f87171; --purple:#c4b5fd; --cyan:#67e8f9;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:'Segoe UI',Arial,sans-serif;line-height:1.6;}
+  .wrap{max-width:920px;margin:0 auto;padding:32px 24px 80px;}
+  h1{font-size:28px;margin-bottom:4px;}
+  .sub{color:var(--dim);font-size:14px;margin-bottom:28px;}
+  nav{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:16px 20px;margin-bottom:32px;}
+  nav b{display:block;margin-bottom:10px;color:var(--accent2);font-size:12px;letter-spacing:.06em;text-transform:uppercase;}
+  nav a{display:inline-block;color:var(--muted);text-decoration:none;font-size:13.5px;padding:4px 10px 4px 0;}
+  nav a:hover{color:var(--accent2);}
+  section{margin-bottom:36px;padding-bottom:28px;border-bottom:1px solid var(--border);}
+  section:last-child{border-bottom:none;}
+  h2{font-size:20px;color:var(--accent2);margin:0 0 4px;display:flex;align-items:center;gap:8px;}
+  h3{font-size:15px;color:var(--text);margin:20px 0 8px;}
+  p{color:var(--muted);font-size:14px;margin:8px 0;}
+  ul,ol{color:var(--muted);font-size:14px;padding-left:22px;}
+  li{margin-bottom:6px;}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin:12px 0;}
+  .badge{display:inline-block;font-size:11px;font-weight:700;padding:2px 9px;border-radius:99px;margin-right:6px;}
+  .b-green{background:#052e16;color:var(--green);border:1px solid #166534;}
+  .b-amber{background:#1a1206;color:var(--amber);border:1px solid #78350f;}
+  .b-red{background:#2e0a0a;color:var(--red);border:1px solid #7f1d1d;}
+  .b-blue{background:#0a1a2e;color:var(--accent2);border:1px solid #1e3a5f;}
+  .b-purple{background:#3b0764;color:var(--purple);border:1px solid #7c3aed;}
+  .b-cyan{background:#0c2a3a;color:var(--cyan);border:1px solid #0891b2;}
+  .step{display:flex;gap:12px;margin:10px 0;}
+  .step-n{flex-shrink:0;width:24px;height:24px;border-radius:50%;background:#1e3a5f;color:var(--accent2);font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;}
+  .step p{margin:0;color:var(--text);font-size:13.5px;}
+  code{background:#0b1220;border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-size:12.5px;color:var(--amber);}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin:10px 0;}
+  th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--border);color:var(--muted);}
+  th{color:var(--accent2);font-weight:700;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;}
+  .note{background:#0a1520;border-left:3px solid var(--accent);border-radius:6px;padding:10px 14px;font-size:13px;color:var(--muted);margin:12px 0;}
+  .warn{background:#1a0a00;border-left:3px solid var(--amber);border-radius:6px;padding:10px 14px;font-size:13px;color:var(--muted);margin:12px 0;}
+  .top{position:fixed;bottom:20px;right:20px;background:var(--panel);border:1px solid var(--border);border-radius:99px;padding:8px 16px;font-size:12px;color:var(--accent2);text-decoration:none;}
 </style>
-<script>
-function setLang(lang){
-  var classes=['en','hi','mr'];
-  for(var c=0;c<classes.length;c++){
-    var els=document.querySelectorAll('.t-'+classes[c]);
-    for(var i=0;i<els.length;i++){
-      els[i].style.display=(classes[c]===lang)?'inline':'none';
-    }
-  }
-  var btns=document.querySelectorAll('.lang-btn');
-  for(var i=0;i<btns.length;i++){
-    var d=btns[i].getAttribute('data-lang');
-    btns[i].style.background=d===lang?'#F5A31A':'transparent';
-    btns[i].style.color=d===lang?'#000':'rgba(255,255,255,0.65)';
-    btns[i].style.borderColor=d===lang?'#F5A31A':'rgba(255,255,255,0.25)';
-  }
-  document.documentElement.lang=lang;
-  try{localStorage.setItem('gcc_lang',lang);}catch(e){}
-}
-window.onload=function(){
-  var s='en';
-  try{s=localStorage.getItem('gcc_lang')||'en';}catch(e){}
-  setLang(s);
-};
-</script>
 </head>
 <body>
-<div class="lang-bar no-print">
-  <span class="lang-bar-label">Language / &#2349;&#2366;&#2359;&#2366; / &#2349;&#2366;&#2359;&#2366;:</span>
-  <button class="lang-btn" data-lang="en" onclick="setLang('en')">English</button>
-  <button class="lang-btn" data-lang="hi" onclick="setLang('hi')">&#2361;&#2367;&#2306;&#2342;&#2368;</button>
-  <button class="lang-btn" data-lang="mr" onclick="setLang('mr')">&#2350;&#2352;&#2366;&#2336;&#2368;</button>
+<div class="wrap">
+
+<h1>📘 GCC Operations Hub — User Guide</h1>
+<p class="sub">VEEBEE / Gujarat Colours & Coatings — internal operations reference. Last updated to reflect the current build.</p>
+
+<nav>
+  <b>Jump to a section</b>
+  <a href="#orders">🛒 Orders</a>
+  <a href="#siteDelivery">📍 Site Delivery</a>
+  <a href="#dispatch">🚚 Dispatch Today</a>
+  <a href="#prep">📦 Direct / Transport Prep</a>
+  <a href="#sequence">🔢 Delivery Sequences</a>
+  <a href="#reports">📊 Reports</a>
+  <a href="#complaints">⚠️ Complaints</a>
+  <a href="#leakage">💧 Leakage</a>
+  <a href="#rd">🧪 R&D & Trials</a>
+  <a href="#bom">📋 BOM</a>
+  <a href="#stock">🏪 Stock</a>
+  <a href="#roles">👥 Roles & Permissions</a>
+  <a href="#lang">🌐 Hindi / भाषा</a>
+</nav>
+
+<section id="orders">
+<h2>🛒 Orders</h2>
+<p>Central hub for every pending customer order, imported from Tally.</p>
+
+<h3>Importing orders</h3>
+<div class="step"><div class="step-n">1</div><p>Export your pending sales order report from Tally as .xlsx.</p></div>
+<div class="step"><div class="step-n">2</div><p>Go to <b>Orders → Setup</b> and click <b>Import Orders</b>, choose the file.</p></div>
+<div class="step"><div class="step-n">3</div><p>If any customer isn't in the route/transporter master list yet, you'll be asked to fill in their route and transporter before the import finishes.</p></div>
+<div class="step"><div class="step-n">4</div><p>Orders already dispatched are never reset. Partially dispatched orders keep their dispatched quantity — only the remaining balance updates from Tally.</p></div>
+<div class="step"><div class="step-n">5</div><p>Any order no longer present in the new file (i.e. closed in Tally) is automatically marked <span class="badge b-blue">Pre-closed</span>.</p></div>
+
+<h3>Transport / customer master list</h3>
+<p>Under <b>Orders → Setup</b>, you can manually add or edit a customer's route, transporter, and whether they're Direct or via a named transporter. You can also bulk-import this list from a spreadsheet.</p>
+<div class="note">When importing the transport master list, the header row is now detected automatically by its content (Customer/Particulars/Party, Transport/Transporter, Route/Type/Area) — it no longer needs to be in a fixed position.</div>
+</section>
+
+<section id="siteDelivery">
+<h2>📍 Site Delivery</h2>
+<p>Sometimes an order is billed to one customer but physically delivered somewhere else — a project site, or a location on a completely different route. Site Delivery lets you override the route/transporter for <b>one specific order</b> without changing the customer's normal account details.</p>
+
+<h3>How to flag an order</h3>
+<div class="step"><div class="step-n">1</div><p>In <b>Orders → Pending</b>, expand the customer's card to see their individual orders.</p></div>
+<div class="step"><div class="step-n">2</div><p>Click <span class="badge b-purple">📍 Mark Site Delivery</span> next to the order's voucher number.</p></div>
+<div class="step"><div class="step-n">3</div><p>Search and select (or type a new) <b>Actual Delivery Route/Area</b> and <b>Transport</b>. New entries are automatically added to the master route/transporter list.</p></div>
+<div class="step"><div class="step-n">4</div><p>Save. The order now shows a purple <span class="badge b-purple">📍 Site Delivery → [route] / [transport]</span> badge and moves under the new route everywhere in the system — Dispatch Today, Direct/Transport Prep, sequencing, printed lists, and reports.</p></div>
+
+<div class="note">Only that one order is affected. The customer's other orders and their default account route remain untouched. Click <b>✕ Remove Override</b> at any time to revert it.</div>
+<div class="warn">This survives Tally re-import — the flag, route, and transporter stay locked in for that order even after you re-upload the full order file, as long as the order is still pending.</div>
+<p>Who can flag a site delivery: <b>Admin, Issuer, HO.</b></p>
+</section>
+
+<section id="dispatch">
+<h2>🚚 Dispatch Today</h2>
+<p>Shows everything dispatched today, split into two sections:</p>
+<ul>
+  <li><span class="badge b-blue">🏢 TRANSPORTER ORDERS</span> — sequenced by your uploaded transporter sequence</li>
+  <li><span class="badge b-green">🚚 DIRECT ORDERS</span> — sequenced by your uploaded per-route direct delivery sequence</li>
+</ul>
+<p>Each section numbers independently, so the sequence number matches what your loading team sees on the ground. Print the dispatch list from here — it keeps the same two-section layout on paper.</p>
+</section>
+
+<section id="prep">
+<h2>📦 Direct Prep & Transport Prep</h2>
+<p>Both tabs show a <b>Preparation Summary</b> panel alongside the order list, with three views:</p>
+<table>
+<tr><th>View</th><th>Shows</th></tr>
+<tr><td>👥 Customer</td><td>Same breakdown as the order list, with sequence number, cartons/loose count</td></tr>
+<tr><td>📦 Product</td><td>Total quantity needed per product across all customers, with volume and per-customer split</td></tr>
+<tr><td>🗺 Route / 🏢 Transporter</td><td>Grouped by route or transporter — most useful when viewing "All"</td></tr>
+</table>
+
+<h3>Direct Prep route tabs</h3>
+<p>Selecting a route (e.g. Bombay) shows customers on that route <i>and</i> any customer explicitly added to that route's uploaded sequence file, even if their registered route is different — this is separate from Site Delivery, and is meant for cases where a delivery sequence sheet intentionally groups customers across routes for a single trip. Look for the amber <span class="badge b-amber">↳ added to [route] sequence</span> tag.</p>
+<p>If a customer appears in more than one route's sequence file, they'll show up under every matching route tab.</p>
+</section>
+
+<section id="sequence">
+<h2>🔢 Delivery Sequences</h2>
+<p>Upload a sequence file per transporter, and a separate one per direct-delivery route, from <b>Orders → Setup</b>. Format: two columns — a sequence number and a name — in either column order (the system auto-detects which is which).</p>
+<div class="note">After uploading, "Missing from Sequence" downloads a clean list of only the transporters (or customers, for Direct) that aren't yet in your file — nothing else clutters the download.</div>
+</section>
+
+<section id="reports">
+<h2>📊 Reports</h2>
+<p>Under <b>Orders → Reports</b>, filter by:</p>
+<ul>
+  <li><b>Transport</b> — pick <code>All</code>, a specific named transporter, or <code>🚚 Direct — all routes</code></li>
+  <li><b>Direct Route</b> — appears only when Direct is selected, narrows to one route (e.g. Bombay)</li>
+</ul>
+<p>Print an individual delivery list per transporter or per direct route this way, instead of one mixed list.</p>
+</section>
+
+<section id="complaints">
+<h2>⚠️ Complaints</h2>
+
+<h3>Logging a complaint</h3>
+<p>Salesmen logging their own complaint skip the "Where was this received" question entirely — it's assumed to be them. Admin/QC/Issuer/HO still choose between <b>Received by Salesman</b> or <b>Received at HO</b>.</p>
+<p>For HO-received complaints, you can leave <b>Assign to Salesman</b> as <i>"— Assign later —"</i> and come back to it afterward.</p>
+
+<h3>Assigning (or re-assigning) a salesman later</h3>
+<p>Open any complaint with no salesman assigned yet — Admin/HO will see an inline <b>Assign</b> panel right in the complaint's detail view. Picking a salesman here notifies them immediately and works exactly like assigning at creation time.</p>
+
+<h3>Field visit</h3>
+<p>Once assigned, the salesman sees a <b>📍 Add Field Visit Details</b> button with a Visited Customer? dropdown (Yes / Not yet / Scheduled), visit notes, and photo upload.</p>
+
+<h3>List view</h3>
+<p>Each complaint is a single compact row: <b>Customer · Product · Date · Assigned Salesman · Status</b>. Toggle <b>👥 By Customer</b> to group repeat complaints — a red badge flags any customer with more than one complaint on file.</p>
+<p><b>"Open"</b> filter means "not yet Resolved or Closed" — it includes every in-progress stage, not just the literal "Open" status.</p>
+
+<h3>Visibility</h3>
+<p>A salesman sees complaints they logged <i>and</i> any complaint assigned to them by someone else — but never another salesman's complaints.</p>
+</section>
+
+<section id="leakage">
+<h2>💧 Leakage</h2>
+<p>Found under the <b>⚠️ Complaints</b> tab, as a sub-tab next to Complaints (users with only Leakage access go straight there).</p>
+
+<h3>Reporting a leak</h3>
+<p>Customer, product, batch no, invoice no, date, quantity leaked (with unit), description, and photo/video evidence. On-screen reminder: get a photo of the <b>batch number</b>, the <b>leak itself</b>, and the <b>invoice</b> if possible.</p>
+
+<h3>The decision flow</h3>
+<div class="card">
+<b>1. Admin Response</b> — Admin reviews and picks one:
+<ul>
+  <li><span class="badge b-amber">Visit Customer</span> — salesman gets a notes form (with photo upload) to fill in after visiting</li>
+  <li><span class="badge b-blue">Issue Credit Note</span> — HO gets notified to issue it</li>
+  <li><span class="badge b-red">Reject</span> — salesman gets a notes form to acknowledge</li>
+  <li><span class="badge b-green">Close (No Credit Note)</span> — closes it directly, no further action needed</li>
+</ul>
+Admin can also attach more photos here if the original upload wasn't enough, and can change the decision anytime until the case is finalized.
+</div>
+<div class="card">
+<b>2. Salesman follow-up</b> (Visit Customer / Reject only) — adds notes (and photos, for a visit). Submitting auto-closes the case.
+</div>
+<div class="card">
+<b>3. HO issues the credit note</b> (Credit Note Approved only) — enters CN number, amount, date, and clicks <b>✓ Mark Credit Note Issued</b>. The system silently timestamps this, so the workspace shows <i>"Took X days from approval to credit note being issued"</i> — a turnaround-time record for HO.
 </div>
 
-<!-- COVER -->
-<div class="cover no-print">
-  <div class="cover-badge">Gujarat Colours &amp; Coatings Pvt. Ltd.</div>
-  <h1>GCC Operations<br><span><span class="t-en">Hub Guide</span><span class="t-hi">&#2361;&#2348; &#2327;&#2366;&#2311;&#2337;</span><span class="t-mr">&#2361;&#2348; &#2350;&#2366;&#2352;&#2381;&#2327;&#2342;&#2352;&#2381;&#2358;&#2367;&#2325;&#2366;</span></span></h1>
-  <p class="cover-sub"><span class="t-en">Complete user manual for all roles &mdash; 2026</span><span class="t-hi">&#2360;&#2349;&#2368; &#2349;&#2370;&#2350;&#2367;&#2325;&#2366;&#2323;&#2306; &#2325;&#2375; &#2354;&#2367;&#2319; &#2346;&#2370;&#2352;&#2381;&#2339; &#2350;&#2376;&#2344;&#2369;&#2309;&#2354;</span><span class="t-mr">&#2360;&#2352;&#2381;&#2357; &#2349;&#2370;&#2350;&#2367;&#2325;&#2366;&#2306;&#2360;&#2366;&#2336;&#2368; &#2360;&#2306;&#2346;&#2370;&#2352;&#2381;&#2339; &#2350;&#2366;&#2352;&#2381;&#2327;&#2342;&#2352;&#2381;&#2358;&#2367;&#2325;&#2366;</span></p>
-  <div class="cover-divider"></div>
-  <p class="cover-meta"><strong>GCC Operations Hub</strong> &nbsp;&middot;&nbsp; VEEBEE Brand &nbsp;&middot;&nbsp; ISO 9001</p>
-  <div class="cover-roles">
-    <span class="role-pill" style="background:rgba(59,130,246,0.2);color:#93c5fd;border:1px solid rgba(59,130,246,0.3)">&#128273; Admin</span>
-    <span class="role-pill" style="background:rgba(245,158,11,0.2);color:#fcd34d;border:1px solid rgba(245,158,11,0.3)">&#128230; <span class="t-en">Issuer</span><span class="t-hi">&#2311;&#2358;&#2370;&#2309;&#2352;</span><span class="t-mr">&#2311;&#2358;&#2381;&#2351;&#2370;&#2905;&#2352;</span></span>
-    <span class="role-pill" style="background:rgba(34,197,94,0.2);color:#86efac;border:1px solid rgba(34,197,94,0.3)">&#128300; QC</span>
-    <span class="role-pill" style="background:rgba(168,85,247,0.2);color:#d8b4fe;border:1px solid rgba(168,85,247,0.3)">&#128188; <span class="t-en">Sales</span><span class="t-hi">&#2360;&#2375;&#2354;&#2381;&#2360;</span><span class="t-mr">&#2360;&#2375;&#2354;&#2381;&#2360;</span></span>
-    <span class="role-pill" style="background:rgba(56,189,248,0.2);color:#7dd3fc;border:1px solid rgba(56,189,248,0.3)">&#127978; <span class="t-en">Store</span><span class="t-hi">&#2360;&#2381;&#2335;&#2379;&#2352;</span><span class="t-mr">&#2360;&#2381;&#2335;&#2379;&#2905;&#2352;</span></span>
-  </div>
-</div>
+<h3>Who sees what</h3>
+<table>
+<tr><th>Role</th><th>Can view</th></tr>
+<tr><td>Admin, Issuer, HO</td><td>Every leakage report</td></tr>
+<tr><td>Sales, Store, QC</td><td>Only reports they personally added</td></tr>
+</table>
+<p>List view supports the same <b>📋 List / 👥 By Customer</b> toggle as Complaints, with a teal badge for customers with repeat leakage issues.</p>
+</section>
 
-<!-- TOC -->
-<div class="toc page-break">
-  <h2><span class="t-en">Table of Contents</span><span class="t-hi">&#2357;&#2367;&#2359;&#2351; &#2360;&#2370;&#2330;&#2368;</span><span class="t-mr">&#2309;&#2344;&#2369;&#2325;&#2381;&#2352;&#2350;&#2339;&#2367;&#2325;&#2366;</span></h2>
-  <div class="toc-grid">
-    <a class="toc-item" href="#gs"><span class="toc-num">01</span><span class="t-en">Getting Started</span><span class="t-hi">&#2358;&#2369;&#2352;&#2369;&#2310;&#2340; &#2325;&#2352;&#2375;&#2306;</span><span class="t-mr">&#2360;&#2369;&#2352;&#2369;&#2357;&#2366;&#2340; &#2325;&#2352;&#2366;</span></a>
-    <a class="toc-item" href="#admin"><span class="toc-num">02</span><span class="toc-dot" style="background:#3b82f6"></span>Admin <span class="t-en">Guide</span><span class="t-hi">&#2327;&#2366;&#2311;&#2337;</span><span class="t-mr">&#2350;&#2366;&#2352;&#2381;&#2327;&#2342;&#2352;&#2381;&#2358;&#2367;&#2325;&#2366;</span></a>
-    <a class="toc-item" href="#issuer"><span class="toc-num">03</span><span class="toc-dot" style="background:#f59e0b"></span><span class="t-en">Issuer Guide</span><span class="t-hi">&#2311;&#2358;&#2370;&#2309;&#2352; &#2327;&#2366;&#2311;&#2337;</span><span class="t-mr">&#2311;&#2358;&#2381;&#2351;&#2370;&#2905;&#2352; &#2350;&#2366;&#2352;&#2381;&#2327;&#2342;&#2352;&#2381;&#2358;&#2367;&#2325;&#2366;</span></a>
-    <a class="toc-item" href="#qc"><span class="toc-num">04</span><span class="toc-dot" style="background:#22c55e"></span>QC <span class="t-en">Guide</span><span class="t-hi">&#2327;&#2366;&#2311;&#2337;</span><span class="t-mr">&#2350;&#2366;&#2352;&#2381;&#2327;&#2342;&#2352;&#2381;&#2358;&#2367;&#2325;&#2366;</span></a>
-    <a class="toc-item" href="#sales"><span class="toc-num">05</span><span class="toc-dot" style="background:#a855f7"></span><span class="t-en">Sales Guide</span><span class="t-hi">&#2360;&#2375;&#2354;&#2381;&#2360; &#2327;&#2366;&#2311;&#2337;</span><span class="t-mr">&#2360;&#2375;&#2354;&#2381;&#2360; &#2350;&#2366;&#2352;&#2381;&#2327;&#2342;&#2352;&#2381;&#2358;&#2367;&#2325;&#2366;</span></a>
-    <a class="toc-item" href="#store"><span class="toc-num">06</span><span class="toc-dot" style="background:#38bdf8"></span><span class="t-en">Store Guide</span><span class="t-hi">&#2360;&#2381;&#2335;&#2379;&#2352; &#2327;&#2366;&#2311;&#2337;</span><span class="t-mr">&#2360;&#2381;&#2335;&#2379;&#2905;&#2352; &#2350;&#2366;&#2352;&#2381;&#2327;&#2342;&#2352;&#2381;&#2358;&#2367;&#2325;&#2366;</span></a>
-    <a class="toc-item" href="#stainer"><span class="toc-num">07</span><span class="t-en">Stainer Calculator</span><span class="t-hi">&#2360;&#2381;&#2335;&#2375;&#2344;&#2352; &#2325;&#2376;&#2354;&#2381;&#2325;&#2369;&#2354;&#2375;&#2335;&#2352;</span><span class="t-mr">&#2360;&#2381;&#2335;&#2375;&#2344;&#2352; &#2325;&#2376;&#2354;&#2381;&#2325;&#2369;&#2354;&#2375;&#2335;&#2352;</span></a>
-    <a class="toc-item" href="#gloss"><span class="toc-num">08</span><span class="t-en">Glossary &amp; Quick Ref</span><span class="t-hi">&#2358;&#2348;&#2381;&#2342;&#2325;&#2379;&#2358; &#2319;&#2357;&#2306; &#2340;&#2381;&#2357;&#2352;&#2367;&#2340; &#2360;&#2306;&#2342;&#2352;&#2381;&#2349;</span><span class="t-mr">&#2358;&#2348;&#2381;&#2342;&#2325;&#2379;&#2358; &#2357; &#2342;&#2381;&#2352;&#2369;&#2340; &#2360;&#2306;&#2342;&#2352;&#2381;&#2349;</span></a>
-  </div>
-</div>
+<section id="rd">
+<h2>🧪 R&D & Trials</h2>
+<h3>Total Trial Batch Size</h3>
+<p>When logging or editing a trial, set an exact <b>Total Trial Batch Size</b> (quantity + unit). It prints in bold on the individual Trial Sheet and as its own row on the Trial Comparison Sheet, so the team makes exactly that much — not more, not less.</p>
+<h3>Test report results on the comparison sheet</h3>
+<p>If a trial already has a completed Test Report, the Trial Comparison print pulls in the actual results (with a Pass/Fail/Marginal tag) automatically. Trials without a report yet print a blank line for the team to fill by hand.</p>
+<h3>BOM — Download All (ZIP)</h3>
+<p>Bundles every product's BOM into one ZIP, sorted into folders by product Category (Decorative/, Industrial/, Automotive/…), each file containing the Current version plus all Archived versions as separate sheets.</p>
+</section>
 
-<!-- GETTING STARTED -->
-<div id="gs" class="page-break">
-<div class="sec-hdr">
-  <div class="role-tag" style="background:#eff6ff;color:#1d4ed8">&#128640; <span class="t-en">Getting Started</span><span class="t-hi">&#2358;&#2369;&#2352;&#2369;&#2310;&#2340; &#2325;&#2352;&#2375;&#2306;</span><span class="t-mr">&#2360;&#2369;&#2352;&#2369;&#2357;&#2366;&#2340; &#2325;&#2352;&#2366;</span></div>
-  <h2><span class="t-en">Login &amp; Dashboard</span><span class="t-hi">&#2354;&#2377;&#2327;&#2311;&#2344; &#2310;&#2352; &#2337;&#2376;&#2358;&#2348;&#2379;&#2352;&#2381;&#2337;</span><span class="t-mr">&#2354;&#2377;&#2327;&#2311;&#2344; &#2310;&#2339;&#2367; &#2337;&#2373;&#2358;&#2348;&#2379;&#2352;&#2381;&#2337;</span></h2>
-</div>
-<div class="content">
-  <div class="step-sec avoid-break">
-    <h3><span class="sico" style="background:#eff6ff">&#128272;</span><span class="t-en">Logging In</span><span class="t-hi">&#2354;&#2377;&#2327;&#2311;&#2344; &#2325;&#2376;&#2360;&#2375; &#2325;&#2352;&#2375;&#2306;</span><span class="t-mr">&#2354;&#2377;&#2327;&#2311;&#2344; &#2325;&#2360;&#2375; &#2325;&#2352;&#2366;&#2357;&#2375;</span></h3>
-    <ol class="steps">
-      <li><span class="sn">1</span><span><span class="t-en">Open browser: <code>rajdagli91-ops.github.io/gcc-hub/</code></span><span class="t-hi">&#2348;&#2381;&#2352;&#2366;&#2313;&#2360;&#2352; &#2326;&#2379;&#2354;&#2375;&#2306;: <code>rajdagli91-ops.github.io/gcc-hub/</code></span><span class="t-mr">&#2348;&#2381;&#2352;&#2366;&#2313;&#2360;&#2352; &#2313;&#2328;&#2337;&#2366;: <code>rajdagli91-ops.github.io/gcc-hub/</code></span></span></li>
-      <li><span class="sn">2</span><span><span class="t-en">Enter your <strong>email</strong> and <strong>password</strong> given by admin. Click <strong>Sign In</strong>.</span><span class="t-hi">&#2319;&#2337;&#2350;&#2367;&#2344; &#2342;&#2381;&#2357;&#2366;&#2352;&#2366; &#2342;&#2367;&#2351;&#2366; <strong>&#2311;&#2350;&#2375;&#2354;</strong> &#2310;&#2352; <strong>&#2346;&#2366;&#2360;&#2357;&#2352;&#2381;&#2337;</strong> &#2342;&#2352;&#2381;&#2332; &#2325;&#2352;&#2375;&#2306;&#2404; <strong>Sign In</strong> &#2325;&#2381;&#2354;&#2367;&#2325; &#2325;&#2352;&#2375;&#2306;&#2404;</span><span class="t-mr">&#2319;&#2337;&#2350;&#2367;&#2344;&#2344;&#2375; &#2342;&#2367;&#2354;&#2375;&#2354;&#2366; <strong>&#2311;&#2350;&#2375;&#2354;</strong> &#2310;&#2339;&#2367; <strong>&#2346;&#2366;&#2360;&#2357;&#2352;&#2381;&#2337;</strong> &#2335;&#2366;&#2325;&#2366;&#2404; <strong>Sign In</strong> &#2325;&#2381;&#2354;&#2367;&#2325; &#2325;&#2352;&#2366;&#2404;</span></span></li>
-      <li><span class="sn">3</span><span><span class="t-en">If you see <em>"No access"</em>, contact admin to assign your role.</span><span class="t-hi"><em>"No access"</em> &#2342;&#2367;&#2326;&#2375; &#2340;&#2379; &#2319;&#2337;&#2350;&#2367;&#2344; &#2360;&#2375; &#2360;&#2306;&#2346;&#2352;&#2381;&#2325; &#2325;&#2352;&#2375;&#2306;&#2404;</span><span class="t-mr"><em>"No access"</em> &#2342;&#2367;&#2360;&#2354;&#2381;&#2351;&#2366;&#2360; &#2319;&#2337;&#2350;&#2367;&#2344;&#2358;&#2368; &#2360;&#2306;&#2346;&#2352;&#2381;&#2325; &#2325;&#2352;&#2366;&#2404;</span></span></li>
-    </ol>
-    <div class="ibox tip"><span class="ibox-icon">&#128161;</span><div class="ibox-body"><strong><span class="t-en">Forgot password?</span><span class="t-hi">&#2346;&#2366;&#2360;&#2357;&#2352;&#2381;&#2337; &#2349;&#2370;&#2354; &#2327;&#2319;?</span><span class="t-mr">&#2346;&#2366;&#2360;&#2357;&#2352;&#2381;&#2337; &#2357;&#2367;&#2360;&#2352;&#2354;&#2366;&#2340;?</span></strong> <span class="t-en">Ask admin to reset from Users tab. Use <strong>&#128273; Change PW</strong> button in header to change your own password.</span><span class="t-hi">&#2319;&#2337;&#2350;&#2367;&#2344; &#2360;&#2375; Users &#2335;&#2376;&#2348; &#2360;&#2375; &#2352;&#2368;&#2360;&#2375;&#2335; &#2325;&#2352;&#2357;&#2366;&#2319;&#2306;&#2404; &#2361;&#2375;&#2337;&#2352; &#2350;&#2375;&#2306; <strong>&#128273; Change PW</strong> &#2348;&#2335;&#2344; &#2360;&#2375; &#2338;&#2369;&#2342; &#2348;&#2342;&#2354;&#2375;&#2306;&#2404;</span><span class="t-mr">&#2319;&#2337;&#2350;&#2367;&#2344;&#2354;&#2366; Users &#2335;&#2376;&#2348;&#2350;&#2343;&#2370;&#2344; reset &#2325;&#2352;&#2339;&#2381;&#2351;&#2366;&#2360; &#2360;&#2366;&#2306;&#2327;&#2366;&#2404; &#2361;&#2375;&#2337;&#2352;&#2350;&#2343;&#2368;&#2354; <strong>&#128273; Change PW</strong> &#2348;&#2335;&#2339;&#2366;&#2344;&#2375; &#2360;&#2381;&#2357;&#2340;:&#2330;&#2366; &#2348;&#2342;&#2354;&#2366;&#2404;</span></div></div>
-  </div>
-  <div class="step-sec avoid-break">
-    <h3><span class="sico" style="background:#f0fdf4">&#128202;</span><span class="t-en">Dashboard — Clickable Stat Cards</span><span class="t-hi">&#2337;&#2376;&#2358;&#2348;&#2379;&#2352;&#2381;&#2337; &mdash; &#2325;&#2381;&#2354;&#2367;&#2325; &#2325;&#2352;&#2344;&#2375; &#2351;&#2379;&#2327;&#2381;&#2351; &#2325;&#2366;&#2352;&#2381;&#2337;</span><span class="t-mr">&#2337;&#2373;&#2358;&#2348;&#2379;&#2352;&#2381;&#2337; &mdash; &#2325;&#2381;&#2354;&#2367;&#2325; &#2325;&#2352;&#2339;&#2381;&#2351;&#2366;&#2351;&#2379;&#2327;&#2381;&#2351; &#2325;&#2366;&#2352;&#2381;&#2337;</span></h3>
-    <ol class="steps">
-      <li><span class="sn">1</span><span><span class="t-en"><strong>Active Batches</strong> = batches in progress (Issued / In Production / QC / QC Pass / QC Fail). Does NOT count Packed batches.</span><span class="t-hi"><strong>Active Batches</strong> = &#2332;&#2379; &#2348;&#2376;&#2330; &#2330;&#2354; &#2352;&#2361;&#2375; &#2361;&#2376;&#2306; (Issued/In Production/QC)&#2404; Packed &#2348;&#2376;&#2330; &#2344;&#2361;&#2368;&#2306; &#2327;&#2367;&#2344;&#2375; &#2332;&#2366;&#2340;&#2375;&#2404;</span><span class="t-mr"><strong>Active Batches</strong> = &#2330;&#2366;&#2354;&#2370; &#2348;&#2364;&#2330; (Issued/In Production/QC)&#2404; Packed &#2348;&#2364;&#2330; &#2350;&#2379;&#2332;&#2354;&#2375; &#2332;&#2366;&#2340; &#2344;&#2366;&#2361;&#2368;&#2340;&#2404;</span></span></li>
-      <li><span class="sn">2</span><span><span class="t-en"><strong>R&D Active</strong> = only Ongoing and Pending Approval projects. Completed / Cancelled not counted.</span><span class="t-hi"><strong>R&D Active</strong> = &#2360;&#2367;&#2352;&#2381;&#2347; Ongoing &#2310;&#2352; Pending Approval &#2354;&#2399; Completed/Cancelled &#2344;&#2361;&#2368;&#2306;&#2404;</span><span class="t-mr"><strong>R&D Active</strong> = &#2347;&#2325;&#2381;&#2340; Ongoing &#2310;&#2339;&#2367; Pending Approval &#2354;&#2366;&#2404; Completed/Cancelled &#2344;&#2366;&#2361;&#2368;&#2404;</span></span></li>
-      <li><span class="sn">3</span><span><span class="t-en">Every stat card is a <strong>button</strong> — click it to jump to that module directly.</span><span class="t-hi">&#2361;&#2352; &#2325;&#2366;&#2352;&#2381;&#2337; &#2319;&#2325; <strong>&#2348;&#2335;&#2344;</strong> &#2361;&#2376; &mdash; &#2313;&#2360; &#2350;&#2377;&#2337;&#2381;&#2351;&#2370;&#2354; &#2350;&#2375;&#2306; &#2360;&#2368;&#2343;&#2375; &#2332;&#2366;&#2344;&#2375; &#2325;&#2375; &#2354;&#2367;&#2319; &#2325;&#2381;&#2354;&#2367;&#2325; &#2325;&#2352;&#2375;&#2306;&#2404;</span><span class="t-mr">&#2346;&#2381;&#2352;&#2340;&#2381;&#2351;&#2375;&#2325; &#2325;&#2366;&#2352;&#2381;&#2337; &#2319;&#2325; <strong>&#2348;&#2335;&#2339;</strong> &#2310;&#2361;&#2375; &mdash; &#2340;&#2381;&#2351;&#2366; &#2350;&#2377;&#2337;&#2381;&#2351;&#2370;&#2354;&#2357;&#2352; &#2360;&#2381;&#2357;&#2366;&#2352; &#2332;&#2366;&#2339;&#2381;&#2351;&#2366;&#2360;&#2366;&#2336;&#2368; &#2325;&#2381;&#2354;&#2367;&#2325; &#2325;&#2352;&#2366;&#2404;</span></span></li>
-    </ol>
-    <div class="ibox note"><span class="ibox-icon">&#128276;</span><div class="ibox-body"><span class="t-en">The &#128276; bell shows unread notifications. Click to read, &times; to dismiss, or <strong>Mark all read</strong>.</span><span class="t-hi">&#128276; &#2348;&#2375;&#2354; &#2344;&#2312; &#2360;&#2370;&#2330;&#2344;&#2366;&#2323;&#2306; &#2346;&#2352; &#2354;&#2366;&#2354; &#2348;&#2376;&#2332; &#2342;&#2367;&#2326;&#2366;&#2340;&#2366; &#2361;&#2376;&#2404; &#2325;&#2381;&#2354;&#2367;&#2325; &#2325;&#2352;&#2375;&#2306; &#2340;&#2379; &#2346;&#2395; &#2360;&#2325;&#2340;&#2375; &#2361;&#2376;&#2306;&#2404;</span><span class="t-mr">&#128276; &#2348;&#2375;&#2354; &#2344;&#2357;&#2368;&#2344; &#2360;&#2370;&#2330;&#2344;&#2366;&#2306;&#2360;&#2366;&#2336;&#2368; &#2354;&#2366;&#2354; &#2348;&#2373;&#2332; &#2342;&#2366;&#2326;&#2357;&#2340;&#2375;&#2404; &#2325;&#2381;&#2354;&#2367;&#2325; &#2325;&#2352;&#2366; &#2350;&#2381;&#2361;&#2339;&#2332;&#2375;&#2404;</span></div></div>
-    <div class="ibox tip"><span class="ibox-icon">&#128218;</span><div class="ibox-body"><span class="t-en">Click the <strong>&#128218; Guide</strong> button in the header to open this guide at any time.</span><span class="t-hi">&#2361;&#2375;&#2337;&#2352; &#2350;&#2375;&#2306; <strong>&#128218; Guide</strong> &#2348;&#2335;&#2344; &#2360;&#2375; &#2325;&#2349;&#2368; &#2349;&#2368; &#2351;&#2361; &#2327;&#2366;&#2311;&#2337; &#2326;&#2379;&#2354;&#2375;&#2306;&#2404;</span><span class="t-mr">&#2361;&#2375;&#2337;&#2352;&#2350;&#2343;&#2368;&#2354; <strong>&#128218; Guide</strong> &#2348;&#2335;&#2339;&#2366;&#2344;&#2375; &#2361;&#2368; &#2350;&#2366;&#2352;&#2381;&#2327;&#2342;&#2352;&#2381;&#2358;&#2367;&#2325;&#2366; &#2313;&#2328;&#2337;&#2366;&#2404;</span></div></div>
-  </div>
-</div>
-</div>
+<section id="bom">
+<h2>📋 BOM</h2>
+<p>Each product's Bill of Materials, with full version history. Archived versions are kept as separate sheets when exporting, so nothing is lost when a formulation changes.</p>
+</section>
 
-<!-- ADMIN -->
-<div id="admin" class="page-break">
-<div class="sec-hdr" style="border-bottom-color:#3b82f6">
-  <div class="role-tag" style="background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe">&#128273; Admin</div>
-  <h2><span class="t-en">Admin Guide</span><span class="t-hi">&#2319;&#2337;&#2350;&#2367;&#2344; &#2327;&#2366;&#2311;&#2337;</span><span class="t-mr">&#2319;&#2337;&#2350;&#2367;&#2344; &#2350;&#2366;&#2352;&#2381;&#2327;&#2342;&#2352;&#2381;&#2358;&#2367;&#2325;&#2366;</span></h2>
-  <p><span class="t-en">Full access &mdash; manages users, permissions, batches, BOM, all modules. Only Admin assigns tasks.</span><span class="t-hi">&#2346;&#2370;&#2352;&#2381;&#2339; &#2319;&#2325;&#2381;&#2360;&#2375;&#2360; &mdash; &#2313;&#2346;&#2351;&#2379;&#2327;&#2325;&#2352;&#2381;&#2340;&#2366;, &#2348;&#2376;&#2330;, BOM &#2360;&#2349;&#2368; &#2350;&#2377;&#2337;&#2381;&#2351;&#2370;&#2354;&#2404; &#2325;&#2375;&#2357;&#2354; &#2319;&#2337;&#2350;&#2367;&#2344; &#2325;&#2366;&#2352;&#2381;&#2351; &#2360;&#2380;&#2306;&#2346;&#2340;&#2375; &#2361;&#2376;&#2306;&#2404;</span><span class="t-mr">&#2360;&#2306;&#2346;&#2370;&#2352;&#2381;&#2339; &#2346;&#2381;&#2352;&#2357;&#2375;&#2358; &mdash; &#2357;&#2366;&#2346;&#2352;&#2325;&#2352;&#2381;&#2340;&#2375;, &#2348;&#2364;&#2330;, BOM &#2360;&#2352;&#2381;&#2357; &#2350;&#2377;&#2337;&#2381;&#2351;&#2370;&#2354;&#2404; &#2347;&#2325;&#2381;&#2340; &#2319;&#2337;&#2350;&#2367;&#2344; &#2325;&#2366;&#2350; &#2360;&#2379;&#2346;&#2357;&#2340;&#2379;&#2404;</span></p>
-</div>
-<div class="content">
-  <div class="step-sec avoid-break">
-    <h3><span class="sico" style="background:#eff6ff">&#128100;</span><span class="t-en">Managing Users &amp; Permissions</span><span class="t-hi">&#2313;&#2346;&#2351;&#2379;&#2327;&#2325;&#2352;&#2381;&#2340;&#2366; &#2310;&#2352; &#2309;&#2344;&#2369;&#2350;&#2340;&#2367;&#2351;&#2366;&#2306;</span><span class="t-mr">&#2357;&#2366;&#2346;&#2352;&#2325;&#2352;&#2381;&#2340;&#2375; &#2310;&#2339;&#2367; &#2346;&#2352;&#2357;&#2366;&#2344;&#2327;&#2381;&#2351;&#2366;</span></h3>
-    <ol class="steps">
-      <li><span class="sn">1</span><span><span class="t-en"><strong>Users</strong> tab &rarr; <strong>+ Add User</strong> &rarr; enter email and temporary password.</span><span class="t-hi"><strong>Users</strong> &#2335;&#2376;&#2348; &#2315; <strong>+ Add User</strong> &#2315; &#2311;&#2350;&#2375;&#2354; &#2310;&#2352; &#2309;&#2360;&#2381;&#2341;&#2366;&#2351;&#2368; &#2346;&#2366;&#2360;&#2357;&#2352;&#2381;&#2337; &#2342;&#2352;&#2381;&#2332; &#2325;&#2352;&#2375;&#2306;&#2404;</span><span class="t-mr"><strong>Users</strong> &#2335;&#2373;&#2348; &#2315; <strong>+ Add User</strong> &#2315; &#2311;&#2350;&#2375;&#2354; &#2310;&#2339;&#2367; &#2340;&#2366;&#2340;&#2381;&#2346;&#2369;&#2352;&#2340;&#2366; &#2346;&#2366;&#2360;&#2357;&#2352;&#2381;&#2337; &#2336;&#2366;&#2325;&#2366;&#2404;</span></span></li>
-      <li><span class="sn">2</span><span><span class="t-en">Click <strong>&#128272; Permissions</strong> on the user's card. Apply a <strong>Quick Preset</strong> (Issuer / QC / Sales / Store) in one click.</span><span class="t-hi">&#2313;&#2346;&#2351;&#2379;&#2327;&#2325;&#2352;&#2381;&#2340;&#2366; &#2325;&#2366;&#2352;&#2381;&#2337; &#2346;&#2352; <strong>&#128272; Permissions</strong> &#2325;&#2381;&#2354;&#2367;&#2325; &#2325;&#2352;&#2375;&#2306;&#2404; <strong>Quick Preset</strong> &#2319;&#2325; &#2325;&#2381;&#2354;&#2367;&#2325; &#2350;&#2375;&#2306; &#2354;&#2327;&#2366;&#2319;&#2306;&#2404;</span><span class="t-mr">&#2357;&#2366;&#2346;&#2352;&#2325;&#2352;&#2381;&#2340;&#2381;&#2351;&#2366;&#2330;&#2381;&#2351;&#2366; &#2325;&#2366;&#2352;&#2381;&#2337;&#2357;&#2352; <strong>&#128272; Permissions</strong> &#2325;&#2381;&#2354;&#2367;&#2325; &#2325;&#2352;&#2366;&#2404; <strong>Quick Preset</strong> &#2319;&#2325;&#2366; &#2325;&#2381;&#2354;&#2367;&#2325;&#2350;&#2343;&#2381;&#2351;&#2375; &#2354;&#2366;&#2357;&#2366;&#2404;</span></span></li>
-      <li><span class="sn">3</span><span><span class="t-en">Fine-tune checkboxes if needed &rarr; click <strong>&#10003; Save Permissions</strong>.</span><span class="t-hi">&#2332;&#2352;&#2370;&#2352;&#2340; &#2361;&#2379; &#2340;&#2379; &#2330;&#2375;&#2325;&#2348;&#2377;&#2325;&#2381;&#2360; &#2348;&#2342;&#2354;&#2375;&#2306; &#2347;&#2367;&#2352; <strong>&#10003; Save Permissions</strong>&#2404;</span><span class="t-mr">&#2310;&#2357;&#2358;&#2381;&#2351;&#2325; &#2310;&#2360;&#2354;&#2381;&#2351;&#2366;&#2360; &#2330;&#2375;&#2325;&#2348;&#2377;&#2325;&#2381;&#2360; &#2348;&#2342;&#2354;&#2366; &#2350;&#2327; <strong>&#10003; Save Permissions</strong>&#2404;</span></span></li>
-    </ol>
-    <div class="ibox warn"><span class="ibox-icon">&#9888;&#65039;</span><div class="ibox-body"><span class="t-en"><strong>Key permission rules:</strong> QC has no BOM or RM Stock access. Issuer has BOM + RM Stock. Only Admin assigns tasks.</span><span class="t-hi"><strong>&#2350;&#2361;&#2340;&#2381;&#2357;&#2346;&#2370;&#2352;&#2381;&#2339; &#2344;&#2367;&#2351;&#2350;:</strong> QC &#2325;&#2379; BOM &#2351;&#2366; RM Stock &#2344;&#2361;&#2368;&#2306;&#2404; Issuer &#2325;&#2379; BOM + RM Stock &#2361;&#2376;&#2404; &#2325;&#2375;&#2357;&#2354; Admin &#2325;&#2366;&#2352;&#2381;&#2351; &#2360;&#2380;&#2306;&#2346;&#2340;&#2375; &#2361;&#2376;&#2306;&#2404;</span><span class="t-mr"><strong>&#2350;&#2361;&#2340;&#2381;&#2357;&#2366;&#2330;&#2375; &#2344;&#2367;&#2351;&#2350;:</strong> QC &#2354;&#2366; BOM &#2351;&#2366; RM Stock &#2344;&#2366;&#2361;&#2368;&#2404; Issuer &#2354;&#2366; BOM + RM Stock &#2310;&#2361;&#2375;&#2404; &#2347;&#2325;&#2381;&#2340; Admin &#2325;&#2366;&#2350; &#2360;&#2379;&#2346;&#2357;&#2340;&#2379;&#2404;</span></div></div>
-  </div>
-  <div class="step-sec avoid-break">
-    <h3><span class="sico" style="background:#fffbeb">&#9989;</span><span class="t-en">Assigning Tasks (Admin Only)</span><span class="t-hi">&#2325;&#2366;&#2352;&#2381;&#2351; &#2360;&#2380;&#2306;&#2346;&#2344;&#2366; (&#2325;&#2375;&#2357;&#2354; &#2319;&#2337;&#2350;&#2367;&#2344;)</span><span class="t-mr">&#2325;&#2366;&#2350; &#2360;&#2379;&#2346;&#2357;&#2339;&#2375; (&#2347;&#2325;&#2381;&#2340; &#2319;&#2337;&#2350;&#2367;&#2344;)</span></h3>
-    <div class="ibox warn"><span class="ibox-icon">&#9888;&#65039;</span><div class="ibox-body"><span class="t-en"><strong>Admin only!</strong> Issuer, QC, Sales, Store users cannot assign tasks. They can only complete tasks assigned to them.</span><span class="t-hi"><strong>&#2325;&#2375;&#2357;&#2354; &#2319;&#2337;&#2350;&#2367;&#2344;!</strong> &#2309;&#2344;&#2381;&#2351; &#2313;&#2346;&#2351;&#2379;&#2327;&#2325;&#2352;&#2381;&#2340;&#2366; &#2325;&#2366;&#2352;&#2381;&#2351; &#2344;&#2361;&#2368;&#2306; &#2360;&#2380;&#2306;&#2346; &#2360;&#2325;&#2340;&#2375;&#2404; &#2357;&#2375; &#2360;&#2367;&#2352;&#2381;&#2347; &#2313;&#2344;&#2381;&#2361;&#2375;&#2306; &#2360;&#2380;&#2306;&#2346;&#2375; &#2327;&#2319; &#2325;&#2366;&#2352;&#2381;&#2351; &#2346;&#2370;&#2352;&#2381;&#2339; &#2325;&#2352; &#2360;&#2325;&#2340;&#2375; &#2361;&#2376;&#2306;&#2404;</span><span class="t-mr"><strong>&#2347;&#2325;&#2381;&#2340; &#2319;&#2337;&#2350;&#2367;&#2344;!</strong> &#2311;&#2340;&#2352; &#2357;&#2366;&#2346;&#2352;&#2325;&#2352;&#2381;&#2340;&#2375; &#2325;&#2366;&#2350; &#2360;&#2379;&#2346;&#2357;&#2370; &#2358;&#2325;&#2340; &#2344;&#2366;&#2361;&#2368;&#2340;&#2404; &#2340;&#2381;&#2351;&#2366;&#2306;&#2344;&#2366; &#2360;&#2379;&#2346;&#2357;&#2354;&#2375;&#2354;&#2375; &#2325;&#2366;&#2350; &#2325;&#2352;&#2339;&#2381;&#2351;&#2366;&#2360; &#2350;&#2371;&#2321;&#2370;&#2344; &#2354;&#2366;&#2357;&#2340;&#2375;&#2404;</span></div></div>
-    <ol class="steps">
-      <li><span class="sn">1</span><span><span class="t-en"><strong>Tasks</strong> tab &rarr; <strong>+ Assign Task</strong> &rarr; enter title, select user, set category (General or R&amp;D), due date &amp; priority.</span><span class="t-hi"><strong>Tasks</strong> &#2335;&#2376;&#2348; &#2315; <strong>+ Assign Task</strong> &#2315; &#2358;&#2368;&#2352;&#2381;&#2359;&#2325;, &#2313;&#2346;&#2351;&#2379;&#2327;&#2325;&#2352;&#2381;&#2340;&#2366;, Category (General/R&amp;D), &#2340;&#2366;&#2352;&#2368;&#2326; &#2354;&#2327;&#2366;&#2319;&#2306;&#2404;</span><span class="t-mr"><strong>Tasks</strong> &#2335;&#2373;&#2348; &#2315; <strong>+ Assign Task</strong> &#2315; &#2358;&#2368;&#2352;&#2381;&#2359;&#2325;, &#2357;&#2366;&#2346;&#2352;&#2325;&#2352;&#2381;&#2340;&#2366;, Category (General/R&amp;D), &#2340;&#2366;&#2352;&#2368;&#2326; &#2354;&#2366;&#2357;&#2366;&#2404;</span></span></li>
-      <li><span class="sn">2</span><span><span class="t-en">R&amp;D category shows a formula editor &mdash; fill formula name, type, ingredients. This auto-creates an R&amp;D project.</span><span class="t-hi">R&amp;D &#2330;&#2369;&#2344;&#2344;&#2375; &#2346;&#2352; &#2347;&#2377;&#2352;&#2381;&#2350;&#2370;&#2354;&#2366; &#2319;&#2337;&#2367;&#2335;&#2352; &#2310;&#2340;&#2366; &#2361;&#2376; &mdash; &#2349;&#2352;&#2375;&#2306;&#2404; &#2351;&#2361; R&amp;D &#2346;&#2381;&#2352;&#2379;&#2332;&#2375;&#2325;&#2381;&#2335; &#2310;&#2346;&#2344;&#2375; &#2310;&#2346; &#2348;&#2344;&#2366;&#2340;&#2366; &#2361;&#2376;&#2404;</span><span class="t-mr">R&amp;D &#2344;&#2367;&#2357;&#2337;&#2354;&#2381;&#2351;&#2366;&#2360; &#2347;&#2377;&#2352;&#2381;&#2350;&#2381;&#2351;&#2369;&#2354;&#2366; &#2319;&#2337;&#2367;&#2335;&#2352; &#2351;&#2375;&#2340;&#2379; &mdash; &#2349;&#2352;&#2366;&#2404; &#2351;&#2366;&#2350;&#2369;&#2379;&#2347;&#2375; R&amp;D &#2346;&#2381;&#2352;&#2325;&#2354;&#2381;&#2346; &#2310;&#2346;&#2379;&#2310;&#2346; &#2340;&#2351;&#2366;&#2352; &#2361;&#2379;&#2340;&#2379;&#2404;</span></span></li>
-      <li><span class="sn">3</span><span><span class="t-en">Click <strong>&#10003; Assign Task</strong>. The user gets an instant &#128276; notification.</span><span class="t-hi"><strong>&#10003; Assign Task</strong> &#2325;&#2381;&#2354;&#2367;&#2325; &#2325;&#2352;&#2375;&#2306;&#2404; &#2313;&#2346;&#2351;&#2379;&#2327;&#2325;&#2352;&#2381;&#2340;&#2366; &#2325;&#2379; &#128276; &#2344;&#2379;&#2335;&#2367;&#2347;&#2367;&#2325;&#2375;&#2358;&#2344; &#2350;&#2367;&#2354;&#2375;&#2327;&#2366;&#2404;</span><span class="t-mr"><strong>&#10003; Assign Task</strong> &#2325;&#2381;&#2354;&#2367;&#2325; &#2325;&#2352;&#2366;&#2404; &#2357;&#2366;&#2346;&#2352;&#2325;&#2352;&#2381;&#2340;&#2381;&#2351;&#2366;&#2354;&#2366; &#128276; &#2360;&#2370;&#2330;&#2344;&#2366; &#2350;&#2367;&#2379;&#2340;&#2375;&#2404;</span></span></li>
-    </ol>
-  </div>
-  <div class="step-sec avoid-break">
-    <h3><span class="sico" style="background:#f0fdf4">&#128230;</span><span class="t-en">Issuing a Batch</span><span class="t-hi">&#2348;&#2376;&#2330; &#2332;&#2366;&#2352;&#2368; &#2325;&#2352;&#2344;&#2366;</span><span class="t-mr">&#2348;&#2364;&#2330; &#2332;&#2366;&#2352;&#2368; &#2325;&#2352;&#2339;&#2375;</span></h3>
-    <ol class="steps">
-      <li><span class="sn">1</span><span><span class="t-en"><strong>Batches</strong> &rarr; <strong>+ Issue Batch</strong> &rarr; select BOM &rarr; set Batch Size and Issue Date &rarr; click <strong>Issue Batch</strong>.</span><span class="t-hi"><strong>Batches</strong> &#2315; <strong>+ Issue Batch</strong> &#2315; BOM &#2330;&#2369;&#2344;&#2375;&#2306; &#2315; Size &#2310;&#2352; Issue Date &#2354;&#2327;&#2366;&#2319;&#2306;&#2404;</span><span class="t-mr"><strong>Batches</strong> &#2315; <strong>+ Issue Batch</strong> &#2315; BOM &#2344;&#2367;&#2357;&#2337;&#2366; &#2315; Size &#2310;&#2339;&#2367; Issue Date &#2354;&#2366;&#2357;&#2366;&#2404;</span></span></li>
-      <li><span class="sn">2</span><span><span class="t-en">Production sheet opens automatically &mdash; print it (Portrait A4). Left 25mm margin is for filing/binding. If old/rejected stock is available for this product, it prints in an amber section at the bottom.</span><span class="t-hi">&#2346;&#2381;&#2352;&#2379;&#2337;&#2325;&#2381;&#2358;&#2344; &#2358;&#2368;&#2335; &#2310;&#2346;&#2344;&#2375; &#2310;&#2346; &#2326;&#2369;&#2354;&#2340;&#2368; &#2361;&#2376; &mdash; &#2346;&#2381;&#2352;&#2367;&#2306;&#2335; &#2325;&#2352;&#2375;&#2306;&#2404; &#2351;&#2342;&#2367; &#2346;&#2369;&#2352;&#2366;/rejected &#2360;&#2381;&#2335;&#2377;&#2325; &#2313;&#2346;&#2354;&#2348;&#2381;&#2343; &#2361;&#2376; &#2340;&#2379; &#2351;&#2361; &#2350;&#2369;&#2342;&#2381;&#2352;&#2339; &#2350;&#2375;&#2306; &#2348;&#2341;&#2366; &#2327;&#2376;&#2352;&#2375; &#2352;&#2306;&#2327; &#2325;&#2368; &#2244;&#2366;&#2339;&#2368; &#2350;&#2375;&#2306; &#2342;&#2367;&#2326;&#2375;&#2327;&#2366;&#2404;</span><span class="t-mr">&#2346;&#2381;&#2352;&#2379;&#2337;&#2325;&#2381;&#2358;&#2344; &#2358;&#2368;&#2335; &#2310;&#2346;&#2379;&#2310;&#2346; &#2313;&#2328;&#2337;&#2340;&#2375; &mdash; &#2346;&#2381;&#2352;&#2367;&#2306;&#2335; &#2325;&#2352;&#2366;&#2404; &#2332;&#2369;&#2344;&#2366;/rejected &#2360;&#2381;&#2335;&#2377;&#2325; &#2313;&#2346;&#2354;&#2348;&#2343; &#2309;&#2360;&#2354;&#2381;&#2351;&#2366;&#2360; &#2340;&#2381;&#2351;&#2366; &#2370;&#2366;&#2327;&#2368; &#2352;&#2306;&#2327;&#2366;&#2330;&#2381;&#2351;&#2366; &#2326;&#2339;&#2344;&#2368; &#2350;&#2343;&#2381;&#2351;&#2375; &#2326;&#2366;&#2354;&#2368; &#2305;&#2350;&#2369;&#2342;&#2381;&#2352;&#2367;&#2340; &#2361;&#2379;&#2340;&#2375;&#2404;</span></span></li>
-    </ol>
-    <div class="ibox tip"><span class="ibox-icon">&#128161;</span><div class="ibox-body"><span class="t-en"><strong>FY:</strong> April 1 &ndash; March 31. Issue Date determines the Financial Year.</span><span class="t-hi"><strong>&#2357;&#2367;&#2340;&#2381;&#2340;&#2368;&#2351; &#2357;&#2352;&#2381;&#2359;:</strong> 1 &#2309;&#2346;&#2381;&#2352;&#2376;&#2354; &#2360;&#2375; 31 &#2350;&#2366;&#2352;&#2381;&#2330;&#2404; Issue Date &#2360;&#2375; FY &#2340;&#2351; &#2361;&#2379;&#2340;&#2366; &#2361;&#2376;&#2404;</span><span class="t-mr"><strong>&#2310;&#2352;&#2381;&#2341;&#2367;&#2325; &#2357;&#2352;&#2381;&#2359;:</strong> 1 &#2319;&#2346;&#2381;&#2352;&#2367;&#2354; &#2340;&#2375; 31 &#2350;&#2366;&#2352;&#2381;&#2330;&#2404; Issue Date &#2357;&#2352;&#2370;&#2344; FY &#2336;&#2352;&#2340;&#2375;&#2404;</span></div></div>
-  </div>
-  <div class="step-sec avoid-break">
-    <h3><span class="sico" style="background:#fdf4ff">&#128193;</span><span class="t-en">Year-End Archive</span><span class="t-hi">&#2357;&#2352;&#2381;&#2359;-&#2309;&#2306;&#2340; &#2310;&#2352;&#2381;&#2325;&#2366;&#2311;&#2357;</span><span class="t-mr">&#2357;&#2352;&#2381;&#2359;-&#2309;&#2306;&#2340; &#2310;&#2352;&#2381;&#2325;&#2366;&#2311;&#2357;&#2381;&#2361;</span></h3>
-    <ol class="steps">
-      <li><span class="sn">1</span><span><span class="t-en"><strong>Settings</strong> &rarr; <strong>FY Archive</strong> &rarr; select completed FY &rarr; click <strong>&#128229; Download Archive</strong> first.</span><span class="t-hi"><strong>Settings</strong> &#2315; <strong>FY Archive</strong> &#2315; &#2346;&#2370;&#2352;&#2381;&#2339; FY &#2330;&#2369;&#2344;&#2375;&#2306; &#2315; <strong>&#128229; Download Archive</strong> &#2346;&#2361;&#2354;&#2375; &#2325;&#2381;&#2354;&#2367;&#2325; &#2325;&#2352;&#2375;&#2306;&#2404;</span><span class="t-mr"><strong>Settings</strong> &#2315; <strong>FY Archive</strong> &#2315; &#2346;&#2370;&#2352;&#2381;&#2339; FY &#2344;&#2367;&#2357;&#2337;&#2366; &#2315; <strong>&#128229; Download Archive</strong> &#2310;&#2343;&#2368; &#2325;&#2381;&#2354;&#2367;&#2325; &#2325;&#2352;&#2366;&#2404;</span></span></li>
-      <li><span class="sn">2</span><span><span class="t-en">After verifying download, click <strong>&#128465; Delete FY Data</strong>. R&amp;D Projects are never deleted.</span><span class="t-hi">&#2337;&#2366;&#2313;&#2344;&#2354;&#2379;&#2337; &#2344;&#2367;&#2358;&#2381;&#2330;&#2367;&#2340; &#2325;&#2352;&#2344;&#2375; &#2325;&#2375; &#2348;&#2366;&#2342; <strong>&#128465; Delete FY Data</strong>&#2404; R&amp;D Projects &#2325;&#2349;&#2368; &#2344;&#2361;&#2368;&#2306; &#2361;&#2335;&#2366;&#2319; &#2332;&#2366;&#2340;&#2375;&#2404;</span><span class="t-mr">&#2337;&#2366;&#2313;&#2344;&#2354;&#2379;&#2337; &#2360;&#2340;&#2381;&#2351;&#2366;&#2346;&#2367;&#2340; &#2325;&#2375;&#2354;&#2381;&#2351;&#2366;&#2344;&#2306;&#2340;&#2352; <strong>&#128465; Delete FY Data</strong>&#2404; R&amp;D Projects &#2325;&#2343;&#2368;&#2361;&#2368; &#2361;&#2335;&#2357;&#2354;&#2375; &#2332;&#2366;&#2340; &#2344;&#2366;&#2361;&#2368;&#2340;&#2404;</span></span></li>
-    </ol>
-    <div class="ibox warn"><span class="ibox-icon">&#9888;&#65039;</span><div class="ibox-body"><span class="t-en">Always download first. Deletion is permanent.</span><span class="t-hi">&#2361;&#2350;&#2375;&#2358;&#2366; &#2346;&#2361;&#2354;&#2375; &#2337;&#2366;&#2313;&#2344;&#2354;&#2379;&#2337; &#2325;&#2352;&#2375;&#2306;&#2404; &#2361;&#2335;&#2366;&#2344;&#2366; &#2360;&#2381;&#2341;&#2366;&#2351;&#2368; &#2361;&#2376;&#2404;</span><span class="t-mr">&#2344;&#2375;&#2361;&#2350;&#2368; &#2310;&#2343;&#2368; &#2337;&#2366;&#2313;&#2344;&#2354;&#2379;&#2337; &#2325;&#2352;&#2366;&#2404; &#2361;&#2335;&#2357;&#2339;&#2375; &#2325;&#2366;&#2351;&#2350;&#2360;&#2381;&#2357;&#2352;&#2370;&#2346;&#2368; &#2310;&#2361;&#2375;&#2404;</span></div></div>
-  </div>
-</div>
-</div>
+<section id="stock">
+<h2>🏪 Stock</h2>
+<p>Raw material stock levels, daily consumption logging, and import/export tools. Store role has view + consume access by default.</p>
+</section>
 
-<!-- ISSUER -->
-<div id="issuer" class="page-break">
-<div class="sec-hdr" style="border-bottom-color:#f59e0b">
-  <div class="role-tag" style="background:#fffbeb;color:#92400e;border:1px solid #fde68a">&#128230; <span class="t-en">Issuer</span><span class="t-hi">&#2311;&#2358;&#2370;&#2309;&#2352;</span><span class="t-mr">&#2311;&#2358;&#2381;&#2351;&#2370;&#2905;&#2352;</span></div>
-  <h2><span class="t-en">Issuer Guide</span><span class="t-hi">&#2311;&#2358;&#2370;&#2309;&#2352; &#2327;&#2366;&#2311;&#2337;</span><span class="t-mr">&#2311;&#2358;&#2381;&#2351;&#2370;&#2905;&#2352; &#2350;&#2366;&#2352;&#2381;&#2327;&#2342;&#2352;&#2381;&#2358;&#2367;&#2325;&#2366;</span></h2>
-  <p><span class="t-en">Issues batches, creates/edits BOM (including Copy BOM), views RM stock, records consumption.</span><span class="t-hi">&#2348;&#2376;&#2330; &#2332;&#2366;&#2352;&#2368; &#2325;&#2352;&#2344;&#2366;, BOM &#2348;&#2344;&#2366;&#2344;&#2366;/&#2360;&#2306;&#2346;&#2366;&#2342;&#2367;&#2340; &#2325;&#2352;&#2344;&#2366; (Copy BOM &#2360;&#2361;&#2367;&#2340;), RM &#2360;&#2381;&#2335;&#2377;&#2325; &#2342;&#2375;&#2326;&#2344;&#2366; &#2310;&#2352; &#2313;&#2346;&#2349;&#2379;&#2327; &#2342;&#2352;&#2381;&#2332; &#2325;&#2352;&#2344;&#2366;&#2404;</span><span class="t-mr">&#2348;&#2364;&#2330; &#2332;&#2366;&#2352;&#2368; &#2325;&#2352;&#2339;&#2375;, BOM &#2340;&#2351;&#2366;&#2352;/&#2360;&#2306;&#2346;&#2366;&#2342;&#2367;&#2340; &#2325;&#2352;&#2339;&#2375; (Copy &#2360;&#2361;), RM &#2360;&#2381;&#2335;&#2377;&#2325; &#2346;&#2366;&#2361;&#2339;&#2375; &#2310;&#2339;&#2367; &#2357;&#2366;&#2346;&#2352; &#2344;&#2379;&#2306;&#2342;&#2357;&#2339;&#2375;&#2404;</span></p>
-  <div class="chips">
-    <span class="chip on"><span class="t-en">Batches (Issue)</span><span class="t-hi">&#2348;&#2376;&#2330;</span><span class="t-mr">&#2348;&#2364;&#2330;</span></span>
-    <span class="chip on">BOM</span>
-    <span class="chip on">RM Stock</span>
-    <span class="chip on"><span class="t-en">Tasks (own)</span><span class="t-hi">&#2325;&#2366;&#2352;&#2381;&#2351;</span><span class="t-mr">&#2325;&#2366;&#2350;</span></span>
-    <span class="chip off">R&amp;D</span><span class="chip off"><span class="t-en">Users</span><span class="t-hi">&#2313;&#2346;&#2351;&#2379;&#2327;&#2325;&#2352;&#2381;&#2340;&#2366;</span><span class="t-mr">&#2357;&#2366;&#2346;&#2352;&#2325;&#2352;&#2381;&#2340;&#2375;</span></span>
-  </div>
-</div>
-<div class="content">
-  <div class="step-sec avoid-break">
-    <h3><span class="sico" style="background:#f0fdf4">&#128203;</span><span class="t-en">BOM — Copy, Create &amp; Edit</span><span class="t-hi">BOM &mdash; &#2325;&#2377;&#2346;&#2368;, &#2348;&#2344;&#2366;&#2319;&#2306; &#2310;&#2352; &#2360;&#2306;&#2346;&#2366;&#2342;&#2367;&#2340; &#2325;&#2352;&#2375;&#2306;</span><span class="t-mr">BOM &mdash; &#2325;&#2377;&#2346;&#2368;, &#2340;&#2351;&#2366;&#2352; &#2310;&#2339;&#2367; &#2360;&#2306;&#2346;&#2366;&#2342;&#2367;&#2340; &#2325;&#2352;&#2366;</span></h3>
-    <ol class="steps">
-      <li><span class="sn">1</span><span><span class="t-en"><strong>BOM</strong> tab opens in <strong>Grouped view</strong> by default (organised by category). Click <strong>&#9776; List</strong> for flat view.</span><span class="t-hi"><strong>BOM</strong> &#2335;&#2376;&#2348; &#2337;&#2367;&#2347;&#2377;&#2354;&#2381;&#2335; &#2360;&#2375; <strong>Grouped view</strong> &#2350;&#2375;&#2306; &#2326;&#2369;&#2354;&#2340;&#2366; &#2361;&#2376;&#2404; &#2338;&#2381;&#2354;&#2376;&#2335; &#2357;&#2381;&#2351;&#2370; &#2325;&#2375; &#2354;&#2367;&#2319; <strong>&#9776; List</strong> &#2325;&#2381;&#2354;&#2367;&#2325; &#2325;&#2352;&#2375;&#2306;&#2404;</span><span class="t-mr"><strong>BOM</strong> &#2335;&#2373;&#2348; &#2337;&#2367;&#2347;&#2377;&#2354;&#2381;&#2335; <strong>Grouped view</strong> &#2350;&#2343;&#2381;&#2351;&#2375; &#2313;&#2328;&#2337;&#2340;&#2375;&#2404; &#2360;&#2366;&#2343;&#2366;  &#2347;&#2381;&#2354;&#2377;&#2335; &#2357;&#2381;&#2361;&#2370; &#2360;&#2366;&#2336;&#2368; <strong>&#9776; List</strong> &#2325;&#2381;&#2354;&#2367;&#2325; &#2325;&#2352;&#2366;&#2404;</span></span></li>
-      <li><span class="sn">2</span><span><span class="t-en"><strong>Copy BOM:</strong> Click <strong>&#128203; Copy</strong> on any BOM card to duplicate it. The form opens pre-filled with "(Copy)" suffix. Change the name and save as a new BOM.</span><span class="t-hi"><strong>BOM &#2325;&#2377;&#2346;&#2368;:</strong> &#2325;&#2367;&#2360;&#2368; BOM &#2325;&#2366;&#2352;&#2381;&#2337; &#2346;&#2352; <strong>&#128203; Copy</strong> &#2325;&#2381;&#2354;&#2367;&#2325; &#2325;&#2352;&#2375;&#2306; &#2340;&#2379; &#2309;&#2331;&#2368; &#2348;&#2344; &#2352;&#2361;&#2361;&#2361; &#2361;&#2376;&#2404; &#2344;&#2366;&#2350; &#2348;&#2342;&#2354;&#2375;&#2306; &#2310;&#2352; Save &#2325;&#2352;&#2375;&#2306;&#2404;</span><span class="t-mr"><strong>BOM &#2325;&#2377;&#2346;&#2368;:</strong> &#2325;&#2379;&#2339;&#2340;&#2381;&#2351;&#2366;&#2361;&#2368; BOM &#2325;&#2366;&#2352;&#2381;&#2337;&#2357;&#2352; <strong>&#128203; Copy</strong> &#2325;&#2381;&#2354;&#2367;&#2325; &#2325;&#2352;&#2366;&#2404; &#2346;&#2368;&#2332;&#2371;&#2367;&#2354;&#2375;&#2354;&#2366; &#2347;&#2377;&#2352;&#2381;&#2350; &#2313;&#2328;&#2337;&#2340;&#2379;&#2404; &#2344;&#2366;&#2357; &#2348;&#2342;&#2354;&#2366; &#2310;&#2339;&#2367; Save &#2325;&#2352;&#2366;&#2404;</span></span></li>
-      <li><span class="sn">3</span><span><span class="t-en"><strong>Create BOM:</strong> click <strong>+ Create BOM</strong> &rarr; select Product &amp; Category &rarr; add ingredients &rarr; set QC Parameters &rarr; set Pack Sizes &rarr; <strong>Save BOM</strong>.</span><span class="t-hi"><strong>+ Create BOM</strong> &#2315; Product &amp; Category &#2330;&#2369;&#2344;&#2375;&#2306; &#2315; &#2360;&#2366;&#2350;&#2327;&#2381;&#2352;&#2368; &#2332;&#2379;&#2395;&#2375;&#2306; &#2315; QC Parameters &#2354;&#2327;&#2366;&#2319;&#2306; &#2315; <strong>Save BOM</strong>&#2404;</span><span class="t-mr"><strong>+ Create BOM</strong> &#2315; Product &#2310;&#2339;&#2367; Category &#2344;&#2367;&#2357;&#2337;&#2366; &#2315; &#2360;&#2366;&#2361;&#2367;&#2340;&#2381;&#2351;&#2375; &#2332;&#2379;&#2337;&#2366; &#2315; QC Parameters &#2354;&#2366;&#2357;&#2366; &#2315; <strong>Save BOM</strong>&#2404;</span></span></li>
-    </ol>
-  </div>
-  <div class="step-sec avoid-break">
-    <h3><span class="sico" style="background:#f0f9ff">&#128284;</span><span class="t-en">Recording RM Consumption</span><span class="t-hi">RM &#2313;&#2346;&#2349;&#2379;&#2327; &#2342;&#2352;&#2381;&#2332; &#2325;&#2352;&#2344;&#2366;</span><span class="t-mr">RM &#2357;&#2366;&#2346;&#2352; &#2344;&#2379;&#2306;&#2342;&#2357;&#2339;&#2375;</span></h3>
-    <ol class="steps">
-      <li><span class="sn">1</span><span><span class="t-en"><strong>RM Stock</strong> &rarr; <strong>Record Consumption</strong> &rarr; set Date &rarr; select Category &rarr; enter qty used next to each material &rarr; <strong>Save</strong>.</span><span class="t-hi"><strong>RM Stock</strong> &#2315; <strong>Record Consumption</strong> &#2315; &#2340;&#2366;&#2352;&#2368;&#2326; &#2315; Category &#2315; &#2346;&#2381;&#2352;&#2340;&#2381;&#2351;&#2375;&#2325; &#2360;&#2366;&#2350;&#2327;&#2381;&#2352;&#2368; &#2325;&#2375; &#2346;&#2366;&#2360; &#2350;&#2366;&#2340;&#2381;&#2352;&#2366; &#2342;&#2352;&#2381;&#2332; &#2325;&#2352;&#2375;&#2306; &#2315; <strong>Save</strong>&#2404;</span><span class="t-mr"><strong>RM Stock</strong> &#2315; <strong>Record Consumption</strong> &#2315; &#2340;&#2366;&#2352;&#2368;&#2326; &#2315; Category &#2315; &#2346;&#2381;&#2352;&#2340;&#2381;&#2351;&#2375;&#2325; &#2360;&#2366;&#2361;&#2367;&#2340;&#2381;&#2351;&#2366;&#2332;&#2357;&#2379;&#2354; &#2346;&#2381;&#2352;&#2350;&#2366;&#2339; &#2344;&#2379;&#2306;&#2342;&#2357;&#2366; &#2315; <strong>Save</strong>&#2404;</span></span></li>
-      <li><span class="sn">2</span><span><span class="t-en">Red border = exceeds available stock. Check before saving.</span><span class="t-hi">&#2354;&#2366;&#2354; &#2348;&#2377;&#2352;&#2381;&#2337;&#2352; = &#2313;&#2346;&#2354;&#2348;&#2381;&#2343; &#2360;&#2381;&#2335;&#2377;&#2325; &#2360;&#2375; &#2309;&#2343;&#2367;&#2325;&#2404; &#2360;&#2361;&#2375;&#2332;&#2344;&#2375; &#2360;&#2375; &#2346;&#2361;&#2354;&#2375; &#2332;&#2366;&#2306;&#2330;&#2375;&#2306;&#2404;</span><span class="t-mr">&#2354;&#2366;&#2354; &#2360;&#2368;&#2350;&#2366; = &#2313;&#2346;&#2354;&#2348;&#2343;&#2340;&#2375;&#2346;&#2375;&#2325;&#2381;&#2359;&#2366; &#2332;&#2366;&#2360;&#2381;&#2340;&#2404; &#2360;&#2375;&#2357;&#2381;&#2361; &#2325;&#2352;&#2339;&#2381;&#2351;&#2366;&#2346;&#2370;&#2352;&#2381;&#2357;&#2368; &#2340;&#2346;&#2366;&#2360;&#2366;&#2404;</span></span></li>
-    </ol>
-  </div>
-</div>
-</div>
+<section id="roles">
+<h2>👥 Roles & Permissions</h2>
+<table>
+<tr><th>Role</th><th>Leakage</th><th>Orders</th><th>Complaints</th></tr>
+<tr><td>Admin</td><td>Full access</td><td>Full</td><td>Full</td></tr>
+<tr><td>Issuer</td><td>View all + add</td><td>Full</td><td>View only</td></tr>
+<tr><td>HO</td><td>View all + respond/issue CN</td><td>Full</td><td>Can assign salesman</td></tr>
+<tr><td>QC</td><td>None</td><td>None</td><td>View + respond</td></tr>
+<tr><td>Sales</td><td>Add + view own only</td><td>None</td><td>Add + view assigned</td></tr>
+<tr><td>Store</td><td>Add + view own only</td><td>View + dispatch</td><td>None</td></tr>
+</table>
+<div class="warn">If a user has <b>custom permissions</b> set individually in <b>Settings → Users</b> (rather than just their role default), new permissions from recent updates won't apply to them automatically. Check their checkboxes there if something seems missing.</div>
+</section>
 
-<!-- QC -->
-<div id="qc" class="page-break">
-<div class="sec-hdr" style="border-bottom-color:#22c55e">
-  <div class="role-tag" style="background:#f0fdf4;color:#166534;border:1px solid #bbf7d0">&#128300; QC</div>
-  <h2><span class="t-en">QC Guide</span><span class="t-hi">QC &#2327;&#2366;&#2311;&#2337;</span><span class="t-mr">QC &#2350;&#2366;&#2352;&#2381;&#2327;&#2342;&#2352;&#2381;&#2358;&#2367;&#2325;&#2366;</span></h2>
-  <p><span class="t-en">Production &amp; QC test details, R&amp;D projects, complaint responses, Stainer Calculator.</span><span class="t-hi">&#2313;&#2340;&#2381;&#2346;&#2366;&#2342;&#2344; &#2310;&#2352; QC &#2340;&#2381;&#2352;&#2306;&#2360;&#2340;&#2381;&#2352;&#2306;&#2360; &#2348;&#2376;&#2330;&#2319;&#2306;&#2327;&#2324;&#2350; &#2349;&#2352;&#2344;&#2366;, R&amp;D &#2346;&#2381;&#2352;&#2379;&#2332;&#2375;&#2325;&#2381;&#2335;, &#2358;&#2367;&#2325;&#2366;&#2351;&#2340;&#2375;&#2306; &#2310;&#2352; Stainer Calculator&#2404;</span><span class="t-mr">&#2313;&#2340;&#2381;&#2346;&#2366;&#2342;&#2344; &#2310;&#2339;&#2367; QC &#2340;&#2346;&#2358;&#2368;&#2354; &#2344;&#2379;&#2306;&#2342;&#2357;&#2339;&#2375;, R&amp;D &#2346;&#2381;&#2352;&#2325;&#2354;&#2381;&#2346;, &#2340;&#2325;&#2381;&#2352;&#2366;&#2352;&#2368; &#2310;&#2339;&#2367; Stainer Calculator&#2404;</span></p>
-  <div class="chips">
-    <span class="chip on"><span class="t-en">Batches (QC)</span><span class="t-hi">&#2348;&#2376;&#2330; (QC)</span><span class="t-mr">&#2348;&#2364;&#2330; (QC)</span></span>
-    <span class="chip on">R&amp;D &amp; QC</span>
-    <span class="chip on"><span class="t-en">Complaints (Respond)</span><span class="t-hi">&#2358;&#2367;&#2325;&#2366;&#2351;&#2340;&#2375;&#2306;</span><span class="t-mr">&#2340;&#2325;&#2381;&#2352;&#2366;&#2352;&#2368;</span></span>
-    <span class="chip off">BOM</span>
-    <span class="chip off">RM Stock</span>
-  </div>
+<section id="lang">
+<h2>🌐 Hindi Language / हिंदी भाषा</h2>
+<p>Click the <span class="badge b-blue">🌐 EN / हिं</span> button in the top-right corner (next to Guide) to switch the interface language. Your choice is remembered on this device.</p>
+<div class="note">
+Currently translated: the main navigation tabs and common actions (Save, Cancel, Add, Search, etc). Screen-specific labels and form fields inside each module are still in English — this is being extended module by module. If a particular screen is a priority for your team, let us know and it'll be translated next.
+<br><br>
+वर्तमान में अनुवादित: मुख्य नेविगेशन टैब और सामान्य क्रियाएं (सेव करें, रद्द करें, जोड़ें, खोजें, आदि)। प्रत्येक मॉड्यूल के अंदर के विशिष्ट लेबल और फॉर्म फ़ील्ड अभी भी अंग्रेज़ी में हैं — इसे धीरे-धीरे बढ़ाया जा रहा है।
 </div>
-<div class="content">
-  <div class="step-sec avoid-break">
-    <h3><span class="sico" style="background:#f0fdf4">&#128300;</span><span class="t-en">Entering QC Test Results</span><span class="t-hi">QC &#2346;&#2352;&#2368;&#2325;&#2381;&#2359;&#2339; &#2346;&#2352;&#2367;&#2339;&#2366;&#2350; &#2342;&#2352;&#2381;&#2332; &#2325;&#2352;&#2344;&#2366;</span><span class="t-mr">QC &#2330;&#2366;&#2330;&#2339;&#2368; &#2346;&#2352;&#2367;&#2339;&#2366;&#2350; &#2344;&#2379;&#2306;&#2342;&#2357;&#2339;&#2375;</span></h3>
-    <ol class="steps">
-      <li><span class="sn">1</span><span><span class="t-en"><strong>Batches</strong> &rarr; find "Issued" batch &rarr; click <strong>&#128221; Production</strong> stage &rarr; enter Actual Qty, Mill No, dates &rarr; <strong>Save</strong>.</span><span class="t-hi"><strong>Batches</strong> &#2315; "Issued" &#2348;&#2376;&#2330; &#2326;&#2379;&#2332;&#2375;&#2306; &#2315; <strong>&#128221; Production</strong> &#2315; Actual Qty, Mill No, &#2340;&#2366;&#2352;&#2368;&#2326;&#2375;&#2306; &#2342;&#2352;&#2381;&#2332; &#2325;&#2352;&#2375;&#2306;&#2404;</span><span class="t-mr"><strong>Batches</strong> &#2315; "Issued" &#2348;&#2364;&#2330; &#2358;&#2379;&#2343;&#2366; &#2315; <strong>&#128221; Production</strong> &#2315; Actual Qty, Mill No, &#2340;&#2366;&#2352;&#2326;&#2366; &#2315; <strong>Save</strong>&#2404;</span></span></li>
-      <li><span class="sn">2</span><span><span class="t-en">Click <strong>&#128300; QC Testing</strong> &rarr; enter Actual Value for each parameter (Viscosity, Colour, SD/TF/HD, Sp.Gr, Gloss) &rarr; select Overall Result &rarr; <strong>Save QC</strong>.</span><span class="t-hi"><strong>&#128300; QC Testing</strong> &#2315; &#2346;&#2381;&#2352;&#2340;&#2381;&#2351;&#2375;&#2325; &#2346;&#2376;&#2352;&#2366;&#2350;&#2368;&#2335;&#2352; &#2325;&#2366; Actual Value &#2342;&#2352;&#2381;&#2332; &#2325;&#2352;&#2375;&#2306; &#2315; Overall Result &#2330;&#2369;&#2344;&#2375;&#2306; &#2315; <strong>Save QC</strong>&#2404;</span><span class="t-mr"><strong>&#128300; QC Testing</strong> &#2315; &#2346;&#2381;&#2352;&#2340;&#2381;&#2351;&#2375;&#2325; &#2346;&#2376;&#2352;&#2366;&#2350;&#2368;&#2335;&#2352;&#2330;&#2375; Actual Value &#2344;&#2379;&#2306;&#2342;&#2357;&#2366; &#2315; Overall Result &#2344;&#2367;&#2357;&#2337;&#2366; &#2315; <strong>Save QC</strong>&#2404;</span></span></li>
-    </ol>
-  </div>
-  <div class="step-sec avoid-break">
-    <h3><span class="sico" style="background:#f0fdf4">&#129514;</span><span class="t-en">R&amp;D Projects</span><span class="t-hi">R&amp;D &#2346;&#2381;&#2352;&#2379;&#2332;&#2375;&#2325;&#2381;&#2335;</span><span class="t-mr">R&amp;D &#2346;&#2381;&#2352;&#2325;&#2354;&#2381;&#2346;</span></h3>
-    <ol class="steps">
-      <li><span class="sn">1</span><span><span class="t-en"><strong>R&amp;D &amp; QC</strong> tab &rarr; <strong>&#9879; R&amp;D Projects</strong> sub-tab &rarr; <strong>+ New Project</strong>. Add trials with formula and results. Approved trials become BOM.</span><span class="t-hi"><strong>R&amp;D &amp; QC</strong> &#2315; <strong>&#9879; R&amp;D Projects</strong> &#2315; <strong>+ New Project</strong>&#2404; Trials &#2332;&#2379;&#2395;&#2375;&#2306;&#2404; Approved &#2340;&#2381;&#2352;&#2366;&#2351;&#2354; BOM &#2348;&#2344; &#2360;&#2325;&#2340;&#2366; &#2361;&#2376;&#2404;</span><span class="t-mr"><strong>R&amp;D &amp; QC</strong> &#2315; <strong>&#9879; R&amp;D Projects</strong> &#2315; <strong>+ New Project</strong>&#2404; Trials &#2332;&#2379;&#2337;&#2366;&#2404; Approved trial BOM &#2348;&#2344;&#2340;&#2379;&#2404;</span></span></li>
-    </ol>
-  </div>
-  <div class="step-sec avoid-break">
-    <h3><span class="sico" style="background:#fff1f2">&#9888;&#65039;</span><span class="t-en">Responding to Complaints</span><span class="t-hi">&#2358;&#2367;&#2325;&#2366;&#2351;&#2340;&#2379;&#2306; &#2325;&#2366; &#2332;&#2357;&#2366;&#2348; &#2342;&#2375;&#2344;&#2366;</span><span class="t-mr">&#2340;&#2325;&#2381;&#2352;&#2366;&#2352;&#2368;&#2306;&#2344;&#2366; &#2313;&#2340;&#2381;&#2340;&#2352; &#2342;&#2375;&#2339;&#2375;</span></h3>
-    <ol class="steps">
-      <li><span class="sn">1</span><span><span class="t-en"><strong>Complaints</strong> tab &rarr; click "QC Pending" complaint &rarr; <strong>+ Add QC Response</strong> &rarr; enter Findings &amp; Action &rarr; set Status.</span><span class="t-hi"><strong>Complaints</strong> &#2315; "QC Pending" &#2358;&#2367;&#2325;&#2366;&#2351;&#2340; &#2315; <strong>+ Add QC Response</strong> &#2315; &#2332;&#2366;&#2306;&#2330; &#2310;&#2352; &#2325;&#2366;&#2352;&#2381;&#2352;&#2357;&#2366;&#2312; &#2342;&#2352;&#2381;&#2332; &#2325;&#2352;&#2375;&#2306;&#2404;</span><span class="t-mr"><strong>Complaints</strong> &#2315; "QC Pending" &#2340;&#2325;&#2381;&#2352;&#2366;&#2352; &#2315; <strong>+ Add QC Response</strong> &#2315; &#2340;&#2346;&#2366;&#2360;&#2339;&#2368; &#2310;&#2339;&#2367; &#2325;&#2366;&#2352;&#2381;&#2351;&#2357;&#2366;&#2361;&#2368; &#2344;&#2379;&#2306;&#2342;&#2357;&#2366;&#2404;</span></span></li>
-    </ol>
-  </div>
-</div>
-</div>
+</section>
 
-<!-- SALES -->
-<div id="sales" class="page-break">
-<div class="sec-hdr" style="border-bottom-color:#a855f7">
-  <div class="role-tag" style="background:#fdf4ff;color:#6b21a8;border:1px solid #e9d5ff">&#128188; <span class="t-en">Sales</span><span class="t-hi">&#2360;&#2375;&#2354;&#2381;&#2360;</span><span class="t-mr">&#2360;&#2375;&#2354;&#2381;&#2360;</span></div>
-  <h2><span class="t-en">Sales Guide</span><span class="t-hi">&#2360;&#2375;&#2354;&#2381;&#2360; &#2327;&#2366;&#2311;&#2337;</span><span class="t-mr">&#2360;&#2375;&#2354;&#2381;&#2360; &#2350;&#2366;&#2352;&#2381;&#2327;&#2342;&#2352;&#2381;&#2358;&#2367;&#2325;&#2366;</span></h2>
-  <div class="chips"><span class="chip on"><span class="t-en">Complaints (Add)</span><span class="t-hi">&#2358;&#2367;&#2325;&#2366;&#2351;&#2340;</span><span class="t-mr">&#2340;&#2325;&#2381;&#2352;&#2366;&#2352;</span></span><span class="chip on"><span class="t-en">Testimonials</span><span class="t-hi">&#2313;&#2337;&#2366;&#2361;&#2352;&#2339;</span><span class="t-mr">&#2313;&#2340;&#2366;&#2352;&#2373;</span></span><span class="chip on"><span class="t-en">Tasks (own)</span><span class="t-hi">&#2325;&#2366;&#2352;&#2381;&#2351;</span><span class="t-mr">&#2325;&#2366;&#2350;</span></span></div>
 </div>
-<div class="content">
-  <div class="step-sec avoid-break">
-    <h3><span class="sico" style="background:#fff1f2">&#9888;&#65039;</span><span class="t-en">Raising a Customer Complaint</span><span class="t-hi">&#2327;&#2381;&#2352;&#2366;&#2361;&#2325; &#2358;&#2367;&#2325;&#2366;&#2351;&#2340; &#2342;&#2352;&#2381;&#2332; &#2325;&#2352;&#2344;&#2366;</span><span class="t-mr">&#2327;&#2381;&#2352;&#2366;&#2361;&#2325; &#2340;&#2325;&#2381;&#2352;&#2366;&#2352; &#2344;&#2379;&#2306;&#2342;&#2357;&#2339;&#2375;</span></h3>
-    <ol class="steps">
-      <li><span class="sn">1</span><span><span class="t-en"><strong>Complaints</strong> &rarr; <strong>+ Add Complaint</strong> &rarr; enter Customer Name, Product, Batch No, Issue Description &rarr; <strong>Submit</strong>.</span><span class="t-hi"><strong>Complaints</strong> &#2315; <strong>+ Add Complaint</strong> &#2315; &#2327;&#2381;&#2352;&#2366;&#2361;&#2325; &#2344;&#2366;&#2350;, Product, Batch No, &#2360;&#2350;&#2360;&#2381;&#2351;&#2366; &#2342;&#2352;&#2381;&#2332; &#2325;&#2352;&#2375;&#2306; &#2315; <strong>Submit</strong>&#2404;</span><span class="t-mr"><strong>Complaints</strong> &#2315; <strong>+ Add Complaint</strong> &#2315; &#2327;&#2381;&#2352;&#2366;&#2361;&#2325;&#2366;&#2330;&#2375; &#2344;&#2366;&#2357;, Product, Batch No, &#2360;&#2350;&#2360;&#2381;&#2351;&#2366; &#2344;&#2379;&#2306;&#2342;&#2357;&#2366; &#2315; <strong>Submit</strong>&#2404;</span></span></li>
-      <li><span class="sn">2</span><span><span class="t-en">Track status: Open &rarr; QC Investigating &rarr; Resolved / Replacement Sent.</span><span class="t-hi">&#2360;&#2381;&#2341;&#2367;&#2340;&#2367; &#2335;&#2381;&#2352;&#2376;&#2325; &#2325;&#2352;&#2375;&#2306;: Open &#2360;&#2375; QC Investigating &#2360;&#2375; Resolved&#2404;</span><span class="t-mr">&#2360;&#2381;&#2341;&#2367;&#2340;&#2368; &#2335;&#2381;&#2352;&#2376;&#2325; &#2325;&#2352;&#2366;: Open &#2340;&#2375; Resolved&#2404;</span></span></li>
-    </ol>
-  </div>
-</div>
-</div>
-
-<!-- STORE -->
-<div id="store" class="page-break">
-<div class="sec-hdr" style="border-bottom-color:#38bdf8">
-  <div class="role-tag" style="background:#f0f9ff;color:#0c4a6e;border:1px solid #bae6fd">&#127978; <span class="t-en">Store</span><span class="t-hi">&#2360;&#2381;&#2335;&#2379;&#2352;</span><span class="t-mr">&#2360;&#2381;&#2335;&#2379;&#2905;&#2352;</span></div>
-  <h2><span class="t-en">Store Guide</span><span class="t-hi">&#2360;&#2381;&#2335;&#2379;&#2352; &#2327;&#2366;&#2311;&#2337;</span><span class="t-mr">&#2360;&#2381;&#2335;&#2379;&#2905;&#2352; &#2350;&#2366;&#2352;&#2381;&#2327;&#2342;&#2352;&#2381;&#2358;&#2367;&#2325;&#2366;</span></h2>
-  <div class="chips"><span class="chip on">RM Stock</span><span class="chip on"><span class="t-en">Tasks (own)</span><span class="t-hi">&#2325;&#2366;&#2352;&#2381;&#2351;</span><span class="t-mr">&#2325;&#2366;&#2350;</span></span><span class="chip off">BOM</span><span class="chip off"><span class="t-en">Batches</span><span class="t-hi">&#2348;&#2376;&#2330;</span><span class="t-mr">&#2348;&#2364;&#2330;</span></span></div>
-</div>
-<div class="content">
-  <div class="step-sec avoid-break">
-    <h3><span class="sico" style="background:#f0f9ff">&#128230;</span><span class="t-en">Viewing Stock &amp; Recording Consumption</span><span class="t-hi">&#2360;&#2381;&#2335;&#2377;&#2325; &#2342;&#2375;&#2326;&#2344;&#2366; &#2310;&#2352; &#2313;&#2346;&#2349;&#2379;&#2327; &#2342;&#2352;&#2381;&#2332; &#2325;&#2352;&#2344;&#2366;</span><span class="t-mr">&#2360;&#2381;&#2335;&#2377;&#2325; &#2346;&#2366;&#2361;&#2339;&#2375; &#2310;&#2339;&#2367; &#2357;&#2366;&#2346;&#2352; &#2344;&#2379;&#2306;&#2342;&#2357;&#2339;&#2375;</span></h3>
-    <ol class="steps">
-      <li><span class="sn">1</span><span><span class="t-en"><strong>RM Stock</strong> &rarr; <strong>All Stock</strong> to view levels. Red &#9888;&#65039; Low Stock = inform admin immediately.</span><span class="t-hi"><strong>RM Stock</strong> &#2315; <strong>All Stock</strong>&#2404; &#2354;&#2366;&#2354; &#9888;&#65039; Low Stock = &#2340;&#2369;&#2352;&#2306;&#2340; &#2319;&#2337;&#2350;&#2367;&#2344; &#2325;&#2379; &#2360;&#2370;&#2330;&#2367;&#2340; &#2325;&#2352;&#2375;&#2306;&#2404;</span><span class="t-mr"><strong>RM Stock</strong> &#2315; <strong>All Stock</strong>&#2404; &#2354;&#2366;&#2354; &#9888;&#65039; Low Stock = &#2340;&#2340;&#2381;&#2325;&#2366;&#2354; &#2319;&#2337;&#2350;&#2367;&#2344;&#2354;&#2366; &#2325;&#2379;&#2333;&#2357;&#2366;&#2404;</span></span></li>
-      <li><span class="sn">2</span><span><span class="t-en"><strong>Record Consumption</strong>: set Date &rarr; select Category &rarr; enter qty used &rarr; add Common Note (e.g. "Batch 0027") &rarr; <strong>Save</strong>.</span><span class="t-hi"><strong>Record Consumption</strong>: &#2340;&#2366;&#2352;&#2368;&#2326; &#2315; Category &#2315; &#2350;&#2366;&#2340;&#2381;&#2352;&#2366; &#2342;&#2352;&#2381;&#2332; &#2325;&#2352;&#2375;&#2306; &#2315; Common Note (&#2332;&#2376;&#2360;&#2375; "&#2348;&#2376;&#2330; 0027") &#2315; <strong>Save</strong>&#2404;</span><span class="t-mr"><strong>Record Consumption</strong>: &#2340;&#2366;&#2352;&#2368;&#2326; &#2315; Category &#2315; &#2346;&#2381;&#2352;&#2350;&#2366;&#2339; &#2344;&#2379;&#2306;&#2342;&#2357;&#2366; &#2315; Common Note &#2315; <strong>Save</strong>&#2404;</span></span></li>
-    </ol>
-  </div>
-</div>
-</div>
-
-<!-- STAINER CALCULATOR -->
-<div id="stainer" class="page-break">
-<div class="sec-hdr" style="border-bottom-color:#22c55e">
-  <div class="role-tag" style="background:#f0fdf4;color:#166534;border:1px solid #bbf7d0">&#127912; <span class="t-en">Stainer Calculator</span><span class="t-hi">&#2360;&#2381;&#2335;&#2375;&#2344;&#2352; &#2325;&#2376;&#2354;&#2381;&#2325;&#2369;&#2354;&#2375;&#2335;&#2352;</span><span class="t-mr">&#2360;&#2381;&#2335;&#2375;&#2344;&#2352; &#2325;&#2376;&#2354;&#2381;&#2325;&#2369;&#2354;&#2375;&#2335;&#2352;</span></div>
-  <h2><span class="t-en">Stainer Pigment Calculator</span><span class="t-hi">&#2360;&#2381;&#2335;&#2375;&#2344;&#2352; &#2346;&#2367;&#2327;&#2350;&#2375;&#2306;&#2335; &#2325;&#2376;&#2354;&#2381;&#2325;&#2369;&#2354;&#2375;&#2335;&#2352;</span><span class="t-mr">&#2360;&#2381;&#2335;&#2375;&#2344;&#2352; &#2346;&#2367;&#2332;&#2350;&#2375;&#2306;&#2335; &#2325;&#2376;&#2354;&#2381;&#2325;&#2369;&#2354;&#2375;&#2335;&#2352;</span></h2>
-  <p><span class="t-en">Located in <strong>R&amp;D &amp; QC &rarr; &#127912; Stainer Calc</strong> sub-tab. Used by QC to calculate how much base paint to add after extra stainer is added.</span><span class="t-hi"><strong>R&amp;D &amp; QC &rarr; &#127912; Stainer Calc</strong> &#2340;&#2379; &#2310;&#2348;-&#2340;&#2366;&#2348; &#2350;&#2375;&#2306; &#2361;&#2376;&#2404; QC &#2313;&#2346;&#2351;&#2379;&#2327; &#2325;&#2352;&#2340;&#2366; &#2361;&#2376;&#2404;</span><span class="t-mr"><strong>R&amp;D &amp; QC &rarr; &#127912; Stainer Calc</strong> &#2313;&#2346;-&#2335;&#2373;&#2348;&#2350;&#2343;&#2381;&#2351;&#2375; &#2310;&#2361;&#2375;&#2404; QC &#2357;&#2366;&#2346;&#2352; &#2325;&#2352;&#2340;&#2379;&#2404;</span></p>
-</div>
-<div class="content">
-  <div class="step-sec avoid-break">
-    <h3><span class="sico" style="background:#f0fdf4">&#128229;</span><span class="t-en">Mode 1 — Stainer Added (Forward)</span><span class="t-hi">&#2350;&#2379;&#2337; 1 &mdash; &#2360;&#2381;&#2335;&#2375;&#2344;&#2352; &#2332;&#2379;&#2395;&#2366; &#2327;&#2351;&#2366;</span><span class="t-mr">&#2350;&#2379;&#2337; 1 &mdash; &#2360;&#2381;&#2335;&#2375;&#2344;&#2352; &#2332;&#2379;&#2337;&#2354;&#2375;</span></h3>
-    <div class="ibox note"><span class="ibox-icon">&#128161;</span><div class="ibox-body"><span class="t-en">Use when extra stainer is added during production and you need to increase the batch with base paint to maintain pigment%.</span><span class="t-hi">&#2332;&#2348; &#2313;&#2340;&#2381;&#2346;&#2366;&#2342;&#2344; &#2350;&#2375;&#2306; &#2309;&#2340;&#2367;&#2352;&#2367;&#2325;&#2381;&#2340; &#2360;&#2381;&#2335;&#2375;&#2344;&#2352; &#2332;&#2379;&#2395;&#2366; &#2332;&#2366;&#2319; &#2340;&#2379; &#2346;&#2367;&#2327;&#2350;&#2375;&#2306;&#2335;% &#2348;&#2344;&#2366;&#2319; &#2352;&#2326;&#2344;&#2375; &#2325;&#2375; &#2354;&#2367;&#2319; &#2313;&#2346;&#2351;&#2379;&#2327; &#2325;&#2352;&#2375;&#2306;&#2404;</span><span class="t-mr">&#2313;&#2340;&#2381;&#2346;&#2366;&#2342;&#2344;&#2350;&#2343;&#2381;&#2351;&#2375; &#2332;&#2366;&#2360;&#2381;&#2340;&#2368;&#2330;&#2366; &#2360;&#2381;&#2335;&#2375;&#2344;&#2352; &#2332;&#2379;&#2337;&#2354;&#2381;&#2351;&#2366;&#2357;&#2352; pigment% &#2352;&#2366;&#2326;&#2339;&#2381;&#2351;&#2366;&#2360;&#2366;&#2336;&#2368; &#2357;&#2366;&#2346;&#2352;&#2366;&#2404;</span></div></div>
-    <ol class="steps">
-      <li><span class="sn">1</span><span><span class="t-en">Select <strong>&#128229; Stainer Added</strong> mode. Enter <strong>Original Batch Size</strong> (e.g. 1000 L).</span><span class="t-hi"><strong>&#128229; Stainer Added</strong> &#2350;&#2379;&#2337; &#2330;&#2369;&#2344;&#2375;&#2306;&#2404; <strong>Original Batch Size</strong> &#2342;&#2352;&#2381;&#2332; &#2325;&#2352;&#2375;&#2306; (&#2332;&#2376;&#2360;&#2375; 1000 L)&#2404;</span><span class="t-mr"><strong>&#128229; Stainer Added</strong> &#2350;&#2379;&#2337; &#2344;&#2367;&#2357;&#2337;&#2366;&#2404; <strong>Original Batch Size</strong> &#2335;&#2366;&#2325;&#2366; (&#2313;&#2342;&#2366;. 1000 L)&#2404;</span></span></li>
-      <li><span class="sn">2</span><span><span class="t-en">Enter <strong>Original Pigment %</strong> (from the BOM, e.g. 15%). The <strong>Target Pigment %</strong> auto-fills to the same value. Change it only if you want a different final %.</span><span class="t-hi"><strong>Original Pigment %</strong> (BOM &#2360;&#2375;, &#2332;&#2376;&#2360;&#2375; 15%) &#2342;&#2352;&#2381;&#2332; &#2325;&#2352;&#2375;&#2306;&#2404; <strong>Target Pigment %</strong> &#2309;&#2346;&#2344;&#2375; &#2310;&#2346; &#2349;&#2352; &#2332;&#2366;&#2340;&#2366; &#2361;&#2376;&#2404; &#2309;&#2354;&#2327; Target &#2330;&#2366;&#2361;&#2367;&#2319; &#2340;&#2379; &#2348;&#2342;&#2354;&#2375;&#2306;&#2404;</span><span class="t-mr"><strong>Original Pigment %</strong> (BOM &#2350;&#2343;&#2370;&#2344;, &#2313;&#2342;&#2366;. 15%) &#2335;&#2366;&#2325;&#2366;&#2404; <strong>Target Pigment %</strong> &#2310;&#2346;&#2379;&#2310;&#2346; &#2340;&#2381;&#2351;&#2366;&#2330; &#2350;&#2370;&#2354;&#2381;&#2351;&#2366;&#2344;&#2375; &#2349;&#2352;&#2340;&#2379;&#2404; &#2357;&#2375;&#2327;&#2349;&#2379; Target &#2361;&#2357;&#2366; &#2366;&#2360;&#2354;&#2381;&#2351;&#2366;&#2360; &#2348;&#2342;&#2354;&#2366;&#2404;</span></span></li>
-      <li><span class="sn">3</span><span><span class="t-en">In the <strong>Stainers Added</strong> table: enter name (optional), amount (L/kg), and pigment % for each stainer. Click <strong>+ Add Stainer</strong> to add multiple.</span><span class="t-hi"><strong>Stainers Added</strong> &#2340;&#2366;&#2354;&#2367;&#2325;&#2366; &#2350;&#2375;&#2306;: &#2344;&#2366;&#2350;, &#2350;&#2366;&#2340;&#2381;&#2352;&#2366; (L/kg) &#2310;&#2352; pigment % &#2342;&#2352;&#2381;&#2332; &#2325;&#2352;&#2375;&#2306;&#2404; &#2309;&#2344;&#2375;&#2325; &#2360;&#2381;&#2335;&#2375;&#2344;&#2352; &#2332;&#2379;&#2395;&#2344;&#2375; &#2325;&#2375; &#2354;&#2367;&#2319; <strong>+ Add Stainer</strong>&#2404;</span><span class="t-mr"><strong>Stainers Added</strong> &#2340;&#2325;&#2381;&#2340;&#2381;&#2351;&#2366;&#2340;: &#2344;&#2366;&#2357;, &#2346;&#2381;&#2352;&#2350;&#2366;&#2339; (L/kg) &#2310;&#2339;&#2367; pigment % &#2344;&#2379;&#2306;&#2342;&#2357;&#2366;&#2404; &#2309;&#2344;&#2375;&#2325; stainers &#2360;&#2366;&#2336;&#2368; <strong>+ Add Stainer</strong>&#2404;</span></span></li>
-      <li><span class="sn">4</span><span><span class="t-en">Results show: <strong>Pigment% after stainer</strong>, <strong>Batch Size Increase</strong> (final &minus; original), <strong>Final Batch Size</strong> (rounded down to 10L). The Action box says: "Increase from 1000L &rarr; 1160L (+160L total). Stainer already added: 50L &middot; Still add: 110L base."</span><span class="t-hi">&#2352;&#2367;&#2332;&#2354;&#2381;&#2335;: Pigment% (&#2360;&#2381;&#2335;&#2375;&#2344;&#2352; &#2325;&#2375; &#2348;&#2366;&#2342;), Batch Size Increase (&#2309;&#2306;&#2340;&#2367;&#2350; &minus; &#2350;&#2370;&#2354;), Final Batch Size (10L &#2340;&#2325; &#2325;&#2381;&#2352;&#2380;&#2302;&#2332;&#2339;)&#2404;</span><span class="t-mr">&#2352;&#2367;&#2332;&#2354;&#2381;&#2335;: Pigment% (&#2360;&#2381;&#2335;&#2375;&#2344;&#2352; &#2344;&#2306;&#2340;&#2352;), Batch Size Increase (&#2309;&#2306;&#2340;&#2367;&#2350; &minus; &#2350;&#2370;&#2333;), Final Batch Size (10L &#2354;&#2366; &#2332;&#2357;&#2313; floor)&#2404;</span></span></li>
-    </ol>
-  </div>
-  <div class="step-sec avoid-break">
-    <h3><span class="sico" style="background:#f0fdf4">&#128300;</span><span class="t-en">Mode 2 — Actual Pigment% Measured (Reverse)</span><span class="t-hi">&#2350;&#2379;&#2337; 2 &mdash; &#2357;&#2366;&#2360;&#2381;&#2340;&#2357;&#2367;&#2325; Pigment% &#2350;&#2366;&#2346;&#2366; &#2327;&#2351;&#2366;</span><span class="t-mr">&#2350;&#2379;&#2337; 2 &mdash; &#2346;&#2381;&#2352;&#2340;&#2381;&#2351;&#2352;&#2381;&#2353; Pigment% &#2350;&#2379;&#2332;&#2354;&#2366;</span></h3>
-    <ol class="steps">
-      <li><span class="sn">1</span><span><span class="t-en">Select <strong>&#128300; Actual Pigment%</strong> mode. Enter Batch Size, Actual Measured Pigment%, and Target Pigment%.</span><span class="t-hi"><strong>&#128300; Actual Pigment%</strong> &#2350;&#2379;&#2337; &#2330;&#2369;&#2344;&#2375;&#2306;&#2404; Batch Size, &#2357;&#2366;&#2360;&#2381;&#2340;&#2357;&#2367;&#2325; pigment% &#2310;&#2352; Target % &#2342;&#2352;&#2381;&#2332; &#2325;&#2352;&#2375;&#2306;&#2404;</span><span class="t-mr"><strong>&#128300; Actual Pigment%</strong> &#2350;&#2379;&#2337; &#2344;&#2367;&#2357;&#2337;&#2366;&#2404; Batch Size, &#2346;&#2381;&#2352;&#2340;&#2381;&#2351;&#2352;&#2381;&#2353; &#2350;&#2379;&#2332;&#2354;&#2375;&#2354;&#2375; pigment% &#2310;&#2339;&#2367; Target % &#2335;&#2366;&#2325;&#2366;&#2404;</span></span></li>
-      <li><span class="sn">2</span><span><span class="t-en">System reverse-calculates exactly how much base to add to reach the target. Final batch size is rounded down to nearest 10L.</span><span class="t-hi">&#2360;&#2367;&#2360;&#2381;&#2335;&#2350; &#2360;&#2381;&#2357;&#2330;&#2366;&#2354;&#2367;&#2340; &#2348;&#2340;&#2366;&#2340;&#2366; &#2361;&#2376; &#2325;&#2367; &#2347;&#2360;&#2354; 10L &#2340;&#2325; &#2343;&#2370;&#2354; &#2325;&#2371;&#2340; &#2310;&#2343;&#2366;&#2352;&#2360;&#2375; &#2325;&#2367;&#2340;&#2344;&#2366; &#2348;&#2375;&#2360; &#2332;&#2379;&#2395;&#2344;&#2366; &#2361;&#2376;&#2404;</span><span class="t-mr">&#2360;&#2367;&#2360;&#2381;&#2335;&#2350; &#2310;&#2346;&#2379;&#2310;&#2346; &#2332;&#2357;&#2333; &#2348;&#2375;&#2360; &#2332;&#2379;&#2337;&#2366;&#2351;&#2330;&#2375; &#2330;&#2370; &#2360;&#2366;&#2306;&#2327;&#2340;&#2375;&#2404; Final batch 10L &#2354;&#2366; floor&#2404;</span></span></li>
-    </ol>
-    <div class="ibox tip"><span class="ibox-icon">&#128161;</span><div class="ibox-body"><span class="t-en"><strong>Example:</strong> 1000L batch (15% pigment) + 100L stainer (50%) &rarr; Final batch = <strong>1160L</strong>. Increase = <strong>160L</strong>. Still add: <strong>110L</strong> base (stainer 50L already added).</span><span class="t-hi"><strong>&#2313;&#2342;&#2366;&#2361;&#2352;&#2339;:</strong> 1000L &#2348;&#2376;&#2330; (15%) + 100L stainer (50%) &rarr; Final = <strong>1160L</strong>&#2404; &#2348;&#2396;&#2340;&#2368; = <strong>160L</strong>&#2404; &#2348;&#2375;&#2360; &#2332;&#2379;&#2395;&#2375;&#2306;: <strong>110L</strong>&#2404;</span><span class="t-mr"><strong>&#2313;&#2342;&#2366;&#2361;&#2352;&#2339;:</strong> 1000L &#2348;&#2364;&#2330; (15%) + 100L stainer (50%) &rarr; Final = <strong>1160L</strong>&#2404; &#2357;&#2366;&#2337; = <strong>160L</strong>&#2404; Base &#2332;&#2379;&#2337;&#2366;: <strong>110L</strong>&#2404;</span></div></div>
-  </div>
-</div>
-</div>
-
-<!-- GLOSSARY -->
-<div id="gloss" class="page-break">
-<div class="sec-hdr">
-  <div class="role-tag" style="background:#f8fafc;color:#334155;border:1px solid #e2e8f0">&#128218; <span class="t-en">Glossary</span><span class="t-hi">&#2358;&#2348;&#2381;&#2342;&#2325;&#2379;&#2358;</span><span class="t-mr">&#2358;&#2348;&#2381;&#2342;&#2325;&#2379;&#2358;</span></div>
-  <h2><span class="t-en">Glossary &amp; Quick Reference</span><span class="t-hi">&#2358;&#2348;&#2381;&#2342;&#2325;&#2379;&#2358; &#2319;&#2357;&#2306; &#2340;&#2381;&#2357;&#2352;&#2367;&#2340; &#2360;&#2306;&#2342;&#2352;&#2381;&#2349;</span><span class="t-mr">&#2358;&#2348;&#2381;&#2342;&#2325;&#2379;&#2358; &#2310;&#2339;&#2367; &#2342;&#2381;&#2352;&#2369;&#2340; &#2360;&#2306;&#2342;&#2352;&#2381;&#2349;</span></h2>
-</div>
-<div class="content">
-  <div class="gloss">
-    <div class="gi avoid-break"><div class="gt">BOM</div><div class="gd"><span class="t-en">Bill of Materials — formula/recipe for a product with all ingredients and quantities.</span><span class="t-hi">&#2313;&#2340;&#2381;&#2346;&#2366;&#2342;&#2344; &#2325;&#2368; &#2352;&#2375;&#2360;&#2368;&#2346;&#2368;/&#2347;&#2377;&#2352;&#2381;&#2350;&#2369;&#2354;&#2366;&#2404;</span><span class="t-mr">&#2313;&#2340;&#2381;&#2346;&#2366;&#2342;&#2344;&#2366;&#2330;&#2368; &#2325;&#2371;&#2340;&#2368;/&#2347;&#2377;&#2352;&#2381;&#2350;&#2381;&#2351;&#2369;&#2354;&#2366;&#2404;</span></div></div>
-    <div class="gi avoid-break"><div class="gt"><span class="t-en">Batch Number</span><span class="t-hi">&#2348;&#2376;&#2330; &#2344;&#2306;&#2348;&#2352;</span><span class="t-mr">&#2348;&#2364;&#2330; &#2344;&#2306;&#2348;&#2352;</span></div><div class="gd"><span class="t-en">Auto-generated sequential number (e.g. 0027) per Financial Year. Resets every April.</span><span class="t-hi">&#2357;&#2367;&#2340;&#2381;&#2340;&#2368;&#2351; &#2357;&#2352;&#2381;&#2359; &#2350;&#2375;&#2306; &#2310;&#2306;&#2325; (&#2332;&#2376;&#2360;&#2375; 0027)&#2404; &#2361;&#2352; &#2309;&#2346;&#2381;&#2352;&#2376;&#2354; &#2340;&#2366;&#2332;&#2366; &#2361;&#2379;&#2340;&#2366; &#2361;&#2376;&#2404;</span><span class="t-mr">&#2310;&#2352;&#2381;&#2341;&#2367;&#2325; &#2357;&#2352;&#2381;&#2359;&#2366;&#2340; &#2310;&#2306;&#2325; (&#2313;&#2342;&#2366;. 0027)&#2404; &#2346;&#2381;&#2352;&#2340;&#2381;&#2351;&#2375;&#2325; &#2319;&#2346;&#2381;&#2352;&#2367;&#2354;&#2354;&#2366; &#2352;&#2368;&#2360;&#2375;&#2335;&#2404;</span></div></div>
-    <div class="gi avoid-break"><div class="gt"><span class="t-en">Financial Year (FY)</span><span class="t-hi">&#2357;&#2367;&#2340;&#2381;&#2340;&#2368;&#2351; &#2357;&#2352;&#2381;&#2359;</span><span class="t-mr">&#2310;&#2352;&#2381;&#2341;&#2367;&#2325; &#2357;&#2352;&#2381;&#2359;</span></div><div class="gd"><span class="t-en">April 1 to March 31. Issue Date determines batch FY.</span><span class="t-hi">1 &#2309;&#2346;&#2381;&#2352;&#2376;&#2354; &#2360;&#2375; 31 &#2350;&#2366;&#2352;&#2381;&#2330;&#2404; Issue Date &#2360;&#2375; FY &#2340;&#2351; &#2361;&#2379;&#2340;&#2366; &#2361;&#2376;&#2404;</span><span class="t-mr">1 &#2319;&#2346;&#2381;&#2352;&#2367;&#2354; &#2340;&#2375; 31 &#2350;&#2366;&#2352;&#2381;&#2330;&#2404; Issue Date &#2357;&#2352;&#2370;&#2344; FY &#2336;&#2352;&#2340;&#2375;&#2404;</span></div></div>
-    <div class="gi avoid-break"><div class="gt">SD / TF / HD</div><div class="gd"><span class="t-en">Surface Dry / Touch Free / Hard Dry — three drying stages in QC testing.</span><span class="t-hi">&#2330;&#2367;&#2325;&#2344;&#2366;&#2360; &#2360;&#2369;&#2326;&#2366;&#2344;&#2375; &#2325;&#2375; &#2340;&#2368;&#2344; &#2330;&#2352;&#2339;&#2404;</span><span class="t-mr">&#2360;&#2369;&#2325;&#2339;&#2381;&#2351;&#2366;&#2330;&#2375; &#2340;&#2368;&#2344; &#2335;&#2346;&#2381;&#2346;&#2375;&#2404;</span></div></div>
-    <div class="gi avoid-break"><div class="gt"><span class="t-en">Active Batch</span><span class="t-hi">&#2360;&#2325;&#2381;&#2352;&#2367;&#2351; &#2348;&#2376;&#2330;</span><span class="t-mr">&#2360;&#2325;&#2381;&#2352;&#2367;&#2351; &#2348;&#2364;&#2330;</span></div><div class="gd"><span class="t-en">A batch that is not yet Packed. Includes: Issued, In Production, QC Pending, QC Pass, QC Fail.</span><span class="t-hi">&#2332;&#2379; &#2348;&#2376;&#2330; &#2309;&#2349;&#2368; Packed &#2344;&#2361;&#2368;&#2306; &#2361;&#2369;&#2310;&#2404;</span><span class="t-mr">&#2332;&#2379; &#2348;&#2364;&#2330; &#2309;&#2332;&#2370;&#2344; Packed &#2344;&#2366;&#2361;&#2368;&#2404;</span></div></div>
-    <div class="gi avoid-break"><div class="gt"><span class="t-en">Stainer</span><span class="t-hi">&#2360;&#2381;&#2335;&#2375;&#2344;&#2352;</span><span class="t-mr">&#2360;&#2381;&#2335;&#2375;&#2344;&#2352;</span></div><div class="gd"><span class="t-en">A concentrated colorant added to base paint to achieve the target colour and pigment%.</span><span class="t-hi">&#2352;&#2306;&#2327; &#2310;&#2352; pigment% &#2346;&#2366;&#2344;&#2375; &#2325;&#2375; &#2354;&#2367;&#2319; &#2348;&#2375;&#2360; &#2346;&#2375;&#2306;&#2335; &#2350;&#2375;&#2306; &#2332;&#2379;&#2395;&#2366; &#2332;&#2366;&#2344;&#2375; &#2357;&#2366;&#2354;&#2366; &#2332;&#2381;&#2351;&#2366;&#2342;&#2366; &#2366;&#2352;&#2306;&#2327;</span><span class="t-mr">&#2352;&#2306;&#2327; &#2310;&#2339;&#2367; pigment% &#2360;&#2366;&#2336;&#2381;&#2351;&#2366;&#2360;&#2366;&#2336;&#2368; &#2348;&#2375;&#2360; &#2346;&#2375;&#2306;&#2335;&#2350;&#2343;&#2381;&#2351;&#2375; &#2350;&#2367;&#2360;&#2379;&#2333;&#2354;&#2375;&#2354;&#2375; &#2360;&#2366;&#2306;&#2342;&#2381;&#2352;&#2364;&#2366;&#2330;&#2375; &#2352;&#2306;&#2332;&#2325; &#2342;&#2381;&#2352;&#2357;&#2381;&#2351;</span></div></div>
-    <div class="gi avoid-break"><div class="gt"><span class="t-en">Old / Rejected Stock</span><span class="t-hi">&#2346;&#2369;&#2352;&#2366;/&#2352;&#2367;&#2332;&#2375;&#2325;&#2381;&#2335;&#2375;&#2337; &#2360;&#2381;&#2335;&#2377;&#2325;</span><span class="t-mr">&#2332;&#2369;&#2344;&#2366;/&#2344;&#2366;&#2325;&#2366;&#2352;&#2354;&#2375;&#2354;&#2366; &#2360;&#2381;&#2335;&#2377;&#2325;</span></div><div class="gd"><span class="t-en">Old or rejected paint in stock. Prints in amber section on production sheet as reminder to use first.</span><span class="t-hi">&#2346;&#2369;&#2352;&#2366;&#2344;&#2366;/&#2352;&#2367;&#2332;&#2375;&#2325;&#2381;&#2335;&#2375;&#2337; &#2346;&#2375;&#2306;&#2335;&#2404; &#2346;&#2381;&#2352;&#2379;&#2337;&#2325;&#2381;&#2358;&#2344; &#2358;&#2368;&#2335; &#2350;&#2375;&#2306; &#2346;&#2361;&#2354;&#2375; &#2313;&#2346;&#2351;&#2379;&#2327; &#2325;&#2352;&#2344;&#2375; &#2361;&#2375;&#2340;&#2369; &#2342;&#2367;&#2326;&#2340;&#2366; &#2361;&#2376;&#2404;</span><span class="t-mr">&#2332;&#2369;&#2344;&#2366;/&#2344;&#2366;&#2325;&#2366;&#2352;&#2354;&#2375;&#2354;&#2366; &#2346;&#2375;&#2306;&#2335;&#2404; &#2309;&#2366;&#2343;&#2368; &#2357;&#2366;&#2346;&#2352;&#2361;&#2378;&#2333;&#2354;&#2366; &#2350;&#2381;&#2361;&#2339;&#2370;&#2344; &#2346;&#2381;&#2352;&#2379;&#2337;&#2325;&#2381;&#2358;&#2344; &#2358;&#2368;&#2335;&#2357;&#2352; &#2342;&#2367;&#2360;&#2340;&#2375;&#2404;</span></div></div>
-    <div class="gi avoid-break"><div class="gt"><span class="t-en">Copy BOM</span><span class="t-hi">BOM &#2325;&#2377;&#2346;&#2368;</span><span class="t-mr">BOM &#2325;&#2377;&#2346;&#2368;</span></div><div class="gd"><span class="t-en">Duplicate an existing BOM to save time when creating similar products. Click &#128203; Copy on any BOM card.</span><span class="t-hi">&#2360;&#2350;&#2366;&#2344; &#2313;&#2340;&#2381;&#2346;&#2366;&#2342; &#2348;&#2344;&#2366;&#2344;&#2375; &#2325;&#2375; &#2354;&#2367;&#2319; &#2350;&#2380;&#2332;&#2370;&#2342;&#2366; BOM &#2344;&#2325;&#2354; &#2325;&#2352;&#2375;&#2306;&#2404; &#128203; Copy &#2325;&#2381;&#2354;&#2367;&#2325; &#2325;&#2352;&#2375;&#2306;&#2404;</span><span class="t-mr">&#2360;&#2350;&#2366;&#2344; &#2313;&#2340;&#2381;&#2346;&#2366;&#2342;&#2305;&#2360;&#2366;&#2336;&#2368; &#2357;&#2375;&#2333; &#2357;&#2366;&#2330;&#2357;&#2366;&#2351;&#2354;&#2366; &#128203; Copy &#2325;&#2381;&#2354;&#2367;&#2325; &#2325;&#2352;&#2366;&#2404;</span></div></div>
-  </div>
-  <div class="qrc avoid-break">
-    <h4><span class="t-en">Quick Reference</span><span class="t-hi">&#2340;&#2381;&#2357;&#2352;&#2367;&#2340; &#2360;&#2306;&#2342;&#2352;&#2381;&#2349;</span><span class="t-mr">&#2342;&#2381;&#2352;&#2369;&#2340; &#2360;&#2306;&#2342;&#2352;&#2381;&#2349;</span></h4>
-    <div class="qrg">
-      <div class="qri"><strong><span class="t-en">Issue a batch</span><span class="t-hi">&#2348;&#2376;&#2330; &#2332;&#2366;&#2352;&#2368; &#2325;&#2352;&#2375;&#2306;</span><span class="t-mr">&#2348;&#2364;&#2330; &#2332;&#2366;&#2352;&#2368; &#2325;&#2352;&#2366;</span></strong><span>Batches &#8594; + Issue Batch &#8594; BOM &#8594; Issue</span></div>
-      <div class="qri"><strong><span class="t-en">Copy a BOM</span><span class="t-hi">BOM &#2325;&#2377;&#2346;&#2368;</span><span class="t-mr">BOM &#2325;&#2377;&#2346;&#2368;</span></strong><span>BOM &#8594; &#128203; Copy &#8594; rename &#8594; Save</span></div>
-      <div class="qri"><strong><span class="t-en">Record consumption</span><span class="t-hi">&#2313;&#2346;&#2349;&#2379;&#2327; &#2342;&#2352;&#2381;&#2332; &#2325;&#2352;&#2375;&#2306;</span><span class="t-mr">&#2357;&#2366;&#2346;&#2352; &#2344;&#2379;&#2306;&#2342;&#2357;&#2366;</span></strong><span>RM Stock &#8594; Record Consumption &#8594; Save</span></div>
-      <div class="qri"><strong><span class="t-en">Stainer Calculator</span><span class="t-hi">&#2360;&#2381;&#2335;&#2375;&#2344;&#2352; &#2325;&#2376;&#2354;&#2381;&#2325;</span><span class="t-mr">&#2360;&#2381;&#2335;&#2375;&#2344;&#2352; &#2325;&#2376;&#2354;&#2381;&#2325;</span></strong><span>R&amp;D &amp; QC &#8594; &#127912; Stainer Calc</span></div>
-      <div class="qri"><strong><span class="t-en">Add complaint</span><span class="t-hi">&#2358;&#2367;&#2325;&#2366;&#2351;&#2340; &#2342;&#2352;&#2381;&#2332;</span><span class="t-mr">&#2340;&#2325;&#2381;&#2352;&#2366;&#2352; &#2344;&#2379;&#2306;&#2342;</span></strong><span>Complaints &#8594; + Add Complaint &#8594; Submit</span></div>
-      <div class="qri"><strong><span class="t-en">Complete a task</span><span class="t-hi">&#2325;&#2366;&#2352;&#2381;&#2351; &#2346;&#2370;&#2352;&#2381;&#2339; &#2325;&#2352;&#2375;&#2306;</span><span class="t-mr">&#2325;&#2366;&#2350; &#2346;&#2370;&#2352;&#2381;&#2339; &#2325;&#2352;&#2366;</span></strong><span>Tasks &#8594; Pending &#8594; Mark Complete</span></div>
-      <div class="qri"><strong><span class="t-en">Assign task (Admin)</span><span class="t-hi">&#2325;&#2366;&#2352;&#2381;&#2351; &#2360;&#2380;&#2306;&#2346;&#2375;&#2306;</span><span class="t-mr">&#2325;&#2366;&#2350; &#2360;&#2379;&#2346;&#2357;&#2366;</span></strong><span>Tasks &#8594; + Assign Task &#8594; Assign</span></div>
-      <div class="qri"><strong><span class="t-en">Open Guide</span><span class="t-hi">&#2327;&#2366;&#2311;&#2337; &#2326;&#2379;&#2354;&#2375;&#2306;</span><span class="t-mr">&#2350;&#2366;&#2352;&#2381;&#2327;&#2342;&#2352;&#2381;&#2358;&#2367;&#2325;&#2366; &#2313;&#2328;&#2337;&#2366;</span></strong><span><span class="t-en">Header &#8594; &#128218; Guide button</span><span class="t-hi">Header &#8594; &#128218; Guide &#2348;&#2335;&#2344;</span><span class="t-mr">Header &#8594; &#128218; Guide &#2348;&#2335;&#2339;</span></span></div>
-    </div>
-  </div>
-</div>
-</div>
-
-<div class="guide-footer">
-  <div><strong style="color:rgba(255,255,255,0.75)">Gujarat Colours &amp; Coatings Pvt. Ltd.</strong> &mdash; GCC Operations Hub</div>
-  <div>ISO 9001 &nbsp;&middot;&nbsp; Palghar, Maharashtra &nbsp;&middot;&nbsp; Est. 1983</div>
-</div>
-<div class="no-print" style="position:fixed;bottom:20px;right:20px;z-index:999">
-  <button onclick="window.print()" style="background:#0D3569;color:#fff;border:none;border-radius:10px;padding:11px 22px;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 4px 16px rgba(13,53,105,0.4);font-family:inherit">&#128424; Print / Save PDF</button>
-</div>
+<a class="top" href="#top" onclick="window.scrollTo(0,0);return false;">↑ Top</a>
 </body>
 </html>
