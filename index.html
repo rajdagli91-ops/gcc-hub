@@ -738,7 +738,7 @@ const DEFAULT_PACK_SIZES_BY_CAT = {
 const gps = (p) => typeof p==="string" ? {size:p, qty:""} : (p||{size:"",qty:""});
 
 const PAINT_TYPES=["Emulsion","Enamel","Primer","Distemper","Texture","Road Marking","Epoxy","PU","Wood Finish","Anti-corrosive","Other"];
-const PROJECT_STATUS=["Ongoing","Completed","On Hold","Cancelled","Pending Approval"];
+const PROJECT_STATUS=["Ongoing","Completed","On Hold","Closed - Unsuccessful","Cancelled","Pending Approval"];
 const TEST_RESULTS=["Pass","Fail","Conditional Pass","Pending","Retest Required"];
 const RM_CATEGORIES=["Resin / Binder","Pigment","Extender / Filler","Solvent / Thinner","Additive","Drier","Emulsifier","Other"];
 const TRIAL_OUTCOMES=["Promising","Needs Revision","Failed","Approved as Final","Under Evaluation","Sample Sent to Customer"];
@@ -782,7 +782,7 @@ const LEAKAGE_STATUS=["Open","Visit Customer Required","Rejected","Credit Note A
 const LS_COL={Open:"#ef4444","Visit Customer Required":"#f59e0b",Rejected:"#64748b","Credit Note Approved":"#3b82f6","Credit Note Issued":"#22c55e",Closed:"#94a3b8"};
 const EL={customerName:"",productName:"",batchNo:"",invoiceNo:"",leakDate:"",qtyLeaked:"",qtyUnit:"L",description:""};
 
-const STATUS_COLORS={"Ongoing":"#3b82f6","Completed":"#22c55e","On Hold":"#f59e0b","Cancelled":"#ef4444","Pending Approval":"#a855f7"};
+const STATUS_COLORS={"Ongoing":"#3b82f6","Completed":"#22c55e","On Hold":"#f59e0b","Closed - Unsuccessful":"#64748b","Cancelled":"#ef4444","Pending Approval":"#a855f7"};
 const RESULT_COLORS={"Pass":"#22c55e","Fail":"#ef4444","Conditional Pass":"#f59e0b","Pending":"#94a3b8","Retest Required":"#f97316"};
 const OUTCOME_COLORS={"Promising":"#38bdf8","Needs Revision":"#f59e0b","Failed":"#ef4444","Approved as Final":"#22c55e","Under Evaluation":"#a855f7","Sample Sent to Customer":"#06b6d4"};
 const PAINT_ACCENT={"Emulsion":"#e879f9","Enamel":"#38bdf8","Primer":"#fb923c","Distemper":"#a3e635","Texture":"#f472b6","Road Marking":"#facc15","Epoxy":"#34d399","PU":"#818cf8","Wood Finish":"#d97706","Anti-corrosive":"#64748b","Other":"#cbd5e1"};
@@ -2786,11 +2786,12 @@ function ProjectWorkspace({project,isAdmin,showToast,sysUnits,sysRmCats,onAddRmC
   </div>;
 }
 
-function ProjectCard({p,onClick,onDelete,onEdit,onToggleHide,isAdmin}){
+function ProjectCard({p,onClick,onDelete,onEdit,onToggleHide,onClose,isAdmin}){
   const accent=PAINT_ACCENT[p.paintType]||"#cbd5e1";
   const sc=STATUS_COLORS[p.status]||"#94a3b8";
   const tc=(p.trials||[]).length;
   const hasFinal=(p.trials||[]).some(t=>t.outcome==="Approved as Final");
+  const isOpenStatus=["Ongoing","On Hold","Pending Approval"].includes(p.status);
   return <div onClick={onClick} onMouseEnter={e=>e.currentTarget.style.background="#0f1f35"} onMouseLeave={e=>e.currentTarget.style.background=p.hiddenFromQC?"#060d1a":"#0f172a"}
     style={{background:p.hiddenFromQC?"#060d1a":"#0f172a",border:"1px solid #1e293b",borderLeft:`3px solid ${p.hiddenFromQC?"#334155":accent}`,borderRadius:"12px",padding:"15px 20px",cursor:"pointer",transition:"background 0.15s",boxShadow:"0 2px 10px rgba(0,0,0,0.3)",marginBottom:"10px",opacity:p.hiddenFromQC?0.65:1}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:"8px"}}>
@@ -2803,6 +2804,10 @@ function ProjectCard({p,onClick,onDelete,onEdit,onToggleHide,isAdmin}){
         {isAdmin&&onToggleHide&&<button onClick={e=>{e.stopPropagation();onToggleHide(p);}} title={p.hiddenFromQC?"Show to QC":"Hide from QC"}
           style={{background:p.hiddenFromQC?"#1e293b":"none",border:"1px solid #1e293b",borderRadius:"6px",color:p.hiddenFromQC?"#94a3b8":"#475569",fontSize:"12px",padding:"2px 8px",cursor:"pointer"}}>
           {p.hiddenFromQC?"👁 Show":"🙈 Hide"}
+        </button>}
+        {isAdmin&&isOpenStatus&&onClose&&<button onClick={e=>{e.stopPropagation();onClose(p);}} title="Close this project"
+          style={{background:"none",border:"1px solid #7f1d1d",borderRadius:"6px",color:"#f87171",fontSize:"11.5px",fontWeight:"700",padding:"2px 9px",cursor:"pointer"}}>
+          🔒 Close
         </button>}
         {isAdmin&&<button onClick={e=>{e.stopPropagation();onEdit(p)}} style={{background:"none",border:"1px solid #1e293b",borderRadius:"6px",color:"#475569",fontSize:"12px",padding:"2px 8px",cursor:"pointer"}}>✏️</button>}
         {isAdmin&&<button onClick={e=>{e.stopPropagation();onDelete(p.id)}} style={{background:"none",border:"none",color:"#334155",fontSize:"15px",padding:"2px 4px",cursor:"pointer"}}>🗑</button>}
@@ -12248,6 +12253,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
   const [showAddProject,setShowAddProject]=useState(false);
   const [showAddRM,setShowAddRM]=useState(false);
   const [editProject,setEditProject]=useState(null);
+  const [closingProject,setClosingProject]=useState(null);
   const [editRM,setEditRM]=useState(null);
 
   // Forms
@@ -12894,6 +12900,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
             onDelete={async(id)=>{if(!confirm("Delete project?"))return;await C("rd_projects").doc(id).delete();showToast("Deleted","error");}}
             onEdit={p=>setEditProject({...p})}
             onToggleHide={async(proj)=>{await C("rd_projects").doc(proj.id).update({hiddenFromQC:!proj.hiddenFromQC});showToast(proj.hiddenFromQC?"Project visible to QC ✓":"Project hidden from QC ✓");}}
+            onClose={proj=>setClosingProject({...proj,closeStatus:"Closed - Unsuccessful",closeNotes:""})}
             isAdmin={isAdminRD}/>)}
         </>}
         {rdSubTab==="rmtests"&&<>
@@ -13207,6 +13214,35 @@ function MainApp({user,role,roles=[],permissions=[]}){
         <div style={{display:"flex",gap:"8px",justifyContent:"flex-end"}}>
           <Btn label="Cancel" onClick={()=>setEditProject(null)} outline color="#475569"/>
           <Btn label={saving?"Saving…":"Save Changes"} onClick={()=>updateProject(editProject)} disabled={saving} color="#f59e0b"/>
+        </div>
+      </>}
+    </Modal>
+
+    {/* Close Project */}
+    <Modal open={!!closingProject} onClose={()=>setClosingProject(null)} title="🔒 Close Project">
+      {closingProject&&<>
+        <div style={{fontSize:"13px",color:"#94a3b8",marginBottom:"14px"}}>Closing <strong style={{color:"#f1f5f9"}}>{closingProject.projectName}</strong>. This stops it showing as an open/ongoing project. You can still find it later under the {closingProject.closeStatus} filter.</div>
+        <Field label="Outcome">
+          <div style={{display:"flex",gap:"8px",marginBottom:"4px"}}>
+            <button onClick={()=>setClosingProject({...closingProject,closeStatus:"Completed"})} style={{flex:1,padding:"9px",background:closingProject.closeStatus==="Completed"?"#052e16":"#080d18",border:`1px solid ${closingProject.closeStatus==="Completed"?"#166534":"#1e293b"}`,borderRadius:"8px",color:closingProject.closeStatus==="Completed"?"#4ade80":"#475569",fontWeight:"700",fontSize:"12.5px",cursor:"pointer"}}>✓ Completed (Successful)</button>
+            <button onClick={()=>setClosingProject({...closingProject,closeStatus:"Closed - Unsuccessful"})} style={{flex:1,padding:"9px",background:closingProject.closeStatus==="Closed - Unsuccessful"?"#1e293b":"#080d18",border:`1px solid ${closingProject.closeStatus==="Closed - Unsuccessful"?"#475569":"#1e293b"}`,borderRadius:"8px",color:closingProject.closeStatus==="Closed - Unsuccessful"?"#e2e8f0":"#475569",fontWeight:"700",fontSize:"12.5px",cursor:"pointer"}}>Close (Unsuccessful)</button>
+          </div>
+        </Field>
+        <Field label="Closing Notes (optional) — reason, findings, what to revisit if picked up again">
+          <textarea style={{...ta,minHeight:"70px"}} value={closingProject.closeNotes} onChange={e=>setClosingProject({...closingProject,closeNotes:e.target.value})} placeholder="e.g. Gloss retention didn't meet spec after 3 trials; revisit with a different resin base if needed."/>
+        </Field>
+        <div style={{display:"flex",gap:"8px",justifyContent:"flex-end",marginTop:"4px"}}>
+          <Btn label="Cancel" onClick={()=>setClosingProject(null)} outline color="#475569"/>
+          <Btn label={saving?"Closing…":"🔒 Close Project"} onClick={async()=>{
+            setSaving(true);
+            try{
+              const notesAppend=closingProject.closeNotes.trim()?`\n\n[Closed ${today()}] ${closingProject.closeNotes.trim()}`:`\n\n[Closed ${today()}]`;
+              await C("rd_projects").doc(closingProject.id).update({status:closingProject.closeStatus,notes:(closingProject.notes||"")+notesAppend,closedAt:today(),closedBy:user.email});
+              showToast(`Project closed as "${closingProject.closeStatus}" ✓`);
+              setClosingProject(null);
+            }catch(e){showToast("Error: "+e.message,"error");}
+            setSaving(false);
+          }} disabled={saving} color="#ef4444"/>
         </div>
       </>}
     </Modal>
