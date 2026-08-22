@@ -7513,7 +7513,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
         // ambiguous (both numeric, both text, or both blank) — fall back to original Name-first assumption
         return{name:String(a||"").trim(),seq:parseFloat(b)||cnt};
       };
-      const isHeaderText=s=>{const t=s.toLowerCase();return t===""||t==="name"||t==="customer"||t==="transporter"||t==="s.no"||t==="sno"||t==="sr.no"||t==="seq"||t==="sequence";};
+      const isHeaderText=s=>{const t=s.toLowerCase().trim();return t===""||t==="#"||t==="name"||t==="customer"||t==="transporter"||t==="s.no"||t==="sno"||t==="sr.no"||t==="seq"||t==="sequence"||t==="customer name"||t==="transporter name"||t==="name (transporter / customer)";};
       wb.SheetNames.forEach(sheetName=>{
         const ws=wb.Sheets[sheetName];
         const rows=XLSX.utils.sheet_to_json(ws,{header:1});
