@@ -473,7 +473,7 @@ function printTrialSheet(trial,project,index){
 
 
 function printRMTestSheet(entry){
-  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>RM Test Sheet — ${entry.materialName}</title>
+  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>RM Test Sheet — ${entry.companyPartNo?entry.companyPartNo+" — ":""}${entry.materialName}</title>
 <style>
   *{box-sizing:border-box}
   body{font-family:Arial,sans-serif;margin:0;padding:8pt 10pt;font-size:11pt;}
@@ -493,7 +493,8 @@ function printRMTestSheet(entry){
 <table style="border:2px solid #000;margin:6pt 0">
   <tr>
     <td style="width:60%;padding:6pt 10pt;border-right:1px solid #999">
-      <div style="font-size:9pt;color:#666">MATERIAL</div>
+      ${entry.companyPartNo?`<div style="font-size:9pt;color:#666">COMPANY PART NO</div><div style="font-size:11pt;font-weight:700;color:#333;margin-bottom:3pt">${entry.companyPartNo}</div>`:""}
+      <div style="font-size:9pt;color:#666">VENDOR MATERIAL NAME</div>
       <div style="font-size:13pt;font-weight:700">${entry.materialName||"—"}</div>
     </td>
     <td style="width:40%;padding:6pt 10pt">
@@ -2860,7 +2861,7 @@ function RMCard({r,onClick,onDelete,onEdit,isAdmin,allProfiles={}}){
     style={{background:"#0f172a",border:"1px solid #1e293b",borderLeft:`3px solid ${rc}`,borderRadius:"12px",padding:"15px 20px",cursor:"pointer",transition:"background 0.15s",boxShadow:"0 2px 10px rgba(0,0,0,0.3)",marginBottom:"10px"}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:"8px"}}>
       <div style={{flex:1}}>
-        <div style={{fontSize:"14px",fontWeight:"700",color:"#f1f5f9",marginBottom:"3px",fontFamily:"'DM Serif Display',serif"}}>{r.materialName}</div>
+        <div style={{fontSize:"14px",fontWeight:"700",color:"#f1f5f9",marginBottom:"3px",fontFamily:"'DM Serif Display',serif"}}>{r.companyPartNo&&<span style={{color:"#fbbf24"}}>{r.companyPartNo} — </span>}{r.materialName}</div>
         <div style={{fontSize:"11.5px",color:"#64748b",marginBottom:"6px"}}>{r.vendorName} · {r.category} · Batch: {r.batchNo||"—"}</div>
       </div>
       <div style={{display:"flex",gap:"6px",alignItems:"center",flexShrink:0}}>
@@ -2943,7 +2944,7 @@ function RMDetailView({entry,showToast,allProfiles={}}){
   return <div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"14px",gap:"8px"}}>
       <div>
-        <div style={{fontSize:"20px",fontWeight:"400",fontFamily:"'DM Serif Display',serif",color:"#f1f5f9"}}>{live.materialName}</div>
+        <div style={{fontSize:"20px",fontWeight:"400",fontFamily:"'DM Serif Display',serif",color:"#f1f5f9"}}>{live.companyPartNo&&<span style={{color:"#fbbf24"}}>{live.companyPartNo} — </span>}{live.materialName}</div>
         <div style={{fontSize:"12px",color:"#64748b"}}>{live.vendorName} · {live.category}</div>
       </div>
       <div style={{display:"flex",gap:"8px",alignItems:"center",flexShrink:0}}>
@@ -5287,7 +5288,7 @@ function NoAccessScreen(){
 // MAIN APP
 // ══════════════════════════════════════════════════════════
 const EP={projectName:"",projectCode:"",paintType:"Emulsion",application:"",status:"Ongoing",objective:"",formulationBase:"",assignedTo:"",targetDate:"",notes:""};
-const ER={materialName:"",vendorName:"",category:"Resin / Binder",batchNo:"",lotNo:"",quantityReceived:"",dateReceived:"",specsToTest:"",assignedTo:"",testedBy:"",testResult:"Pending",testsPerformed:"",observations:"",remarks:""};
+const ER={materialName:"",companyPartNo:"",vendorName:"",category:"Resin / Binder",batchNo:"",lotNo:"",quantityReceived:"",dateReceived:"",specsToTest:"",assignedTo:"",testedBy:"",testResult:"Pending",testsPerformed:"",observations:"",remarks:""};
 const EB={category:"",productName:"",shade:"",batchSize:"",unit:"kg",dateIssued:today(),issuedBy:"",oldStockUsed:"",issueNotes:""};
 const EC={customerName:"",productName:"",batchNo:"",monthYear:"",invoiceNo:"",materialAvailable:"",complaint:"",applicationProcess:"",thinnerUsed:"",source:"salesman",assignedSalesman:"",visitedCustomer:"",visitDate:"",complaintDate:""};
 
@@ -12637,7 +12638,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
   const frm=rmTests.filter(r=>{
     const ms=rmFilter==="All"||r.testResult===rmFilter;
     const q=rmSearch.toLowerCase();
-    return ms&&(!q||r.materialName?.toLowerCase().includes(q)||r.vendorName?.toLowerCase().includes(q));
+    return ms&&(!q||r.materialName?.toLowerCase().includes(q)||r.vendorName?.toLowerCase().includes(q)||r.companyPartNo?.toLowerCase().includes(q));
   });
 
   const tabs=[
@@ -13287,8 +13288,12 @@ function MainApp({user,role,roles=[],permissions=[]}){
 
     {/* Add RM */}
     <Modal open={showAddRM} onClose={()=>setShowAddRM(false)} title="New Raw Material Test Entry">
+      <datalist id="rm-partno-list">{[...new Set(rmTests.map(r=>r.companyPartNo).filter(Boolean))].sort().map(pn=><option key={pn} value={pn}/>)}</datalist>
       <Grid2>
-        <Field label="Material Name *"><input style={inp} value={rmForm.materialName} onChange={e=>setRmForm({...rmForm,materialName:e.target.value})} placeholder="e.g. TiO2, Alkyd Resin"/></Field>
+        <Field label="Company Part No (existing or new)"><input style={inp} list="rm-partno-list" value={rmForm.companyPartNo} onChange={e=>setRmForm({...rmForm,companyPartNo:e.target.value})} placeholder="e.g. RM-0142 — pick existing or type new"/></Field>
+        <Field label="Vendor Material Name *"><input style={inp} value={rmForm.materialName} onChange={e=>setRmForm({...rmForm,materialName:e.target.value})} placeholder="Name the vendor calls it — e.g. TiO2, Alkyd Resin"/></Field>
+      </Grid2>
+      <Grid2>
         <Field label="Vendor / Supplier *"><input style={inp} value={rmForm.vendorName} onChange={e=>setRmForm({...rmForm,vendorName:e.target.value})}/></Field>
       </Grid2>
       <Grid2>
@@ -13334,8 +13339,12 @@ function MainApp({user,role,roles=[],permissions=[]}){
     {/* Edit RM */}
     <Modal open={!!editRM} onClose={()=>setEditRM(null)} title="Edit RM Entry">
       {editRM&&<>
+        <datalist id="rm-partno-list-edit">{[...new Set(rmTests.map(r=>r.companyPartNo).filter(Boolean))].sort().map(pn=><option key={pn} value={pn}/>)}</datalist>
         <Grid2>
-          <Field label="Material Name *"><input style={inp} value={editRM.materialName} onChange={e=>setEditRM({...editRM,materialName:e.target.value})}/></Field>
+          <Field label="Company Part No (existing or new)"><input style={inp} list="rm-partno-list-edit" value={editRM.companyPartNo||""} onChange={e=>setEditRM({...editRM,companyPartNo:e.target.value})} placeholder="e.g. RM-0142"/></Field>
+          <Field label="Vendor Material Name *"><input style={inp} value={editRM.materialName} onChange={e=>setEditRM({...editRM,materialName:e.target.value})}/></Field>
+        </Grid2>
+        <Grid2>
           <Field label="Vendor / Supplier *"><input style={inp} value={editRM.vendorName} onChange={e=>setEditRM({...editRM,vendorName:e.target.value})}/></Field>
         </Grid2>
         <Grid2>
