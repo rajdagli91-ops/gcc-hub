@@ -6321,6 +6321,67 @@ function FGMovementsTab({role,user,showToast,isAdmin,canManage}){
 // ORDERS TAB — Tally Sales Orders, customer-grouped, dispatch system
 // ══════════════════════════════════════════════════════════════════
 
+// Print a Preparation Summary (used by both Direct Prep and Transport Prep) — takes a flat
+// list of items {partyName,name,qty,route,transport} and a view mode, groups it the same way
+// the on-screen panel does, and opens a clean printable sheet for the warehouse team.
+function printPrepSummary(opts){
+  const title=opts.title||"Preparation Summary";
+  const view=opts.view; // "customer" | "product" | "route" | "transporter"
+  const items=opts.items||[];
+  const dateStr=opts.dateStr||new Date().toLocaleDateString("en-IN");
+  function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+  let h='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>'+esc(title)+'</title>';
+  h+='<style>*{box-sizing:border-box}body{font-family:Arial,sans-serif;margin:0;padding:10pt 12pt;font-size:10.5pt;color:#000}';
+  h+='@page{size:A4 portrait;margin:10mm}table{border-collapse:collapse;width:100%;margin-bottom:8pt}';
+  h+='th{background:#e8e8e8;border:1px solid #000;padding:4pt 6pt;text-align:left;font-size:9.5pt}';
+  h+='td{border:1px solid #000;padding:4pt 6pt;font-size:9.5pt}.grp{background:#f0f0f0;font-weight:700}';
+  h+='.hdr{display:flex;justify-content:space-between;border-bottom:2px solid #000;padding-bottom:5pt;margin-bottom:4pt}';
+  h+='.co{font-size:15pt;font-weight:800;letter-spacing:0.5px}.ttl{font-size:12pt;font-weight:700}.view{font-size:10pt;font-weight:700;color:#333;margin-bottom:8pt;text-transform:uppercase;letter-spacing:0.04em}</style></head><body>';
+  h+='<div class="hdr"><span class="co">VEEBEE</span><span class="ttl">'+esc(title)+'</span><span>'+esc(dateStr)+'</span></div>';
+  const viewLabel=view==="customer"?"Grouped By Customer":view==="product"?"Grouped By Product":view==="transporter"?"Grouped By Transporter":"Grouped By Route";
+  h+='<div class="view">📋 '+viewLabel+'</div>';
+
+  if(view==="customer"){
+    const byC={};
+    items.forEach(i=>{const k=i.partyName+"::"+(i.route||i.transport||"");if(!byC[k])byC[k]={partyName:i.partyName,loc:i.transport||i.route||"",items:[]};byC[k].items.push(i);});
+    h+='<table><tr><th style="width:4%">#</th><th style="width:30%">Customer</th><th style="width:16%">Route/Transport</th><th style="width:36%">Product</th><th style="width:14%">Qty</th></tr>';
+    Object.values(byC).forEach((c,ci)=>{
+      c.items.forEach((it,ii)=>{
+        h+='<tr>';
+        if(ii===0)h+='<td rowspan="'+c.items.length+'">'+(ci+1)+'</td><td rowspan="'+c.items.length+'"><b>'+esc(c.partyName)+'</b></td><td rowspan="'+c.items.length+'">'+esc(c.loc)+'</td>';
+        h+='<td>'+esc(it.name)+'</td><td style="text-align:center;font-weight:700">'+esc(it.qty)+'</td></tr>';
+      });
+    });
+    h+='</table>';
+  }else if(view==="product"){
+    const byP={};items.forEach(i=>{if(!byP[i.name])byP[i.name]={name:i.name,total:0,rows:[]};byP[i.name].total+=(parseFloat(i.qty)||0);byP[i.name].rows.push(i);});
+    h+='<table><tr><th style="width:4%">#</th><th style="width:40%">Product</th><th style="width:16%">Total Qty</th><th style="width:40%">Customer Breakdown</th></tr>';
+    Object.values(byP).sort((a,b)=>b.total-a.total).forEach((p,pi)=>{
+      const breakdown=p.rows.map(r=>esc(r.partyName)+" ("+esc(r.qty)+")").join(", ");
+      h+='<tr><td>'+(pi+1)+'</td><td><b>'+esc(p.name)+'</b></td><td style="text-align:center;font-weight:700">'+p.total+'</td><td style="font-size:8.5pt">'+breakdown+'</td></tr>';
+    });
+    h+='</table>';
+  }else{ // route or transporter
+    const field=view==="transporter"?"transport":"route";
+    const byG={};items.forEach(i=>{const k=i[field]||"—";if(!byG[k])byG[k]={label:k,items:[]};byG[k].items.push(i);});
+    h+='<table><tr><th style="width:4%">#</th><th style="width:26%">'+(view==="transporter"?"Transporter":"Route")+'</th><th style="width:26%">Customer</th><th style="width:30%">Product</th><th style="width:14%">Qty</th></tr>';
+    let gi=0;
+    Object.values(byG).forEach(g=>{
+      gi++;
+      let first=true;
+      g.items.forEach(it=>{
+        h+='<tr>';
+        if(first){h+='<td rowspan="'+g.items.length+'">'+gi+'</td><td rowspan="'+g.items.length+'"><b>'+esc(g.label)+'</b></td>';first=false;}
+        h+='<td>'+esc(it.partyName)+'</td><td>'+esc(it.name)+'</td><td style="text-align:center;font-weight:700">'+esc(it.qty)+'</td></tr>';
+      });
+    });
+    h+='</table>';
+  }
+  h+='<div style="margin-top:14pt;font-size:9pt;color:#333">Prepared by: ______________________ &nbsp;&nbsp;&nbsp; Checked by: ______________________</div>';
+  h+='</body></html>';
+  const w=window.open('','_blank');w.document.write(h);w.document.close();setTimeout(()=>w.print(),400);
+}
+
 // Print today's dispatch list — plain ES5, defined in script block but called here
 function printDispatchList(groups,routeLabel,dateStr,fgProds){
   function calcVol(name,qty){
@@ -8828,7 +8889,10 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
               <span style={{fontSize:"10.5px",color:"#475569",fontWeight:"700"}}>Total Volume:</span>
               {Object.entries(directVolTotals).map(([u,v])=><span key={u} style={{fontSize:"14px",fontWeight:"700",color:"#93c5fd"}}>{v.toFixed(2)} {u}</span>)}
             </div>}
-            <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:"8px"}}>Preparation Summary — {directPrepView==="customer"?"By Customer":directPrepView==="product"?"By Product":"By Route"}</div>
+            <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:"8px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <span>Preparation Summary — {directPrepView==="customer"?"By Customer":directPrepView==="product"?"By Product":"By Route"}</span>
+              <button onClick={()=>printPrepSummary({title:"Direct Prep — "+(directPrepArea==="All"?"All Routes":directPrepArea),view:directPrepView,items:allDirectItems})} style={{background:"#052e16",border:"1px solid #16653440",borderRadius:"5px",color:"#4ade80",cursor:"pointer",fontSize:"10.5px",fontWeight:"700",padding:"3px 9px"}}>🖨 Print</button>
+            </div>
             <div style={{display:"flex",gap:"5px",marginBottom:"8px"}}>
               <button onClick={()=>setDirectPrepView("customer")} style={{background:directPrepView==="customer"?"#1e293b":"#080d18",border:`1px solid ${directPrepView==="customer"?"#475569":"#1e293b"}`,borderRadius:"5px",padding:"4px 9px",color:directPrepView==="customer"?"#f1f5f9":"#475569",fontSize:"11px",fontWeight:"600",cursor:"pointer"}}>👥 Customer</button>
               <button onClick={()=>setDirectPrepView("product")} style={{background:directPrepView==="product"?"#1e293b":"#080d18",border:`1px solid ${directPrepView==="product"?"#475569":"#1e293b"}`,borderRadius:"5px",padding:"4px 9px",color:directPrepView==="product"?"#f1f5f9":"#475569",fontSize:"11px",fontWeight:"600",cursor:"pointer"}}>📦 Product</button>
@@ -9045,7 +9109,10 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
               {Object.entries(volTotals).map(([u,v])=><span key={u} style={{fontSize:"14px",fontWeight:"700",color:"#93c5fd"}}>{v.toFixed(2)} {u}</span>)}
             </div>;
           })()}
-          <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:"8px"}}>Preparation Summary — {transportPrepView==="customer"?"By Customer":transportPrepView==="product"?"By Product":"By Transporter"}</div>
+          <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:"8px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span>Preparation Summary — {transportPrepView==="customer"?"By Customer":transportPrepView==="product"?"By Product":"By Transporter"}</span>
+            <button onClick={()=>printPrepSummary({title:"Transport Prep",view:transportPrepView,items:stagedTransportItems})} style={{background:"#052e16",border:"1px solid #16653440",borderRadius:"5px",color:"#4ade80",cursor:"pointer",fontSize:"10.5px",fontWeight:"700",padding:"3px 9px"}}>🖨 Print</button>
+          </div>
           {(()=>{
             // Build staged list directly from stagedTransportItems (customerGroups excludes staged items)
             const stagedList=stagedTransportItems;
