@@ -13004,7 +13004,7 @@ function MainApp({user,role,roles=[],permissions=[]}){
 
     {/* Issue Batch */}
     {/* Change Password Modal */}
-    {showChangePw&&<Modal title="🔑 Change My Password" onClose={()=>{setShowChangePw(false);setCpForm({cur:"",nw:"",nw2:""});setCpError("");}}>
+    {showChangePw&&<Modal open={showChangePw} title="🔑 Change My Password" onClose={()=>{setShowChangePw(false);setCpForm({cur:"",nw:"",nw2:""});setCpError("");}}>
       <div style={{padding:"4px 0"}}>
         <InfoBox color="#3b82f6">Enter your current password to verify identity, then set a new one.</InfoBox>
         <Field label="Current Password">
