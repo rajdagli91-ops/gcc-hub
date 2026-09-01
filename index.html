@@ -7402,7 +7402,11 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
       else if(routeFilter!=="All"&&o.route!==routeFilter)return false;
       if(deliveryFilter==="Direct"&&!o.isDirect)return false;
       if(deliveryFilter==="Transport"&&o.isDirect)return false;
-      if(search.trim()&&!normalize(o.partyName||"").includes(normalize(search))&&!normalize(o.voucherNo||"").includes(normalize(search))&&!(o.items||[]).some(i=>normalize(i.name||"").includes(normalize(search))))return false;
+      if(search.trim()){
+        const q=normalize(search);
+        const transLabel=o.isDirect?"directdelivery":normalize(o.transport||"");
+        if(!normalize(o.partyName||"").includes(q)&&!normalize(o.voucherNo||"").includes(q)&&!transLabel.includes(q)&&!normalize(o.route||"").includes(q)&&!(o.items||[]).some(i=>normalize(i.name||"").includes(q)))return false;
+      }
       return true;
     });
     filtered.forEach(o=>{
@@ -7464,7 +7468,10 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
     if(dispatched48hDateFilter!=="all")res=res.map(g=>({...g,items:g.items.filter(i=>(i.dispatchDate||"")===dispatched48hDateFilter)})).filter(g=>g.items.length>0);
     if(dispatched48hTypeFilter==="Direct")res=res.filter(g=>g.isDirect);
     else if(dispatched48hTypeFilter==="Transport")res=res.filter(g=>!g.isDirect);
-    if(search.trim())res=res.filter(g=>normalize(g.partyName).includes(normalize(search)));
+    if(search.trim()){
+      const q=normalize(search);
+      res=res.filter(g=>normalize(g.partyName).includes(q)||normalize(g.transport||"").includes(q)||normalize(g.route||"").includes(q)||g.items.some(i=>normalize(i.name||"").includes(q)));
+    }
     return res;
   })();
 
@@ -7510,7 +7517,10 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
     // Helper: order goes with transport if it's non-direct OR it appears in transport sequence
     const isTransportOrder=g=>!g.isDirect||getTransportSeq(g.partyName,g.transport)<999;
     let res=todayDispatched.filter(g=>{
-      if(search.trim()&&!normalize(g.partyName).includes(normalize(search)))return false;
+      if(search.trim()){
+        const q=normalize(search);
+        if(!normalize(g.partyName).includes(q)&&!normalize(g.transport||"").includes(q)&&!normalize(g.route||"").includes(q)&&!(g.items||[]).some(i=>normalize(i.name||"").includes(q)))return false;
+      }
       if(printRouteFilter==="transport")return isTransportOrder(g);
       if(printRouteFilter==="directonly")return g.isDirect&&getTransportSeq(g.partyName,g.transport)===999;
       if(printRouteFilter.startsWith("direct:"))return g.isDirect&&g.route===printRouteFilter.slice(7);
@@ -7548,7 +7558,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
       const bMin=b.orders.map(o=>o.orderDate||"9999").sort()[0];
       return aMin.localeCompare(bMin);
     })}));
-  })();
+  })().filter(tg=>viewMode!=="transporter"||!search.trim()||normalize(tg.transport||"").includes(normalize(search)));
   const totalTodayItems=filteredToday.reduce((a,g)=>a+g.items.length,0);
 
   // ── Product-wise grouping (for material preparation view) ──
@@ -7843,7 +7853,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
     });
     // Sort customers old-to-new within each product
     return Object.values(map).sort((a,b)=>b.totalQty-a.totalQty).map(pg=>({...pg,customers:pg.customers.sort((a,b)=>String(a.orderDate).localeCompare(String(b.orderDate)))}));
-  })();
+  })().filter(pg=>viewMode!=="product"||!search.trim()||normalize(pg.name||"").includes(normalize(search)));
 
   const [reverting,setReverting]=useState(null);
   const [revertForm,setRevertForm]=useState({}); // rKey -> qty string
@@ -8159,7 +8169,7 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
     {subTab!=="setup"&&<div style={{display:"flex",gap:"8px",marginBottom:"8px",flexWrap:"wrap",alignItems:"center"}}>
       <div style={{position:"relative",flex:"1 1 160px",minWidth:"140px"}}>
         <span style={{position:"absolute",left:"9px",top:"50%",transform:"translateY(-50%)",color:"#334155",pointerEvents:"none"}}>🔍</span>
-        <input style={{...inp,paddingLeft:"30px",paddingRight:search?"30px":"12px"}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search customer or order no…"/>
+        <input style={{...inp,paddingLeft:"30px",paddingRight:search?"30px":"12px"}} value={search} onChange={e=>setSearch(e.target.value)} placeholder={viewMode==="product"?"Search product…":viewMode==="transporter"?"Search transporter…":"Search customer or order no…"}/>
         {search&&<button onClick={()=>setSearch("")} style={{position:"absolute",right:"8px",top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#475569",cursor:"pointer",fontSize:"14px",lineHeight:1,padding:"0"}}>✕</button>}
       </div>
     </div>}
@@ -9014,7 +9024,11 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
           <div style={{fontSize:"11px",fontWeight:"700",color:"#64748b",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:"8px"}}>Staged Items — {stagedTransportItems.length} item{stagedTransportItems.length!==1?"s":""} from {new Set(stagedTransportItems.map(i=>i.partyName)).size} customers</div>
           {(()=>{
             const byCustomer={};
-            stagedTransportItems.forEach(i=>{
+            const visibleStaged=search.trim()?stagedTransportItems.filter(i=>{
+              const q=normalize(search);
+              return normalize(i.partyName||"").includes(q)||normalize(i.transport||"").includes(q)||normalize(i.route||"").includes(q)||normalize(i.name||"").includes(q);
+            }):stagedTransportItems;
+            visibleStaged.forEach(i=>{
               if(!byCustomer[i.partyName])byCustomer[i.partyName]={partyName:i.partyName,transport:i.transport,route:i.route,items:[]};
               byCustomer[i.partyName].items.push(i);
             });
