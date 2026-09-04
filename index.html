@@ -6885,6 +6885,8 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
       setNewItemForms(unknownItemsFound); // pre-filled with guessed values
       setNewItemsPrompt({items:Object.keys(unknownItemsFound)});
     }
+    // Record when this import happened so the team can see how fresh the Pending Orders data is
+    try{await C("settings").doc("lastImport").set({at:ts(),atISO:new Date().toISOString(),by:user.email,newCount,updCount,closedCount},{merge:true});}catch(e){/* best-effort */}
     let msg=`Import done: ${newCount} new · ${updCount} updated · ${closedCount} auto-closed ✓`;
     if(alreadyDispatched.length>0){
       showToast(msg,"success");
@@ -6894,6 +6896,9 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
     }
   };
   const [fgProducts,setFgProducts]=useState([]);
+  const [lastImportInfo,setLastImportInfo]=useState(null);
+  const [nowTick,setNowTick]=useState(Date.now());
+  useEffect(()=>{const iv=setInterval(()=>setNowTick(Date.now()),30000);return()=>clearInterval(iv);},[]); // live "X ago" ticker — updates every 30s, no page refresh needed
   const [quickAddCustomer,setQuickAddCustomer]=useState(null);
   const [siteDeliveryEdit,setSiteDeliveryEdit]=useState(null); // order id currently being edited
   const [sdForm,setSdForm]=useState({route:"",transport:"",isDirect:false});
@@ -6952,7 +6957,10 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
       if(snap.exists){const d=snap.data();setCustomerMap(d.map||{});setRoutes(d.routes||[]);setExtraTransporters(d.extraTransporters||[]);}
     },()=>{});
     const u3=C("fg_products").onSnapshot(s=>{setFgProducts(s.docs.map(d=>({id:d.id,...d.data()})));},()=>{});
-    return ()=>{u1();u2();u3();};
+    const u4=C("settings").doc("lastImport").onSnapshot(snap=>{
+      if(snap.exists)setLastImportInfo(snap.data());
+    },()=>{});
+    return ()=>{u1();u2();u3();u4();};
   },[]);
 
   // ── Import Transport List ──
@@ -8209,6 +8217,23 @@ function OrdersTab({role,roles,user,showToast,isAdmin,hp}){
         </div>
       </>}
     </div>}
+
+    {/* Last order import time — live-updating, no refresh needed */}
+    {subTab==="pending"&&lastImportInfo?.at&&(()=>{
+      const importedMs=lastImportInfo.at?.toDate?.()?.getTime()||(lastImportInfo.atISO?new Date(lastImportInfo.atISO).getTime():null);
+      if(!importedMs)return null;
+      const diffMs=Math.max(0,nowTick-importedMs);
+      const mins=Math.floor(diffMs/60000);
+      const ago=mins<1?"just now":mins<60?`${mins} min${mins!==1?"s":""} ago`:mins<1440?`${Math.floor(mins/60)} hr${Math.floor(mins/60)!==1?"s":""} ago`:`${Math.floor(mins/1440)} day${Math.floor(mins/1440)!==1?"s":""} ago`;
+      const dt=new Date(importedMs);
+      const dateStr=dt.toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"});
+      const timeStr=dt.toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"});
+      const stale=mins>720; // flag if last import older than 12 hours
+      return <div style={{display:"flex",alignItems:"center",gap:"8px",background:stale?"#1a1500":"#0a1520",border:`1px solid ${stale?"#92400e40":"#1e3a5f"}`,borderRadius:"8px",padding:"6px 12px",marginBottom:"8px",fontSize:"11.5px",color:stale?"#fbbf24":"#93c5fd",flexWrap:"wrap"}}>
+        <span>🕐 Last order import: <strong>{dateStr}, {timeStr}</strong> — <strong>{ago}</strong>{lastImportInfo.by?<> · by {lastImportInfo.by.split("@")[0]}</>:null}</span>
+        {stale&&<span style={{fontSize:"10.5px"}}>⚠ Data may be out of date — consider re-importing from Tally</span>}
+      </div>;
+    })()}
 
     {/* Shared search */}
     {subTab!=="setup"&&<div style={{display:"flex",gap:"8px",marginBottom:"8px",flexWrap:"wrap",alignItems:"center"}}>
