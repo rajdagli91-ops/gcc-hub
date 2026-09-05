@@ -25784,7 +25784,7 @@ function OrdersTab({
           flexWrap: "wrap",
           justifyContent: "flex-end"
         }
-      }, (isAdmin || roles.includes("issuer")) && getTransportSeq(cg.partyName, cg.transport) < 999 && /*#__PURE__*/React.createElement("button", {
+      }, (isAdmin || roles.includes("issuer")) && /*#__PURE__*/React.createElement("button", {
         onClick: async () => {
           setSaving(true);
           try {
