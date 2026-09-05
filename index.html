@@ -20089,7 +20089,7 @@ function TransporterGroupRow({
         padding: "1px 6px",
         cursor: "pointer"
       }
-    }, "Part"), stageItems && /*#__PURE__*/React.createElement("button", {
+    }, "Part"), !tg.isDirect && stageItems && /*#__PURE__*/React.createElement("button", {
       onClick: () => stageItems([{
         orderId: o.id,
         itemIdx: ii
@@ -20892,7 +20892,7 @@ function OrdersTab({
           const seqKeys = Object.keys(seqMap);
           const isInSeqFn = name => {
             const n = normalize(name || "");
-            return seqKeys.some(k => k === n || k.length >= 4 && (n.includes(k) || k.includes(n)));
+            return seqKeys.includes(n);
           };
           const transInSeq = isInSeqFn(normalizedTransport);
           if (!transInSeq && Object.keys(seqMap).length > 0) {
@@ -20906,7 +20906,7 @@ function OrdersTab({
           const seqForRoute = seqDirect[routeKey] || seqDirect["all"] || {};
           const seqRouteKeys = Object.keys(seqForRoute);
           const custNorm2 = normalize(custForm.customer.trim());
-          const custInSeq = seqRouteKeys.some(k => k === custNorm2 || k.length >= 4 && (custNorm2.includes(k) || k.includes(custNorm2)));
+          const custInSeq = seqRouteKeys.includes(custNorm2);
           if (!custInSeq && Object.keys(seqForRoute).length > 0) {
             setSeqWarning({
               msg: `"${custForm.customer.trim()}" is not in the ${custForm.route} delivery sequence. Add it in Direct Prep → ⬆ Upload sequence.`,
@@ -21647,12 +21647,11 @@ function OrdersTab({
     if (!Object.keys(seqMap).length) return 999;
     const normParty = normalize(partyName || "");
     const normTrans = normalize(transport || "");
+    // Exact match only — normalization already strips spaces/punctuation/case, but a partial
+    // "contains" match (e.g. transporter "BHAGWATI" vs customer "BHAGWATI ENTERPRISE") would
+    // wrongly treat two different names as the same entity just because one starts with the other.
     if (seqMap[normTrans]) return seqMap[normTrans].seq;
-    const partialTrans = Object.keys(seqMap).find(k => k.length >= 4 && (normTrans.includes(k) || k.includes(normTrans)));
-    if (partialTrans) return seqMap[partialTrans].seq;
     if (seqMap[normParty]) return seqMap[normParty].seq;
-    const partialCust = Object.keys(seqMap).find(k => k.length >= 4 && (normParty.includes(k) || k.includes(normParty)));
-    if (partialCust) return seqMap[partialCust].seq;
     return 999;
   };
   const getDirectSeq = (partyName, route) => {
@@ -21663,8 +21662,6 @@ function OrdersTab({
     if (!keys.length) return 999;
     const normParty = normalize(partyName || "");
     if (seqForRoute[normParty]) return seqForRoute[normParty].seq;
-    const partial = keys.find(k => k.length >= 4 && (normParty.includes(k) || k.includes(normParty)));
-    if (partial) return seqForRoute[partial].seq;
     return 999;
   };
   // Order sequence: direct customers use their route's direct sequence; if unlisted there,
@@ -21898,8 +21895,10 @@ function OrdersTab({
           const seqForRoute = routeSeqs[routeKey] || routeSeqs["all"] || {};
           const seqRouteKeys = Object.keys(seqForRoute);
           const custNorm = normalize(c.customer || "");
-          // Smart match: ignore spaces, dots, case
-          return !seqRouteKeys.some(k => k === custNorm || k.length >= 4 && (custNorm.includes(k) || k.includes(custNorm)));
+          // Exact match only (spaces/dots/case already stripped by normalize) — a partial
+          // "contains" match risks conflating two different names, e.g. a transporter or
+          // customer whose name is a prefix of another's.
+          return !seqRouteKeys.includes(custNorm);
         }).sort((a, b) => a.customer.localeCompare(b.customer));
         if (missingDirectCust.length > 0) {
           const rows = [["Customer Name", "Route", "(Not in sequence — add to Excel and re-upload)"], ...missingDirectCust.map(c => [c.customer, c.route, ""])];
@@ -21970,11 +21969,11 @@ function OrdersTab({
         };
         // Build clean transporter list: real customers with actual transport names only
         const allTransInSystem = [...new Set(Object.values(allCustMap).filter(c => c.customer && c.customer.trim() && !c._transportOnly && c.transport && normalize(c.transport || "") !== "direct" && normalize(c.transport || "").length >= 3).map(c => c.transport.trim()))].sort();
-        // Smart match: same logic as getTransportSeq (normalize + partial)
+        // Exact match only — same logic as getTransportSeq
         const seqKeys = Object.keys(seqMap);
         const isInSeq = name => {
           const n = normalize(name || "");
-          return n.length > 0 && seqKeys.some(k => k === n || k.length >= 4 && n.length >= 4 && (n.includes(k) || k.includes(n)));
+          return n.length > 0 && seqKeys.includes(n);
         };
         const missingTrans = allTransInSystem.filter(t => !isInSeq(t));
         if (missingTrans.length > 0) {
@@ -22012,6 +22011,13 @@ function OrdersTab({
   const [stagedQtyOverrides, setStagedQtyOverrides] = useState({}); // orderId__itemIdx -> qty string
 
   const stageItemsForTransport = async (itemsToStage, shouldStage, transport, isDirect) => {
+    // Direct orders are handled entirely through Direct Prep and must never be staged for
+    // Transport Prep — this is a hard guard, not just a UI-level omission, since this function
+    // is called from several places (Pending tab's Product/Transporter views, Direct Prep, etc).
+    if (shouldStage && isDirect) {
+      showToast("Direct orders can't be staged for Transport Prep — use Direct Prep instead", "error");
+      return;
+    }
     setStagingSaving(true);
     try {
       const byOrder = {};
@@ -22071,7 +22077,12 @@ function OrdersTab({
 
   // Derive staged items from order state (live via onSnapshot)
   const stagedTransportItems = orders.flatMap(o => {
-    // Include any order (direct or transport) that has staged items
+    // Staged items always belong here once flagged, even for an order whose base record is
+    // isDirect — Direct Prep has a deliberate "Stage to Transport" override for exactly this
+    // (e.g. a direct order needs to go via a transporter instead). That's the only legitimate
+    // way a direct order's item ends up with stagedForTransport:true; the ordinary "stage"
+    // buttons elsewhere (e.g. the Pending tab's Transporter view) refuse to stage direct orders
+    // in the first place — see the guard in stageItemsForTransport.
     if (!["Pending", "Partial"].includes(o.status)) return [];
     return (o.items || []).filter(i => i.stagedForTransport && i.balanceQty > 0 && i.status !== "Dispatched").map(item => ({
       name: item.name,
@@ -25649,7 +25660,6 @@ function OrdersTab({
           if (seqKeys.length) {
             const np = normalize(g.partyName || "");
             if (seqMap[np]) return true;
-            if (seqKeys.some(k => k.length >= 4 && np.length >= 4 && (np.includes(k) || k.includes(np)))) return true;
           }
         }
         return false;
@@ -25774,7 +25784,7 @@ function OrdersTab({
           flexWrap: "wrap",
           justifyContent: "flex-end"
         }
-      }, (isAdmin || roles.includes("issuer")) && /*#__PURE__*/React.createElement("button", {
+      }, (isAdmin || roles.includes("issuer")) && getTransportSeq(cg.partyName, cg.transport) < 999 && /*#__PURE__*/React.createElement("button", {
         onClick: async () => {
           setSaving(true);
           try {
