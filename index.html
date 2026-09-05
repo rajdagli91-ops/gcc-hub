@@ -21124,7 +21124,11 @@ function OrdersTab({
   const [dispatched48hTypeFilter, setDispatched48hTypeFilter] = useState("All"); // All/Direct/Transport
   const todayStr = new Date().toISOString().slice(0, 10);
   const [dispatchDateChoice, setDispatchDateChoice] = useState("today");
-  const dispatchDateStr = dispatchDateChoice === "tomorrow" ? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10) : todayStr;
+  // Sunday is a non-working day (no dispatch, no invoicing) — so on Saturday, the "next dispatch
+  // day" is Monday (+2 days), not Sunday (+1 day). Every other day, "next" is simply tomorrow.
+  const isSaturday = new Date().getDay() === 6;
+  const nextDispatchDayOffset = isSaturday ? 2 : 1;
+  const dispatchDateStr = dispatchDateChoice === "tomorrow" ? new Date(Date.now() + nextDispatchDayOffset * 24 * 60 * 60 * 1000).toISOString().slice(0, 10) : todayStr;
   const openReverseForm = (partyName, items) => {
     setReverseForm({
       partyName,
@@ -24491,7 +24495,7 @@ function OrdersTab({
       fontSize: "11.5px",
       cursor: "pointer"
     }
-  }, "📅 Tomorrow (", new Date(Date.now() + 86400000).toISOString().slice(5, 10), ")"))), /*#__PURE__*/React.createElement("div", {
+  }, "📅 ", isSaturday ? "Monday" : "Tomorrow", " (", new Date(Date.now() + nextDispatchDayOffset * 86400000).toISOString().slice(5, 10), ")"))), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: "6px",
