@@ -19325,6 +19325,33 @@ function DispatchHistoryReport({
     if (mode === "single") loadSingle(reportDate);else loadRange();
   }, [mode, reportDate, fromDate, toDate]);
   const isDirectEntry = e => !e.transport || ["DIRECT", "direct", "Direct"].includes(e.transport);
+  // Segregate a list of report entries into: one section per distinct Direct route that has
+  // dispatched material, plus one combined Transporter section — same grouping as Dispatch
+  // Today and Dispatched(48h), so the report reads the same way as the live dispatch views.
+  const groupEntries = entriesList => {
+    const directByRoute = {};
+    const transportList = [];
+    entriesList.forEach(e => {
+      if (isDirectEntry(e)) {
+        const key = e.route || "Direct";
+        if (!directByRoute[key]) directByRoute[key] = [];
+        directByRoute[key].push(e);
+      } else {
+        transportList.push(e);
+      }
+    });
+    const sections = Object.entries(directByRoute).sort((a, b) => a[0].localeCompare(b[0])).map(([route, list]) => ({
+      label: `🚚 Direct — ${route}`,
+      color: "#4ade80",
+      list
+    }));
+    if (transportList.length > 0) sections.push({
+      label: "🏢 Transporter Orders",
+      color: "#93c5fd",
+      list: transportList
+    });
+    return sections;
+  };
   // Filter helpers
   const filterEntry = e => {
     if (transportFilter === "All") return true;
@@ -19380,12 +19407,16 @@ function DispatchHistoryReport({
     const filterLabel = transportFilter === "All" ? "" : transportFilter === "__direct__" ? " · Direct" + (directRouteFilter !== "All" ? " — " + directRouteFilter : " (all routes)") : " · " + transportFilter;
     h += `<div style="display:flex;justify-content:space-between;border-bottom:2px solid #000;margin-bottom:4pt;padding-bottom:3pt"><b style="font-size:12pt">VEEBEE — DISPATCH REPORT</b><span>${dateLabel}${filterLabel}</span></div>`;
     h += `<div style="margin-bottom:4pt;font-size:9pt"><b>Total Qty: ${totals.qty}</b>${Object.entries(totals.vols).map(([u, v]) => " | " + v.toFixed(2) + " " + u).join("")}</div>`;
-    h += '<div class="sec">Dispatched</div>';
-    h += '<table><tr><th>Date</th><th>Customer</th><th>Route</th><th>Transport</th><th>Order No</th><th>Order Date</th><th>Product</th><th style="text-align:center">Qty</th><th style="text-align:center">Volume</th></tr>';
-    entriesToPrint.forEach(e => (e.items || []).forEach((it, ii) => {
-      h += `<tr><td>${ii === 0 ? e._date || "" : ""}</td><td>${ii === 0 ? e.partyName : ""}</td><td>${ii === 0 ? e.route || "" : ""}</td><td>${ii === 0 ? e.isDirect ? "Direct" : e.transport || "" : ""}</td><td>${it.voucherNo || ""}</td><td>${it.orderDate || ""}</td><td>${it.name}</td><td style="text-align:center">${it.qty}</td><td style="text-align:center">${it.vol ? it.vol.vol + " " + it.vol.unit : ""}</td></tr>`;
-    }));
-    h += '</table>';
+    // Same segregation as the on-screen view: one table per Direct route, plus one combined
+    // Transporter table — instead of one mixed "Dispatched" table for everything.
+    groupEntries(entriesToPrint).forEach(section => {
+      h += `<div class="sec">${section.label} (${section.list.length})</div>`;
+      h += '<table><tr><th>Date</th><th>Customer</th><th>Route</th><th>Transport</th><th>Order No</th><th>Order Date</th><th>Product</th><th style="text-align:center">Qty</th><th style="text-align:center">Volume</th></tr>';
+      section.list.forEach(e => (e.items || []).forEach((it, ii) => {
+        h += `<tr><td>${ii === 0 ? e._date || "" : ""}</td><td>${ii === 0 ? e.partyName : ""}</td><td>${ii === 0 ? e.route || "" : ""}</td><td>${ii === 0 ? e.isDirect ? "Direct" : e.transport || "" : ""}</td><td>${it.voucherNo || ""}</td><td>${it.orderDate || ""}</td><td>${it.name}</td><td style="text-align:center">${it.qty}</td><td style="text-align:center">${it.vol ? it.vol.vol + " " + it.vol.unit : ""}</td></tr>`;
+      }));
+      h += '</table>';
+    });
     if (reversalsToPrint.length) {
       h += '<div class="sec">Reversals</div><table><tr><th>Date</th><th>Customer</th><th>Product</th><th style="text-align:center">Qty</th><th>By</th></tr>';
       reversalsToPrint.forEach(r => (r.items || []).forEach((it, ii) => {
@@ -19599,7 +19630,31 @@ function DispatchHistoryReport({
       color: "#4ade80",
       marginBottom: "8px"
     }
-  }, "✓ Dispatched — ", entries.length, " customer", entries.length !== 1 ? "s" : ""), entries.map((entry, ei) => /*#__PURE__*/React.createElement("div", {
+  }, "✓ Dispatched — ", entries.length, " customer", entries.length !== 1 ? "s" : ""), groupEntries(entries).map((section, si) => /*#__PURE__*/React.createElement("div", {
+    key: section.label
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: "8px",
+      margin: si === 0 ? "0 0 6px" : "12px 0 6px",
+      padding: "4px 2px",
+      borderBottom: `2px solid ${section.color}30`
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: "11.5px",
+      fontWeight: "800",
+      color: section.color,
+      letterSpacing: "0.03em"
+    }
+  }, section.label.toUpperCase()), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: "10px",
+      color: "#475569",
+      fontWeight: "700"
+    }
+  }, "(", section.list.length, ")")), section.list.map((entry, ei) => /*#__PURE__*/React.createElement("div", {
     key: ei,
     style: {
       background: "#0b1220",
@@ -19680,7 +19735,7 @@ function DispatchHistoryReport({
       fontSize: "10px",
       flexShrink: 0
     }
-  }, item.orderDate)))))), reversals.length > 0 && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+  }, item.orderDate)))))))), reversals.length > 0 && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: "12px",
       fontWeight: "700",
@@ -19802,10 +19857,34 @@ function DispatchHistoryReport({
         color: "#93c5fd"
       }
     }, v.toFixed(2), " ", u)));
-  })())), r.entries.map((e, ei) => /*#__PURE__*/React.createElement("div", {
+  })())), groupEntries(r.entries).map((section, si) => /*#__PURE__*/React.createElement("div", {
+    key: section.label
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "4px 14px",
+      display: "flex",
+      alignItems: "center",
+      gap: "6px",
+      borderTop: si === 0 ? "none" : "1px solid #0f172a",
+      background: "#080d18"
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: "10px",
+      fontWeight: "800",
+      color: section.color,
+      letterSpacing: "0.03em"
+    }
+  }, section.label.toUpperCase()), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: "9.5px",
+      color: "#475569",
+      fontWeight: "700"
+    }
+  }, "(", section.list.length, ")")), section.list.map((e, ei) => /*#__PURE__*/React.createElement("div", {
     key: ei,
     style: {
-      borderTop: ei === 0 ? "none" : "1px solid #0f172a",
+      borderTop: "1px solid #0f172a",
       background: ei % 2 === 0 ? "transparent" : "#060d1a"
     }
   }, /*#__PURE__*/React.createElement("div", {
@@ -19861,7 +19940,7 @@ function DispatchHistoryReport({
       color: "#334155",
       flexShrink: 0
     }
-  }, it.vol.vol, " ", it.vol.unit))))), (r.reversals || []).length > 0 && /*#__PURE__*/React.createElement("div", {
+  }, it.vol.vol, " ", it.vol.unit))))))), (r.reversals || []).length > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       borderTop: "1px solid #7f1d1d40",
       background: "#0f0505",
@@ -25225,152 +25304,203 @@ function OrdersTab({
       borderRadius: "10px",
       color: "#334155"
     }
-  }, "No confirmed dispatches", dispatched48hDateFilter !== "all" ? ` for ${dispatched48hDateFilter}` : " in the last 48 hours", ".") : filteredDispatched48h.map((group, gi) => /*#__PURE__*/React.createElement("div", {
-    key: group.partyName + "::" + (group.route || "") + "::" + (group.transport || ""),
-    style: {
-      background: "#0b1220",
-      border: "1px solid #1e293b",
-      borderLeft: "3px solid #3b82f6",
-      borderRadius: "10px",
-      marginBottom: "7px",
-      overflow: "hidden",
-      opacity: 0.85
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      padding: "9px 12px",
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-      flexWrap: "wrap",
-      gap: "6px"
-    }
-  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: "12.5px",
-      fontWeight: "700",
-      color: "#f1f5f9"
-    }
-  }, gi + 1, ". ", group.partyName), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: "10.5px",
-      color: "#475569",
-      display: "flex",
-      gap: "8px",
-      marginTop: "1px",
-      flexWrap: "wrap"
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: group.isDirect ? "#22c55e" : "#93c5fd"
-    }
-  }, group.isDirect ? "🚚 Direct" : "🏢 " + group.transport), /*#__PURE__*/React.createElement("span", null, group.route), group.items[0]?.dispatchDate && /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: "#fcd34d",
-      fontWeight: "700"
-    }
-  }, "📅 ", group.items[0].dispatchDate))), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: "5px",
-      alignItems: "center"
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: "10px",
+  }, "No confirmed dispatches", dispatched48hDateFilter !== "all" ? ` for ${dispatched48hDateFilter}` : " in the last 48 hours", ".") : (() => {
+    // Segregate: one section per distinct Direct route that has dispatched material,
+    // plus one combined Transporter section — so it's clear at a glance which area(s)
+    // were direct-delivered vs sent via transporter, instead of one mixed list.
+    const directByRoute = {};
+    const transportGroups = [];
+    filteredDispatched48h.forEach(g => {
+      if (g.isDirect) {
+        const key = g.route || "Direct";
+        if (!directByRoute[key]) directByRoute[key] = [];
+        directByRoute[key].push(g);
+      } else {
+        transportGroups.push(g);
+      }
+    });
+    const sections = Object.entries(directByRoute).sort((a, b) => a[0].localeCompare(b[0])).map(([route, groups]) => ({
+      label: `🚚 Direct — ${route}`,
       color: "#4ade80",
-      background: "#052e16",
-      border: "1px solid #166534",
-      borderRadius: "99px",
-      padding: "2px 8px"
-    }
-  }, "✓ Delivered"), canDispatch && group.items.some(i => i.canReverse) && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("button", {
-    onClick: () => openReverseForm(group.partyName, group.items.filter(i => i.canReverse)),
-    style: {
-      background: "#2e0a0a",
-      border: "1px solid #7f1d1d",
-      borderRadius: "6px",
-      padding: "3px 9px",
-      color: "#f87171",
-      fontWeight: "700",
-      fontSize: "11px",
-      cursor: "pointer"
-    }
-  }, "↩ Select Items"), /*#__PURE__*/React.createElement("button", {
-    onClick: () => {
-      if (confirm(`Reverse ENTIRE order for ${group.partyName}?`)) reverseEntireOrder(group.partyName, group.items.filter(i => i.canReverse));
-    },
-    disabled: reverseSaving,
-    style: {
-      background: "#450a0a",
-      border: "1px solid #dc2626",
-      borderRadius: "6px",
-      padding: "3px 9px",
-      color: "#fca5a5",
-      fontWeight: "700",
-      fontSize: "11px",
-      cursor: "pointer"
-    }
-  }, "↩ Reverse All")))), /*#__PURE__*/React.createElement("div", {
-    style: {
-      background: "#060d1a",
-      borderTop: "1px solid #0f172a"
-    }
-  }, group.items.map((item, ii) => /*#__PURE__*/React.createElement("div", {
-    key: ii,
-    style: {
-      display: "flex",
-      justifyContent: "space-between",
-      padding: "5px 12px",
-      borderTop: ii === 0 ? "none" : "1px solid #0f172a",
-      gap: "8px",
-      alignItems: "center"
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: "11.5px",
-      color: "#64748b",
-      flex: 1,
-      overflow: "hidden",
-      textOverflow: "ellipsis",
-      whiteSpace: "nowrap"
-    }
-  }, item.name), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: "5px",
-      alignItems: "center",
-      flexShrink: 0
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: "12px",
-      fontWeight: "700",
-      color: "#4ade80"
-    }
-  }, item.qty), item.vol && /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: "10px",
-      color: "#334155",
-      background: "#0b1220",
-      border: "1px solid #1e293b",
-      borderRadius: "4px",
-      padding: "1px 5px"
-    }
-  }, item.vol.vol, " ", item.vol.unit), /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: "9px",
-      color: "#334155"
-    }
-  }, item.voucherNo), /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: "9px",
-      color: "#334155"
-    }
-  }, item.confirmedAt ? new Date(item.confirmedAt).toLocaleTimeString("en-IN", {
-    hour: "2-digit",
-    minute: "2-digit"
-  }) : "")))))))), subTab === "direct_prep" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      groups
+    }));
+    if (transportGroups.length > 0) sections.push({
+      label: "🏢 Transporter Orders",
+      color: "#93c5fd",
+      groups: transportGroups
+    });
+    const renderCard = (group, gi) => /*#__PURE__*/React.createElement("div", {
+      key: group.partyName + "::" + (group.route || "") + "::" + (group.transport || ""),
+      style: {
+        background: "#0b1220",
+        border: "1px solid #1e293b",
+        borderLeft: "3px solid #3b82f6",
+        borderRadius: "10px",
+        marginBottom: "7px",
+        overflow: "hidden",
+        opacity: 0.85
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        padding: "9px 12px",
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        flexWrap: "wrap",
+        gap: "6px"
+      }
+    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: "12.5px",
+        fontWeight: "700",
+        color: "#f1f5f9"
+      }
+    }, gi + 1, ". ", group.partyName), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: "10.5px",
+        color: "#475569",
+        display: "flex",
+        gap: "8px",
+        marginTop: "1px",
+        flexWrap: "wrap"
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: group.isDirect ? "#22c55e" : "#93c5fd"
+      }
+    }, group.isDirect ? "🚚 Direct" : "🏢 " + group.transport), /*#__PURE__*/React.createElement("span", null, group.route), group.items[0]?.dispatchDate && /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: "#fcd34d",
+        fontWeight: "700"
+      }
+    }, "📅 ", group.items[0].dispatchDate))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: "5px",
+        alignItems: "center"
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: "10px",
+        color: "#4ade80",
+        background: "#052e16",
+        border: "1px solid #166534",
+        borderRadius: "99px",
+        padding: "2px 8px"
+      }
+    }, "✓ Delivered"), canDispatch && group.items.some(i => i.canReverse) && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("button", {
+      onClick: () => openReverseForm(group.partyName, group.items.filter(i => i.canReverse)),
+      style: {
+        background: "#2e0a0a",
+        border: "1px solid #7f1d1d",
+        borderRadius: "6px",
+        padding: "3px 9px",
+        color: "#f87171",
+        fontWeight: "700",
+        fontSize: "11px",
+        cursor: "pointer"
+      }
+    }, "↩ Select Items"), /*#__PURE__*/React.createElement("button", {
+      onClick: () => {
+        if (confirm(`Reverse ENTIRE order for ${group.partyName}?`)) reverseEntireOrder(group.partyName, group.items.filter(i => i.canReverse));
+      },
+      disabled: reverseSaving,
+      style: {
+        background: "#450a0a",
+        border: "1px solid #dc2626",
+        borderRadius: "6px",
+        padding: "3px 9px",
+        color: "#fca5a5",
+        fontWeight: "700",
+        fontSize: "11px",
+        cursor: "pointer"
+      }
+    }, "↩ Reverse All")))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        background: "#060d1a",
+        borderTop: "1px solid #0f172a"
+      }
+    }, group.items.map((item, ii) => /*#__PURE__*/React.createElement("div", {
+      key: ii,
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        padding: "5px 12px",
+        borderTop: ii === 0 ? "none" : "1px solid #0f172a",
+        gap: "8px",
+        alignItems: "center"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: "11.5px",
+        color: "#64748b",
+        flex: 1,
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap"
+      }
+    }, item.name), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: "5px",
+        alignItems: "center",
+        flexShrink: 0
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: "12px",
+        fontWeight: "700",
+        color: "#4ade80"
+      }
+    }, item.qty), item.vol && /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: "10px",
+        color: "#334155",
+        background: "#0b1220",
+        border: "1px solid #1e293b",
+        borderRadius: "4px",
+        padding: "1px 5px"
+      }
+    }, item.vol.vol, " ", item.vol.unit), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: "9px",
+        color: "#334155"
+      }
+    }, item.voucherNo), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: "9px",
+        color: "#334155"
+      }
+    }, item.confirmedAt ? new Date(item.confirmedAt).toLocaleTimeString("en-IN", {
+      hour: "2-digit",
+      minute: "2-digit"
+    }) : ""))))));
+    return sections.map((section, si) => /*#__PURE__*/React.createElement("div", {
+      key: section.label
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: "8px",
+        margin: si === 0 ? "0 0 8px" : "16px 0 8px",
+        padding: "6px 2px",
+        borderBottom: `2px solid ${section.color}30`
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: "12.5px",
+        fontWeight: "800",
+        color: section.color,
+        letterSpacing: "0.04em"
+      }
+    }, section.label.toUpperCase()), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: "10.5px",
+        color: "#475569",
+        fontWeight: "700"
+      }
+    }, "(", section.groups.length, ")")), section.groups.map((group, gi) => renderCard(group, gi))));
+  })()), subTab === "direct_prep" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       justifyContent: "space-between",
