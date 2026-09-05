@@ -5128,6 +5128,12 @@ function ComplaintWorkspace({
     responseDate: today(),
     respondedBy: ""
   });
+  const [adminResp, setAdminResp] = useState({
+    notes: "",
+    respondedBy: "",
+    responseDate: today()
+  });
+  const [statusNotes, setStatusNotes] = useState("");
   const [newStatus, setNewStatus] = useState(complaint.status);
   const [showEdit, setShowEdit] = useState(false);
   const [editForm, setEditForm] = useState({
@@ -5276,10 +5282,45 @@ function ComplaintWorkspace({
   const saveStatus = async () => {
     setSaving(true);
     try {
+      const historyEntry = {
+        status: newStatus,
+        notes: statusNotes.trim(),
+        by: user.email,
+        date: today(),
+        at: new Date().toISOString()
+      };
+      const updatedHistory = [...(live.statusHistory || []), historyEntry];
       await C("complaints").doc(complaint.id).update({
-        status: newStatus
+        status: newStatus,
+        statusHistory: updatedHistory
       });
       showToast("Status updated ✓");
+      setStatusNotes("");
+    } catch (e) {
+      showToast("Error", "error");
+    }
+    setSaving(false);
+  };
+  const saveAdminResponse = async () => {
+    if (!adminResp.notes.trim()) return showToast("Enter a response", "error");
+    setSaving(true);
+    try {
+      const entry = {
+        ...adminResp,
+        respondedBy: adminResp.respondedBy || user.email,
+        respondedDate: today()
+      };
+      const updated = [...(live.adminResponses || []), entry];
+      await C("complaints").doc(complaint.id).update({
+        adminResponses: updated
+      });
+      setAdminResp({
+        notes: "",
+        respondedBy: "",
+        responseDate: today()
+      });
+      setEditStage(null);
+      showToast("Admin response saved ✓");
     } catch (e) {
       showToast("Error", "error");
     }
@@ -6038,7 +6079,164 @@ function ComplaintWorkspace({
       color: "#334155",
       fontStyle: "italic"
     }
-  }, "Awaiting customer feedback from sales team.")), role === "admin" && /*#__PURE__*/React.createElement("div", {
+  }, "Awaiting customer feedback from sales team.")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      border: `1px solid ${(live.adminResponses || []).length > 0 ? "#166534" : isAdmin ? "#f59e0b30" : "#1e293b"}`,
+      borderRadius: "10px",
+      marginBottom: "12px",
+      overflow: "hidden"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "12px 16px",
+      background: (live.adminResponses || []).length > 0 ? "#052e16" : isAdmin ? "#1a1206" : "#0b1220",
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center"
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: "13px",
+      fontWeight: "700",
+      color: (live.adminResponses || []).length > 0 ? "#22c55e" : isAdmin ? "#fbbf24" : "#475569"
+    }
+  }, "👑 Admin Response"), isAdmin && editStage !== "admin" && /*#__PURE__*/React.createElement(Btn, {
+    label: "Add Admin Response",
+    onClick: () => setEditStage("admin"),
+    color: "#f59e0b",
+    small: true
+  })), editStage === "admin" ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "14px 16px",
+      background: "#080d18"
+    }
+  }, /*#__PURE__*/React.createElement(Field, {
+    label: "Response / Notes"
+  }, /*#__PURE__*/React.createElement("textarea", {
+    style: {
+      ...ta,
+      minHeight: "80px"
+    },
+    value: adminResp.notes,
+    onChange: e => setAdminResp({
+      ...adminResp,
+      notes: e.target.value
+    }),
+    placeholder: "Admin's response to this complaint…"
+  })), /*#__PURE__*/React.createElement(Grid2, null, /*#__PURE__*/React.createElement(Field, {
+    label: "Response Date"
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "date",
+    style: inp,
+    value: adminResp.responseDate,
+    onChange: e => setAdminResp({
+      ...adminResp,
+      responseDate: e.target.value
+    })
+  })), /*#__PURE__*/React.createElement(Field, {
+    label: "Responded By (optional)"
+  }, /*#__PURE__*/React.createElement("input", {
+    style: inp,
+    value: adminResp.respondedBy,
+    onChange: e => setAdminResp({
+      ...adminResp,
+      respondedBy: e.target.value
+    }),
+    placeholder: user.email
+  }))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: "8px",
+      justifyContent: "flex-end"
+    }
+  }, /*#__PURE__*/React.createElement(Btn, {
+    label: "Cancel",
+    onClick: () => setEditStage(null),
+    outline: true,
+    color: "#475569",
+    small: true
+  }), /*#__PURE__*/React.createElement(Btn, {
+    label: saving ? "Saving…" : "Submit Admin Response",
+    onClick: saveAdminResponse,
+    disabled: saving,
+    color: "#f59e0b",
+    small: true
+  }))) : (live.adminResponses || []).length > 0 ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "14px 16px",
+      background: "#080d18"
+    }
+  }, (live.adminResponses || []).slice().reverse().map((a, i) => /*#__PURE__*/React.createElement("div", {
+    key: i,
+    style: {
+      marginBottom: i < live.adminResponses.length - 1 ? "14px" : "0",
+      paddingBottom: i < live.adminResponses.length - 1 ? "14px" : "0",
+      borderBottom: i < live.adminResponses.length - 1 ? "1px solid #1e293b" : "none"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: "13px",
+      color: "#e2e8f0",
+      whiteSpace: "pre-wrap",
+      marginBottom: "6px"
+    }
+  }, a.notes), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: "11px",
+      color: "#475569"
+    }
+  }, (a.respondedBy || "").split("@")[0], " · ", a.respondedDate)))) : /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "12px 16px",
+      background: "#080d18",
+      fontSize: "12px",
+      color: "#334155",
+      fontStyle: "italic"
+    }
+  }, "No admin response yet.")), (live.statusHistory || []).length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: "#0b1220",
+      border: "1px solid #1e293b",
+      borderRadius: "10px",
+      padding: "12px 16px",
+      marginBottom: "12px"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: "11px",
+      fontWeight: "700",
+      color: "#64748b",
+      textTransform: "uppercase",
+      letterSpacing: "0.08em",
+      marginBottom: "8px"
+    }
+  }, "📋 Status History"), live.statusHistory.slice().reverse().map((h, i) => /*#__PURE__*/React.createElement("div", {
+    key: i,
+    style: {
+      display: "flex",
+      gap: "10px",
+      alignItems: "flex-start",
+      marginBottom: "8px",
+      fontSize: "12px"
+    }
+  }, /*#__PURE__*/React.createElement(Bdg, {
+    label: h.status,
+    color: CS_COL[h.status] || "#94a3b8"
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1
+    }
+  }, h.notes && /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: "#cbd5e1",
+      marginBottom: "2px"
+    }
+  }, h.notes), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: "#475569",
+      fontSize: "11px"
+    }
+  }, (h.by || "").split("@")[0], " · ", h.date))))), role === "admin" && /*#__PURE__*/React.createElement("div", {
     style: {
       background: "#0b1220",
       border: "1px solid #1e293b",
@@ -6058,7 +6256,8 @@ function ComplaintWorkspace({
     style: {
       display: "flex",
       gap: "8px",
-      alignItems: "center"
+      alignItems: "center",
+      marginBottom: "8px"
     }
   }, /*#__PURE__*/React.createElement("select", {
     style: {
@@ -6075,6 +6274,16 @@ function ComplaintWorkspace({
     disabled: saving,
     color: "#f59e0b",
     small: true
+  })), /*#__PURE__*/React.createElement(Field, {
+    label: "Notes with this status change (visible to salesman, HO, Issuer, QC)"
+  }, /*#__PURE__*/React.createElement("textarea", {
+    style: {
+      ...ta,
+      minHeight: "50px"
+    },
+    value: statusNotes,
+    onChange: e => setStatusNotes(e.target.value),
+    placeholder: "Optional — why this status, or what to do next…"
   }))));
 }
 
@@ -20504,13 +20713,6 @@ function OrdersTab({
   const [newItemForms, setNewItemForms] = useState({});
   const [confirmingDispatch, setConfirmingDispatch] = useState(null);
   const [transporterSuggest, setTransporterSuggest] = useState(null);
-
-  // Auto-clear transporter suggestion if those orders are reverted out of today's dispatch
-  useEffect(() => {
-    if (!transporterSuggest) return;
-    const stillDispatchedToday = todayDispatched.some(g => normTKey(g.transport) === normTKey(transporterSuggest.transport));
-    if (!stillDispatchedToday) setTransporterSuggest(null);
-  }, [todayDispatched]);
   const [printRouteFilter, setPrintRouteFilter] = useState("All");
   const [dispatchRouteFilter, setDispatchRouteFilter] = useState("All");
   const [dispatchDeliveryFilter, setDispatchDeliveryFilter] = useState("All");
@@ -21376,6 +21578,13 @@ function OrdersTab({
     ...g,
     items: g.items.filter(i => !i.confirmed)
   })).filter(g => g.items.length > 0), [todayDispatchedAll]);
+
+  // Auto-clear transporter suggestion if those orders are reverted out of today's dispatch
+  useEffect(() => {
+    if (!transporterSuggest) return;
+    const stillDispatchedToday = todayDispatched.some(g => normTKey(g.transport) === normTKey(transporterSuggest.transport));
+    if (!stillDispatchedToday) setTransporterSuggest(null);
+  }, [todayDispatched]);
   const dispatched48h = useMemo(() => {
     const now = Date.now();
     const WINDOW_MS = 48 * 60 * 60 * 1000; // 48h from start of dispatch date
