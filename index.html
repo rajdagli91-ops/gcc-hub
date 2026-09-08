@@ -27750,7 +27750,7 @@ function FGStockTab({
   const [search, setSearch] = useState("");
   const [catFilter, setCatFilter] = useState("All");
   const [subTab, setSubTab] = useState("stock"); // stock first — show products immediately
-  const [groupByCategory, setGroupByCategory] = useState(false);
+  const [groupMode, setGroupMode] = useState("none"); // "none"|"category"|"group"
   const [stockActionForm, setStockActionForm] = useState(null);
   const [saving, setSaving] = useState(false);
   const [importStatus, setImportStatus] = useState(null);
@@ -27761,6 +27761,7 @@ function FGStockTab({
     size: "",
     unit: "L",
     category: "",
+    productGroup: "",
     tinsPerCarton: "",
     packType: "Single Pack"
   });
@@ -27905,6 +27906,7 @@ function FGStockTab({
     stockByProduct[k].loose += s.looseTins || 0;
   });
   const categories = ["All", ...new Set(fgProducts.map(p => p.category || "Other").filter(Boolean)).values()].sort();
+  const productGroupsList = [...new Set(fgProducts.map(p => p.productGroup).filter(Boolean))].sort();
   const filtered = fgProducts.filter(p => {
     const matchCat = catFilter === "All" || (p.category || "Other") === catFilter;
     const matchSearch = !search.trim() || normalize(p.name || "").includes(normalize(search));
@@ -28092,6 +28094,7 @@ function FGStockTab({
         size: parseFloat(p.size) || 0,
         unit: p.unit,
         category: p.category,
+        productGroup: p.productGroup || "",
         tinsPerCarton: parseInt(p.tinsPerCarton) || 0,
         packType: p.packType,
         lastModifiedAt: ts()
@@ -28101,6 +28104,7 @@ function FGStockTab({
           size: parseFloat(p.size) || 0,
           unit: p.unit,
           category: p.category,
+          productGroup: p.productGroup || "",
           tinsPerCarton: parseInt(p.tinsPerCarton) || 0,
           packType: p.packType,
           _createdAt: ts()
@@ -28261,7 +28265,7 @@ function FGStockTab({
   }, "+ New Product"), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "grid",
-      gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 1fr",
+      gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 1fr 1fr",
       gap: "8px",
       marginBottom: "10px"
     }
@@ -28342,6 +28346,26 @@ function FGStockTab({
       color: "#475569",
       marginBottom: "3px"
     }
+  }, "Product Group"), /*#__PURE__*/React.createElement("input", {
+    style: inp2,
+    list: "fg-product-group-list",
+    value: addForm.productGroup,
+    onChange: e => setAddForm(f => ({
+      ...f,
+      productGroup: e.target.value
+    })),
+    placeholder: "e.g. Car Patch"
+  }), /*#__PURE__*/React.createElement("datalist", {
+    id: "fg-product-group-list"
+  }, productGroupsList.map(g => /*#__PURE__*/React.createElement("option", {
+    key: g,
+    value: g
+  })))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: "10.5px",
+      color: "#475569",
+      marginBottom: "3px"
+    }
   }, "Pack Type"), /*#__PURE__*/React.createElement("select", {
     style: inp2,
     value: addForm.packType,
@@ -28390,7 +28414,7 @@ function FGStockTab({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "grid",
-      gridTemplateColumns: "3fr 1fr 1fr 1fr 1fr 80px",
+      gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 1fr 80px",
       gap: "0",
       background: "#060d1a",
       padding: "7px 12px",
@@ -28399,7 +28423,7 @@ function FGStockTab({
       color: "#475569",
       borderBottom: "1px solid #1e293b"
     }
-  }, /*#__PURE__*/React.createElement("span", null, "Product Name"), /*#__PURE__*/React.createElement("span", null, "Size"), /*#__PURE__*/React.createElement("span", null, "Category"), /*#__PURE__*/React.createElement("span", null, "Tins/Ctn"), /*#__PURE__*/React.createElement("span", null, "Pack"), /*#__PURE__*/React.createElement("span", null, "Actions")), filtered.length === 0 && /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("span", null, "Product Name"), /*#__PURE__*/React.createElement("span", null, "Size"), /*#__PURE__*/React.createElement("span", null, "Category"), /*#__PURE__*/React.createElement("span", null, "Group"), /*#__PURE__*/React.createElement("span", null, "Tins/Ctn"), /*#__PURE__*/React.createElement("span", null, "Pack"), /*#__PURE__*/React.createElement("span", null, "Actions")), filtered.length === 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       padding: "40px",
       textAlign: "center",
@@ -28412,7 +28436,7 @@ function FGStockTab({
       key: p.id,
       style: {
         display: "grid",
-        gridTemplateColumns: "3fr 1fr 1fr 1fr 1fr 80px",
+        gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 1fr 80px",
         gap: "0",
         padding: "7px 12px",
         borderBottom: "1px solid #0f172a",
@@ -28449,6 +28473,17 @@ function FGStockTab({
       onChange: e => setEditProduct(f => ({
         ...f,
         category: e.target.value
+      }))
+    }), /*#__PURE__*/React.createElement("input", {
+      style: {
+        ...inp2,
+        fontSize: "11.5px"
+      },
+      list: "fg-product-group-list",
+      value: editProduct.productGroup || "",
+      onChange: e => setEditProduct(f => ({
+        ...f,
+        productGroup: e.target.value
       }))
     }), /*#__PURE__*/React.createElement("input", {
       style: {
@@ -28523,6 +28558,11 @@ function FGStockTab({
       }
     }, p.category || ""), /*#__PURE__*/React.createElement("span", {
       style: {
+        fontSize: "11px",
+        color: "#a78bfa"
+      }
+    }, p.productGroup || ""), /*#__PURE__*/React.createElement("span", {
+      style: {
         fontSize: "12px",
         color: "#94a3b8"
       }
@@ -28588,26 +28628,43 @@ function FGStockTab({
   }, categories.map(c => /*#__PURE__*/React.createElement("option", {
     key: c
   }, c))), /*#__PURE__*/React.createElement("button", {
-    onClick: () => setGroupByCategory(v => !v),
+    onClick: () => setGroupMode(m => m === "none" ? "category" : m === "category" ? "group" : "none"),
     style: {
-      background: groupByCategory ? "#1e3a5f" : "#060d1a",
-      border: `1px solid ${groupByCategory ? "#3b82f6" : "#1e293b"}`,
+      background: groupMode !== "none" ? "#1e3a5f" : "#060d1a",
+      border: `1px solid ${groupMode !== "none" ? "#3b82f6" : "#1e293b"}`,
       borderRadius: "6px",
       padding: "5px 12px",
-      color: groupByCategory ? "#93c5fd" : "#475569",
+      color: groupMode !== "none" ? "#93c5fd" : "#475569",
       fontSize: "12px",
       fontWeight: "600",
       cursor: "pointer"
     }
-  }, groupByCategory ? "📂 Grouped" : "📄 Flat")), (() => {
+  }, groupMode === "category" ? "📂 By Category" : groupMode === "group" ? "🏷 By Product Group" : "📄 Flat")), (() => {
     const rows = filtered;
-    // Group by category if enabled
-    const groups = groupByCategory ? [...new Set(rows.map(p => p.category || "Other"))].sort().map(cat => ({
-      cat,
-      products: rows.filter(p => (p.category || "Other") === cat)
-    })) : [{
+    // Group by category or product group if enabled, with an aggregated stock total per group
+    const groupKeyFn = groupMode === "group" ? p => p.productGroup || "Ungrouped" : groupMode === "category" ? p => p.category || "Other" : null;
+    const groups = groupKeyFn ? [...new Set(rows.map(groupKeyFn))].sort().map(cat => {
+      const products = rows.filter(p => groupKeyFn(p) === cat);
+      const groupTotal = products.reduce((acc, p) => {
+        const stk = stockByProduct[normalize(p.name || "")];
+        if (stk) {
+          acc.tins += stk.tins || 0;
+          acc.cartons += stk.cartons || 0;
+        }
+        return acc;
+      }, {
+        tins: 0,
+        cartons: 0
+      });
+      return {
+        cat,
+        products,
+        groupTotal
+      };
+    }) : [{
       cat: null,
-      products: rows
+      products: rows,
+      groupTotal: null
     }];
     const renderProductRow = (p, i) => {
       const stk = stockByProduct[normalize(p.name || "")];
@@ -28795,7 +28852,8 @@ function FGStockTab({
       }
     }, "No products found"), groups.map(({
       cat,
-      products
+      products,
+      groupTotal
     }) => /*#__PURE__*/React.createElement("div", {
       key: cat || "all"
     }, cat && /*#__PURE__*/React.createElement("div", {
@@ -28805,14 +28863,23 @@ function FGStockTab({
         borderBottom: "1px solid #0f172a",
         fontSize: "11px",
         fontWeight: "700",
-        color: "#3b82f6"
+        color: groupMode === "group" ? "#a78bfa" : "#3b82f6",
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center"
       }
-    }, "📂 ", cat, " ", /*#__PURE__*/React.createElement("span", {
+    }, /*#__PURE__*/React.createElement("span", null, groupMode === "group" ? "🏷" : "📂", " ", cat, " ", /*#__PURE__*/React.createElement("span", {
       style: {
         color: "#334155",
         fontWeight: "400"
       }
-    }, "(", products.length, ")")), products.map((p, i) => renderProductRow(p, i)))));
+    }, "(", products.length, ")")), groupTotal && groupTotal.tins > 0 && /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: "11px",
+        color: "#4ade80",
+        fontWeight: "700"
+      }
+    }, "Group Stock: ", groupTotal.cartons > 0 ? groupTotal.cartons + " ctn · " : "", groupTotal.tins, " tins")), products.map((p, i) => renderProductRow(p, i)))));
   })()), subTab === "import" && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
