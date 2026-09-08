@@ -1539,13 +1539,13 @@ const TR = {
   }
 };
 const getLang = () => localStorage.getItem("gcc_lang") || "en";
-const COMPLAINT_STATUS = ["Open", "Assigned to Salesman", "Under Review", "QC Responded", "Resolved", "Closed"];
+const COMPLAINT_STATUS = ["Open", "Assigned to Salesman", "QC Responded", "Resolved (Take Back Material)", "Resolved (No Complaint)"];
 const CS_COL = {
   Open: "#ef4444",
-  "Under Review": "#f59e0b",
+  "Assigned to Salesman": "#f59e0b",
   "QC Responded": "#3b82f6",
-  Resolved: "#22c55e",
-  Closed: "#64748b"
+  "Resolved (Take Back Material)": "#a855f7",
+  "Resolved (No Complaint)": "#22c55e"
 };
 const LEAKAGE_STATUS = ["Open", "Visit Customer Required", "Visit Completed", "Rejected", "Credit Note Approved", "Credit Note Issued", "Closed"];
 const LS_COL = {
@@ -5254,7 +5254,10 @@ function ComplaintWorkspace({
         respondedDate: today()
       };
       const updated = [...salesResponses, entry];
-      const ns = needsMore ? "Open" : salesResp.resolved === "Yes" ? "Resolved" : "Closed";
+      // "Resolved" and "Closed" no longer exist as separate statuses — both non-"needs more action"
+      // outcomes here map to "Resolved (No Complaint)"; Admin can change it to
+      // "Resolved (Take Back Material)" via the status dropdown if material actually needs collecting.
+      const ns = needsMore ? "Open" : "Resolved (No Complaint)";
       const updateData = {
         salesResponses: updated,
         salesResponse: entry,
@@ -13511,11 +13514,12 @@ function FYArchiveTab({
       const allFYBatches = bSnap.docs.filter(d => getBFY(d.data()) === fy);
       const pendingBatchCount = allFYBatches.filter(d => d.data().status !== "Packed").length;
       const batches = allFYBatches.filter(d => d.data().status === "Packed");
-      // Complaints: only Resolved/Closed are eligible — an Open (or any in-progress) complaint
-      // must never be deleted, regardless of how old it is.
+      // Complaints: only Resolved (either variant) are eligible — an Open/Assigned/QC Responded
+      // complaint must never be deleted, regardless of how old it is.
       const allFYComplaints = cSnap.docs.filter(d => inFY(d.data().dateCreated, fy));
-      const pendingComplaintCount = allFYComplaints.filter(d => !["Resolved", "Closed"].includes(d.data().status)).length;
-      const complaints = allFYComplaints.filter(d => ["Resolved", "Closed"].includes(d.data().status));
+      const isResolvedStatus = s => (s || "").startsWith("Resolved");
+      const pendingComplaintCount = allFYComplaints.filter(d => !isResolvedStatus(d.data().status)).length;
+      const complaints = allFYComplaints.filter(d => isResolvedStatus(d.data().status));
       // Leakage: only Closed is eligible — anything still open, awaiting a visit, awaiting a
       // credit note, etc. must never be deleted.
       const allFYLeakage = lkSnap.docs.filter(d => inFY(d.data().leakDate || d.data().dateCreated, fy));
@@ -37371,7 +37375,7 @@ function MainApp({
   const isSalesOnly = roles.includes("sales") && !roles.some(r => ["admin", "qc", "issuer"].includes(r));
   const fc = complaints.filter(c => {
     if (isSalesOnly && c.addedBy !== user.email && c.assignedSalesman !== user.email) return false;
-    const ms = complaintFilter === "All" || (complaintFilter === "Open" ? !["Resolved", "Closed"].includes(c.status) : c.status === complaintFilter);
+    const ms = complaintFilter === "All" || (complaintFilter === "Open" ? !(c.status || "").startsWith("Resolved") : c.status === complaintFilter);
     const q = complaintSearch.toLowerCase();
     return ms && (!q || c.customerName?.toLowerCase().includes(q) || c.productName?.toLowerCase().includes(q) || c.batchNo?.toLowerCase().includes(q));
   });
@@ -38162,7 +38166,7 @@ function MainApp({
     });
     const groups = Object.values(byCust).sort((a, b) => b.complaints.length - a.complaints.length || a.customerName.localeCompare(b.customerName));
     return groups.map(g => {
-      const unresolvedCount = g.complaints.filter(c => !["Resolved", "Closed"].includes(c.status)).length;
+      const unresolvedCount = g.complaints.filter(c => !(c.status || "").startsWith("Resolved")).length;
       return /*#__PURE__*/React.createElement("div", {
         key: g.customerName,
         style: {
