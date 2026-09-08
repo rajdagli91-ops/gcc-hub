@@ -20578,9 +20578,15 @@ function OrdersTab({
   const [loading, setLoading] = useState(true);
   const [parsing, setParsing] = useState(false);
   const [transportParsing, setTransportParsing] = useState(false);
-  const [subTab, setSubTab] = useState("pending"); // "pending"|"dispatch"|"setup"
+  const [subTab, setSubTab] = useState("pending"); // "pending"|"direct_prep"|"transport_prep"|"dispatched"|"reports"|"setup"
   const [viewMode, setViewMode] = useState("customer"); // "customer"|"product"|"transporter"
   const [search, setSearch] = useState("");
+  // Search is a filter for whichever tab you're currently on — switching tabs clears it, so a
+  // transporter/product search typed in Pending never silently carries over and filters Direct
+  // Prep, Transport Prep, or any other tab unexpectedly.
+  useEffect(() => {
+    setSearch("");
+  }, [subTab]);
   const [routeFilter, setRouteFilter] = useState("All");
   const [deliveryFilter, setDeliveryFilter] = useState("All");
   const [expandedCustomer, setExpandedCustomer] = useState(null);
@@ -26334,6 +26340,7 @@ function OrdersTab({
       });
       return Object.values(byP).sort((a, b) => b.total - a.total).map(p => {
         const pVol = calcVolume(p.name, p.total);
+        const pCt = calcCartons(p.name, p.total);
         return /*#__PURE__*/React.createElement("div", {
           key: p.name,
           style: {
@@ -26373,7 +26380,16 @@ function OrdersTab({
             fontWeight: "700",
             color: "#fcd34d"
           }
-        }, p.total), pVol && /*#__PURE__*/React.createElement("span", {
+        }, p.total), pCt && (pCt.cartons > 0 || pCt.loose > 0) && /*#__PURE__*/React.createElement("span", {
+          style: {
+            fontSize: "11px",
+            color: "#a78bfa",
+            background: "#12083a",
+            border: "1px solid #7c3aed30",
+            borderRadius: "4px",
+            padding: "1px 6px"
+          }
+        }, pCt.cartons > 0 ? pCt.cartons + " ctn" : "", pCt.loose > 0 ? (pCt.cartons > 0 ? " + " : "") + pCt.loose + " loose" : ""), pVol && /*#__PURE__*/React.createElement("span", {
           style: {
             fontSize: "11px",
             color: "#4ade80",
@@ -26382,25 +26398,41 @@ function OrdersTab({
             borderRadius: "4px",
             padding: "1px 6px"
           }
-        }, pVol.vol, " ", pVol.unit))), p.customers.map((c, ci) => /*#__PURE__*/React.createElement("div", {
-          key: ci,
-          style: {
-            display: "flex",
-            justifyContent: "space-between",
-            padding: "4px 12px",
-            borderTop: ci === 0 ? "none" : "1px solid #0f172a",
-            fontSize: "11px"
-          }
-        }, /*#__PURE__*/React.createElement("span", {
-          style: {
-            color: "#94a3b8"
-          }
-        }, c.partyName), /*#__PURE__*/React.createElement("span", {
-          style: {
-            color: "#fcd34d",
-            fontWeight: "600"
-          }
-        }, c.qty))));
+        }, pVol.vol, " ", pVol.unit))), p.customers.map((c, ci) => {
+          const cCt = calcCartons(p.name, c.qty);
+          return /*#__PURE__*/React.createElement("div", {
+            key: ci,
+            style: {
+              display: "flex",
+              justifyContent: "space-between",
+              padding: "4px 12px",
+              borderTop: ci === 0 ? "none" : "1px solid #0f172a",
+              fontSize: "11px",
+              gap: "6px"
+            }
+          }, /*#__PURE__*/React.createElement("span", {
+            style: {
+              color: "#94a3b8"
+            }
+          }, c.partyName), /*#__PURE__*/React.createElement("div", {
+            style: {
+              display: "flex",
+              gap: "5px",
+              alignItems: "center",
+              flexShrink: 0
+            }
+          }, cCt && (cCt.cartons > 0 || cCt.loose > 0) && /*#__PURE__*/React.createElement("span", {
+            style: {
+              fontSize: "9.5px",
+              color: "#a78bfa"
+            }
+          }, cCt.cartons > 0 ? cCt.cartons + " ctn" : "", cCt.loose > 0 ? (cCt.cartons > 0 ? " + " : "") + cCt.loose + " loose" : ""), /*#__PURE__*/React.createElement("span", {
+            style: {
+              color: "#fcd34d",
+              fontWeight: "600"
+            }
+          }, c.qty)));
+        }));
       });
     })() : (() => {
       const byR = {};
@@ -27204,6 +27236,7 @@ function OrdersTab({
       });
       return Object.values(byP).sort((a, b) => b.total - a.total).map(p => {
         const pVol = calcVolume(p.name, p.total);
+        const pCt = calcCartons(p.name, p.total);
         return /*#__PURE__*/React.createElement("div", {
           key: p.name,
           style: {
@@ -27243,7 +27276,16 @@ function OrdersTab({
             fontWeight: "700",
             color: "#fcd34d"
           }
-        }, p.total), pVol && /*#__PURE__*/React.createElement("span", {
+        }, p.total), pCt && (pCt.cartons > 0 || pCt.loose > 0) && /*#__PURE__*/React.createElement("span", {
+          style: {
+            fontSize: "11px",
+            color: "#a78bfa",
+            background: "#12083a",
+            border: "1px solid #7c3aed30",
+            borderRadius: "4px",
+            padding: "1px 6px"
+          }
+        }, pCt.cartons > 0 ? pCt.cartons + " ctn" : "", pCt.loose > 0 ? (pCt.cartons > 0 ? " + " : "") + pCt.loose + " loose" : ""), pVol && /*#__PURE__*/React.createElement("span", {
           style: {
             fontSize: "11px",
             color: "#93c5fd",
@@ -27252,25 +27294,41 @@ function OrdersTab({
             borderRadius: "4px",
             padding: "1px 6px"
           }
-        }, pVol.vol, " ", pVol.unit))), p.customers.map((c, ci) => /*#__PURE__*/React.createElement("div", {
-          key: ci,
-          style: {
-            display: "flex",
-            justifyContent: "space-between",
-            padding: "4px 12px",
-            borderTop: ci === 0 ? "none" : "1px solid #0f172a",
-            fontSize: "11px"
-          }
-        }, /*#__PURE__*/React.createElement("span", {
-          style: {
-            color: "#94a3b8"
-          }
-        }, c.partyName), /*#__PURE__*/React.createElement("span", {
-          style: {
-            color: "#fcd34d",
-            fontWeight: "600"
-          }
-        }, c.qty))));
+        }, pVol.vol, " ", pVol.unit))), p.customers.map((c, ci) => {
+          const cCt = calcCartons(p.name, c.qty);
+          return /*#__PURE__*/React.createElement("div", {
+            key: ci,
+            style: {
+              display: "flex",
+              justifyContent: "space-between",
+              padding: "4px 12px",
+              borderTop: ci === 0 ? "none" : "1px solid #0f172a",
+              fontSize: "11px",
+              gap: "6px"
+            }
+          }, /*#__PURE__*/React.createElement("span", {
+            style: {
+              color: "#94a3b8"
+            }
+          }, c.partyName), /*#__PURE__*/React.createElement("div", {
+            style: {
+              display: "flex",
+              gap: "5px",
+              alignItems: "center",
+              flexShrink: 0
+            }
+          }, cCt && (cCt.cartons > 0 || cCt.loose > 0) && /*#__PURE__*/React.createElement("span", {
+            style: {
+              fontSize: "9.5px",
+              color: "#a78bfa"
+            }
+          }, cCt.cartons > 0 ? cCt.cartons + " ctn" : "", cCt.loose > 0 ? (cCt.cartons > 0 ? " + " : "") + cCt.loose + " loose" : ""), /*#__PURE__*/React.createElement("span", {
+            style: {
+              color: "#fcd34d",
+              fontWeight: "600"
+            }
+          }, c.qty)));
+        }));
       });
     }
     // By transporter
