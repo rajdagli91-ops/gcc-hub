@@ -27914,6 +27914,92 @@ function FGStockTab({
   }).sort((a, b) => (a.name || "").localeCompare(b.name || ""));
 
   // ── Import products from Excel ──
+  // ── Download / Upload the full catalogue — for bulk edits like adding Product Group in Excel ──
+  const downloadCatalogue = async () => {
+    try {
+      await loadXLSX();
+    } catch (e) {
+      showToast("Could not load Excel library", "error");
+      return;
+    }
+    const XLSX = window.XLSX;
+    const rows = [["Product Name", "Size", "Unit", "Category", "Product Group", "Tins/Carton", "Pack Type"], ...fgProducts.slice().sort((a, b) => (a.name || "").localeCompare(b.name || "")).map(p => [p.name || "", p.size || "", p.unit || "", p.category || "", p.productGroup || "", p.tinsPerCarton || "", p.packType || ""])];
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws["!cols"] = [{
+      wch: 38
+    }, {
+      wch: 8
+    }, {
+      wch: 8
+    }, {
+      wch: 18
+    }, {
+      wch: 18
+    }, {
+      wch: 12
+    }, {
+      wch: 14
+    }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "FG Product Catalogue");
+    XLSX.writeFile(wb, `VEEBEE_FG_Catalogue_${today()}.xlsx`);
+    showToast(`${fgProducts.length} products exported ✓`);
+  };
+  const uploadCatalogueUpdate = async file => {
+    try {
+      await loadXLSX();
+    } catch (e) {
+      showToast("Could not load Excel library", "error");
+      return;
+    }
+    const XLSX = window.XLSX;
+    const data = await new Promise(r => {
+      const fr = new FileReader();
+      fr.onload = e => r(e.target.result);
+      fr.readAsArrayBuffer(file);
+    });
+    try {
+      const wb = XLSX.read(data, {
+        type: "array"
+      });
+      const ws = wb.Sheets["FG Product Catalogue"] || wb.Sheets[Object.keys(wb.Sheets)[0]];
+      if (!ws) {
+        showToast("Could not find catalogue sheet", "error");
+        return;
+      }
+      const rows = XLSX.utils.sheet_to_json(ws, {
+        header: 1,
+        range: 1
+      });
+      // Matches each row to an EXISTING product by name and updates it — this never creates new
+      // products (use the separate "Import New Products" tool for that), so a typo in the name
+      // column just gets reported as unmatched rather than silently creating a duplicate entry.
+      let updated = 0;
+      const unmatched = [];
+      for (const row of rows) {
+        const [name, sizeRaw, unit, category, productGroup, tpcRaw, packType] = row;
+        if (!name || String(name).trim().length < 2) continue;
+        const prod = fgProducts.find(p => normalize(p.name) === normalize(String(name)));
+        if (!prod) {
+          unmatched.push(String(name).trim());
+          continue;
+        }
+        const updateData = {};
+        if (sizeRaw != null && sizeRaw !== "") updateData.size = parseFloat(String(sizeRaw).replace(/[^\d.]/g, "")) || prod.size || 0;
+        if (unit) updateData.unit = String(unit).trim();
+        if (category) updateData.category = String(category).trim();
+        updateData.productGroup = productGroup ? String(productGroup).trim() : "";
+        if (tpcRaw != null && tpcRaw !== "") updateData.tinsPerCarton = parseInt(String(tpcRaw).replace(/[^\d]/g, "")) || prod.tinsPerCarton || 0;
+        if (packType) updateData.packType = String(packType).trim();
+        updateData.lastModifiedAt = ts();
+        await C("fg_products").doc(prod.id).update(updateData);
+        updated++;
+      }
+      showToast(`${updated} product${updated !== 1 ? "s" : ""} updated ✓${unmatched.length > 0 ? ` — ${unmatched.length} row(s) had no matching product (check spelling)` : ""}`, unmatched.length > 0 ? "error" : undefined);
+    } catch (err) {
+      showToast("Upload error: " + err.message, "error");
+    }
+  };
   const importProducts = async file => {
     try {
       await loadXLSX();
@@ -28242,12 +28328,56 @@ function FGStockTab({
       fontSize: "12px",
       cursor: "pointer"
     }
-  }, "+ Add Product"), /*#__PURE__*/React.createElement("span", {
+  }, "+ Add Product"), /*#__PURE__*/React.createElement("button", {
+    onClick: downloadCatalogue,
+    style: {
+      background: "#0a1a2e",
+      border: "1px solid #1e3a5f",
+      borderRadius: "6px",
+      padding: "6px 12px",
+      color: "#93c5fd",
+      fontWeight: "700",
+      fontSize: "12px",
+      cursor: "pointer"
+    }
+  }, "⬇ Download Catalogue"), canManage && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("input", {
+    id: "catalogue-upload-input",
+    type: "file",
+    accept: ".xlsx,.xls",
+    style: {
+      display: "none"
+    },
+    onChange: async e => {
+      if (e.target.files[0]) {
+        await uploadCatalogueUpdate(e.target.files[0]);
+        e.target.value = "";
+      }
+    }
+  }), /*#__PURE__*/React.createElement("button", {
+    onClick: () => document.getElementById("catalogue-upload-input").click(),
+    style: {
+      background: "#1a0a2e",
+      border: "1px solid #7c3aed",
+      borderRadius: "6px",
+      padding: "6px 12px",
+      color: "#c4b5fd",
+      fontWeight: "700",
+      fontSize: "12px",
+      cursor: "pointer"
+    }
+  }, "⬆ Upload Catalogue")), /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: "11px",
       color: "#475569"
     }
-  }, filtered.length, " products")), showAddForm && canManage && /*#__PURE__*/React.createElement("div", {
+  }, filtered.length, " products")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: "10.5px",
+      color: "#475569",
+      marginBottom: "12px",
+      marginTop: "-6px"
+    }
+  }, "💡 Download the catalogue, fill in the ", /*#__PURE__*/React.createElement("b", null, "Product Group"), " column (or any other column) in Excel, then Upload it back — matching products (by name) get updated, nothing gets duplicated."), showAddForm && canManage && /*#__PURE__*/React.createElement("div", {
     style: {
       background: "#0b1220",
       border: "1px solid #166534",
