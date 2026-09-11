@@ -19263,9 +19263,9 @@ function printDispatchList(groups, routeLabel, dateStr, fgProds) {
   h += '<span style="font-size:8pt"><b>' + dateStr + '<\/b> &nbsp;|&nbsp; Route: <b>' + routeLabel + '<\/b> &nbsp;|&nbsp; Customers: <b>' + groups.length + '<\/b>' + volSummary + '<\/span>';
   h += '<\/div>';
   var tableHead = '<tr><th style="border:1px solid #000;background:#e8e8e8;text-align:left;width:4%">#<\/th><th style="border:1px solid #000;background:#e8e8e8;text-align:left;width:20%">Customer<\/th><th style="border:1px solid #000;background:#e8e8e8;text-align:left;width:38%">Product<\/th><th style="border:1px solid #000;background:#e8e8e8;text-align:center;width:7%">Qty<\/th><th style="border:1px solid #000;background:#e8e8e8;text-align:center;width:12%">Cartons<\/th><th style="border:1px solid #000;background:#e8e8e8;text-align:center;width:8%">Volume<\/th><th style="border:1px solid #000;background:#e8e8e8;text-align:left;width:11%">Order No<\/th><\/tr>';
-  function buildSection(subGroups, label, color) {
+  function buildSection(subGroups, label, color, skipLabel) {
     if (!subGroups.length) return '';
-    var out = '<div style="font-weight:800;font-size:9pt;letter-spacing:0.03em;color:' + color + ';border-bottom:2px solid ' + color + ';padding:5pt 2pt 2pt;margin-top:6pt">' + label + ' (' + subGroups.length + ')<\/div>';
+    var out = skipLabel ? '' : '<div style="font-weight:800;font-size:9pt;letter-spacing:0.03em;color:' + color + ';border-bottom:2px solid ' + color + ';padding:5pt 2pt 2pt;margin-top:6pt">' + label + ' (' + subGroups.length + ')<\/div>';
     out += '<table>' + tableHead;
     subGroups.forEach(function (g, gi) {
       g.items.forEach(function (it, ii) {
@@ -19286,7 +19286,23 @@ function printDispatchList(groups, routeLabel, dateStr, fgProds) {
     (g.isDirect ? directGroups : transportGroups).push(g);
   });
   h += buildSection(transportGroups, '🏢 TRANSPORTER ORDERS', '#1e3a8a');
-  h += buildSection(directGroups, '🚚 DIRECT ORDERS', '#166534');
+  if (directGroups.length) {
+    h += '<div style="font-weight:800;font-size:9pt;letter-spacing:0.03em;color:#166534;border-bottom:2px solid #166534;padding:5pt 2pt 2pt;margin-top:6pt">🚚 DIRECT ORDERS (' + directGroups.length + ')<\/div>';
+    var byRoute = {},
+      routeOrder = [];
+    directGroups.forEach(function (g) {
+      var rk = g.route || '—';
+      if (!byRoute[rk]) {
+        byRoute[rk] = [];
+        routeOrder.push(rk);
+      }
+      byRoute[rk].push(g);
+    });
+    routeOrder.sort().forEach(function (rk) {
+      h += '<div style="font-weight:700;font-size:8pt;color:#166534;padding:3pt 2pt 1pt 8pt">🗺 ' + rk + ' (' + byRoute[rk].length + ')<\/div>';
+      h += buildSection(byRoute[rk], '', null, true);
+    });
+  }
   h += '<div style="margin-top:6pt;font-size:7pt;display:flex;justify-content:space-between;border-top:1px solid #ccc;padding-top:3pt"><span>GCC Operations Hub<\/span><span>Prepared by: _________________________ &nbsp; Checked by: _________________________<\/span><\/div>';
   h += '<\/body><\/html>';
   var w = window.open('', '_blank');
@@ -19984,7 +20000,8 @@ function TransporterGroupRow({
   setDispatchForm,
   canDispatch,
   stageItems,
-  stagingSaving
+  stagingSaving,
+  calcCartons
 }) {
   const [open, setOpen] = useState(false);
   const totalItems = tg.customers.reduce((a, c) => a + c.totalItems, 0);
@@ -20136,7 +20153,16 @@ function TransporterGroupRow({
         textOverflow: "ellipsis",
         whiteSpace: "nowrap"
       }
-    }, item.name), /*#__PURE__*/React.createElement("span", {
+    }, item.name), (() => {
+      const ct = calcCartons?.(item.name, item.balanceQty);
+      return ct && (ct.cartons > 0 || ct.loose > 0) ? /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: "9.5px",
+          color: "#a78bfa",
+          flexShrink: 0
+        }
+      }, ct.cartons > 0 ? ct.cartons + " ctn" : "", ct.loose > 0 ? (ct.cartons > 0 ? " + " : "") + ct.loose + " loose" : "") : null;
+    })(), /*#__PURE__*/React.createElement("span", {
       style: {
         color: "#fcd34d",
         fontWeight: "600",
@@ -20269,7 +20295,8 @@ function ProductGroupRow({
   onCustomerSelect,
   selectedCustomer,
   stageItems,
-  stagingSaving
+  stagingSaving,
+  calcCartons
 }) {
   const [open, setOpen] = useState(false);
   return /*#__PURE__*/React.createElement("div", {
@@ -20334,7 +20361,26 @@ function ProductGroupRow({
       fontSize: "9.5px",
       color: "#475569"
     }
-  }, "total units")), /*#__PURE__*/React.createElement("span", {
+  }, "total units")), (() => {
+    const ct = calcCartons?.(pg.name, pg.totalQty);
+    return ct && (ct.cartons > 0 || ct.loose > 0) ? /*#__PURE__*/React.createElement("div", {
+      style: {
+        textAlign: "right"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: "13px",
+        fontWeight: "700",
+        color: "#a78bfa",
+        lineHeight: 1
+      }
+    }, ct.cartons > 0 ? ct.cartons + " ctn" : "", ct.loose > 0 ? (ct.cartons > 0 ? "+" : "") + ct.loose + "ls" : ""), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: "9.5px",
+        color: "#475569"
+      }
+    }, "cartons")) : null;
+  })(), /*#__PURE__*/React.createElement("span", {
     style: {
       color: "#334155",
       fontSize: "11px"
@@ -20346,7 +20392,7 @@ function ProductGroupRow({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "grid",
-      gridTemplateColumns: "2fr 70px 1fr auto",
+      gridTemplateColumns: "2fr 60px 80px 1fr auto",
       gap: "6px",
       background: "#060d1a",
       padding: "5px 14px",
@@ -20360,18 +20406,23 @@ function ProductGroupRow({
     style: {
       textAlign: "center"
     }
-  }, "Qty"), /*#__PURE__*/React.createElement("span", null, "Transport"), /*#__PURE__*/React.createElement("span", {
+  }, "Qty"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      textAlign: "center"
+    }
+  }, "Cartons"), /*#__PURE__*/React.createElement("span", null, "Transport"), /*#__PURE__*/React.createElement("span", {
     style: {
       textAlign: "center"
     }
   }, canDispatch ? "Dispatch" : "")), pg.customers.map((c, ci) => {
     const fk = c.orderId + "__" + c.itemIdx;
     const df = dispatchForm[fk] || {};
+    const cCt = calcCartons?.(pg.name, c.qty);
     return /*#__PURE__*/React.createElement("div", {
       key: ci,
       style: {
         display: "grid",
-        gridTemplateColumns: "2fr 70px 1fr auto",
+        gridTemplateColumns: "2fr 60px 80px 1fr auto",
         gap: "6px",
         padding: "7px 14px",
         borderTop: "1px solid #0f172a",
@@ -20400,6 +20451,12 @@ function ProductGroupRow({
         color: "#fcd34d"
       }
     }, c.qty), /*#__PURE__*/React.createElement("div", {
+      style: {
+        textAlign: "center",
+        fontSize: "10px",
+        color: "#a78bfa"
+      }
+    }, cCt && (cCt.cartons > 0 || cCt.loose > 0) ? (cCt.cartons > 0 ? cCt.cartons + " ctn" : "") + (cCt.loose > 0 ? (cCt.cartons > 0 ? " + " : "") + cCt.loose + " loose" : "") : "—"), /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: "11px",
         color: c.isDirect ? "#4ade80" : "#93c5fd"
@@ -21793,9 +21850,15 @@ function OrdersTab({
       if (printRouteFilter.startsWith("direct:")) return g.isDirect && g.route === printRouteFilter.slice(7);
       return true;
     });
-    // Segregate: all transporter orders first (in transporter sequence), then all direct orders (in direct sequence)
+    // Segregate: all transporter orders first (in transporter sequence), then all direct orders
+    // grouped by route (each route's own uploaded sequence), routes ordered alphabetically.
     return [...res].sort((a, b) => {
       if (!!a.isDirect !== !!b.isDirect) return a.isDirect ? 1 : -1;
+      if (a.isDirect && b.isDirect) {
+        const routeA = a.route || "",
+          routeB = b.route || "";
+        if (routeA !== routeB) return routeA.localeCompare(routeB);
+      }
       return seqSortFn(a, b);
     });
   })();
@@ -23860,7 +23923,8 @@ function OrdersTab({
     onCustomerSelect: setSelectedCustomerInProduct,
     selectedCustomer: selectedCustomerInProduct,
     stageItems: stageItemsForTransport,
-    stagingSaving: stagingSaving
+    stagingSaving: stagingSaving,
+    calcCartons: calcCartons
   }))), viewMode === "transporter" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: {
       background: "#0b1220",
@@ -23882,7 +23946,8 @@ function OrdersTab({
     setDispatchForm: setDispatchForm,
     canDispatch: canDispatch,
     stageItems: stageItemsForTransport,
-    stagingSaving: stagingSaving
+    stagingSaving: stagingSaving,
+    calcCartons: calcCartons
   }))), viewMode === "customer" && /*#__PURE__*/React.createElement("div", null, customerGroups.map(group => {
     const isUnknown = group.route === "Unknown" || !group.route;
     const isExp = expandedCustomer === group.partyName;
@@ -24772,6 +24837,12 @@ function OrdersTab({
     const borderCol = allConfirmed ? "#22c55e" : "#f59e0b";
     const isFirstOfCategory = gi === 0 || !!filteredToday[gi - 1].isDirect !== !!group.isDirect;
     const catIdx = group.isDirect ? gi - todayTransportGroups.length : gi;
+    // Within Direct, also break into route sub-groups — todayDirectGroups is already
+    // route-grouped (and sequence-sorted within each route) by the sort above.
+    const isFirstOfRoute = group.isDirect && (catIdx === 0 || todayDirectGroups[catIdx - 1].route !== group.route);
+    const routeFirstIdx = group.isDirect ? todayDirectGroups.findIndex(g => g.route === group.route) : 0;
+    const routeIdx = group.isDirect ? catIdx - routeFirstIdx : catIdx;
+    const routeCount = group.isDirect ? todayDirectGroups.filter(g => g.route === group.route).length : 0;
     return /*#__PURE__*/React.createElement(React.Fragment, {
       key: group.partyName + "::" + (group.route || "") + "::" + (group.transport || "")
     }, isFirstOfCategory && /*#__PURE__*/React.createElement("div", {
@@ -24796,7 +24867,28 @@ function OrdersTab({
         color: "#475569",
         fontWeight: "700"
       }
-    }, "(", group.isDirect ? todayDirectGroups.length : todayTransportGroups.length, ")")), /*#__PURE__*/React.createElement("div", {
+    }, "(", group.isDirect ? todayDirectGroups.length : todayTransportGroups.length, ")")), isFirstOfRoute && /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: "8px",
+        margin: "6px 0 6px 8px",
+        padding: "3px 2px",
+        borderBottom: "1px solid #16653440"
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: "11px",
+        fontWeight: "700",
+        color: "#4ade80"
+      }
+    }, "🗺 ", group.route || "—"), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: "10px",
+        color: "#475569",
+        fontWeight: "700"
+      }
+    }, "(", routeCount, ")")), /*#__PURE__*/React.createElement("div", {
       style: {
         background: "#0b1220",
         border: "1px solid #1e293b",
@@ -24804,7 +24896,8 @@ function OrdersTab({
         borderRadius: "10px",
         marginBottom: "6px",
         overflow: "hidden",
-        opacity: allConfirmed ? 0.85 : 1
+        opacity: allConfirmed ? 0.85 : 1,
+        marginLeft: group.isDirect ? "8px" : "0"
       }
     }, /*#__PURE__*/React.createElement("div", {
       style: {
@@ -24821,7 +24914,7 @@ function OrdersTab({
         fontWeight: "700",
         color: "#f1f5f9"
       }
-    }, catIdx + 1, ". ", group.partyName), /*#__PURE__*/React.createElement("div", {
+    }, routeIdx + 1, ". ", group.partyName), /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: "10.5px",
         color: "#475569",
@@ -26528,7 +26621,8 @@ function OrdersTab({
           justifyContent: "space-between",
           padding: "4px 12px",
           borderTop: ii === 0 ? "none" : "1px solid #0f172a",
-          fontSize: "11px"
+          fontSize: "11px",
+          gap: "6px"
         }
       }, /*#__PURE__*/React.createElement("span", {
         style: {
@@ -26538,7 +26632,16 @@ function OrdersTab({
           textOverflow: "ellipsis",
           whiteSpace: "nowrap"
         }
-      }, it.partyName, " · ", it.name), /*#__PURE__*/React.createElement("span", {
+      }, it.partyName, " · ", it.name), (() => {
+        const ct = calcCartons(it.name, it.qty);
+        return ct && (ct.cartons > 0 || ct.loose > 0) ? /*#__PURE__*/React.createElement("span", {
+          style: {
+            fontSize: "9.5px",
+            color: "#a78bfa",
+            flexShrink: 0
+          }
+        }, ct.cartons > 0 ? ct.cartons + " ctn" : "", ct.loose > 0 ? (ct.cartons > 0 ? " + " : "") + ct.loose + " loose" : "") : null;
+      })(), /*#__PURE__*/React.createElement("span", {
         style: {
           color: "#fcd34d",
           fontWeight: "600",
@@ -27426,7 +27529,8 @@ function OrdersTab({
         justifyContent: "space-between",
         padding: "4px 12px",
         borderTop: ii === 0 ? "none" : "1px solid #0f172a",
-        fontSize: "11px"
+        fontSize: "11px",
+        gap: "6px"
       }
     }, /*#__PURE__*/React.createElement("span", {
       style: {
@@ -27436,7 +27540,16 @@ function OrdersTab({
         textOverflow: "ellipsis",
         whiteSpace: "nowrap"
       }
-    }, it.partyName, " · ", it.name), /*#__PURE__*/React.createElement("span", {
+    }, it.partyName, " · ", it.name), (() => {
+      const ct = calcCartons(it.name, it.qty);
+      return ct && (ct.cartons > 0 || ct.loose > 0) ? /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: "9.5px",
+          color: "#a78bfa",
+          flexShrink: 0
+        }
+      }, ct.cartons > 0 ? ct.cartons + " ctn" : "", ct.loose > 0 ? (ct.cartons > 0 ? " + " : "") + ct.loose + " loose" : "") : null;
+    })(), /*#__PURE__*/React.createElement("span", {
       style: {
         color: "#fcd34d",
         fontWeight: "600",
