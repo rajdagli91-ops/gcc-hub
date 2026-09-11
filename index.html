@@ -19372,15 +19372,31 @@ function DispatchHistoryReport({
         transportList.push(e);
       }
     });
+    const totalFor = list => {
+      let qty = 0;
+      const vols = {};
+      list.forEach(e => (e.items || []).forEach(it => {
+        qty += parseFloat(it.qty) || 0;
+        if (it.vol) {
+          vols[it.vol.unit] = (vols[it.vol.unit] || 0) + (parseFloat(it.vol.vol) || 0);
+        }
+      }));
+      return {
+        qty,
+        vols
+      };
+    };
     const sections = Object.entries(directByRoute).sort((a, b) => a[0].localeCompare(b[0])).map(([route, list]) => ({
       label: `🚚 Direct — ${route}`,
       color: "#4ade80",
-      list
+      list,
+      total: totalFor(list)
     }));
     if (transportList.length > 0) sections.push({
       label: "🏢 Transporter Orders",
       color: "#93c5fd",
-      list: transportList
+      list: transportList,
+      total: totalFor(transportList)
     });
     return sections;
   };
@@ -19442,7 +19458,8 @@ function DispatchHistoryReport({
     // Same segregation as the on-screen view: one table per Direct route, plus one combined
     // Transporter table — instead of one mixed "Dispatched" table for everything.
     groupEntries(entriesToPrint).forEach(section => {
-      h += `<div class="sec">${section.label} (${section.list.length})</div>`;
+      const totVolStr = Object.entries(section.total.vols).map(([u, v]) => ` · ${v.toFixed(2)} ${u}`).join("");
+      h += `<div class="sec" style="display:flex;justify-content:space-between"><span>${section.label} (${section.list.length})</span><span>Total: ${section.total.qty}${totVolStr}</span></div>`;
       h += '<table><tr><th>Date</th><th>Customer</th><th>Route</th><th>Transport</th><th>Order No</th><th>Order Date</th><th>Product</th><th style="text-align:center">Qty</th><th style="text-align:center">Volume</th></tr>';
       section.list.forEach(e => (e.items || []).forEach((it, ii) => {
         h += `<tr><td>${ii === 0 ? e._date || "" : ""}</td><td>${ii === 0 ? e.partyName : ""}</td><td>${ii === 0 ? e.route || "" : ""}</td><td>${ii === 0 ? e.isDirect ? "Direct" : e.transport || "" : ""}</td><td>${it.voucherNo || ""}</td><td>${it.orderDate || ""}</td><td>${it.name}</td><td style="text-align:center">${it.qty}</td><td style="text-align:center">${it.vol ? it.vol.vol + " " + it.vol.unit : ""}</td></tr>`;
@@ -19668,10 +19685,17 @@ function DispatchHistoryReport({
     style: {
       display: "flex",
       alignItems: "center",
+      justifyContent: "space-between",
       gap: "8px",
       margin: si === 0 ? "0 0 6px" : "12px 0 6px",
       padding: "4px 2px",
       borderBottom: `2px solid ${section.color}30`
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: "8px"
     }
   }, /*#__PURE__*/React.createElement("span", {
     style: {
@@ -19686,7 +19710,13 @@ function DispatchHistoryReport({
       color: "#475569",
       fontWeight: "700"
     }
-  }, "(", section.list.length, ")")), section.list.map((entry, ei) => /*#__PURE__*/React.createElement("div", {
+  }, "(", section.list.length, ")")), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: "10.5px",
+      color: section.color,
+      fontWeight: "700"
+    }
+  }, "Total: ", section.total.qty, Object.entries(section.total.vols).map(([u, v]) => ` · ${v.toFixed(2)} ${u}`).join(""))), section.list.map((entry, ei) => /*#__PURE__*/React.createElement("div", {
     key: ei,
     style: {
       background: "#0b1220",
@@ -19896,9 +19926,16 @@ function DispatchHistoryReport({
       padding: "4px 14px",
       display: "flex",
       alignItems: "center",
+      justifyContent: "space-between",
       gap: "6px",
       borderTop: si === 0 ? "none" : "1px solid #0f172a",
       background: "#080d18"
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: "6px"
     }
   }, /*#__PURE__*/React.createElement("span", {
     style: {
@@ -19913,7 +19950,13 @@ function DispatchHistoryReport({
       color: "#475569",
       fontWeight: "700"
     }
-  }, "(", section.list.length, ")")), section.list.map((e, ei) => /*#__PURE__*/React.createElement("div", {
+  }, "(", section.list.length, ")")), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: "9.5px",
+      color: section.color,
+      fontWeight: "700"
+    }
+  }, "Total: ", section.total.qty)), section.list.map((e, ei) => /*#__PURE__*/React.createElement("div", {
     key: ei,
     style: {
       borderTop: "1px solid #0f172a",
