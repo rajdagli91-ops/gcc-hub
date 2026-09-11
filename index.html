@@ -20856,7 +20856,7 @@ function OrdersTab({
     isDirect: false
   });
   const canManageSiteDelivery = isAdmin || roles.includes("issuer") || roles.includes("ho");
-  const saveSiteDelivery = async orderId => {
+  const saveSiteDelivery = async (orderId, partyName) => {
     if (!sdForm.route.trim()) return showToast("Enter the delivery route/area", "error");
     if (!sdForm.isDirect && !sdForm.transport.trim()) return showToast("Select or enter a transporter, or choose Direct", "error");
     try {
@@ -20866,24 +20866,42 @@ function OrdersTab({
       // reports, and sequence uploads all stay consistent — no stray one-off spellings.
       const routeExists = routes.some(r => normalize(r) === normalize(routeVal));
       const transExists = sdForm.isDirect || transporterNames.some(t => normTKey(t) === normTKey(transVal));
-      if (!routeExists || !transExists) {
-        const snap = await C("settings").doc("customerTransport").get();
-        const d = snap.exists ? snap.data() : {
-          map: {},
-          routes: [],
-          extraTransporters: []
-        };
-        const newRoutes = routeExists ? d.routes || [] : [...(d.routes || []), routeVal].sort();
-        const newExtra = transExists ? d.extraTransporters || [] : [...(d.extraTransporters || []), transVal].sort();
-        await C("settings").doc("customerTransport").set({
-          ...d,
-          routes: newRoutes,
-          extraTransporters: newExtra,
-          updatedAt: ts()
-        }, {
-          merge: true
-        });
-      }
+      const snap = await C("settings").doc("customerTransport").get();
+      const d = snap.exists ? snap.data() : {
+        map: {},
+        routes: [],
+        extraTransporters: []
+      };
+      const newRoutes = routeExists ? d.routes || [] : [...(d.routes || []), routeVal].sort();
+      const newExtra = transExists ? d.extraTransporters || [] : [...(d.extraTransporters || []), transVal].sort();
+      // Save this route/transport combo against the customer's own record too, so it shows up
+      // as a quick pick next time — a customer can have several different site deliveries saved
+      // (e.g. Site A via one transporter, Site B direct), not just one.
+      const custKey = normalize(partyName || "");
+      const custEntry = (d.map || {})[custKey] || {};
+      const existingSites = custEntry.siteDeliveries || [];
+      const alreadySaved = existingSites.some(sd => normalize(sd.route) === normalize(routeVal) && normTKey(sd.transport) === normTKey(transVal) && !!sd.isDirect === !!sdForm.isDirect);
+      const newSites = alreadySaved ? existingSites : [...existingSites, {
+        route: routeVal,
+        transport: transVal,
+        isDirect: sdForm.isDirect
+      }];
+      const newMap = {
+        ...(d.map || {}),
+        [custKey]: {
+          ...custEntry,
+          siteDeliveries: newSites
+        }
+      };
+      await C("settings").doc("customerTransport").set({
+        ...d,
+        map: newMap,
+        routes: newRoutes,
+        extraTransporters: newExtra,
+        updatedAt: ts()
+      }, {
+        merge: true
+      });
       await C("orders").doc(orderId).update({
         siteDelivery: true,
         siteRoute: routeVal,
@@ -21727,7 +21745,7 @@ function OrdersTab({
       return true;
     });
     filtered.forEach(o => {
-      const k = normalize(o.partyName) + "::" + normalize(o.route || "") + "::" + normalize(o.transport || "");
+      const k = normalize(o.partyName) + "::" + normalize(o.route || "") + "::" + normalize(o.transport || "") + (o.siteDelivery ? "::site" : "");
       if (!map[k]) map[k] = {
         partyName: o.partyName,
         route: o.route,
@@ -21751,7 +21769,7 @@ function OrdersTab({
     orders.forEach(o => {
       (o.items || []).forEach(item => {
         if (!item.dispatchConfirmed && item.lastDispatchedAt && (item.dispatchedQty || 0) > 0 && !item.stagedForTransport) {
-          const k = normalize(o.partyName) + "::" + normalize(o.route || "") + "::" + normalize(o.transport || "");
+          const k = normalize(o.partyName) + "::" + normalize(o.route || "") + "::" + normalize(o.transport || "") + (o.siteDelivery ? "::site" : "");
           if (!map[k]) map[k] = {
             partyName: o.partyName,
             route: o.route,
@@ -21804,7 +21822,7 @@ function OrdersTab({
         if (now - windowStart > WINDOW_MS) return; // outside 48h window from dispatch date
         const cat = item.dispatchConfirmedAt;
         const confirmedAt = cat ? typeof cat === "string" ? new Date(cat).getTime() : cat.toMillis ? cat.toMillis() : cat.seconds ? cat.seconds * 1000 : 0 : 0;
-        const k = normalize(o.partyName) + "::" + normalize(o.route || "") + "::" + normalize(o.transport || "");
+        const k = normalize(o.partyName) + "::" + normalize(o.route || "") + "::" + normalize(o.transport || "") + (o.siteDelivery ? "::site" : "");
         if (!map[k]) map[k] = {
           partyName: o.partyName,
           route: o.route,
@@ -21847,7 +21865,7 @@ function OrdersTab({
     direct: {},
     transport: {}
   });
-  const getTransportSeq = (partyName, transport) => {
+  const getTransportSeq = (partyName, transport, isSite) => {
     const seqMap = deliverySequence.transport || {};
     if (!Object.keys(seqMap).length) return 999;
     const normParty = normalize(partyName || "");
@@ -21855,41 +21873,57 @@ function OrdersTab({
     // Exact match only — normalization already strips spaces/punctuation/case, but a partial
     // "contains" match (e.g. transporter "BHAGWATI" vs customer "BHAGWATI ENTERPRISE") would
     // wrongly treat two different names as the same entity just because one starts with the other.
-    if (seqMap[normTrans]) return seqMap[normTrans].seq;
-    if (seqMap[normParty]) return seqMap[normParty].seq;
+    // A customer can have BOTH a regular sequence entry and a "(Site)" entry — pick the one that
+    // matches this order's actual delivery type, falling back to whichever variant exists.
+    const pick = entry => {
+      if (!entry) return null;
+      if (isSite && entry.site) return entry.site.seq;
+      if (!isSite && entry.regular) return entry.regular.seq;
+      return (entry.site || entry.regular)?.seq ?? null;
+    };
+    const byTrans = pick(seqMap[normTrans]);
+    if (byTrans != null) return byTrans;
+    const byParty = pick(seqMap[normParty]);
+    if (byParty != null) return byParty;
     return 999;
   };
-  const getDirectSeq = (partyName, route) => {
+  const getDirectSeq = (partyName, route, isSite) => {
     const routeMap = deliverySequence.direct || {};
     const routeKey = normalize(route || "all");
     const seqForRoute = routeMap[routeKey] || routeMap["all"] || {};
     const keys = Object.keys(seqForRoute);
     if (!keys.length) return 999;
     const normParty = normalize(partyName || "");
-    if (seqForRoute[normParty]) return seqForRoute[normParty].seq;
+    const entry = seqForRoute[normParty];
+    if (entry) {
+      if (isSite && entry.site) return entry.site.seq;
+      if (!isSite && entry.regular) return entry.regular.seq;
+      const any = entry.site || entry.regular;
+      if (any) return any.seq;
+    }
     return 999;
   };
   // Order sequence: direct customers use their route's direct sequence; if unlisted there,
   // fall back to the transporter sequence (covers direct orders riding along a transporter route).
   const getOrderSeq = g => {
     if (g.isDirect) {
-      const dSeq = getDirectSeq(g.partyName, g.route);
+      const dSeq = getDirectSeq(g.partyName, g.route, g.siteDelivery);
       if (dSeq < 999) return dSeq;
-      return getTransportSeq(g.partyName, g.transport);
+      return getTransportSeq(g.partyName, g.transport, g.siteDelivery);
     }
-    return getTransportSeq(g.partyName, g.transport);
+    return getTransportSeq(g.partyName, g.transport, g.siteDelivery);
   };
   const seqSortFn = (a, b) => getOrderSeq(a) - getOrderSeq(b) || (a.partyName || "").localeCompare(b.partyName || "");
   const filteredToday = (() => {
     // Helper: order goes with transport if it's non-direct OR it appears in transport sequence
-    const isTransportOrder = g => !g.isDirect || getTransportSeq(g.partyName, g.transport) < 999;
+    const isTransportOrder = g => !g.isDirect || getTransportSeq(g.partyName, g.transport, g.siteDelivery) < 999;
     let res = todayDispatched.filter(g => {
       if (search.trim()) {
         const q = normalize(search);
         if (!normalize(g.partyName).includes(q) && !normalize(g.transport || "").includes(q) && !normalize(g.route || "").includes(q) && !(g.items || []).some(i => normalize(i.name || "").includes(q))) return false;
       }
       if (printRouteFilter === "transport") return isTransportOrder(g);
-      if (printRouteFilter === "directonly") return g.isDirect && getTransportSeq(g.partyName, g.transport) === 999;
+      if (printRouteFilter === "directonly") return g.isDirect && getTransportSeq(g.partyName, g.transport, g.siteDelivery) === 999;
       if (printRouteFilter.startsWith("direct:")) return g.isDirect && g.route === printRouteFilter.slice(7);
       return true;
     });
@@ -22044,6 +22078,19 @@ function OrdersTab({
         const t = s.toLowerCase().trim();
         return t === "" || t === "#" || t === "name" || t === "customer" || t === "transporter" || t === "s.no" || t === "sno" || t === "sr.no" || t === "seq" || t === "sequence" || t === "customer name" || t === "transporter name" || t === "name (transporter / customer)";
       };
+      // A customer can appear TWICE in the same sequence sheet — once for their regular/personal
+      // delivery, once for a site delivery — as long as the site-delivery row's name ends with a
+      // "(Site)" marker (case-insensitive; "(Site Delivery)", "- Site", etc. all work too). Without
+      // this, the second row would just silently overwrite the first and one of the two orders
+      // would end up with no matching sequence position.
+      const SITE_MARKER_RE = /\s*[\(\-–]\s*site(\s*delivery)?\s*\)?\s*$/i;
+      const splitSiteMarker = rawName => {
+        const isSite = SITE_MARKER_RE.test(rawName);
+        return {
+          base: rawName.replace(SITE_MARKER_RE, "").trim(),
+          isSite
+        };
+      };
       wb.SheetNames.forEach(sheetName => {
         const ws = wb.Sheets[sheetName];
         const rows = XLSX.utils.sheet_to_json(ws, {
@@ -22057,8 +22104,14 @@ function OrdersTab({
           if (!name || isHeaderText(name) || isHeaderText(String(row[1] || "").trim())) return;
           counter++;
           const seq = parsedSeq || counter;
-          seqMap[normalize(name)] = {
-            name,
+          const {
+            base,
+            isSite
+          } = splitSiteMarker(name);
+          const key = normalize(base);
+          if (!seqMap[key]) seqMap[key] = {};
+          seqMap[key][isSite ? "site" : "regular"] = {
+            name: base,
             seq
           };
         });
@@ -22087,8 +22140,14 @@ function OrdersTab({
             if (!name || isHeaderText(name) || isHeaderText(String(row[1] || "").trim())) return;
             counter++;
             const seq = parsedSeq || counter;
-            entries[normalize(name)] = {
-              name,
+            const {
+              base,
+              isSite
+            } = splitSiteMarker(name);
+            const key = normalize(base);
+            if (!entries[key]) entries[key] = {};
+            entries[key][isSite ? "site" : "regular"] = {
+              name: base,
               seq
             };
           });
@@ -24038,7 +24097,18 @@ function OrdersTab({
         textOverflow: "ellipsis",
         whiteSpace: "nowrap"
       }
-    }, group.partyName), /*#__PURE__*/React.createElement("div", {
+    }, group.partyName, group.siteDelivery && /*#__PURE__*/React.createElement("span", {
+      style: {
+        marginLeft: "6px",
+        fontSize: "10px",
+        fontWeight: "700",
+        color: "#c4b5fd",
+        background: "#3b0764",
+        border: "1px solid #7c3aed",
+        borderRadius: "5px",
+        padding: "1px 6px"
+      }
+    }, "📍 SITE")), /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: "11px",
         color: "#475569",
@@ -24090,7 +24160,7 @@ function OrdersTab({
         whiteSpace: "nowrap"
       }
     }, isQA ? "✕ Cancel" : "+ Add Route"), !isUnknown && (canDispatch || isAdmin || roles.includes("issuer")) && (() => {
-      const inTransportSeq = group.isDirect && getTransportSeq(group.partyName, group.transport) < 999;
+      const inTransportSeq = group.isDirect && getTransportSeq(group.partyName, group.transport, group.siteDelivery) < 999;
       if (!group.isDirect || inTransportSeq) {
         const allPending = group.orders.flatMap(o => (o.items || []).filter(i => i.balanceQty > 0 && i.status !== "Dispatched" && !i.stagedForTransport).map(item => ({
           orderId: o.id,
@@ -24312,7 +24382,30 @@ function OrdersTab({
         fontWeight: "600",
         cursor: "pointer"
       }
-    }, order.siteDelivery ? "✏️ Edit" : "📍 Mark Site Delivery")), siteDeliveryEdit === order.id && /*#__PURE__*/React.createElement("div", {
+    }, order.siteDelivery ? "✏️ Edit" : "📍 Mark Site Delivery"), canManageSiteDelivery && group.isDirect && !order.siteDelivery && /*#__PURE__*/React.createElement("button", {
+      onClick: () => {
+        // Quick shortcut: same route, switch this order to Transport — pre-fill
+        // whatever transporter is already on file for this customer, if any.
+        const savedTransport = customerMap[normalize(group.partyName)]?.transport;
+        const prefill = savedTransport && normalize(savedTransport) !== "direct" ? savedTransport : "";
+        setSdForm({
+          route: order.route || group.route || "",
+          transport: prefill,
+          isDirect: false
+        });
+        setSiteDeliveryEdit(order.id);
+      },
+      style: {
+        background: "none",
+        border: "1px solid #7c3aed50",
+        borderRadius: "5px",
+        padding: "1px 8px",
+        color: "#c4b5fd",
+        fontSize: "10px",
+        fontWeight: "600",
+        cursor: "pointer"
+      }
+    }, "🔄 Send via Transport")), siteDeliveryEdit === order.id && /*#__PURE__*/React.createElement("div", {
       style: {
         background: "#0a0620",
         border: "1px solid #7c3aed40",
@@ -24326,7 +24419,86 @@ function OrdersTab({
         color: "#a78bfa",
         marginBottom: "7px"
       }
-    }, "This order ships to a different location than ", order.originalRoute || order.route, "'s usual route (", order.originalTransport || order.transport, "). Set the actual delivery route/transport for THIS order only — it won't change ", group.partyName, "'s default route for future orders."), /*#__PURE__*/React.createElement(Grid2, null, /*#__PURE__*/React.createElement(Field, {
+    }, "This order ships to a different location than ", order.originalRoute || order.route, "'s usual route (", order.originalTransport || order.transport, "). Set the actual delivery route/transport for THIS order only — it won't change ", group.partyName, "'s default route for future orders."), (() => {
+      const savedSites = customerMap[normalize(group.partyName)]?.siteDeliveries || [];
+      if (!savedSites.length) return null;
+      return /*#__PURE__*/React.createElement("div", {
+        style: {
+          marginBottom: "10px"
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: "10px",
+          fontWeight: "700",
+          color: "#64748b",
+          textTransform: "uppercase",
+          letterSpacing: "0.06em",
+          marginBottom: "5px"
+        }
+      }, "📍 Saved site deliveries for ", group.partyName), /*#__PURE__*/React.createElement("div", {
+        style: {
+          display: "flex",
+          flexWrap: "wrap",
+          gap: "5px"
+        }
+      }, savedSites.map((sd, si) => {
+        const active = sdForm.route === sd.route && sdForm.transport === sd.transport && sdForm.isDirect === !!sd.isDirect;
+        return /*#__PURE__*/React.createElement("button", {
+          key: si,
+          onClick: () => setSdForm({
+            route: sd.route,
+            transport: sd.transport,
+            isDirect: !!sd.isDirect
+          }),
+          style: {
+            display: "flex",
+            alignItems: "center",
+            gap: "5px",
+            background: active ? "#3b0764" : "#0a0620",
+            border: `1px solid ${active ? "#7c3aed" : "#3b076440"}`,
+            borderRadius: "6px",
+            padding: "4px 10px",
+            color: active ? "#e9d5ff" : "#a78bfa",
+            fontSize: "11px",
+            fontWeight: "600",
+            cursor: "pointer"
+          }
+        }, sd.isDirect ? "🚚" : "🏢", " ", sd.route, " ", !sd.isDirect && /*#__PURE__*/React.createElement("span", {
+          style: {
+            opacity: 0.7
+          }
+        }, "/ ", sd.transport), /*#__PURE__*/React.createElement("span", {
+          onClick: async e => {
+            e.stopPropagation();
+            if (!confirm(`Remove saved site delivery "${sd.route}" for ${group.partyName}?`)) return;
+            const snap = await C("settings").doc("customerTransport").get();
+            const d = snap.exists ? snap.data() : {
+              map: {}
+            };
+            const custKey = normalize(group.partyName);
+            const custEntry = (d.map || {})[custKey] || {};
+            const filtered = (custEntry.siteDeliveries || []).filter((_, i) => i !== si);
+            await C("settings").doc("customerTransport").set({
+              ...d,
+              map: {
+                ...(d.map || {}),
+                [custKey]: {
+                  ...custEntry,
+                  siteDeliveries: filtered
+                }
+              }
+            }, {
+              merge: true
+            });
+          },
+          style: {
+            color: active ? "#c4b5fd" : "#7c3aed80",
+            fontWeight: "800",
+            marginLeft: "2px"
+          }
+        }, "✕"));
+      })));
+    })(), /*#__PURE__*/React.createElement(Grid2, null, /*#__PURE__*/React.createElement(Field, {
       label: "Actual Delivery Route/Area *"
     }, /*#__PURE__*/React.createElement(CustomerSearchInput, {
       value: sdForm.route,
@@ -24434,7 +24606,7 @@ function OrdersTab({
         cursor: "pointer"
       }
     }, "Cancel"), /*#__PURE__*/React.createElement("button", {
-      onClick: () => saveSiteDelivery(order.id),
+      onClick: () => saveSiteDelivery(order.id, group.partyName),
       style: {
         background: "#3b0764",
         border: "1px solid #7c3aed",
@@ -26433,7 +26605,7 @@ function OrdersTab({
       }
     }, "🗺 Route")), directPrepView === "customer" ? (() => {
       return sorted.map((c, ci) => {
-        const seq = getDirectSeq(c.partyName, c.route);
+        const seq = getDirectSeq(c.partyName, c.route, c.siteDelivery);
         const items = allDirectItems.filter(i => i.partyName === c.partyName);
         if (!items.length) return null;
         return /*#__PURE__*/React.createElement("div", {
@@ -27058,14 +27230,14 @@ function OrdersTab({
         textOverflow: "ellipsis",
         whiteSpace: "nowrap"
       }
-    }, Object.keys(deliverySequence.transport || {}).length > 0 && getTransportSeq(cg.partyName, cg.transport) < 999 && /*#__PURE__*/React.createElement("span", {
+    }, Object.keys(deliverySequence.transport || {}).length > 0 && getTransportSeq(cg.partyName, cg.transport, cg.siteDelivery) < 999 && /*#__PURE__*/React.createElement("span", {
       style: {
         fontSize: "10px",
         color: "#a78bfa",
         marginRight: "5px",
         fontWeight: "800"
       }
-    }, "#", getTransportSeq(cg.partyName, cg.transport)), cg.partyName), /*#__PURE__*/React.createElement("div", {
+    }, "#", getTransportSeq(cg.partyName, cg.transport, cg.siteDelivery)), cg.partyName), /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: "10px",
         color: "#93c5fd"
@@ -27341,7 +27513,7 @@ function OrdersTab({
       // Sort by delivery sequence
       const sorted = Object.values(byC).sort(seqSortFn);
       return sorted.map((c, ci) => {
-        const seq = getTransportSeq(c.partyName, c.transport);
+        const seq = getTransportSeq(c.partyName, c.transport, c.siteDelivery);
         return /*#__PURE__*/React.createElement("div", {
           key: c.partyName + "::" + (c.route || ""),
           style: {
