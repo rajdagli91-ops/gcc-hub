@@ -25932,7 +25932,19 @@ function OrdersTab({
       Object.entries(directSeq).forEach(([routeKey, seqMap]) => {
         if (!seqMap || typeof seqMap !== "object") return;
         const rows = [["#", "Customer Name"]];
-        Object.values(seqMap).sort((a, b) => a.seq - b.seq).forEach(({
+        // Each entry can hold a "regular" delivery AND/OR a "site" delivery for the same
+        // customer — write out whichever exist as separate rows, appending "(Site)" to the
+        // site-delivery row's name so it round-trips correctly if re-uploaded unchanged.
+        const flatEntries = [];
+        Object.values(seqMap).forEach(entry => {
+          if (!entry || typeof entry !== "object") return;
+          if (entry.regular) flatEntries.push(entry.regular);
+          if (entry.site) flatEntries.push({
+            name: entry.site.name + " (Site)",
+            seq: entry.site.seq
+          });
+        });
+        flatEntries.sort((a, b) => a.seq - b.seq).forEach(({
           name,
           seq
         }) => rows.push([seq, name]));
@@ -26963,14 +26975,31 @@ function OrdersTab({
       const XLSX = window.XLSX;
       const rows = [["#", "Name (Transporter / Customer)"]];
       const seqMap = deliverySequence.transport || {};
-      // Handle both {name,seq} objects and fallback to key as name
-      Object.entries(seqMap).map(([key, v]) => typeof v === "object" ? {
-        name: v.name || key,
-        seq: v.seq || 0
-      } : {
-        name: key,
-        seq: v || 0
-      }).sort((a, b) => a.seq - b.seq).forEach(({
+      // Each entry can hold a "regular" delivery AND/OR a "site" delivery for the same
+      // name — write out whichever exist as separate rows, appending "(Site)" to the
+      // site-delivery row's name so it round-trips correctly if re-uploaded unchanged.
+      const flatEntries = [];
+      Object.entries(seqMap).forEach(([key, v]) => {
+        if (v && typeof v === "object" && (v.regular || v.site)) {
+          if (v.regular) flatEntries.push({
+            name: v.regular.name || key,
+            seq: v.regular.seq || 0
+          });
+          if (v.site) flatEntries.push({
+            name: (v.site.name || key) + " (Site)",
+            seq: v.site.seq || 0
+          });
+        } else {
+          flatEntries.push(typeof v === "object" ? {
+            name: v.name || key,
+            seq: v.seq || 0
+          } : {
+            name: key,
+            seq: v || 0
+          });
+        }
+      });
+      flatEntries.sort((a, b) => a.seq - b.seq).forEach(({
         name,
         seq
       }) => rows.push([seq, name]));
