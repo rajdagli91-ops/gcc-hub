@@ -26301,7 +26301,9 @@ function OrdersTab({
       ...item,
       qty: item.balanceQty,
       partyName: cg.partyName,
-      route: cg.route
+      route: cg.route,
+      transport: cg.transport,
+      siteDelivery: cg.siteDelivery
     }))));
     const directVolTotals = {};
     allDirectItems.forEach(i => {
@@ -26320,7 +26322,9 @@ function OrdersTab({
         gridTemplateColumns: "1fr 1fr",
         gap: "12px"
       }
-    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    }, /*#__PURE__*/React.createElement("div", {
+      key: "direct-prep-list-" + directPrepArea
+    }, /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: "11px",
         fontWeight: "700",
@@ -26339,7 +26343,7 @@ function OrdersTab({
       })));
       if (!items.length) return null;
       return /*#__PURE__*/React.createElement("div", {
-        key: cg.partyName + "::" + (cg.route || ""),
+        key: cg.partyName + "::" + (cg.route || "") + "::" + (cg.transport || "") + (cg.siteDelivery ? "::site" : ""),
         style: {
           background: "#0b1220",
           border: "1px solid #1e293b",
@@ -26371,7 +26375,18 @@ function OrdersTab({
           fontWeight: "700",
           color: "#f1f5f9"
         }
-      }, cg.partyName), /*#__PURE__*/React.createElement("span", {
+      }, cg.partyName), cg.siteDelivery && /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: "10px",
+          fontWeight: "800",
+          color: "#e9d5ff",
+          background: "#3b0764",
+          border: "1px solid #a855f7",
+          borderRadius: "5px",
+          padding: "1px 7px",
+          letterSpacing: "0.03em"
+        }
+      }, "📍 SITE DELIVERY"), /*#__PURE__*/React.createElement("span", {
         style: {
           fontSize: "10.5px",
           color: "#475569",
@@ -26722,10 +26737,10 @@ function OrdersTab({
     }, "🗺 Route")), directPrepView === "customer" ? (() => {
       return sorted.map((c, ci) => {
         const seq = getDirectSeq(c.partyName, c.route, c.siteDelivery);
-        const items = allDirectItems.filter(i => i.partyName === c.partyName);
+        const items = allDirectItems.filter(i => i.partyName === c.partyName && (i.route || "") === (c.route || "") && (i.transport || "") === (c.transport || "") && !!i.siteDelivery === !!c.siteDelivery);
         if (!items.length) return null;
         return /*#__PURE__*/React.createElement("div", {
-          key: c.partyName + "::" + (c.route || ""),
+          key: c.partyName + "::" + (c.route || "") + "::" + (c.transport || "") + (c.siteDelivery ? "::site" : ""),
           style: {
             background: "#0b1220",
             border: "1px solid #1e293b",
@@ -26750,7 +26765,18 @@ function OrdersTab({
             color: "#4ade80",
             marginRight: "5px"
           }
-        }, "#", seq), c.partyName), /*#__PURE__*/React.createElement("span", {
+        }, "#", seq), c.partyName, c.siteDelivery && /*#__PURE__*/React.createElement("span", {
+          style: {
+            marginLeft: "6px",
+            fontSize: "9px",
+            fontWeight: "800",
+            color: "#e9d5ff",
+            background: "#3b0764",
+            border: "1px solid #a855f7",
+            borderRadius: "4px",
+            padding: "1px 5px"
+          }
+        }, "📍 SITE")), /*#__PURE__*/React.createElement("span", {
           style: {
             fontSize: "10px",
             color: "#4ade80"
@@ -27314,7 +27340,7 @@ function OrdersTab({
       byCustomer[i.partyName].items.push(i);
     });
     return Object.values(byCustomer).sort(seqSortFn).map(cg => /*#__PURE__*/React.createElement("div", {
-      key: cg.partyName + "::" + (cg.route || ""),
+      key: cg.partyName + "::" + (cg.route || "") + "::" + (cg.transport || ""),
       style: {
         background: "#0b1220",
         border: "1px solid #7c3aed40",
@@ -27631,7 +27657,7 @@ function OrdersTab({
       return sorted.map((c, ci) => {
         const seq = getTransportSeq(c.partyName, c.transport, c.siteDelivery);
         return /*#__PURE__*/React.createElement("div", {
-          key: c.partyName + "::" + (c.route || ""),
+          key: c.partyName + "::" + (c.route || "") + "::" + (c.transport || ""),
           style: {
             background: "#0b1220",
             border: "1px solid #1e293b",
