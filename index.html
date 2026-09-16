@@ -26228,7 +26228,7 @@ function OrdersTab({
         // no matter what any sequence sheet says — that was causing the same order to appear
         // under every route whose sequence file happened to mention their name.
         if (directPrepArea !== "All") {
-          const hasRealRoute = g.route && routes.some(r => normalize(r) === normalize(g.route));
+          const hasRealRoute = g.route && directAreas.some(a => normRoute(a) === normRoute(g.route));
           if (!hasRealRoute) {
             const seqMap = (deliverySequence.direct || {})[normalize(directPrepArea)] || {};
             const np = normalize(g.partyName || "");
