@@ -20643,6 +20643,36 @@ const applySiteOverride = o => {
     isDirect: !!o.siteIsDirect
   };
 };
+function renderDuplicateOrdersPanel(p) {
+  var rows = [];
+  if (p.dupOrderCheck !== null) {
+    if (p.dupOrderCheck.length === 0) {
+      rows.push(React.createElement("div", {key: "none", style: {fontSize: "12px", color: "#4ade80"}}, "No duplicate orders found."));
+    } else {
+      p.dupOrderCheck.forEach(function(group, gi) {
+        var itemRows = group.map(function(o) {
+          var label = "Route: " + (o.route || "-") + (o.transport ? " - Transport: " + o.transport : "") + " - " + (o.items || []).length + " items" + (o.orderDate ? " - order date " + o.orderDate : "");
+          return React.createElement("div", {key: o.id, style: {display: "flex", justifyContent: "space-between", alignItems: "center", padding: "5px 8px", background: "#0b1220", borderRadius: "5px", marginBottom: "4px", fontSize: "11px", gap: "8px", flexWrap: "wrap"}}, [
+            React.createElement("span", {key: "l", style: {color: "#94a3b8"}}, label),
+            React.createElement("button", {key: "b", onClick: function() { p.onDelete(o.id); }, style: {background: "#450a0a", border: "1px solid #dc2626", borderRadius: "5px", padding: "3px 10px", color: "#fca5a5", fontWeight: "700", fontSize: "10.5px", cursor: "pointer"}}, "Delete this copy")
+          ]);
+        });
+        var groupTitle = "WARN " + group[0].partyName + " - Voucher " + (group[0].voucherNo || "-") + " (" + group.length + " copies found)";
+        rows.push(React.createElement("div", {key: gi, style: {background: "#1a0a00", border: "1px solid #92400e", borderRadius: "8px", padding: "10px 12px", marginBottom: "8px"}}, [
+          React.createElement("div", {key: "t", style: {fontSize: "12px", fontWeight: "700", color: "#fbbf24", marginBottom: "6px"}}, groupTitle),
+          React.createElement("div", {key: "rows"}, itemRows)
+        ]));
+      });
+    }
+  }
+  return React.createElement("div", {style: {background: "#0a1520", border: "1px solid #1e3a5f", borderRadius: "12px", padding: "16px", marginBottom: "14px"}}, [
+    React.createElement("div", {key: "h", style: {fontSize: "13px", fontWeight: "700", color: "#93c5fd", marginBottom: "8px"}}, "Find Duplicate Orders"),
+    React.createElement("div", {key: "d", style: {fontSize: "11.5px", color: "#64748b", marginBottom: "10px"}}, "Checks all pending orders for the same customer plus voucher number appearing more than once - usually caused by a tiny formatting difference in the voucher number between two Tally imports."),
+    React.createElement("button", {key: "btn", onClick: p.onCheck, disabled: p.checking, style: {background: "#0a1a2e", border: "1px solid #1e3a5f", borderRadius: "6px", padding: "6px 14px", color: "#93c5fd", fontWeight: "700", fontSize: "12px", cursor: "pointer"}}, p.checking ? "Checking..." : "Check for Duplicates"),
+    p.dupOrderCheck !== null ? React.createElement("div", {key: "results", style: {marginTop: "12px"}}, rows) : null
+  ]);
+}
+
 function OrdersTab({
   role,
   roles,
@@ -20694,6 +20724,29 @@ function OrdersTab({
   const [loading, setLoading] = useState(true);
   const [parsing, setParsing] = useState(false);
   const [transportParsing, setTransportParsing] = useState(false);
+  const [dupOrderCheck, setDupOrderCheck] = useState(null);
+  const [dupOrderChecking, setDupOrderChecking] = useState(false);
+  const findDuplicateOrders = () => {
+    setDupOrderChecking(true);
+    const groups = {};
+    orders.filter(o => o.status === "Pending" || o.status === "Partial").forEach(o => {
+      const key = normalize(o.partyName || "") + "::" + normalize(o.voucherNo || "");
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(o);
+    });
+    setDupOrderCheck(Object.values(groups).filter(g => g.length > 1));
+    setDupOrderChecking(false);
+  };
+  const deleteDuplicateOrder = async orderId => {
+    if (!confirm("Permanently delete this duplicate order record? This cannot be undone.")) return;
+    try {
+      await C("orders").doc(orderId).delete();
+      showToast("Duplicate order deleted ✓");
+      setDupOrderCheck(prev => prev ? prev.map(g => g.filter(o => o.id !== orderId)).filter(g => g.length > 1) : prev);
+    } catch (e) {
+      showToast("Error: " + e.message, "error");
+    }
+  };
   const [subTab, setSubTab] = useState("pending"); // "pending"|"direct_prep"|"transport_prep"|"dispatched"|"reports"|"setup"
   const [viewMode, setViewMode] = useState("customer"); // "customer"|"product"|"transporter"
   const [search, setSearch] = useState("");
@@ -23113,7 +23166,7 @@ function OrdersTab({
       fontSize: "12px",
       cursor: "pointer"
     }
-  }, savingUnknown ? "Saving…" : "Save & Import")))), subTab === "setup" && /*#__PURE__*/React.createElement("div", {
+  }, savingUnknown ? "Saving…" : "Save & Import")))), subTab === "setup" && (isAdmin || roles.includes("issuer")) && renderDuplicateOrdersPanel({dupOrderCheck, checking: dupOrderChecking, onCheck: findDuplicateOrders, onDelete: deleteDuplicateOrder}), subTab === "setup" && /*#__PURE__*/React.createElement("div", {
     style: {
       background: "#060d1a",
       border: "1px solid #7c3aed40",
