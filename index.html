@@ -26148,13 +26148,19 @@ function OrdersTab({
       if (g.isDirect) {
         if (areaMatch) return true;
         // Also include customers explicitly listed under this route's uploaded sequence,
-        // even if their system route differs (e.g. a Thane customer added to the Bombay sequence sheet)
+        // even if their system route differs (e.g. a Thane customer added to the Bombay sequence sheet).
+        // If the SAME customer name has been listed in MORE THAN ONE route's sequence sheet (usually
+        // by mistake — e.g. a sequence template reused across routes without removing them), only
+        // borrow them into ONE route — whichever sorts first alphabetically — so the same pending
+        // order never shows up under every route tab that happens to mention their name.
         if (directPrepArea !== "All") {
           const seqMap = (deliverySequence.direct || {})[normalize(directPrepArea)] || {};
-          const seqKeys = Object.keys(seqMap);
-          if (seqKeys.length) {
-            const np = normalize(g.partyName || "");
-            if (seqMap[np]) return true;
+          const np = normalize(g.partyName || "");
+          if (seqMap[np]) {
+            const allRoutesListingThem = Object.keys(deliverySequence.direct || {})
+              .filter(rk => rk !== "all" && ((deliverySequence.direct[rk] || {})[np]))
+              .sort();
+            if (allRoutesListingThem.length === 0 || allRoutesListingThem[0] === normalize(directPrepArea)) return true;
           }
         }
         return false;
