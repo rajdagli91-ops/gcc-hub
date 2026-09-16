@@ -25928,8 +25928,13 @@ function OrdersTab({
       const XLSX = window.XLSX;
       const wb = XLSX.utils.book_new();
       const directSeq = deliverySequence.direct || {};
+      // When a specific route is selected (not "All"), only export that one route's sequence —
+      // matching "Upload for [route]", which is also scoped to just that route. Exporting every
+      // route into one file regardless of selection was confusing when you just wanted to check
+      // one route's data.
+      const scopedDirectSeq = directPrepArea !== "All" ? Object.fromEntries(Object.entries(directSeq).filter(([routeKey]) => routeKey === normalize(directPrepArea))) : directSeq;
       // Each key = route (or "all"); each sheet = one route
-      Object.entries(directSeq).forEach(([routeKey, seqMap]) => {
+      Object.entries(scopedDirectSeq).forEach(([routeKey, seqMap]) => {
         if (!seqMap || typeof seqMap !== "object") return;
         const rows = [["#", "Customer Name"]];
         // Each entry can hold a "regular" delivery AND/OR a "site" delivery for the same
