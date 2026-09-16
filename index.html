@@ -20779,11 +20779,33 @@ function OrdersTab({
 
   // Core import save logic — separated so it can be called after unknown-customer modal
   const _doImport = async sanitisedMap => {
-    const incomingSet = new Set(Object.keys(sanitisedMap));
+    // Fallback lookup: if a voucher's sanitized ID doesn't exactly match an existing order (e.g.
+    // because Tally exported the voucher number with a tiny formatting difference this time — an
+    // extra space, different punctuation — even though it looks identical), also try matching by
+    // the fully-normalized customer name + voucher number, which strips ALL such differences. This
+    // is what actually prevents duplicate order records for what is really the same voucher, and
+    // stops a still-valid order from being wrongly marked Pre-closed just because its exact key
+    // happened to come out slightly different this time.
+    const findExistingOrder = (key, order) => {
+      const byId = orders.find(o => o.id === key);
+      if (byId) return byId;
+      const wantCust = normalize(order.partyName || "");
+      const wantVoucher = normalize(order.voucherNo || "");
+      if (!wantVoucher) return null;
+      return orders.find(o => (o.status === "Pending" || o.status === "Partial") && normalize(o.partyName || "") === wantCust && normalize(o.voucherNo || "") === wantVoucher) || null;
+    };
+    // Build the set of existing order IDs that are genuinely matched by something in this import
+    // (by exact key OR by the normalized fallback above) — this is what decides whether an order
+    // still in "Pending"/"Partial" should be auto-closed, not just a raw key-string comparison.
+    const matchedExistingIds = new Set();
+    Object.entries(sanitisedMap).forEach(([key, order]) => {
+      const m = findExistingOrder(key, order);
+      if (m) matchedExistingIds.add(m.id);
+    });
     const pendingInDB = orders.filter(o => o.status === "Pending" || o.status === "Partial");
     let closedCount = 0;
     for (const dbOrder of pendingInDB) {
-      if (!incomingSet.has(dbOrder.id)) {
+      if (!matchedExistingIds.has(dbOrder.id)) {
         await C("orders").doc(dbOrder.id).update({
           status: "Pre-closed",
           preClosedAt: ts(),
@@ -20796,10 +20818,9 @@ function OrdersTab({
       updCount = 0;
     const alreadyDispatched = []; // vouchers that were fully dispatched — warn team
     const unknownItemsFound = {}; // local accumulator — don't use state inside async loop
-
     for (const [key, order] of Object.entries(sanitisedMap)) {
-      const docRef = C("orders").doc(key);
-      const existing = orders.find(o => o.id === key);
+      const existing = findExistingOrder(key, order);
+      const docRef = C("orders").doc(existing ? existing.id : key);
       if (existing) {
         // ── Guard: if order is already fully dispatched, do NOT reset it ──
         if (existing.status === "Dispatched") {
