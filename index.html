@@ -20643,73 +20643,6 @@ const applySiteOverride = o => {
     isDirect: !!o.siteIsDirect
   };
 };
-function renderOrderDebugPanel(p) {
-  var q = (p.debugSearch || "").trim().toLowerCase();
-  var results = null;
-  if (q) {
-    var matchingOrders = p.orders.filter(function(o) { return (o.partyName || "").toLowerCase().includes(q); });
-    var matchingGroups = p.customerGroups.filter(function(g) { return (g.partyName || "").toLowerCase().includes(q); });
-    var orderRows = matchingOrders.map(function(o) {
-      return React.createElement("div", {key: o.id, style: {padding: "5px 8px", background: "#0b1220", borderRadius: "5px", marginBottom: "4px", fontSize: "10.5px", color: "#94a3b8"}},
-        "Doc ID: " + o.id + " | Status: " + o.status + " | Voucher: " + (o.voucherNo || "-") + " | Route: " + (o.route || "-") + " | Transport: " + (o.transport || "-") + " | isDirect: " + String(o.isDirect) + " | siteDelivery: " + String(!!o.siteDelivery)
-      );
-    });
-    var groupRows = matchingGroups.map(function(g, gi) {
-      return React.createElement("div", {key: gi, style: {padding: "5px 8px", background: "#1a0a2e", border: "1px solid #7c3aed40", borderRadius: "5px", marginBottom: "4px", fontSize: "10.5px", color: "#c4b5fd"}},
-        "Group #" + (gi + 1) + " - Route: " + (g.route || "-") + " | Transport: " + (g.transport || "-") + " | isDirect: " + String(g.isDirect) + " | siteDelivery: " + String(!!g.siteDelivery) + " | Orders inside this group: " + (g.orders || []).length
-      );
-    });
-    results = React.createElement("div", {style: {marginTop: "10px"}}, [
-      React.createElement("div", {key: "s1", style: {fontSize: "11px", fontWeight: "700", color: "#fbbf24", marginBottom: "6px"}}, "Raw Order Documents matching \"" + q + "\": " + matchingOrders.length),
-      React.createElement("div", {key: "r1"}, orderRows),
-      React.createElement("div", {key: "s2", style: {fontSize: "11px", fontWeight: "700", color: "#fbbf24", marginTop: "10px", marginBottom: "6px"}}, "customerGroups entries matching \"" + q + "\": " + matchingGroups.length),
-      React.createElement("div", {key: "r2"}, groupRows)
-    ]);
-  }
-  return React.createElement("div", {style: {background: "#0a1520", border: "1px solid #92400e", borderRadius: "12px", padding: "16px", marginBottom: "14px"}}, [
-    React.createElement("div", {key: "h", style: {fontSize: "13px", fontWeight: "700", color: "#fbbf24", marginBottom: "8px"}}, "Debug: Inspect Raw Order Data"),
-    React.createElement("div", {key: "d", style: {fontSize: "11.5px", color: "#64748b", marginBottom: "10px"}}, "Type part of a customer name to see exactly how many real order documents exist for them, and how many grouped entries the Direct Prep screen computes from that data."),
-    React.createElement("input", {
-      key: "inp",
-      value: p.debugSearch,
-      onChange: function(e) { p.onSearchChange(e.target.value); },
-      placeholder: "e.g. MAHALAXMI",
-      style: {background: "#080d18", border: "1px solid #1e3a5f", borderRadius: "6px", padding: "6px 10px", color: "#e2e8f0", fontSize: "12px", width: "260px"}
-    }),
-    results
-  ]);
-}
-
-function renderDuplicateOrdersPanel(p) {
-  var rows = [];
-  if (p.dupOrderCheck !== null) {
-    if (p.dupOrderCheck.length === 0) {
-      rows.push(React.createElement("div", {key: "none", style: {fontSize: "12px", color: "#4ade80"}}, "No duplicate orders found."));
-    } else {
-      p.dupOrderCheck.forEach(function(group, gi) {
-        var itemRows = group.map(function(o) {
-          var label = "Route: " + (o.route || "-") + (o.transport ? " - Transport: " + o.transport : "") + " - " + (o.items || []).length + " items" + (o.orderDate ? " - order date " + o.orderDate : "");
-          return React.createElement("div", {key: o.id, style: {display: "flex", justifyContent: "space-between", alignItems: "center", padding: "5px 8px", background: "#0b1220", borderRadius: "5px", marginBottom: "4px", fontSize: "11px", gap: "8px", flexWrap: "wrap"}}, [
-            React.createElement("span", {key: "l", style: {color: "#94a3b8"}}, label),
-            React.createElement("button", {key: "b", onClick: function() { p.onDelete(o.id); }, style: {background: "#450a0a", border: "1px solid #dc2626", borderRadius: "5px", padding: "3px 10px", color: "#fca5a5", fontWeight: "700", fontSize: "10.5px", cursor: "pointer"}}, "Delete this copy")
-          ]);
-        });
-        var groupTitle = "WARN " + group[0].partyName + " - Voucher " + (group[0].voucherNo || "-") + " (" + group.length + " copies found)";
-        rows.push(React.createElement("div", {key: gi, style: {background: "#1a0a00", border: "1px solid #92400e", borderRadius: "8px", padding: "10px 12px", marginBottom: "8px"}}, [
-          React.createElement("div", {key: "t", style: {fontSize: "12px", fontWeight: "700", color: "#fbbf24", marginBottom: "6px"}}, groupTitle),
-          React.createElement("div", {key: "rows"}, itemRows)
-        ]));
-      });
-    }
-  }
-  return React.createElement("div", {style: {background: "#0a1520", border: "1px solid #1e3a5f", borderRadius: "12px", padding: "16px", marginBottom: "14px"}}, [
-    React.createElement("div", {key: "h", style: {fontSize: "13px", fontWeight: "700", color: "#93c5fd", marginBottom: "8px"}}, "Find Duplicate Orders"),
-    React.createElement("div", {key: "d", style: {fontSize: "11.5px", color: "#64748b", marginBottom: "10px"}}, "Checks all pending orders for the same customer plus voucher number appearing more than once - usually caused by a tiny formatting difference in the voucher number between two Tally imports."),
-    React.createElement("button", {key: "btn", onClick: p.onCheck, disabled: p.checking, style: {background: "#0a1a2e", border: "1px solid #1e3a5f", borderRadius: "6px", padding: "6px 14px", color: "#93c5fd", fontWeight: "700", fontSize: "12px", cursor: "pointer"}}, p.checking ? "Checking..." : "Check for Duplicates"),
-    p.dupOrderCheck !== null ? React.createElement("div", {key: "results", style: {marginTop: "12px"}}, rows) : null
-  ]);
-}
-
 function OrdersTab({
   role,
   roles,
@@ -20761,30 +20694,6 @@ function OrdersTab({
   const [loading, setLoading] = useState(true);
   const [parsing, setParsing] = useState(false);
   const [transportParsing, setTransportParsing] = useState(false);
-  const [dupOrderCheck, setDupOrderCheck] = useState(null);
-  const [debugSearch, setDebugSearch] = useState("");
-  const [dupOrderChecking, setDupOrderChecking] = useState(false);
-  const findDuplicateOrders = () => {
-    setDupOrderChecking(true);
-    const groups = {};
-    orders.filter(o => o.status === "Pending" || o.status === "Partial").forEach(o => {
-      const key = normalize(o.partyName || "") + "::" + normalize(o.voucherNo || "");
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(o);
-    });
-    setDupOrderCheck(Object.values(groups).filter(g => g.length > 1));
-    setDupOrderChecking(false);
-  };
-  const deleteDuplicateOrder = async orderId => {
-    if (!confirm("Permanently delete this duplicate order record? This cannot be undone.")) return;
-    try {
-      await C("orders").doc(orderId).delete();
-      showToast("Duplicate order deleted ✓");
-      setDupOrderCheck(prev => prev ? prev.map(g => g.filter(o => o.id !== orderId)).filter(g => g.length > 1) : prev);
-    } catch (e) {
-      showToast("Error: " + e.message, "error");
-    }
-  };
   const [subTab, setSubTab] = useState("pending"); // "pending"|"direct_prep"|"transport_prep"|"dispatched"|"reports"|"setup"
   const [viewMode, setViewMode] = useState("customer"); // "customer"|"product"|"transporter"
   const [search, setSearch] = useState("");
@@ -22145,7 +22054,7 @@ function OrdersTab({
       seq: ""
     });
   };
-  const importDeliverySequence = async (file, type) => {
+  const importDeliverySequence = async (file, type, forRoute) => {
     setLoadingSeq(true);
     try {
       await loadXLSX();
@@ -22236,8 +22145,14 @@ function OrdersTab({
         const routeSeqs = {
           ...(existingDoc.direct || {})
         };
+        const uploadedRouteKeys = new Set();
         wb.SheetNames.forEach(sheetName => {
-          const routeKey = normalize(sheetName.trim() || "all");
+          // If the user uploaded this "for" a specific route (not a multi-route "All" batch),
+          // use that selected route directly — not the Excel sheet's internal tab name, which
+          // is easy to leave as the default "Sheet1" and would otherwise file this sequence
+          // under the wrong route entirely, silently.
+          const routeKey = forRoute && forRoute !== "All" ? normalize(forRoute) : normalize(sheetName.trim() || "all");
+          uploadedRouteKeys.add(routeKey);
           let counter = 0;
           const ws = wb.Sheets[sheetName];
           const rows = XLSX.utils.sheet_to_json(ws, {
@@ -22269,9 +22184,11 @@ function OrdersTab({
           ...existingDoc,
           direct: routeSeqs
         });
-        // Check ALL direct customers in setup routes not covered by any uploaded sequence
+        // Check direct customers whose route was actually part of THIS upload — not every
+        // direct customer company-wide, since a customer on a different, not-yet-uploaded
+        // route was never going to be "in" this sequence and shouldn't be flagged as missing.
         const XLSX2 = window.XLSX;
-        const custInRoutes = Object.values(customerMap).filter(c => c.customer && !c._transportOnly && c.isDirect);
+        const custInRoutes = Object.values(customerMap).filter(c => c.customer && !c._transportOnly && c.isDirect && uploadedRouteKeys.has(normalize(c.route || "all")));
         const missingDirectCust = custInRoutes.filter(c => {
           const routeKey = normalize(c.route || "all");
           const seqForRoute = routeSeqs[routeKey] || routeSeqs["all"] || {};
@@ -23225,7 +23142,7 @@ function OrdersTab({
       fontSize: "12px",
       cursor: "pointer"
     }
-  }, savingUnknown ? "Saving…" : "Save & Import")))), subTab === "setup" && (isAdmin || roles.includes("issuer")) && renderDuplicateOrdersPanel({dupOrderCheck, checking: dupOrderChecking, onCheck: findDuplicateOrders, onDelete: deleteDuplicateOrder}), subTab === "setup" && (isAdmin || roles.includes("issuer")) && renderOrderDebugPanel({debugSearch, onSearchChange: setDebugSearch, orders, customerGroups}), subTab === "setup" && /*#__PURE__*/React.createElement("div", {
+  }, savingUnknown ? "Saving…" : "Save & Import")))), subTab === "setup" && /*#__PURE__*/React.createElement("div", {
     style: {
       background: "#060d1a",
       border: "1px solid #7c3aed40",
@@ -24172,7 +24089,7 @@ function OrdersTab({
     const borderColor = isUnknown ? "#ef4444" : hasPartial ? "#3b82f6" : "#f59e0b";
     const isQA = quickAddCustomer === group.partyName;
     return /*#__PURE__*/React.createElement("div", {
-      key: group.partyName + "::" + (group.route || "") + "::" + (group.transport || ""),
+      key: group.partyName + "::" + (group.route || "") + "::" + (group.transport || "") + (group.siteDelivery ? "::site" : ""),
       style: {
         background: "#0b1220",
         border: `1px solid ${isExp ? "#2563eb60" : isUnknown ? "#ef444430" : "#1e293b"}`,
@@ -25171,7 +25088,7 @@ function OrdersTab({
     const routeIdx = group.isDirect ? catIdx - routeFirstIdx : catIdx;
     const routeCount = group.isDirect ? todayDirectGroups.filter(g => g.route === group.route).length : 0;
     return /*#__PURE__*/React.createElement(React.Fragment, {
-      key: group.partyName + "::" + (group.route || "") + "::" + (group.transport || "")
+      key: group.partyName + "::" + (group.route || "") + "::" + (group.transport || "") + (group.siteDelivery ? "::site" : "")
     }, isFirstOfCategory && /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
@@ -25803,7 +25720,7 @@ function OrdersTab({
       groups: transportGroups
     });
     const renderCard = (group, gi) => /*#__PURE__*/React.createElement("div", {
-      key: group.partyName + "::" + (group.route || "") + "::" + (group.transport || ""),
+      key: group.partyName + "::" + (group.route || "") + "::" + (group.transport || "") + (group.siteDelivery ? "::site" : ""),
       style: {
         background: "#0b1220",
         border: "1px solid #1e293b",
@@ -26062,7 +25979,7 @@ function OrdersTab({
     },
     onChange: async e => {
       if (e.target.files[0]) {
-        await importDeliverySequence(e.target.files[0], "direct");
+        await importDeliverySequence(e.target.files[0], "direct", directPrepArea);
         e.target.value = "";
       }
     }
@@ -27340,7 +27257,7 @@ function OrdersTab({
       byCustomer[i.partyName].items.push(i);
     });
     return Object.values(byCustomer).sort(seqSortFn).map(cg => /*#__PURE__*/React.createElement("div", {
-      key: cg.partyName + "::" + (cg.route || "") + "::" + (cg.transport || ""),
+      key: cg.partyName + "::" + (cg.route || "") + "::" + (cg.transport || "") + (cg.siteDelivery ? "::site" : ""),
       style: {
         background: "#0b1220",
         border: "1px solid #7c3aed40",
@@ -27657,7 +27574,7 @@ function OrdersTab({
       return sorted.map((c, ci) => {
         const seq = getTransportSeq(c.partyName, c.transport, c.siteDelivery);
         return /*#__PURE__*/React.createElement("div", {
-          key: c.partyName + "::" + (c.route || "") + "::" + (c.transport || ""),
+          key: c.partyName + "::" + (c.route || "") + "::" + (c.transport || "") + (c.siteDelivery ? "::site" : ""),
           style: {
             background: "#0b1220",
             border: "1px solid #1e293b",
