@@ -25996,6 +25996,15 @@ function OrdersTab({
     },
     onChange: async e => {
       if (e.target.files[0]) {
+        // Uploading while "All" is selected expects a multi-sheet workbook where each sheet is
+        // named after its route — if that's not what was meant (e.g. the route tab just wasn't
+        // selected first), this silently files everything under a generic "all" bucket instead
+        // of the intended route. Confirm before proceeding, since this is exactly the mistake
+        // that's easy to make by accident.
+        if (directPrepArea === "All" && !confirm("You're uploading in \"All Routes\" mode — each sheet in your Excel should be named after its route.\n\nIf this sequence is meant for ONE specific route, click Cancel, select that route's tab, then upload again.\n\nClick OK only if this file genuinely has one sheet per route.")) {
+          e.target.value = "";
+          return;
+        }
         await importDeliverySequence(e.target.files[0], "direct", directPrepArea);
         e.target.value = "";
       }
