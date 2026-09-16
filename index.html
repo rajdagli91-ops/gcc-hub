@@ -26200,20 +26200,18 @@ function OrdersTab({
       const areaMatch = directPrepArea === "All" || normRoute(g.route) === normRoute(directPrepArea);
       if (g.isDirect) {
         if (areaMatch) return true;
-        // Also include customers explicitly listed under this route's uploaded sequence,
-        // even if their system route differs (e.g. a Thane customer added to the Bombay sequence sheet).
-        // If the SAME customer name has been listed in MORE THAN ONE route's sequence sheet (usually
-        // by mistake — e.g. a sequence template reused across routes without removing them), only
-        // borrow them into ONE route — whichever sorts first alphabetically — so the same pending
-        // order never shows up under every route tab that happens to mention their name.
+        // Also include customers explicitly listed under this route's uploaded sequence, but
+        // ONLY when this customer doesn't already have a real, recognized route of their own —
+        // e.g. their account route is "Unknown" or blank. A customer whose account route is a
+        // known, valid route (like "Panvel") should NEVER be borrowed into any other route tab,
+        // no matter what any sequence sheet says — that was causing the same order to appear
+        // under every route whose sequence file happened to mention their name.
         if (directPrepArea !== "All") {
-          const seqMap = (deliverySequence.direct || {})[normalize(directPrepArea)] || {};
-          const np = normalize(g.partyName || "");
-          if (seqMap[np]) {
-            const allRoutesListingThem = Object.keys(deliverySequence.direct || {})
-              .filter(rk => rk !== "all" && ((deliverySequence.direct[rk] || {})[np]))
-              .sort();
-            if (allRoutesListingThem.length === 0 || allRoutesListingThem[0] === normalize(directPrepArea)) return true;
+          const hasRealRoute = g.route && routes.some(r => normalize(r) === normalize(g.route));
+          if (!hasRealRoute) {
+            const seqMap = (deliverySequence.direct || {})[normalize(directPrepArea)] || {};
+            const np = normalize(g.partyName || "");
+            if (seqMap[np]) return true;
           }
         }
         return false;
