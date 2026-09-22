@@ -20643,6 +20643,28 @@ const applySiteOverride = o => {
     isDirect: !!o.siteIsDirect
   };
 };
+function renderPreClosedRecoveryPanel(p) {
+  var rows = null;
+  if (p.preClosedList !== null) {
+    if (p.preClosedList.length === 0) {
+      rows = React.createElement("div", {key: "none", style: {fontSize: "12px", color: "#4ade80"}}, "No Pre-closed orders in the last 24 hours.");
+    } else {
+      rows = React.createElement("div", {key: "rows"}, p.preClosedList.map(function(o) {
+        return React.createElement("div", {key: o.id, style: {display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 10px", background: "#0b1220", borderRadius: "5px", marginBottom: "5px", fontSize: "11px", gap: "8px", flexWrap: "wrap"}}, [
+          React.createElement("span", {key: "l", style: {color: "#94a3b8"}}, (o.partyName || "-") + " | Voucher: " + (o.voucherNo || "-") + " | " + (o.items || []).length + " item(s) | closed " + (o.preClosedAt || "-")),
+          React.createElement("button", {key: "b", onClick: function() { p.onRestore(o.id); }, style: {background: "#052e16", border: "1px solid #166534", borderRadius: "5px", padding: "3px 10px", color: "#4ade80", fontWeight: "700", fontSize: "10.5px", cursor: "pointer"}}, "Restore to Pending")
+        ]);
+      }));
+    }
+  }
+  return React.createElement("div", {style: {background: "#1a0a00", border: "1px solid #92400e", borderRadius: "12px", padding: "16px", marginBottom: "14px"}}, [
+    React.createElement("div", {key: "h", style: {fontSize: "13px", fontWeight: "700", color: "#fbbf24", marginBottom: "8px"}}, "Recover Pre-closed Orders"),
+    React.createElement("div", {key: "d", style: {fontSize: "11.5px", color: "#64748b", marginBottom: "10px"}}, "If an import incorrectly marked orders as Pre-closed (e.g. from a file that didn't parse correctly), find them here and restore them back to Pending."),
+    React.createElement("button", {key: "btn", onClick: p.onCheck, disabled: p.checking, style: {background: "#2e0a0a", border: "1px solid #7f1d1d", borderRadius: "6px", padding: "6px 14px", color: "#fca5a5", fontWeight: "700", fontSize: "12px", cursor: "pointer"}}, p.checking ? "Checking..." : "Show Recently Pre-closed Orders"),
+    rows ? React.createElement("div", {key: "results", style: {marginTop: "12px"}}, rows) : null
+  ]);
+}
+
 function OrdersTab({
   role,
   roles,
@@ -20726,6 +20748,15 @@ function OrdersTab({
 
   // Core import save logic — separated so it can be called after unknown-customer modal
   const _doImport = async sanitisedMap => {
+    // Safety check: if the uploaded file produced ZERO valid orders (wrong file, wrong sheet,
+    // a format Tally didn't export the way this parser expects, etc.), NEVER proceed — doing so
+    // would mark every single existing pending order as "Pre-closed" below, since none of them
+    // would match anything in an empty import. That's a destructive action that must never happen
+    // silently just because a file failed to parse.
+    if (Object.keys(sanitisedMap).length === 0) {
+      showToast("⚠ This file contained no valid orders to import — nothing was changed. Please check the file and try again.", "error");
+      return;
+    }
     // Commit writes in chunks via Firestore batched writes instead of one sequential network
     // round-trip per order — this is what actually makes importing hundreds of orders fast
     // (a handful of batch commits instead of hundreds of individual awaits).
@@ -20762,15 +20793,25 @@ function OrdersTab({
     const pendingInDB = orders.filter(o => o.status === "Pending" || o.status === "Partial");
     let closedCount = 0;
     const closeOps = [];
-    for (const dbOrder of pendingInDB) {
-      if (!matchedExistingIds.has(dbOrder.id)) {
-        closeOps.push(batch => batch.update(C("orders").doc(dbOrder.id), {
-          status: "Pre-closed",
-          preClosedAt: ts(),
-          preClosedNote: "Not found in latest Tally export — likely pre-closed by HO"
-        }));
-        closedCount++;
+    const toClose = pendingInDB.filter(dbOrder => !matchedExistingIds.has(dbOrder.id));
+    // Second safety layer: even with some valid rows, a partial parsing failure (wrong sheet,
+    // truncated export, etc.) could still wipe out a large chunk of genuinely-pending orders.
+    // If this import is about to close an unusually large share of what's currently pending,
+    // confirm with the person doing the import before proceeding.
+    if (toClose.length > 10 && toClose.length > pendingInDB.length * 0.3) {
+      const proceed = confirm(`This import would mark ${toClose.length} of your ${pendingInDB.length} currently pending orders as "Pre-closed" (not found in this file).\n\nThis is expected if those orders are genuinely no longer in Tally — but if this number seems too high, the file may not have parsed correctly.\n\nClick OK to proceed, or Cancel to stop and double-check the file first.`);
+      if (!proceed) {
+        showToast("Import cancelled — no changes made.", "error");
+        return;
       }
+    }
+    for (const dbOrder of toClose) {
+      closeOps.push(batch => batch.update(C("orders").doc(dbOrder.id), {
+        status: "Pre-closed",
+        preClosedAt: ts(),
+        preClosedNote: "Not found in latest Tally export — likely pre-closed by HO"
+      }));
+      closedCount++;
     }
     await commitInBatches(closeOps);
     let newCount = 0,
@@ -20819,7 +20860,15 @@ function OrdersTab({
           ...order,
           items: san(mergedItems),
           status: allDone ? "Dispatched" : anyDone ? "Partial" : "Pending",
-          lastImportedAt: ts()
+          lastImportedAt: ts(),
+          // A hold is placed by HO independently of Tally and must never be cleared just because
+          // the order was re-imported — explicitly carry it forward rather than relying on
+          // Firestore's partial-update semantics alone, so this stays correct even if this
+          // function is ever refactored to a full document write.
+          onHold: existing.onHold || false,
+          holdReason: existing.onHold ? existing.holdReason || null : null,
+          heldBy: existing.onHold ? existing.heldBy || null : null,
+          heldAt: existing.onHold ? existing.heldAt || null : null
         }));
         updCount++;
       } else {
@@ -20879,6 +20928,30 @@ function OrdersTab({
   const [fgProducts, setFgProducts] = useState([]);
   const [lastImportInfo, setLastImportInfo] = useState(null);
   const [nowTick, setNowTick] = useState(Date.now());
+  const [preClosedList, setPreClosedList] = useState(null);
+  const [preClosedChecking, setPreClosedChecking] = useState(false);
+  const checkPreClosed = () => {
+    setPreClosedChecking(true);
+    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const list = orders.filter(o => o.status === "Pre-closed" && o.preClosedAt && o.preClosedAt >= cutoff).sort((a, b) => (b.preClosedAt || "").localeCompare(a.preClosedAt || ""));
+    setPreClosedList(list);
+    setPreClosedChecking(false);
+  };
+  const restorePreClosedOrder = async orderId => {
+    try {
+      await C("orders").doc(orderId).update({
+        status: "Pending",
+        preClosedAt: null,
+        preClosedNote: null,
+        restoredAt: ts(),
+        restoredBy: user.email
+      });
+      showToast("Order restored to Pending ✓");
+      setPreClosedList(prev => prev ? prev.filter(o => o.id !== orderId) : prev);
+    } catch (e) {
+      showToast("Error: " + e.message, "error");
+    }
+  };
   useEffect(() => {
     const iv = setInterval(() => setNowTick(Date.now()), 30000);
     return () => clearInterval(iv);
@@ -20891,6 +20964,43 @@ function OrdersTab({
     isDirect: false
   });
   const canManageSiteDelivery = isAdmin || roles.includes("issuer") || roles.includes("ho");
+  // Only HO (or Admin) can place or release a payment hold on an order — Issuer cannot, since
+  // the whole point is that Issuer is blocked from dispatching a held order until HO releases it.
+  const canManageHold = isAdmin || roles.includes("ho");
+  const [holdReasonEdit, setHoldReasonEdit] = useState(null); // order id currently entering a hold reason
+  const [holdReasonText, setHoldReasonText] = useState("");
+  const holdOrder = async orderId => {
+    if (!holdReasonText.trim()) {
+      showToast("Enter a reason for the hold", "error");
+      return;
+    }
+    try {
+      await C("orders").doc(orderId).update({
+        onHold: true,
+        holdReason: holdReasonText.trim(),
+        heldBy: user.email,
+        heldAt: ts()
+      });
+      showToast("Order placed on hold ✓");
+      setHoldReasonEdit(null);
+      setHoldReasonText("");
+    } catch (e) {
+      showToast("Error: " + e.message, "error");
+    }
+  };
+  const releaseHold = async orderId => {
+    try {
+      await C("orders").doc(orderId).update({
+        onHold: false,
+        holdReason: null,
+        releasedBy: user.email,
+        releasedAt: ts()
+      });
+      showToast("Hold released ✓");
+    } catch (e) {
+      showToast("Error: " + e.message, "error");
+    }
+  };
   const saveSiteDelivery = async (orderId, partyName) => {
     if (!sdForm.route.trim()) return showToast("Enter the delivery route/area", "error");
     if (!sdForm.isDirect && !sdForm.transport.trim()) return showToast("Select or enter a transporter, or choose Direct", "error");
@@ -21317,6 +21427,7 @@ function OrdersTab({
     setSaving(true);
     try {
       for (const order of customerOrders) {
+        if (order.onHold) continue; // defense-in-depth — held orders should never reach here anyway
         const updatedItems = (order.items || []).map((item, idx) => {
           const df = dispatchForm[order.id + "__" + idx];
           if (!df) return item;
@@ -22341,6 +22452,16 @@ function OrdersTab({
       showToast("Direct orders can't be staged for Transport Prep — use Direct Prep instead", "error");
       return;
     }
+    // Defense-in-depth: never stage items belonging to an order HO has put on hold, even if
+    // something upstream missed filtering it out — unstaging (shouldStage=false) is always safe.
+    if (shouldStage) {
+      const heldIds = new Set(orders.filter(o => o.onHold).map(o => o.id));
+      itemsToStage = itemsToStage.filter(it => !heldIds.has(it.orderId));
+      if (!itemsToStage.length) {
+        showToast("Selected item(s) are on hold — nothing staged", "error");
+        return;
+      }
+    }
     setStagingSaving(true);
     try {
       const byOrder = {};
@@ -23166,7 +23287,7 @@ function OrdersTab({
       fontSize: "12px",
       cursor: "pointer"
     }
-  }, savingUnknown ? "Saving…" : "Save & Import")))), subTab === "setup" && /*#__PURE__*/React.createElement("div", {
+  }, savingUnknown ? "Saving…" : "Save & Import")))), subTab === "setup" && (isAdmin || roles.includes("issuer")) && renderPreClosedRecoveryPanel({preClosedList, checking: preClosedChecking, onCheck: checkPreClosed, onRestore: restorePreClosedOrder}), subTab === "setup" && /*#__PURE__*/React.createElement("div", {
     style: {
       background: "#060d1a",
       border: "1px solid #7c3aed40",
@@ -23889,7 +24010,7 @@ function OrdersTab({
     }
   }, "(", g.route, " · ", g.orders.reduce((a, o) => a + (o.items || []).filter(i => i.status !== "Dispatched" && i.balanceQty > 0 && !i.stagedForTransport).length, 0), " items)")), /*#__PURE__*/React.createElement("button", {
     onClick: () => {
-      const items = g.orders.flatMap(o => (o.items || []).filter(i => i.balanceQty > 0 && i.status !== "Dispatched" && !i.stagedForTransport).map(item => ({
+      const items = g.orders.filter(o => !o.onHold).flatMap(o => (o.items || []).filter(i => i.balanceQty > 0 && i.status !== "Dispatched" && !i.stagedForTransport).map(item => ({
         orderId: o.id,
         itemIdx: (o.items || []).indexOf(item)
       })));
@@ -24215,7 +24336,7 @@ function OrdersTab({
     }, isQA ? "✕ Cancel" : "+ Add Route"), !isUnknown && (canDispatch || isAdmin || roles.includes("issuer")) && (() => {
       const inTransportSeq = group.isDirect && getTransportSeq(group.partyName, group.transport, group.siteDelivery) < 999;
       if (!group.isDirect || inTransportSeq) {
-        const allPending = group.orders.flatMap(o => (o.items || []).filter(i => i.balanceQty > 0 && i.status !== "Dispatched" && !i.stagedForTransport).map(item => ({
+        const allPending = group.orders.filter(o => !o.onHold).flatMap(o => (o.items || []).filter(i => i.balanceQty > 0 && i.status !== "Dispatched" && !i.stagedForTransport).map(item => ({
           orderId: o.id,
           itemIdx: (o.items || []).indexOf(item)
         })));
@@ -24374,7 +24495,11 @@ function OrdersTab({
     }, group.orders.map(order => /*#__PURE__*/React.createElement("div", {
       key: order.id,
       style: {
-        marginTop: "10px"
+        marginTop: "10px",
+        background: order.onHold ? "#2e0a0a" : "transparent",
+        border: order.onHold ? "1px solid #7f1d1d" : "none",
+        borderRadius: order.onHold ? "8px" : "0",
+        padding: order.onHold ? "8px" : "0"
       }
     }, /*#__PURE__*/React.createElement("div", {
       style: {
@@ -24410,7 +24535,49 @@ function OrdersTab({
         fontSize: "10px",
         fontWeight: "700"
       }
-    }, "📍 Site Delivery → ", order.route, " / ", order.transport), canManageSiteDelivery && /*#__PURE__*/React.createElement("button", {
+    }, "📍 Site Delivery → ", order.route, " / ", order.transport), order.onHold && /*#__PURE__*/React.createElement("span", {
+      style: {
+        background: "#450a0a",
+        border: "1px solid #dc2626",
+        borderRadius: "5px",
+        padding: "0px 7px",
+        color: "#fca5a5",
+        fontSize: "10px",
+        fontWeight: "800"
+      },
+      title: order.holdReason || ""
+    }, "🔒 ON HOLD", order.holdReason ? " — " + order.holdReason : ""), canManageHold && !order.onHold && /*#__PURE__*/React.createElement("button", {
+      onClick: () => {
+        if (holdReasonEdit === order.id) {
+          setHoldReasonEdit(null);
+          return;
+        }
+        setHoldReasonText("");
+        setHoldReasonEdit(order.id);
+      },
+      style: {
+        background: "none",
+        border: "1px solid #dc262650",
+        borderRadius: "5px",
+        padding: "1px 8px",
+        color: "#f87171",
+        fontSize: "10px",
+        fontWeight: "600",
+        cursor: "pointer"
+      }
+    }, "🔒 Hold"), canManageHold && order.onHold && /*#__PURE__*/React.createElement("button", {
+      onClick: () => releaseHold(order.id),
+      style: {
+        background: "none",
+        border: "1px solid #16653450",
+        borderRadius: "5px",
+        padding: "1px 8px",
+        color: "#4ade80",
+        fontSize: "10px",
+        fontWeight: "600",
+        cursor: "pointer"
+      }
+    }, "🔓 Release Hold"), canManageSiteDelivery && /*#__PURE__*/React.createElement("button", {
       onClick: () => {
         if (siteDeliveryEdit === order.id) {
           setSiteDeliveryEdit(null);
@@ -24458,7 +24625,59 @@ function OrdersTab({
         fontWeight: "600",
         cursor: "pointer"
       }
-    }, "🔄 Send via Transport")), siteDeliveryEdit === order.id && /*#__PURE__*/React.createElement("div", {
+    }, "🔄 Send via Transport")), holdReasonEdit === order.id && /*#__PURE__*/React.createElement("div", {
+      style: {
+        background: "#2e0a0a",
+        border: "1px solid #7f1d1d",
+        borderRadius: "8px",
+        padding: "10px 12px",
+        marginBottom: "8px",
+        display: "flex",
+        gap: "8px",
+        alignItems: "center",
+        flexWrap: "wrap"
+      }
+    }, /*#__PURE__*/React.createElement("input", {
+      value: holdReasonText,
+      onChange: e => setHoldReasonText(e.target.value),
+      placeholder: "Reason for hold — e.g. payment pending",
+      style: {
+        flex: 1,
+        minWidth: "200px",
+        background: "#1a0a0a",
+        border: "1px solid #7f1d1d",
+        borderRadius: "6px",
+        padding: "6px 10px",
+        color: "#fca5a5",
+        fontSize: "12px"
+      }
+    }), /*#__PURE__*/React.createElement("button", {
+      onClick: () => holdOrder(order.id),
+      style: {
+        background: "#450a0a",
+        border: "1px solid #dc2626",
+        borderRadius: "6px",
+        padding: "6px 14px",
+        color: "#fca5a5",
+        fontWeight: "700",
+        fontSize: "11.5px",
+        cursor: "pointer"
+      }
+    }, "🔒 Confirm Hold"), /*#__PURE__*/React.createElement("button", {
+      onClick: () => {
+        setHoldReasonEdit(null);
+        setHoldReasonText("");
+      },
+      style: {
+        background: "none",
+        border: "1px solid #334155",
+        borderRadius: "6px",
+        padding: "6px 12px",
+        color: "#64748b",
+        fontSize: "11.5px",
+        cursor: "pointer"
+      }
+    }, "Cancel")), siteDeliveryEdit === order.id && /*#__PURE__*/React.createElement("div", {
       style: {
         background: "#0a0620",
         border: "1px solid #7c3aed40",
@@ -24767,7 +24986,13 @@ function OrdersTab({
           gap: "2px",
           alignItems: "center"
         }
-      }, canDispatch && item.status !== "Dispatched" && bal > 0 && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+      }, order.onHold && /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: "9px",
+          color: "#f87171",
+          fontWeight: "700"
+        }
+      }, "🔒 Held"), canDispatch && !order.onHold && item.status !== "Dispatched" && bal > 0 && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
         style: {
           display: "flex",
           gap: "3px"
@@ -25182,7 +25407,7 @@ function OrdersTab({
         fontWeight: "700",
         color: "#f1f5f9"
       }
-    }, routeIdx + 1, ". ", group.partyName), /*#__PURE__*/React.createElement("div", {
+    }, "#", routeIdx + 1, " ", group.partyName), /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: "10.5px",
         color: "#475569",
@@ -26381,7 +26606,7 @@ function OrdersTab({
         onClick: async () => {
           setSaving(true);
           try {
-            const itemsToStage = cg.orders.flatMap(o => (o.items || []).filter(i => i.balanceQty > 0 && i.status !== "Dispatched").map(item => ({
+            const itemsToStage = cg.orders.filter(o => !o.onHold).flatMap(o => (o.items || []).filter(i => i.balanceQty > 0 && i.status !== "Dispatched").map(item => ({
               orderId: o.id,
               itemIdx: (o.items || []).indexOf(item)
             })));
@@ -26409,6 +26634,7 @@ function OrdersTab({
           setSaving(true);
           try {
             for (const o of cg.orders) {
+              if (o.onHold) continue; // skip orders HO has put on hold — never dispatch these
               const doc = await C("orders").doc(o.id).get();
               if (!doc.exists) continue;
               const data = doc.data();
@@ -26559,6 +26785,7 @@ function OrdersTab({
               const doc = await C("orders").doc(o.id).get();
               if (!doc.exists) continue;
               const data = doc.data();
+              if (data.onHold) continue; // skip orders HO has put on hold — never dispatch these in bulk
               const updatedItems = (data.items || []).map((item, idx) => {
                 if (item.balanceQty <= 0 || item.status === "Dispatched") return item;
                 const fk = o.id + "__" + idx;
