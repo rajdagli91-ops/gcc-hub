@@ -26729,8 +26729,13 @@ function OrdersTab({
       return false;
     });
     const sorted = [...dirGroups].sort((a, b) => {
-      const sa = getDirectSeq(a.partyName, a.route, a.siteDelivery, a.siteLabel);
-      const sb = getDirectSeq(b.partyName, b.route, b.siteDelivery, b.siteLabel);
+      // Use the currently-viewed route for the sequence lookup, not each customer's own account
+      // route — a customer whose account route is "Thane" but who's deliberately listed in the
+      // "Panvel" sequence sheet (cross-route inclusion) needs their POSITION checked against
+      // Panvel's uploaded sequence, not Thane's, or they'd never match and always sort to the end.
+      const seqRoute = directPrepArea !== "All" ? directPrepArea : null;
+      const sa = getDirectSeq(a.partyName, seqRoute || a.route, a.siteDelivery, a.siteLabel);
+      const sb = getDirectSeq(b.partyName, seqRoute || b.route, b.siteDelivery, b.siteLabel);
       return sa !== sb ? sa - sb : (a.partyName || "").localeCompare(b.partyName || "");
     });
     if (sorted.length === 0) return /*#__PURE__*/React.createElement("div", {
@@ -37879,6 +37884,26 @@ function ShadeCorrectionCalc({
     }
   }, "Default target = current total (maintains pigment level). Increase the target to raise overall pigment loading."))));
 }
+function renderComplaintsAreaToggle(p) {
+  var areas = [
+    { key: "complaints", label: "\u26A0\uFE0F Complaints", access: p.hasComplaintsAccess, activeBg: "#1e3a5f", activeColor: "#93c5fd" },
+    { key: "leakage", label: "\uD83D\uDCA7 Leakage", access: p.hasLeakageAccess, activeBg: "#0c2a3a", activeColor: "#67e8f9" },
+    { key: "testimonials", label: "\u2B50 Testimonials", access: p.hasTestimonialsAccess, activeBg: "#3f2a0a", activeColor: "#fcd34d" },
+    { key: "enquiries", label: "\uD83D\uDCDE Enquiries", access: p.hasEnquiriesAccess, activeBg: "#1a2e0a", activeColor: "#86efac" }
+  ].filter(function(a) { return a.access; });
+  if (areas.length <= 1) return null;
+  return React.createElement("div", {
+    style: { display: "flex", gap: "5px", background: "#080d18", border: "1px solid #1e293b", borderRadius: "9px", padding: "3px", marginBottom: "16px", width: "fit-content", flexWrap: "wrap" }
+  }, areas.map(function(a) {
+    var active = p.eff === a.key;
+    return React.createElement("button", {
+      key: a.key,
+      onClick: function() { p.setComplaintsSubTab(a.key); },
+      style: { background: active ? a.activeBg : "transparent", border: "none", borderRadius: "6px", padding: "7px 16px", color: active ? a.activeColor : "#475569", fontWeight: "700", fontSize: "12.5px", cursor: "pointer" }
+    }, a.label);
+  }));
+}
+
 function MainApp({
   user,
   role,
@@ -38053,7 +38078,34 @@ function MainApp({
   const [batchFYFilter, setBatchFYFilter] = useState("All"); // Default All so existing batches show
   const [complaintFilter, setComplaintFilter] = useState("All");
   const [complaintGroupBy, setComplaintGroupBy] = useState("list"); // "list"|"customer"
-  const [complaintsSubTab, setComplaintsSubTab] = useState("complaints"); // "complaints"|"leakage"
+  const [complaintsSubTab, setComplaintsSubTab] = useState("complaints"); // "complaints"|"leakage"|"testimonials"|"enquiries"
+  // Complaints, Leakage, Testimonials, and Enquiries are consolidated under one top-level tab —
+  // each area still respects its own permission, this just decides which sub-tab shows by default
+  // and which sub-tab buttons appear, without needing four separate top-level tabs.
+  const hasComplaintsAccess = CAN_SEE.complaints.some(r => roles.includes(r));
+  const hasLeakageAccess = CAN_SEE.leakage.some(r => roles.includes(r));
+  const hasTestimonialsAccess = isAdmin || hp("testimonials");
+  const hasEnquiriesAccess = isAdmin || hp("enquiries_create") || hp("enquiries_view_all") || hp("enquiries_update") || hp("enquiries_dispatch");
+  const complaintsAreaAccess = {
+    complaints: hasComplaintsAccess,
+    leakage: hasLeakageAccess,
+    testimonials: hasTestimonialsAccess,
+    enquiries: hasEnquiriesAccess
+  };
+  const complaintsAreaOrder = ["complaints", "leakage", "testimonials", "enquiries"];
+  const effComplaintsSubTab = complaintsAreaAccess[complaintsSubTab] ? complaintsSubTab : complaintsAreaOrder.find(k => complaintsAreaAccess[k]) || "complaints";
+  // Dashboard quick-stat cards (and anything else) may still try to navigate straight to
+  // "testimonials" or "enquiries" as if they were their own top-level tabs — redirect those into
+  // the consolidated "complaints" tab with the right sub-tab selected, so those shortcuts keep
+  // working instead of landing on a blank screen.
+  const navigateFromDashboard = key => {
+    if (key === "testimonials" || key === "enquiries") {
+      setComplaintsSubTab(key);
+      trySetTab("complaints");
+    } else {
+      trySetTab(key);
+    }
+  };
   const [complaintSearch, setComplaintSearch] = useState("");
   const [leakageSearch, setLeakageSearch] = useState("");
   const [leakageFilter, setLeakageFilter] = useState("All");
@@ -38652,12 +38704,6 @@ function MainApp({
     key: "orders",
     label: t("orders")
   }, {
-    key: "testimonials",
-    label: t("testimonials")
-  }, {
-    key: "enquiries",
-    label: t("enquiries")
-  }, {
     key: "users",
     label: t("users")
   }, {
@@ -38668,12 +38714,10 @@ function MainApp({
     const permMap = {
       dashboard: true,
       batches: hp("batches_view"),
-      complaints: hp("complaints_view_all") || hp("complaints_add") || hp("leakage_view_all") || hp("leakage_add"),
+      complaints: hp("complaints_view_all") || hp("complaints_add") || hp("leakage_view_all") || hp("leakage_add") || hasTestimonialsAccess || hasEnquiriesAccess,
       rd: hp("rd_view"),
       bom: hp("bom_view"),
       tasks: hp("tasks_own"),
-      testimonials: hp("testimonials"),
-      enquiries: hp("enquiries_create") || hp("enquiries_view_all") || hp("enquiries_update") || hp("enquiries_dispatch"),
       stock: hp("stock_view"),
       orders: roles.includes("issuer") || roles.includes("ho") || roles.includes("store") || hp("orders_view") || hp("orders_dispatch") || hp("orders_import"),
       users: isAdmin,
@@ -39038,7 +39082,7 @@ function MainApp({
     roles: roles,
     hp: hp,
     user: user,
-    onNavigate: setTab
+    onNavigate: navigateFromDashboard
   }), tab === "batches" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
@@ -39226,48 +39270,14 @@ function MainApp({
     showToast: showToast,
     products: sysProducts,
     catUnits: sysCatUnits
-  })), tab === "complaints" && /*#__PURE__*/React.createElement(React.Fragment, null, (() => {
-    const hasComplaintsAccess = CAN_SEE.complaints.some(r => roles.includes(r));
-    const hasLeakageAccess = CAN_SEE.leakage.some(r => roles.includes(r));
-    const showToggle = hasComplaintsAccess && hasLeakageAccess;
-    const eff = hasComplaintsAccess ? complaintsSubTab : "leakage";
-    return /*#__PURE__*/React.createElement(React.Fragment, null, showToggle && /*#__PURE__*/React.createElement("div", {
-      style: {
-        display: "flex",
-        gap: "5px",
-        background: "#080d18",
-        border: "1px solid #1e293b",
-        borderRadius: "9px",
-        padding: "3px",
-        marginBottom: "16px",
-        width: "fit-content"
-      }
-    }, /*#__PURE__*/React.createElement("button", {
-      onClick: () => setComplaintsSubTab("complaints"),
-      style: {
-        background: eff === "complaints" ? "#1e3a5f" : "transparent",
-        border: "none",
-        borderRadius: "6px",
-        padding: "7px 16px",
-        color: eff === "complaints" ? "#93c5fd" : "#475569",
-        fontWeight: "700",
-        fontSize: "12.5px",
-        cursor: "pointer"
-      }
-    }, "⚠️ Complaints"), /*#__PURE__*/React.createElement("button", {
-      onClick: () => setComplaintsSubTab("leakage"),
-      style: {
-        background: eff === "leakage" ? "#0c2a3a" : "transparent",
-        border: "none",
-        borderRadius: "6px",
-        padding: "7px 16px",
-        color: eff === "leakage" ? "#67e8f9" : "#475569",
-        fontWeight: "700",
-        fontSize: "12.5px",
-        cursor: "pointer"
-      }
-    }, "💧 Leakage")));
-  })(), (CAN_SEE.complaints.some(r => roles.includes(r)) ? complaintsSubTab : "leakage") === "complaints" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+  })), tab === "complaints" && /*#__PURE__*/React.createElement(React.Fragment, null, renderComplaintsAreaToggle({
+    hasComplaintsAccess,
+    hasLeakageAccess,
+    hasTestimonialsAccess,
+    hasEnquiriesAccess,
+    eff: effComplaintsSubTab,
+    setComplaintsSubTab
+  }), effComplaintsSubTab === "complaints" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       justifyContent: "space-between",
@@ -39449,7 +39459,7 @@ function MainApp({
         role: role
       })));
     });
-  })()), (CAN_SEE.complaints.some(r => roles.includes(r)) ? complaintsSubTab : "leakage") === "leakage" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+  })()), tab === "complaints" && effComplaintsSubTab === "leakage" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       justifyContent: "space-between",
@@ -39875,11 +39885,11 @@ function MainApp({
     onAddRmCat: addGlobalRmCat,
     onAddUnit: addGlobalUnit,
     hp: hp
-  }), tab === "testimonials" && /*#__PURE__*/React.createElement(TestimonialsTab, {
+  }), tab === "complaints" && effComplaintsSubTab === "testimonials" && /*#__PURE__*/React.createElement(TestimonialsTab, {
     role: role,
     user: user,
     showToast: showToast
-  }), tab === "enquiries" && /*#__PURE__*/React.createElement(EnquiriesTab, {
+  }), tab === "complaints" && effComplaintsSubTab === "enquiries" && /*#__PURE__*/React.createElement(EnquiriesTab, {
     role: role,
     roles: roles,
     user: user,
