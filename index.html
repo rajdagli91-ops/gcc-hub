@@ -20665,6 +20665,93 @@ function renderPreClosedRecoveryPanel(p) {
   ]);
 }
 
+function renderDirectHoldControls(p) {
+  var cg = p.cg;
+  var held = cg.orders.filter(function(o) { return o.onHold; });
+  var eligible = cg.orders.filter(function(o) { return !o.onHold && o.status !== "Dispatched"; });
+  var parts = [];
+  if (held.length > 0) {
+    parts.push(React.createElement("span", {
+      key: "badge",
+      style: {background: "#450a0a", border: "1px solid #dc2626", borderRadius: "5px", color: "#fca5a5", fontSize: "10px", fontWeight: "800", padding: "2px 8px", whiteSpace: "nowrap"}
+    }, "\uD83D\uDD12 " + held.length + " ON HOLD"));
+    if (p.canManageHold) {
+      held.forEach(function(o, i) {
+        parts.push(React.createElement("button", {
+          key: "rel" + i,
+          onClick: function() { p.releaseHold(o.id); },
+          title: "Release hold on " + (o.voucherNo || "this order"),
+          style: {background: "none", border: "1px solid #16653450", borderRadius: "5px", padding: "1px 8px", color: "#4ade80", fontSize: "10px", fontWeight: "600", cursor: "pointer"}
+        }, "\uD83D\uDD13 Release" + (held.length > 1 ? " " + (o.voucherNo || i + 1) : "")));
+      });
+    }
+  }
+  if (p.canManageHold && eligible.length > 0) {
+    parts.push(React.createElement("button", {
+      key: "hold",
+      onClick: function() {
+        if (eligible.length === 1) {
+          p.setHoldReasonText("");
+          p.setHoldReasonEdit(eligible[0].id);
+        } else {
+          p.setDirectHoldPicker(function(prev) { return prev === cg.key ? null : cg.key; });
+        }
+      },
+      style: {background: "#1a0505", border: "1px solid #7f1d1d50", borderRadius: "5px", padding: "2px 9px", color: "#f87171", fontSize: "10.5px", fontWeight: "700", cursor: "pointer", whiteSpace: "nowrap"}
+    }, "\uD83D\uDD12 Hold"));
+  }
+  return parts;
+}
+function renderDirectHoldPicker(p) {
+  var cg = p.cg;
+  if (p.directHoldPicker !== cg.key) return null;
+  var eligible = cg.orders.filter(function(o) { return !o.onHold && o.status !== "Dispatched"; });
+  return React.createElement("div", {
+    style: {background: "#1a0505", border: "1px solid #7f1d1d", borderRadius: "6px", padding: "8px 10px", margin: "0 12px 8px"}
+  }, [
+    React.createElement("div", {key: "t", style: {fontSize: "10.5px", color: "#fca5a5", fontWeight: "700", marginBottom: "5px"}}, "Which order to hold?"),
+    React.createElement("div", {key: "list", style: {display: "flex", flexWrap: "wrap", gap: "5px"}},
+      eligible.map(function(o) {
+        return React.createElement("button", {
+          key: o.id,
+          onClick: function() {
+            p.setHoldReasonText("");
+            p.setHoldReasonEdit(o.id);
+            p.setDirectHoldPicker(null);
+          },
+          style: {background: "#2e0a0a", border: "1px solid #7f1d1d", borderRadius: "5px", padding: "3px 9px", color: "#f87171", fontSize: "10.5px", fontWeight: "600", cursor: "pointer"}
+        }, o.voucherNo || o.id);
+      })
+    )
+  ]);
+}
+function renderDirectHoldReasonForm(p) {
+  var cg = p.cg;
+  var order = cg.orders.find(function(o) { return o.id === p.holdReasonEdit; });
+  if (!order) return null;
+  return React.createElement("div", {
+    style: {background: "#2e0a0a", border: "1px solid #7f1d1d", borderRadius: "6px", padding: "8px 10px", margin: "0 12px 8px", display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap"}
+  }, [
+    React.createElement("input", {
+      key: "inp",
+      value: p.holdReasonText,
+      onChange: function(e) { p.setHoldReasonText(e.target.value); },
+      placeholder: "Reason for hold (optional)",
+      style: {flex: 1, minWidth: "160px", background: "#1a0a0a", border: "1px solid #7f1d1d", borderRadius: "6px", padding: "5px 9px", color: "#fca5a5", fontSize: "11.5px"}
+    }),
+    React.createElement("button", {
+      key: "confirm",
+      onClick: function() { p.holdOrder(order.id); },
+      style: {background: "#450a0a", border: "1px solid #dc2626", borderRadius: "6px", padding: "5px 12px", color: "#fca5a5", fontWeight: "700", fontSize: "11px", cursor: "pointer"}
+    }, "\uD83D\uDD12 Confirm Hold"),
+    React.createElement("button", {
+      key: "cancel",
+      onClick: function() { p.setHoldReasonEdit(null); p.setHoldReasonText(""); },
+      style: {background: "none", border: "1px solid #334155", borderRadius: "6px", padding: "5px 10px", color: "#64748b", fontSize: "11px", cursor: "pointer"}
+    }, "Cancel")
+  ]);
+}
+
 function OrdersTab({
   role,
   roles,
@@ -20727,6 +20814,7 @@ function OrdersTab({
   }, [subTab]);
   const [routeFilter, setRouteFilter] = useState("All");
   const [deliveryFilter, setDeliveryFilter] = useState("All");
+  const [holdFilter, setHoldFilter] = useState(false);
   const [expandedCustomer, setExpandedCustomer] = useState(null);
   const [dispatchForm, setDispatchForm] = useState({});
   const [saving, setSaving] = useState(false);
@@ -20961,13 +21049,15 @@ function OrdersTab({
   const [sdForm, setSdForm] = useState({
     route: "",
     transport: "",
-    isDirect: false
+    isDirect: false,
+    siteLabel: ""
   });
   const canManageSiteDelivery = isAdmin || roles.includes("issuer") || roles.includes("ho");
   // Only HO (or Admin) can place or release a payment hold on an order — Issuer cannot, since
   // the whole point is that Issuer is blocked from dispatching a held order until HO releases it.
   const canManageHold = isAdmin || roles.includes("ho");
   const [holdReasonEdit, setHoldReasonEdit] = useState(null); // order id currently entering a hold reason
+  const [directHoldPicker, setDirectHoldPicker] = useState(null); // customer group key currently showing "which order?" picker in Direct Prep
   const [holdReasonText, setHoldReasonText] = useState("");
   const holdOrder = async orderId => {
     try {
@@ -21021,11 +21111,13 @@ function OrdersTab({
       const custKey = normalize(partyName || "");
       const custEntry = (d.map || {})[custKey] || {};
       const existingSites = custEntry.siteDeliveries || [];
-      const alreadySaved = existingSites.some(sd => normalize(sd.route) === normalize(routeVal) && normTKey(sd.transport) === normTKey(transVal) && !!sd.isDirect === !!sdForm.isDirect);
+      const siteLabelVal = (sdForm.siteLabel || "").trim();
+      const alreadySaved = existingSites.some(sd => normalize(sd.route) === normalize(routeVal) && normTKey(sd.transport) === normTKey(transVal) && !!sd.isDirect === !!sdForm.isDirect && normalize(sd.siteLabel || "") === normalize(siteLabelVal));
       const newSites = alreadySaved ? existingSites : [...existingSites, {
         route: routeVal,
         transport: transVal,
-        isDirect: sdForm.isDirect
+        isDirect: sdForm.isDirect,
+        siteLabel: siteLabelVal
       }];
       const newMap = {
         ...(d.map || {}),
@@ -21047,7 +21139,8 @@ function OrdersTab({
         siteDelivery: true,
         siteRoute: routeVal,
         siteTransport: transVal,
-        siteIsDirect: sdForm.isDirect
+        siteIsDirect: sdForm.isDirect,
+        siteLabel: siteLabelVal
       });
       showToast(`Site delivery override saved ✓${!routeExists || !transExists ? " — new route/transport added to master list" : ""}`);
       setSiteDeliveryEdit(null);
@@ -21889,6 +21982,7 @@ function OrdersTab({
       } else if (routeFilter !== "All" && o.route !== routeFilter) return false;
       if (deliveryFilter === "Direct" && !o.isDirect) return false;
       if (deliveryFilter === "Transport" && o.isDirect) return false;
+      if (holdFilter && !o.onHold) return false;
       if (search.trim()) {
         const q = normalize(search);
         const transLabel = o.isDirect ? "directdelivery" : normalize(o.transport || "");
@@ -21897,13 +21991,14 @@ function OrdersTab({
       return true;
     });
     filtered.forEach(o => {
-      const k = normalize(o.partyName) + "::" + normalize(o.route || "") + "::" + normalize(o.transport || "") + (o.siteDelivery ? "::site" : "");
+      const k = normalize(o.partyName) + "::" + normalize(o.route || "") + "::" + normalize(o.transport || "") + (o.siteDelivery ? "::site::" + normalize(o.siteLabel || "") : "");
       if (!map[k]) map[k] = {
         partyName: o.partyName,
         route: o.route,
         transport: o.transport,
         isDirect: o.isDirect,
         siteDelivery: o.siteDelivery,
+        siteLabel: o.siteLabel || "",
         orders: []
       };
       map[k].orders.push(o);
@@ -21913,7 +22008,7 @@ function OrdersTab({
       const bMin = b.orders.map(o => o.orderDate || '9999').sort()[0];
       return aMin.localeCompare(bMin); // oldest order date first
     });
-  }, [pendingOrders, routeFilter, deliveryFilter, search]);
+  }, [pendingOrders, routeFilter, deliveryFilter, holdFilter, search]);
 
   // ── Unconfirmed dispatches — all items dispatched but not yet confirmed ──
   const todayDispatchedAll = useMemo(() => {
@@ -21921,13 +22016,14 @@ function OrdersTab({
     orders.forEach(o => {
       (o.items || []).forEach(item => {
         if (!item.dispatchConfirmed && item.lastDispatchedAt && (item.dispatchedQty || 0) > 0 && !item.stagedForTransport) {
-          const k = normalize(o.partyName) + "::" + normalize(o.route || "") + "::" + normalize(o.transport || "") + (o.siteDelivery ? "::site" : "");
+          const k = normalize(o.partyName) + "::" + normalize(o.route || "") + "::" + normalize(o.transport || "") + (o.siteDelivery ? "::site::" + normalize(o.siteLabel || "") : "");
           if (!map[k]) map[k] = {
             partyName: o.partyName,
             route: o.route,
             transport: o.transport,
             isDirect: o.isDirect,
             siteDelivery: o.siteDelivery,
+        siteLabel: o.siteLabel || "",
             items: []
           };
           const vol = calcVolume(item.name, item.dispatchedQty || 0);
@@ -21974,13 +22070,14 @@ function OrdersTab({
         if (now - windowStart > WINDOW_MS) return; // outside 48h window from dispatch date
         const cat = item.dispatchConfirmedAt;
         const confirmedAt = cat ? typeof cat === "string" ? new Date(cat).getTime() : cat.toMillis ? cat.toMillis() : cat.seconds ? cat.seconds * 1000 : 0 : 0;
-        const k = normalize(o.partyName) + "::" + normalize(o.route || "") + "::" + normalize(o.transport || "") + (o.siteDelivery ? "::site" : "");
+        const k = normalize(o.partyName) + "::" + normalize(o.route || "") + "::" + normalize(o.transport || "") + (o.siteDelivery ? "::site::" + normalize(o.siteLabel || "") : "");
         if (!map[k]) map[k] = {
           partyName: o.partyName,
           route: o.route,
           transport: o.transport,
           isDirect: o.isDirect,
           siteDelivery: o.siteDelivery,
+        siteLabel: o.siteLabel || "",
           items: []
         };
         const vol = calcVolume(item.name, item.dispatchedQty || 0);
@@ -22017,7 +22114,7 @@ function OrdersTab({
     direct: {},
     transport: {}
   });
-  const getTransportSeq = (partyName, transport, isSite) => {
+  const getTransportSeq = (partyName, transport, isSite, siteLabel) => {
     const seqMap = deliverySequence.transport || {};
     if (!Object.keys(seqMap).length) return 999;
     const normParty = normalize(partyName || "");
@@ -22025,13 +22122,19 @@ function OrdersTab({
     // Exact match only — normalization already strips spaces/punctuation/case, but a partial
     // "contains" match (e.g. transporter "BHAGWATI" vs customer "BHAGWATI ENTERPRISE") would
     // wrongly treat two different names as the same entity just because one starts with the other.
-    // A customer can have BOTH a regular sequence entry and a "(Site)" entry — pick the one that
-    // matches this order's actual delivery type, falling back to whichever variant exists.
+    // A customer can have a regular entry AND one or more labeled "(Site: Name)" entries — pick
+    // the one matching this order's actual label, falling back sensibly when there's no ambiguity.
     const pick = entry => {
       if (!entry) return null;
-      if (isSite && entry.site) return entry.site.seq;
-      if (!isSite && entry.regular) return entry.regular.seq;
-      return (entry.site || entry.regular)?.seq ?? null;
+      if (isSite) {
+        const sites = entry.sites || {};
+        const labelKey = normalize(siteLabel || "");
+        if (sites[labelKey]) return sites[labelKey].seq;
+        const siteValues = Object.values(sites);
+        if (siteValues.length === 1) return siteValues[0].seq;
+      } else if (entry.regular) return entry.regular.seq;
+      const anySite = Object.values(entry.sites || {})[0];
+      return (entry.regular || anySite)?.seq ?? null;
     };
     const byTrans = pick(seqMap[normTrans]);
     if (byTrans != null) return byTrans;
@@ -22039,7 +22142,7 @@ function OrdersTab({
     if (byParty != null) return byParty;
     return 999;
   };
-  const getDirectSeq = (partyName, route, isSite) => {
+  const getDirectSeq = (partyName, route, isSite, siteLabel) => {
     const routeMap = deliverySequence.direct || {};
     const routeKey = normalize(route || "all");
     const seqForRoute = routeMap[routeKey] || routeMap["all"] || {};
@@ -22048,9 +22151,15 @@ function OrdersTab({
     const normParty = normalize(partyName || "");
     const entry = seqForRoute[normParty];
     if (entry) {
-      if (isSite && entry.site) return entry.site.seq;
-      if (!isSite && entry.regular) return entry.regular.seq;
-      const any = entry.site || entry.regular;
+      if (isSite) {
+        const sites = entry.sites || {};
+        const labelKey = normalize(siteLabel || "");
+        if (sites[labelKey]) return sites[labelKey].seq;
+        const siteValues = Object.values(sites);
+        if (siteValues.length === 1) return siteValues[0].seq;
+      } else if (entry.regular) return entry.regular.seq;
+      const anySite = Object.values(entry.sites || {})[0];
+      const any = entry.regular || anySite;
       if (any) return any.seq;
     }
     return 999;
@@ -22059,23 +22168,23 @@ function OrdersTab({
   // fall back to the transporter sequence (covers direct orders riding along a transporter route).
   const getOrderSeq = g => {
     if (g.isDirect) {
-      const dSeq = getDirectSeq(g.partyName, g.route, g.siteDelivery);
+      const dSeq = getDirectSeq(g.partyName, g.route, g.siteDelivery, g.siteLabel);
       if (dSeq < 999) return dSeq;
-      return getTransportSeq(g.partyName, g.transport, g.siteDelivery);
+      return getTransportSeq(g.partyName, g.transport, g.siteDelivery, g.siteLabel);
     }
-    return getTransportSeq(g.partyName, g.transport, g.siteDelivery);
+    return getTransportSeq(g.partyName, g.transport, g.siteDelivery, g.siteLabel);
   };
   const seqSortFn = (a, b) => getOrderSeq(a) - getOrderSeq(b) || (a.partyName || "").localeCompare(b.partyName || "");
   const filteredToday = (() => {
     // Helper: order goes with transport if it's non-direct OR it appears in transport sequence
-    const isTransportOrder = g => !g.isDirect || getTransportSeq(g.partyName, g.transport, g.siteDelivery) < 999;
+    const isTransportOrder = g => !g.isDirect || getTransportSeq(g.partyName, g.transport, g.siteDelivery, g.siteLabel) < 999;
     let res = todayDispatched.filter(g => {
       if (search.trim()) {
         const q = normalize(search);
         if (!normalize(g.partyName).includes(q) && !normalize(g.transport || "").includes(q) && !normalize(g.route || "").includes(q) && !(g.items || []).some(i => normalize(i.name || "").includes(q))) return false;
       }
       if (printRouteFilter === "transport") return isTransportOrder(g);
-      if (printRouteFilter === "directonly") return g.isDirect && getTransportSeq(g.partyName, g.transport, g.siteDelivery) === 999;
+      if (printRouteFilter === "directonly") return g.isDirect && getTransportSeq(g.partyName, g.transport, g.siteDelivery, g.siteLabel) === 999;
       if (printRouteFilter.startsWith("direct:")) return g.isDirect && g.route === printRouteFilter.slice(7);
       return true;
     });
@@ -22147,6 +22256,51 @@ function OrdersTab({
   const [directPrepArea, setDirectPrepArea] = useState("All");
   const [directPrepView, setDirectPrepView] = useState("customer"); // "customer"|"product"|"route" — Preparation Summary grouping
   const [directQtyOverrides, setDirectQtyOverrides] = useState({});
+  const [bulkDispatchDatePrompt, setBulkDispatchDatePrompt] = useState(false); // shows the Today/Tomorrow picker before "Dispatch All [Route]" actually runs
+  const runBulkDispatchAll = async (chosenDateStr, sortedList) => {
+    setBulkDispatchDatePrompt(false);
+    setSaving(true);
+    try {
+      for (const cg of sortedList) {
+        for (const o of cg.orders) {
+          const doc = await C("orders").doc(o.id).get();
+          if (!doc.exists) continue;
+          const data = doc.data();
+          if (data.onHold) continue; // skip orders HO has put on hold — never dispatch these in bulk
+          const updatedItems = (data.items || []).map((item, idx) => {
+            if (item.balanceQty <= 0 || item.status === "Dispatched") return item;
+            const fk = o.id + "__" + idx;
+            const override = directQtyOverrides[fk];
+            if (override === "0" || override === 0) return item;
+            const dispQty = override !== undefined ? Math.min(parseFloat(override) || 0, parseFloat(item.balanceQty) || 0) : parseFloat(item.balanceQty) || 0;
+            if (dispQty <= 0) return item;
+            const newBalance = Math.max(0, (parseFloat(item.balanceQty) || 0) - dispQty);
+            return {
+              ...item,
+              balanceQty: newBalance,
+              dispatchedQty: (parseFloat(item.dispatchedQty) || 0) + dispQty,
+              status: newBalance <= 0 ? "Dispatched" : "Partial",
+              lastDispatchedAt: chosenDateStr,
+              lastDispatchedBy: user.email,
+              dispatchConfirmed: false,
+              dispatchConfirmedAt: null
+            };
+          });
+          const allDone = updatedItems.every(i => i.balanceQty <= 0 || i.status === "Dispatched");
+          await C("orders").doc(o.id).update({
+            items: updatedItems.map(cleanItem),
+            status: allDone ? "Dispatched" : "Partial",
+            updatedAt: ts()
+          });
+        }
+      }
+      showToast(`All ${directPrepArea === "All" ? "direct" : directPrepArea} orders dispatched for ${chosenDateStr} ✓`);
+      setPrintRouteFilter("All");
+    } catch (e) {
+      showToast("Error: " + e.message, "error");
+    }
+    setSaving(false);
+  };
   const [loadingSeq, setLoadingSeq] = useState(false);
   const [addSeqEntry, setAddSeqEntry] = useState({
     name: "",
@@ -22230,17 +22384,27 @@ function OrdersTab({
         const t = s.toLowerCase().trim();
         return t === "" || t === "#" || t === "name" || t === "customer" || t === "transporter" || t === "s.no" || t === "sno" || t === "sr.no" || t === "seq" || t === "sequence" || t === "customer name" || t === "transporter name" || t === "name (transporter / customer)";
       };
-      // A customer can appear TWICE in the same sequence sheet — once for their regular/personal
-      // delivery, once for a site delivery — as long as the site-delivery row's name ends with a
-      // "(Site)" marker (case-insensitive; "(Site Delivery)", "- Site", etc. all work too). Without
-      // this, the second row would just silently overwrite the first and one of the two orders
-      // would end up with no matching sequence position.
-      const SITE_MARKER_RE = /\s*[\(\-–]\s*site(\s*delivery)?\s*\)?\s*$/i;
+      // A customer can appear multiple times in the same sequence sheet — once for their
+      // regular/personal delivery, and once per site delivery — using a "(Site)" marker
+      // (case-insensitive; "(Site Delivery)", "- Site", etc. all work as a single generic site).
+      // If a customer has MORE than one site delivery on the same route, name each one so HO can
+      // tell them apart: "(Site: Site A)", "(Site A)", "- Site Warehouse 2" all work — whatever
+      // text follows "Site" becomes the label, and must match the label given when that specific
+      // order was marked as a Site Delivery.
+      const SITE_MARKER_RE = /\s*[\(\-–]\s*site\s*:?\s*([^)]*?)\s*\)?\s*$/i;
       const splitSiteMarker = rawName => {
-        const isSite = SITE_MARKER_RE.test(rawName);
+        const m = rawName.match(SITE_MARKER_RE);
+        if (!m) return {
+          base: rawName.trim(),
+          isSite: false,
+          siteLabel: ""
+        };
+        const captured = (m[1] || "").trim();
+        const isGeneric = !captured || /^delivery$/i.test(captured);
         return {
           base: rawName.replace(SITE_MARKER_RE, "").trim(),
-          isSite
+          isSite: true,
+          siteLabel: isGeneric ? "" : captured
         };
       };
       wb.SheetNames.forEach(sheetName => {
@@ -22258,14 +22422,24 @@ function OrdersTab({
           const seq = parsedSeq || counter;
           const {
             base,
-            isSite
+            isSite,
+            siteLabel
           } = splitSiteMarker(name);
           const key = normalize(base);
           if (!seqMap[key]) seqMap[key] = {};
-          seqMap[key][isSite ? "site" : "regular"] = {
-            name: base,
-            seq
-          };
+          if (isSite) {
+            if (!seqMap[key].sites) seqMap[key].sites = {};
+            seqMap[key].sites[normalize(siteLabel)] = {
+              name: base,
+              seq,
+              siteLabel
+            };
+          } else {
+            seqMap[key].regular = {
+              name: base,
+              seq
+            };
+          }
         });
       });
       if (type === "direct") {
@@ -22300,14 +22474,24 @@ function OrdersTab({
             const seq = parsedSeq || counter;
             const {
               base,
-              isSite
+              isSite,
+              siteLabel
             } = splitSiteMarker(name);
             const key = normalize(base);
             if (!entries[key]) entries[key] = {};
-            entries[key][isSite ? "site" : "regular"] = {
-              name: base,
-              seq
-            };
+            if (isSite) {
+              if (!entries[key].sites) entries[key].sites = {};
+              entries[key].sites[normalize(siteLabel)] = {
+                name: base,
+                seq,
+                siteLabel
+              };
+            } else {
+              entries[key].regular = {
+                name: base,
+                seq
+              };
+            }
           });
           routeSeqs[routeKey] = entries;
         });
@@ -22430,8 +22614,13 @@ function OrdersTab({
     setLoadingSeq(false);
   };
   const seqSort = (a, b, seqMap) => {
-    const sa = seqMap[normalize(a)]?.seq ?? seqMap[normTKey(a)]?.seq ?? 999;
-    const sb = seqMap[normalize(b)]?.seq ?? seqMap[normTKey(b)]?.seq ?? 999;
+    const pick = entry => {
+      if (!entry) return null;
+      const v = entry.site || entry.regular;
+      return v ? v.seq : null;
+    };
+    const sa = pick(seqMap[normalize(a)]) ?? pick(seqMap[normTKey(a)]) ?? 999;
+    const sb = pick(seqMap[normalize(b)]) ?? pick(seqMap[normTKey(b)]) ?? 999;
     return sa !== sb ? sa - sb : a.localeCompare(b);
   };
   const [stagingSaving, setStagingSaving] = useState(false);
@@ -23894,7 +24083,27 @@ function OrdersTab({
       fontWeight: "600",
       cursor: "pointer"
     }
-  }, l)))), subTab === "pending" && (loading ? /*#__PURE__*/React.createElement("div", {
+  }, l)))), canManageHold && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: "5px",
+      marginBottom: "12px",
+      flexWrap: "wrap",
+      alignItems: "center"
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => setHoldFilter(v => !v),
+    style: {
+      background: holdFilter ? "#450a0a" : "#080d18",
+      border: `1px solid ${holdFilter ? "#dc2626" : "#1e293b"}`,
+      borderRadius: "5px",
+      padding: "3px 9px",
+      color: holdFilter ? "#fca5a5" : "#475569",
+      fontSize: "11px",
+      fontWeight: "700",
+      cursor: "pointer"
+    }
+  }, "🔒 Show On Hold Only", holdFilter ? " ✓" : "")), subTab === "pending" && (loading ? /*#__PURE__*/React.createElement("div", {
     style: {
       textAlign: "center",
       padding: "40px",
@@ -24230,7 +24439,7 @@ function OrdersTab({
     const borderColor = isUnknown ? "#ef4444" : hasPartial ? "#3b82f6" : "#f59e0b";
     const isQA = quickAddCustomer === group.partyName;
     return /*#__PURE__*/React.createElement("div", {
-      key: group.partyName + "::" + (group.route || "") + "::" + (group.transport || "") + (group.siteDelivery ? "::site" : ""),
+      key: group.partyName + "::" + (group.route || "") + "::" + (group.transport || "") + (group.siteDelivery ? "::site::" + normalize(group.siteLabel || "") : ""),
       style: {
         background: "#0b1220",
         border: `1px solid ${isExp ? "#2563eb60" : isUnknown ? "#ef444430" : "#1e293b"}`,
@@ -24330,7 +24539,7 @@ function OrdersTab({
         whiteSpace: "nowrap"
       }
     }, isQA ? "✕ Cancel" : "+ Add Route"), !isUnknown && (canDispatch || isAdmin || roles.includes("issuer")) && (() => {
-      const inTransportSeq = group.isDirect && getTransportSeq(group.partyName, group.transport, group.siteDelivery) < 999;
+      const inTransportSeq = group.isDirect && getTransportSeq(group.partyName, group.transport, group.siteDelivery, group.siteLabel) < 999;
       if (!group.isDirect || inTransportSeq) {
         const allPending = group.orders.filter(o => !o.onHold).flatMap(o => (o.items || []).filter(i => i.balanceQty > 0 && i.status !== "Dispatched" && !i.stagedForTransport).map(item => ({
           orderId: o.id,
@@ -24566,7 +24775,7 @@ function OrdersTab({
         fontSize: "10px",
         fontWeight: "700"
       }
-    }, "📍 Site Delivery → ", order.route, " / ", order.transport), order.onHold && /*#__PURE__*/React.createElement("span", {
+    }, "📍 Site Delivery → ", order.route, " / ", order.transport, order.siteLabel ? " (" + order.siteLabel + ")" : ""), order.onHold && /*#__PURE__*/React.createElement("span", {
       style: {
         background: "#450a0a",
         border: "1px solid #dc2626",
@@ -24619,7 +24828,8 @@ function OrdersTab({
         setSdForm({
           route: r,
           transport: t,
-          isDirect: !!order.siteIsDirect
+          isDirect: !!order.siteIsDirect,
+          siteLabel: order.siteLabel || ""
         });
         setSiteDeliveryEdit(order.id);
       },
@@ -24642,7 +24852,8 @@ function OrdersTab({
         setSdForm({
           route: order.route || group.route || "",
           transport: prefill,
-          isDirect: false
+          isDirect: false,
+          siteLabel: ""
         });
         setSiteDeliveryEdit(order.id);
       },
@@ -24751,7 +24962,8 @@ function OrdersTab({
           onClick: () => setSdForm({
             route: sd.route,
             transport: sd.transport,
-            isDirect: !!sd.isDirect
+            isDirect: !!sd.isDirect,
+            siteLabel: sd.siteLabel || ""
           }),
           style: {
             display: "flex",
@@ -24770,7 +24982,11 @@ function OrdersTab({
           style: {
             opacity: 0.7
           }
-        }, "/ ", sd.transport), /*#__PURE__*/React.createElement("span", {
+        }, "/ ", sd.transport), sd.siteLabel && /*#__PURE__*/React.createElement("span", {
+          style: {
+            fontWeight: "700"
+          }
+        }, "(", sd.siteLabel, ")"), /*#__PURE__*/React.createElement("span", {
           onClick: async e => {
             e.stopPropagation();
             if (!confirm(`Remove saved site delivery "${sd.route}" for ${group.partyName}?`)) return;
@@ -24827,7 +25043,17 @@ function OrdersTab({
         ...sdForm,
         transport: v
       })
-    }))), /*#__PURE__*/React.createElement("div", {
+    }))), /*#__PURE__*/React.createElement(Field, {
+      label: "Site Name (so it's clear which site this is — e.g. \"Site A\", \"Warehouse 2\")"
+    }, /*#__PURE__*/React.createElement("input", {
+      value: sdForm.siteLabel,
+      onChange: e => setSdForm({
+        ...sdForm,
+        siteLabel: e.target.value
+      }),
+      placeholder: "Optional — e.g. Site A",
+      style: { ...inp }
+    })), /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: "10px",
         color: "#475569",
@@ -25368,7 +25594,7 @@ function OrdersTab({
     const routeIdx = group.isDirect ? catIdx - routeFirstIdx : catIdx;
     const routeCount = group.isDirect ? todayDirectGroups.filter(g => g.route === group.route).length : 0;
     return /*#__PURE__*/React.createElement(React.Fragment, {
-      key: group.partyName + "::" + (group.route || "") + "::" + (group.transport || "") + (group.siteDelivery ? "::site" : "")
+      key: group.partyName + "::" + (group.route || "") + "::" + (group.transport || "") + (group.siteDelivery ? "::site::" + normalize(group.siteLabel || "") : "")
     }, isFirstOfCategory && /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
@@ -26000,7 +26226,7 @@ function OrdersTab({
       groups: transportGroups
     });
     const renderCard = (group, gi) => /*#__PURE__*/React.createElement("div", {
-      key: group.partyName + "::" + (group.route || "") + "::" + (group.transport || "") + (group.siteDelivery ? "::site" : ""),
+      key: group.partyName + "::" + (group.route || "") + "::" + (group.transport || "") + (group.siteDelivery ? "::site::" + normalize(group.siteLabel || "") : ""),
       style: {
         background: "#0b1220",
         border: "1px solid #1e293b",
@@ -26503,11 +26729,8 @@ function OrdersTab({
       return false;
     });
     const sorted = [...dirGroups].sort((a, b) => {
-      // Get route-specific sequence map, fall back to "all"
-      const routeKey = normalize(directPrepArea === "All" ? "all" : directPrepArea);
-      const seqMap = (deliverySequence.direct || {})[routeKey] || (deliverySequence.direct || {})["all"] || {};
-      const sa = seqMap[normalize(a.partyName)]?.seq ?? 999;
-      const sb = seqMap[normalize(b.partyName)]?.seq ?? 999;
+      const sa = getDirectSeq(a.partyName, a.route, a.siteDelivery, a.siteLabel);
+      const sb = getDirectSeq(b.partyName, b.route, b.siteDelivery, b.siteLabel);
       return sa !== sb ? sa - sb : (a.partyName || "").localeCompare(b.partyName || "");
     });
     if (sorted.length === 0) return /*#__PURE__*/React.createElement("div", {
@@ -26566,11 +26789,11 @@ function OrdersTab({
       })));
       if (!items.length) return null;
       return /*#__PURE__*/React.createElement("div", {
-        key: cg.partyName + "::" + (cg.route || "") + "::" + (cg.transport || "") + (cg.siteDelivery ? "::site" : ""),
+        key: cg.partyName + "::" + (cg.route || "") + "::" + (cg.transport || "") + (cg.siteDelivery ? "::site::" + normalize(cg.siteLabel || "") : ""),
         style: {
-          background: "#0b1220",
-          border: "1px solid #1e293b",
-          borderLeft: "3px solid #22c55e",
+          background: cg.orders.some(o => o.onHold) ? "#2e0a0a" : "#0b1220",
+          border: cg.orders.some(o => o.onHold) ? "1px solid #7f1d1d" : "1px solid #1e293b",
+          borderLeft: cg.orders.some(o => o.onHold) ? "3px solid #dc2626" : "3px solid #22c55e",
           borderRadius: "8px",
           marginBottom: "6px",
           overflow: "hidden"
@@ -26609,7 +26832,7 @@ function OrdersTab({
           padding: "1px 7px",
           letterSpacing: "0.03em"
         }
-      }, "📍 SITE DELIVERY"), /*#__PURE__*/React.createElement("span", {
+      }, "📍 SITE DELIVERY", cg.siteLabel ? ": " + cg.siteLabel : ""), /*#__PURE__*/React.createElement("span", {
         style: {
           fontSize: "10.5px",
           color: "#475569",
@@ -26660,7 +26883,21 @@ function OrdersTab({
           cursor: "pointer",
           whiteSpace: "nowrap"
         }
-      }, "📦 Stage to Transport"), canDispatch && /*#__PURE__*/React.createElement("button", {
+      }, "📦 Stage to Transport"), renderDirectHoldControls({
+        cg: {
+          ...cg,
+          key: cg.partyName + "::" + (cg.route || "") + "::" + (cg.transport || "") + (cg.siteDelivery ? "::site::" + normalize(cg.siteLabel || "") : "")
+        },
+        canManageHold,
+        holdReasonEdit,
+        setHoldReasonEdit,
+        holdReasonText,
+        setHoldReasonText,
+        holdOrder,
+        releaseHold,
+        directHoldPicker,
+        setDirectHoldPicker
+      }), canDispatch && /*#__PURE__*/React.createElement("button", {
         onClick: async () => {
           setSaving(true);
           try {
@@ -26714,7 +26951,26 @@ function OrdersTab({
           cursor: "pointer",
           whiteSpace: "nowrap"
         }
-      }, "🚚 ", cg.isDirect ? "Dispatch All" : "Dispatch Direct"))), items.map((item, ii) => {
+      }, "🚚 ", cg.isDirect ? "Dispatch All" : "Dispatch Direct"))), renderDirectHoldPicker({
+        cg: {
+          ...cg,
+          key: cg.partyName + "::" + (cg.route || "") + "::" + (cg.transport || "") + (cg.siteDelivery ? "::site::" + normalize(cg.siteLabel || "") : "")
+        },
+        directHoldPicker,
+        setDirectHoldPicker,
+        setHoldReasonEdit,
+        setHoldReasonText
+      }), renderDirectHoldReasonForm({
+        cg: {
+          ...cg,
+          key: cg.partyName + "::" + (cg.route || "") + "::" + (cg.transport || "") + (cg.siteDelivery ? "::site::" + normalize(cg.siteLabel || "") : "")
+        },
+        holdReasonEdit,
+        holdReasonText,
+        setHoldReasonText,
+        setHoldReasonEdit,
+        holdOrder
+      }), items.map((item, ii) => {
         const fk = item.orderId + "__" + item.itemIdx;
         const editQty = directQtyOverrides[fk];
         const removed = editQty === "0" || editQty === 0;
@@ -26808,49 +27064,7 @@ function OrdersTab({
         padding: "10px 0"
       }
     }, /*#__PURE__*/React.createElement("button", {
-      onClick: async () => {
-        setSaving(true);
-        try {
-          for (const cg of sorted) {
-            for (const o of cg.orders) {
-              const doc = await C("orders").doc(o.id).get();
-              if (!doc.exists) continue;
-              const data = doc.data();
-              if (data.onHold) continue; // skip orders HO has put on hold — never dispatch these in bulk
-              const updatedItems = (data.items || []).map((item, idx) => {
-                if (item.balanceQty <= 0 || item.status === "Dispatched") return item;
-                const fk = o.id + "__" + idx;
-                const override = directQtyOverrides[fk];
-                if (override === "0" || override === 0) return item;
-                const dispQty = override !== undefined ? Math.min(parseFloat(override) || 0, parseFloat(item.balanceQty) || 0) : parseFloat(item.balanceQty) || 0;
-                if (dispQty <= 0) return item;
-                const newBalance = Math.max(0, (parseFloat(item.balanceQty) || 0) - dispQty);
-                return {
-                  ...item,
-                  balanceQty: newBalance,
-                  dispatchedQty: (parseFloat(item.dispatchedQty) || 0) + dispQty,
-                  status: newBalance <= 0 ? "Dispatched" : "Partial",
-                  lastDispatchedAt: dispatchDateStr,
-                  lastDispatchedBy: user.email,
-                  dispatchConfirmed: false,
-                  dispatchConfirmedAt: null
-                };
-              });
-              const allDone = updatedItems.every(i => i.balanceQty <= 0 || i.status === "Dispatched");
-              await C("orders").doc(o.id).update({
-                items: updatedItems.map(cleanItem),
-                status: allDone ? "Dispatched" : "Partial",
-                updatedAt: ts()
-              });
-            }
-          }
-          showToast(`All ${directPrepArea === "All" ? "direct" : directPrepArea} orders dispatched ✓`);
-          setPrintRouteFilter("All");
-        } catch (e) {
-          showToast("Error: " + e.message, "error");
-        }
-        setSaving(false);
-      },
+      onClick: () => setBulkDispatchDatePrompt(true),
       disabled: saving,
       style: {
         width: "100%",
@@ -26863,7 +27077,67 @@ function OrdersTab({
         fontSize: "12.5px",
         cursor: "pointer"
       }
-    }, "🚚 Dispatch All ", directPrepArea === "All" ? "Direct Orders" : directPrepArea + " Orders", " to Dispatch Today"))), /*#__PURE__*/React.createElement("div", null, Object.keys(directVolTotals).length > 0 && /*#__PURE__*/React.createElement("div", {
+    }, "🚚 Dispatch All ", directPrepArea === "All" ? "Direct Orders" : directPrepArea + " Orders", " to Dispatch Today"), bulkDispatchDatePrompt && /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginTop: "8px",
+        background: "#0a1520",
+        border: "1px solid #1e3a5f",
+        borderRadius: "8px",
+        padding: "10px"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: "11px",
+        color: "#93c5fd",
+        fontWeight: "700",
+        marginBottom: "8px"
+      }
+    }, "Dispatch these for which date?"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: "6px",
+        flexWrap: "wrap"
+      }
+    }, /*#__PURE__*/React.createElement("button", {
+      onClick: () => runBulkDispatchAll(todayStr, sorted),
+      disabled: saving,
+      style: {
+        flex: 1,
+        background: "#1e3a5f",
+        border: "1px solid #475569",
+        borderRadius: "6px",
+        padding: "7px",
+        color: "#f1f5f9",
+        fontWeight: "700",
+        fontSize: "11.5px",
+        cursor: "pointer"
+      }
+    }, "📅 Today (", todayStr.slice(5), ")"), /*#__PURE__*/React.createElement("button", {
+      onClick: () => runBulkDispatchAll(new Date(Date.now() + nextDispatchDayOffset * 86400000).toISOString().slice(0, 10), sorted),
+      disabled: saving,
+      style: {
+        flex: 1,
+        background: "#1e3a5f",
+        border: "1px solid #475569",
+        borderRadius: "6px",
+        padding: "7px",
+        color: "#f1f5f9",
+        fontWeight: "700",
+        fontSize: "11.5px",
+        cursor: "pointer"
+      }
+    }, "📅 ", isSaturday ? "Monday" : "Tomorrow", " (", new Date(Date.now() + nextDispatchDayOffset * 86400000).toISOString().slice(5, 10), ")"), /*#__PURE__*/React.createElement("button", {
+      onClick: () => setBulkDispatchDatePrompt(false),
+      style: {
+        background: "none",
+        border: "1px solid #334155",
+        borderRadius: "6px",
+        padding: "7px 12px",
+        color: "#64748b",
+        fontSize: "11.5px",
+        cursor: "pointer"
+      }
+    }, "Cancel"))))), /*#__PURE__*/React.createElement("div", null, Object.keys(directVolTotals).length > 0 && /*#__PURE__*/React.createElement("div", {
       style: {
         background: "#060d1a",
         border: "1px solid #1e3a5f",
@@ -26961,11 +27235,11 @@ function OrdersTab({
       }
     }, "🗺 Route")), directPrepView === "customer" ? (() => {
       return sorted.map((c, ci) => {
-        const seq = getDirectSeq(c.partyName, c.route, c.siteDelivery);
+        const seq = getDirectSeq(c.partyName, c.route, c.siteDelivery, c.siteLabel);
         const items = allDirectItems.filter(i => i.partyName === c.partyName && (i.route || "") === (c.route || "") && (i.transport || "") === (c.transport || "") && !!i.siteDelivery === !!c.siteDelivery);
         if (!items.length) return null;
         return /*#__PURE__*/React.createElement("div", {
-          key: c.partyName + "::" + (c.route || "") + "::" + (c.transport || "") + (c.siteDelivery ? "::site" : ""),
+          key: c.partyName + "::" + (c.route || "") + "::" + (c.transport || "") + (c.siteDelivery ? "::site::" + normalize(c.siteLabel || "") : ""),
           style: {
             background: "#0b1220",
             border: "1px solid #1e293b",
@@ -27582,7 +27856,7 @@ function OrdersTab({
       byCustomer[i.partyName].items.push(i);
     });
     return Object.values(byCustomer).sort(seqSortFn).map(cg => /*#__PURE__*/React.createElement("div", {
-      key: cg.partyName + "::" + (cg.route || "") + "::" + (cg.transport || "") + (cg.siteDelivery ? "::site" : ""),
+      key: cg.partyName + "::" + (cg.route || "") + "::" + (cg.transport || "") + (cg.siteDelivery ? "::site::" + normalize(cg.siteLabel || "") : ""),
       style: {
         background: "#0b1220",
         border: "1px solid #7c3aed40",
@@ -27614,14 +27888,14 @@ function OrdersTab({
         textOverflow: "ellipsis",
         whiteSpace: "nowrap"
       }
-    }, Object.keys(deliverySequence.transport || {}).length > 0 && getTransportSeq(cg.partyName, cg.transport, cg.siteDelivery) < 999 && /*#__PURE__*/React.createElement("span", {
+    }, Object.keys(deliverySequence.transport || {}).length > 0 && getTransportSeq(cg.partyName, cg.transport, cg.siteDelivery, cg.siteLabel) < 999 && /*#__PURE__*/React.createElement("span", {
       style: {
         fontSize: "10px",
         color: "#a78bfa",
         marginRight: "5px",
         fontWeight: "800"
       }
-    }, "#", getTransportSeq(cg.partyName, cg.transport, cg.siteDelivery)), cg.partyName), /*#__PURE__*/React.createElement("div", {
+    }, "#", getTransportSeq(cg.partyName, cg.transport, cg.siteDelivery, cg.siteLabel)), cg.partyName), /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: "10px",
         color: "#93c5fd"
@@ -27897,9 +28171,9 @@ function OrdersTab({
       // Sort by delivery sequence
       const sorted = Object.values(byC).sort(seqSortFn);
       return sorted.map((c, ci) => {
-        const seq = getTransportSeq(c.partyName, c.transport, c.siteDelivery);
+        const seq = getTransportSeq(c.partyName, c.transport, c.siteDelivery, c.siteLabel);
         return /*#__PURE__*/React.createElement("div", {
-          key: c.partyName + "::" + (c.route || "") + "::" + (c.transport || "") + (c.siteDelivery ? "::site" : ""),
+          key: c.partyName + "::" + (c.route || "") + "::" + (c.transport || "") + (c.siteDelivery ? "::site::" + normalize(c.siteLabel || "") : ""),
           style: {
             background: "#0b1220",
             border: "1px solid #1e293b",
