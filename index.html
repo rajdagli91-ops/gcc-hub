@@ -20813,6 +20813,42 @@ function renderSequenceSitesPicker(p) {
   ]);
 }
 
+function renderDispatchAllRouteButton(p) {
+  var hasUnconfirmed = p.groups.some(function(g) { return g.items.some(function(i) { return !i.confirmed; }); });
+  if (!hasUnconfirmed) return null;
+  var open = p.prompt === p.sectionKey;
+  if (!open) {
+    return React.createElement("button", {
+      onClick: function() { p.setPrompt(p.sectionKey); },
+      disabled: p.saving,
+      style: { background: "#052e16", border: "1px solid #166534", borderRadius: "6px", padding: "3px 10px", color: "#4ade80", fontWeight: "700", fontSize: "10.5px", cursor: "pointer" }
+    }, "\u2713 Dispatch All");
+  }
+  var tomorrowDate = new Date(Date.now() + p.nextDispatchDayOffset * 86400000).toISOString().slice(0, 10);
+  return React.createElement("div", {
+    style: { display: "flex", gap: "5px", alignItems: "center", background: "#0a1520", border: "1px solid #1e3a5f", borderRadius: "6px", padding: "4px 6px" }
+  }, [
+    React.createElement("span", { key: "l", style: { fontSize: "10px", color: "#93c5fd", fontWeight: "700", marginRight: "2px" } }, "Date?"),
+    React.createElement("button", {
+      key: "today",
+      onClick: function() { p.onConfirm(p.groups, p.todayStr); p.setPrompt(null); },
+      disabled: p.saving,
+      style: { background: "#1e3a5f", border: "1px solid #475569", borderRadius: "5px", padding: "3px 8px", color: "#f1f5f9", fontWeight: "700", fontSize: "10.5px", cursor: "pointer" }
+    }, "Today (" + p.todayStr.slice(5) + ")"),
+    React.createElement("button", {
+      key: "tom",
+      onClick: function() { p.onConfirm(p.groups, tomorrowDate); p.setPrompt(null); },
+      disabled: p.saving,
+      style: { background: "#1e3a5f", border: "1px solid #475569", borderRadius: "5px", padding: "3px 8px", color: "#f1f5f9", fontWeight: "700", fontSize: "10.5px", cursor: "pointer" }
+    }, (p.isSaturday ? "Monday" : "Tomorrow") + " (" + tomorrowDate.slice(5) + ")"),
+    React.createElement("button", {
+      key: "cancel",
+      onClick: function() { p.setPrompt(null); },
+      style: { background: "none", border: "1px solid #334155", borderRadius: "5px", padding: "3px 8px", color: "#64748b", fontSize: "10.5px", cursor: "pointer" }
+    }, "\u2715")
+  ]);
+}
+
 function OrdersTab({
   role,
   roles,
@@ -21226,6 +21262,7 @@ function OrdersTab({
   const [newItemsPrompt, setNewItemsPrompt] = useState(null);
   const [newItemForms, setNewItemForms] = useState({});
   const [confirmingDispatch, setConfirmingDispatch] = useState(null);
+  const [dispatchAllRoutePrompt, setDispatchAllRoutePrompt] = useState(null); // which section's Today/Tomorrow popup is open, in Dispatch Today
   const [transporterSuggest, setTransporterSuggest] = useState(null);
   const [printRouteFilter, setPrintRouteFilter] = useState("All");
   const [dispatchRouteFilter, setDispatchRouteFilter] = useState("All");
@@ -21923,14 +21960,15 @@ function OrdersTab({
   };
 
   // ── Confirm ALL unconfirmed customers in today's dispatch ──
-  const confirmAllDispatches = async () => {
-    const unconfirmed = filteredToday.filter(g => g.items.some(i => !i.confirmed));
+  const confirmAllDispatches = async (groupsToConfirm, explicitDateStr) => {
+    const scope = groupsToConfirm || filteredToday;
+    const unconfirmed = scope.filter(g => g.items.some(i => !i.confirmed));
     if (!unconfirmed.length) return showToast("All dispatches already confirmed", "error");
     setSaving(true);
     try {
       for (const group of unconfirmed) {
         const pendingItems = group.items.filter(i => !i.confirmed);
-        await finaliseDispatch(group.partyName, pendingItems);
+        await finaliseDispatch(group.partyName, pendingItems, explicitDateStr);
       }
     } catch (e) {
       showToast("Error: " + e.message, "error");
@@ -21949,7 +21987,8 @@ function OrdersTab({
     }))), () => {});
     return unsub;
   }, [isAdmin]);
-  const finaliseDispatch = async (partyName, items) => {
+  const finaliseDispatch = async (partyName, items, explicitDateStr) => {
+    const useDateStr = explicitDateStr || dispatchDateStr;
     setConfirmingDispatch(partyName);
     try {
       const orderIds = [...new Set(items.map(i => i.orderId))];
@@ -21964,7 +22003,7 @@ function OrdersTab({
             ...item,
             dispatchConfirmed: true,
             dispatchConfirmedAt: confirmedAt,
-            lastDispatchedAt: dispatchDateStr
+            lastDispatchedAt: useDateStr
           } : item;
         });
         const allDone = updatedItems.every(i => i.status === "Dispatched" || i.balanceQty <= 0);
@@ -21975,7 +22014,7 @@ function OrdersTab({
         });
       }
       // Save dispatch report — get route/transport from the order
-      const reportId = "report_" + dispatchDateStr;
+      const reportId = "report_" + useDateStr;
       const reportDoc = await C("dispatch_reports").doc(reportId).get();
       const volTotals = {};
       items.forEach(item => {
@@ -22012,7 +22051,7 @@ function OrdersTab({
         });
       } else {
         await C("dispatch_reports").doc(reportId).set({
-          date: dispatchDateStr,
+          date: useDateStr,
           entries: [entry],
           createdAt: confirmedAt,
           updatedAt: confirmedAt,
@@ -25687,7 +25726,17 @@ function OrdersTab({
         color: "#475569",
         fontWeight: "700"
       }
-    }, "(", group.isDirect ? todayDirectGroups.length : todayTransportGroups.length, ")")), isFirstOfRoute && /*#__PURE__*/React.createElement("div", {
+    }, "(", group.isDirect ? todayDirectGroups.length : todayTransportGroups.length, ")"), !group.isDirect && canDispatch && renderDispatchAllRouteButton({
+      sectionKey: "transporter",
+      groups: todayTransportGroups,
+      prompt: dispatchAllRoutePrompt,
+      setPrompt: setDispatchAllRoutePrompt,
+      onConfirm: confirmAllDispatches,
+      todayStr,
+      nextDispatchDayOffset,
+      isSaturday,
+      saving
+    })), isFirstOfRoute && /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
         alignItems: "center",
@@ -25708,7 +25757,17 @@ function OrdersTab({
         color: "#475569",
         fontWeight: "700"
       }
-    }, "(", routeCount, ")")), /*#__PURE__*/React.createElement("div", {
+    }, "(", routeCount, ")"), canDispatch && renderDispatchAllRouteButton({
+      sectionKey: "direct::" + group.route,
+      groups: todayDirectGroups.filter(g => g.route === group.route),
+      prompt: dispatchAllRoutePrompt,
+      setPrompt: setDispatchAllRoutePrompt,
+      onConfirm: confirmAllDispatches,
+      todayStr,
+      nextDispatchDayOffset,
+      isSaturday,
+      saving
+    })), /*#__PURE__*/React.createElement("div", {
       style: {
         background: "#0b1220",
         border: "1px solid #1e293b",
