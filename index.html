@@ -20752,6 +20752,67 @@ function renderDirectHoldReasonForm(p) {
   ]);
 }
 
+function getSequenceSitesForCustomer(partyName, deliverySequence) {
+  var np = normalize(partyName || "");
+  var results = [];
+  var seen = {};
+  var directSeq = (deliverySequence && deliverySequence.direct) || {};
+  Object.keys(directSeq).forEach(function(routeKey) {
+    if (routeKey === "all") return;
+    var routeMap = directSeq[routeKey];
+    var entry = routeMap && routeMap[np];
+    if (entry && entry.sites) {
+      Object.values(entry.sites).forEach(function(s) {
+        if (!s.siteLabel) return;
+        var dedupeKey = normalize(s.siteLabel) + "::direct::" + routeKey;
+        if (seen[dedupeKey]) return;
+        seen[dedupeKey] = true;
+        results.push({ siteLabel: s.siteLabel, source: "direct", routeKey: routeKey });
+      });
+    }
+  });
+  var transSeq = (deliverySequence && deliverySequence.transport) || {};
+  var tEntry = transSeq[np];
+  if (tEntry && tEntry.sites) {
+    Object.values(tEntry.sites).forEach(function(s) {
+      if (!s.siteLabel) return;
+      var dedupeKey = normalize(s.siteLabel) + "::transport";
+      if (seen[dedupeKey]) return;
+      seen[dedupeKey] = true;
+      results.push({ siteLabel: s.siteLabel, source: "transport" });
+    });
+  }
+  return results;
+}
+
+function renderSequenceSitesPicker(p) {
+  var sites = getSequenceSitesForCustomer(p.partyName, p.deliverySequence);
+  if (!sites.length) return null;
+  return React.createElement("div", {
+    style: { marginBottom: "10px" }
+  }, [
+    React.createElement("div", {
+      key: "h",
+      style: { fontSize: "10px", fontWeight: "700", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "5px" }
+    }, "\uD83D\uDCCB Sites found in your uploaded sequence for " + p.partyName),
+    React.createElement("div", {
+      key: "list",
+      style: { display: "flex", flexWrap: "wrap", gap: "5px" }
+    }, sites.map(function(s, i) {
+      var active = p.sdForm.siteLabel === s.siteLabel;
+      return React.createElement("button", {
+        key: i,
+        onClick: function() {
+          p.setSdForm(function(f) {
+            return Object.assign({}, f, { siteLabel: s.siteLabel });
+          });
+        },
+        style: { background: active ? "#1a4a1a" : "#0a1f0a", border: "1px solid " + (active ? "#22c55e" : "#16653440"), borderRadius: "6px", padding: "4px 10px", color: active ? "#bbf7d0" : "#4ade80", fontSize: "11px", fontWeight: "600", cursor: "pointer" }
+      }, "\uD83D\uDCCD " + s.siteLabel);
+    }))
+  ]);
+}
+
 function OrdersTab({
   role,
   roles,
@@ -22385,13 +22446,17 @@ function OrdersTab({
         return t === "" || t === "#" || t === "name" || t === "customer" || t === "transporter" || t === "s.no" || t === "sno" || t === "sr.no" || t === "seq" || t === "sequence" || t === "customer name" || t === "transporter name" || t === "name (transporter / customer)";
       };
       // A customer can appear multiple times in the same sequence sheet — once for their
-      // regular/personal delivery, and once per site delivery — using a "(Site)" marker
-      // (case-insensitive; "(Site Delivery)", "- Site", etc. all work as a single generic site).
-      // If a customer has MORE than one site delivery on the same route, name each one so HO can
-      // tell them apart: "(Site: Site A)", "(Site A)", "- Site Warehouse 2" all work — whatever
-      // text follows "Site" becomes the label, and must match the label given when that specific
-      // order was marked as a Site Delivery.
-      const SITE_MARKER_RE = /\s*[\(\-–]\s*site\s*:?\s*([^)]*?)\s*\)?\s*$/i;
+      // regular/personal delivery, and once per site delivery — using a "Site" marker
+      // (case-insensitive). All of these work: "(Site)", "(Site Delivery)", "- Site",
+      // "(Site: Site A)", "(Site A)", "- Site Warehouse 2", "CUSTOMER NAME Site: Site A", and
+      // even bare "CUSTOMER NAME Site Godown 2" with no colon/parentheses/dash at all — whatever
+      // text follows the word "Site" becomes the label, and must match the label given when that
+      // specific order was marked as a Site Delivery. Trade-off: because this is intentionally
+      // permissive, a customer whose actual name contains the standalone word "site" followed by
+      // more words (e.g. "XYZ SITE SERVICES PVT LTD") would be misread as a site marker too — if
+      // that applies to any of your customers, wrap the real site marker in parentheses instead,
+      // e.g. "XYZ SITE SERVICES PVT LTD (Site: Godown 2)", which is unambiguous either way.
+      const SITE_MARKER_RE = /(?:[\(\-–]\s*site\s*:?\s*|\bsite\s*:?\s+)([^)]*?)\s*\)?\s*$/i;
       const splitSiteMarker = rawName => {
         const m = rawName.match(SITE_MARKER_RE);
         if (!m) return {
@@ -22402,7 +22467,7 @@ function OrdersTab({
         const captured = (m[1] || "").trim();
         const isGeneric = !captured || /^delivery$/i.test(captured);
         return {
-          base: rawName.replace(SITE_MARKER_RE, "").trim(),
+          base: rawName.slice(0, m.index).trim(),
           isSite: true,
           siteLabel: isGeneric ? "" : captured
         };
@@ -24933,7 +24998,12 @@ function OrdersTab({
         color: "#a78bfa",
         marginBottom: "7px"
       }
-    }, "This order ships to a different location than ", order.originalRoute || order.route, "'s usual route (", order.originalTransport || order.transport, "). Set the actual delivery route/transport for THIS order only — it won't change ", group.partyName, "'s default route for future orders."), (() => {
+    }, "This order ships to a different location than ", order.originalRoute || order.route, "'s usual route (", order.originalTransport || order.transport, "). Set the actual delivery route/transport for THIS order only — it won't change ", group.partyName, "'s default route for future orders."), renderSequenceSitesPicker({
+      partyName: group.partyName,
+      deliverySequence,
+      sdForm,
+      setSdForm
+    }), (() => {
       const savedSites = customerMap[normalize(group.partyName)]?.siteDeliveries || [];
       if (!savedSites.length) return null;
       return /*#__PURE__*/React.createElement("div", {
