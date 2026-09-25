@@ -20849,6 +20849,40 @@ function renderDispatchAllRouteButton(p) {
   ]);
 }
 
+function renderCustomerDispatchButton(p) {
+  var open = p.prompt === p.sectionKey;
+  if (!open) {
+    return React.createElement("button", {
+      onClick: function() { p.setPrompt(p.sectionKey); },
+      disabled: p.saving,
+      style: { background: "#052e16", border: "1px solid #166534", borderRadius: "5px", padding: "2px 9px", color: "#4ade80", fontSize: "11px", fontWeight: "700", cursor: "pointer", whiteSpace: "nowrap" }
+    }, "\uD83D\uDE9A Dispatch");
+  }
+  var tomorrowDate = new Date(Date.now() + p.nextDispatchDayOffset * 86400000).toISOString().slice(0, 10);
+  return React.createElement("div", {
+    style: { display: "flex", gap: "4px", alignItems: "center", background: "#0a1520", border: "1px solid #1e3a5f", borderRadius: "5px", padding: "3px 5px" }
+  }, [
+    React.createElement("span", { key: "l", style: { fontSize: "9.5px", color: "#93c5fd", fontWeight: "700", marginRight: "1px", whiteSpace: "nowrap" } }, "Date?"),
+    React.createElement("button", {
+      key: "today",
+      onClick: function() { p.onConfirm(p.cg, p.todayStr); p.setPrompt(null); },
+      disabled: p.saving,
+      style: { background: "#1e3a5f", border: "1px solid #475569", borderRadius: "4px", padding: "2px 7px", color: "#f1f5f9", fontWeight: "700", fontSize: "10px", cursor: "pointer", whiteSpace: "nowrap" }
+    }, "Today"),
+    React.createElement("button", {
+      key: "tom",
+      onClick: function() { p.onConfirm(p.cg, tomorrowDate); p.setPrompt(null); },
+      disabled: p.saving,
+      style: { background: "#1e3a5f", border: "1px solid #475569", borderRadius: "4px", padding: "2px 7px", color: "#f1f5f9", fontWeight: "700", fontSize: "10px", cursor: "pointer", whiteSpace: "nowrap" }
+    }, p.isSaturday ? "Monday" : "Tomorrow"),
+    React.createElement("button", {
+      key: "cancel",
+      onClick: function() { p.setPrompt(null); },
+      style: { background: "none", border: "1px solid #334155", borderRadius: "4px", padding: "2px 6px", color: "#64748b", fontSize: "10px", cursor: "pointer" }
+    }, "\u2715")
+  ]);
+}
+
 function OrdersTab({
   role,
   roles,
@@ -21263,6 +21297,48 @@ function OrdersTab({
   const [newItemForms, setNewItemForms] = useState({});
   const [confirmingDispatch, setConfirmingDispatch] = useState(null);
   const [dispatchAllRoutePrompt, setDispatchAllRoutePrompt] = useState(null); // which section's Today/Tomorrow popup is open, in Dispatch Today
+  const [customerDispatchPrompt, setCustomerDispatchPrompt] = useState(null); // which customer's Today/Tomorrow popup is open, in Direct Prep
+  const runCustomerDirectDispatch = async (cg, chosenDateStr) => {
+    setSaving(true);
+    try {
+      for (const o of cg.orders) {
+        if (o.onHold) continue; // skip orders HO has put on hold — never dispatch these
+        const doc = await C("orders").doc(o.id).get();
+        if (!doc.exists) continue;
+        const data = doc.data();
+        const updatedItems = (data.items || []).map((item, idx) => {
+          if (item.balanceQty <= 0 || item.status === "Dispatched") return item;
+          const fk = o.id + "__" + idx;
+          const override = directQtyOverrides[fk];
+          if (override === "0" || override === 0) return item;
+          const dispQty = override !== undefined ? Math.min(parseFloat(override) || 0, parseFloat(item.balanceQty) || 0) : parseFloat(item.balanceQty) || 0;
+          if (dispQty <= 0) return item;
+          const newBalance = Math.max(0, (parseFloat(item.balanceQty) || 0) - dispQty);
+          return {
+            ...item,
+            balanceQty: newBalance,
+            dispatchedQty: (parseFloat(item.dispatchedQty) || 0) + dispQty,
+            status: newBalance <= 0 ? "Dispatched" : "Partial",
+            lastDispatchedAt: chosenDateStr,
+            lastDispatchedBy: user.email,
+            dispatchConfirmed: false,
+            dispatchConfirmedAt: null
+          };
+        });
+        const allDone = updatedItems.every(i => i.balanceQty <= 0 || i.status === "Dispatched");
+        await C("orders").doc(o.id).update({
+          items: updatedItems.map(cleanItem),
+          status: allDone ? "Dispatched" : "Partial",
+          updatedAt: ts()
+        });
+      }
+      showToast(`${cg.partyName} dispatched ✓`);
+      setPrintRouteFilter("All");
+    } catch (e) {
+      showToast("Error: " + e.message, "error");
+    }
+    setSaving(false);
+  };
   const [transporterSuggest, setTransporterSuggest] = useState(null);
   const [printRouteFilter, setPrintRouteFilter] = useState("All");
   const [dispatchRouteFilter, setDispatchRouteFilter] = useState("All");
@@ -21757,7 +21833,7 @@ function OrdersTab({
         } else {
           showToast(`${partyName} — entire order reversed ✓`);
           try {
-            const dispDate = firstFi?.lastDispatchedAt || dispatchDateStr || todayStr;
+            const dispDate = firstOrderItem?.dispatchDate || firstOrderItem?.lastDispatchedAt || firstFi?.lastDispatchedAt || dispatchDateStr || todayStr;
             const reportId = "report_" + dispDate;
             const reversedItems = items.map(i => ({
               name: i.name,
@@ -21821,11 +21897,21 @@ function OrdersTab({
     setReverseSaving(true);
     try {
       const orderIds = [...new Set(reverseForm.items.map(i => i.orderId))];
-      // Capture dispatch date and confirmed time BEFORE any Firestore writes (avoid race condition)
-      const firstItem = reverseForm.items.find(i => parseFloat(i.reverseQty) > 0);
+      // Use the dispatch date already carried on the reversal form itself — it was captured
+      // directly from what's on screen (the same data the person is looking at when they choose
+      // to reverse), rather than re-deriving it by looking the order back up, which could silently
+      // pick a different date if that fresh lookup ever failed to find a matching item. Getting
+      // this date right is what decides which day's report gets corrected, so it must be reliable.
+      const firstItemWithDate = reverseForm.items.find(i => parseFloat(i.reverseQty) > 0) || reverseForm.items[0];
+      const originalDispatchDate = firstItemWithDate?.dispatchDate || firstItemWithDate?.lastDispatchedAt || (() => {
+        const firstItem = reverseForm.items.find(i => parseFloat(i.reverseQty) > 0);
+        const firstOrder = firstItem ? orders.find(o => o.id === firstItem.orderId) : null;
+        const firstFi = firstOrder ? (firstOrder.items || []).find(i => normalize(i.name) === normalize(firstItem.name)) : null;
+        return firstFi?.lastDispatchedAt || dispatchDateStr || todayStr;
+      })();
+      const firstItem = firstItemWithDate;
       const firstOrder = firstItem ? orders.find(o => o.id === firstItem.orderId) : null;
       const firstFi = firstOrder ? (firstOrder.items || []).find(i => normalize(i.name) === normalize(firstItem.name)) : null;
-      const originalDispatchDate = firstFi?.lastDispatchedAt || dispatchDateStr || todayStr; // capture NOW
       const confirmedAtRaw = firstFi?.dispatchConfirmedAt;
       const confirmedAtMs = confirmedAtRaw ? typeof confirmedAtRaw === "string" ? new Date(confirmedAtRaw).getTime() : confirmedAtRaw.toMillis ? confirmedAtRaw.toMillis() : confirmedAtRaw.seconds ? confirmedAtRaw.seconds * 1000 : 0 : 0;
       const isGracePeriod = confirmedAtMs > 0 && Date.now() - confirmedAtMs < 2 * 60 * 60 * 1000;
@@ -27031,61 +27117,17 @@ function OrdersTab({
         releaseHold,
         directHoldPicker,
         setDirectHoldPicker
-      }), canDispatch && /*#__PURE__*/React.createElement("button", {
-        onClick: async () => {
-          setSaving(true);
-          try {
-            for (const o of cg.orders) {
-              if (o.onHold) continue; // skip orders HO has put on hold — never dispatch these
-              const doc = await C("orders").doc(o.id).get();
-              if (!doc.exists) continue;
-              const data = doc.data();
-              const updatedItems = (data.items || []).map((item, idx) => {
-                if (item.balanceQty <= 0 || item.status === "Dispatched") return item;
-                const fk = o.id + "__" + idx;
-                const override = directQtyOverrides[fk];
-                if (override === "0" || override === 0) return item;
-                const dispQty = override !== undefined ? Math.min(parseFloat(override) || 0, parseFloat(item.balanceQty) || 0) : parseFloat(item.balanceQty) || 0;
-                if (dispQty <= 0) return item;
-                const newBalance = Math.max(0, (parseFloat(item.balanceQty) || 0) - dispQty);
-                return {
-                  ...item,
-                  balanceQty: newBalance,
-                  dispatchedQty: (parseFloat(item.dispatchedQty) || 0) + dispQty,
-                  status: newBalance <= 0 ? "Dispatched" : "Partial",
-                  lastDispatchedAt: dispatchDateStr,
-                  lastDispatchedBy: user.email,
-                  dispatchConfirmed: false,
-                  dispatchConfirmedAt: null
-                };
-              });
-              const allDone = updatedItems.every(i => i.balanceQty <= 0 || i.status === "Dispatched");
-              await C("orders").doc(o.id).update({
-                items: updatedItems.map(cleanItem),
-                status: allDone ? "Dispatched" : "Partial",
-                updatedAt: ts()
-              });
-            }
-            showToast(`${cg.partyName} dispatched direct ✓`);
-            setPrintRouteFilter("All");
-          } catch (e) {
-            showToast("Error: " + e.message, "error");
-          }
-          setSaving(false);
-        },
-        disabled: saving,
-        style: {
-          background: "#052e16",
-          border: "1px solid #166534",
-          borderRadius: "5px",
-          padding: "2px 9px",
-          color: "#4ade80",
-          fontSize: "11px",
-          fontWeight: "700",
-          cursor: "pointer",
-          whiteSpace: "nowrap"
-        }
-      }, "🚚 ", cg.isDirect ? "Dispatch All" : "Dispatch Direct"))), renderDirectHoldPicker({
+      }), canDispatch && renderCustomerDispatchButton({
+        sectionKey: cg.partyName + "::" + (cg.route || "") + "::" + (cg.transport || ""),
+        cg,
+        prompt: customerDispatchPrompt,
+        setPrompt: setCustomerDispatchPrompt,
+        onConfirm: runCustomerDirectDispatch,
+        todayStr,
+        nextDispatchDayOffset,
+        isSaturday,
+        saving
+      }))), renderDirectHoldPicker({
         cg: {
           ...cg,
           key: cg.partyName + "::" + (cg.route || "") + "::" + (cg.transport || "") + (cg.siteDelivery ? "::site::" + normalize(cg.siteLabel || "") : "")
