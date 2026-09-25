@@ -21068,9 +21068,11 @@ function OrdersTab({
             status: prev.status || "Pending",
             stagedForTransport: prev.stagedForTransport || false,
             stagedAt: prev.stagedAt || null,
+            stagedBy: prev.stagedBy || null,
             dispatchConfirmed: prev.dispatchConfirmed || false,
             dispatchConfirmedAt: prev.dispatchConfirmedAt || null,
-            lastDispatchedAt: prev.lastDispatchedAt || null
+            lastDispatchedAt: prev.lastDispatchedAt || null,
+            lastDispatchedBy: prev.lastDispatchedBy || null
           };
         });
         const allDone = mergedItems.every(i => i.status === "Dispatched");
@@ -21087,7 +21089,14 @@ function OrdersTab({
           onHold: existing.onHold || false,
           holdReason: existing.onHold ? existing.holdReason || null : null,
           heldBy: existing.onHold ? existing.heldBy || null : null,
-          heldAt: existing.onHold ? existing.heldAt || null : null
+          heldAt: existing.onHold ? existing.heldAt || null : null,
+          // Same reasoning for a Site Delivery override — it's set independently of Tally too,
+          // and re-importing must never silently drop it back to the customer's default route.
+          siteDelivery: existing.siteDelivery || false,
+          siteRoute: existing.siteDelivery ? existing.siteRoute || null : null,
+          siteTransport: existing.siteDelivery ? existing.siteTransport || null : null,
+          siteIsDirect: existing.siteDelivery ? !!existing.siteIsDirect : false,
+          siteLabel: existing.siteDelivery ? existing.siteLabel || "" : ""
         }));
         updCount++;
       } else {
@@ -27410,8 +27419,9 @@ function OrdersTab({
         cursor: "pointer"
       }
     }, "🗺 Route")), directPrepView === "customer" ? (() => {
+      const seqRoute = directPrepArea !== "All" ? directPrepArea : null;
       return sorted.map((c, ci) => {
-        const seq = getDirectSeq(c.partyName, c.route, c.siteDelivery, c.siteLabel);
+        const seq = getDirectSeq(c.partyName, seqRoute || c.route, c.siteDelivery, c.siteLabel);
         const items = allDirectItems.filter(i => i.partyName === c.partyName && (i.route || "") === (c.route || "") && (i.transport || "") === (c.transport || "") && !!i.siteDelivery === !!c.siteDelivery);
         if (!items.length) return null;
         return /*#__PURE__*/React.createElement("div", {
