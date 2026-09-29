@@ -20693,7 +20693,7 @@ function renderDirectHoldControls(p) {
       held.forEach(function(o, i) {
         parts.push(React.createElement("button", {
           key: "rel" + i,
-          onClick: function() { p.releaseHold(o.id); },
+          onClick: function() { p.releaseHold(o.id, cg.partyName); },
           title: "Release hold on " + (o.voucherNo || "this order"),
           style: {background: "none", border: "1px solid #16653450", borderRadius: "5px", padding: "1px 8px", color: "#4ade80", fontSize: "10px", fontWeight: "600", cursor: "pointer"}
         }, "\uD83D\uDD13 Release" + (held.length > 1 ? " " + (o.voucherNo || i + 1) : "")));
@@ -20755,7 +20755,7 @@ function renderDirectHoldReasonForm(p) {
     }),
     React.createElement("button", {
       key: "confirm",
-      onClick: function() { p.holdOrder(order.id); },
+      onClick: function() { p.holdOrder(order.id, cg.partyName); },
       style: {background: "#450a0a", border: "1px solid #dc2626", borderRadius: "6px", padding: "5px 12px", color: "#fca5a5", fontWeight: "700", fontSize: "11px", cursor: "pointer"}
     }, "\uD83D\uDD12 Confirm Hold"),
     React.createElement("button", {
@@ -21129,11 +21129,22 @@ function OrdersTab({
             };
           }
         });
+        // If this customer has an unresolved hold at the customer level (set when HO held one
+        // of their orders, and not yet cleared by an explicit release), a brand new order for
+        // them should come in already on hold too — otherwise a held order quietly disappearing
+        // from Tally (e.g. cancelled/replaced) would let a fresh order for the same customer slip
+        // through unheld, even though whatever caused the hold was never actually resolved.
+        const custHoldInfo = customerMap[normalize(order.partyName)];
+        const inheritHold = custHoldInfo && custHoldInfo.onHold;
         importOps.push(batch => batch.set(docRef, {
           ...order,
           importedBy: user.email,
           importedAt: ts(),
-          lastImportedAt: ts()
+          lastImportedAt: ts(),
+          onHold: !!inheritHold,
+          holdReason: inheritHold ? custHoldInfo.holdReason || null : null,
+          heldBy: inheritHold ? custHoldInfo.heldBy || null : null,
+          heldAt: inheritHold ? custHoldInfo.heldAt || null : null
         }));
         newCount++;
       }
@@ -21213,14 +21224,42 @@ function OrdersTab({
   const [holdReasonEdit, setHoldReasonEdit] = useState(null); // order id currently entering a hold reason
   const [directHoldPicker, setDirectHoldPicker] = useState(null); // customer group key currently showing "which order?" picker in Direct Prep
   const [holdReasonText, setHoldReasonText] = useState("");
-  const holdOrder = async orderId => {
+  const holdOrder = async (orderId, partyName) => {
     try {
+      const reason = holdReasonText.trim() || null;
       await C("orders").doc(orderId).update({
         onHold: true,
-        holdReason: holdReasonText.trim() || null,
+        holdReason: reason,
         heldBy: user.email,
         heldAt: ts()
       });
+      // Also remember this at the customer level — if this specific voucher later gets
+      // auto-closed (no longer found in a Tally re-import) before HO explicitly releases the
+      // hold, a brand new order for the same customer should still come in on hold too, since
+      // whatever caused the hold hasn't actually been resolved just because the voucher changed.
+      if (partyName) {
+        const custKey = normalize(partyName);
+        const snap = await C("settings").doc("customerTransport").get();
+        const d = snap.exists ? snap.data() : {
+          map: {}
+        };
+        const custEntry = (d.map || {})[custKey] || {};
+        await C("settings").doc("customerTransport").set({
+          ...d,
+          map: {
+            ...(d.map || {}),
+            [custKey]: {
+              ...custEntry,
+              onHold: true,
+              holdReason: reason,
+              heldBy: user.email,
+              heldAt: ts()
+            }
+          }
+        }, {
+          merge: true
+        });
+      }
       showToast("Order placed on hold ✓");
       setHoldReasonEdit(null);
       setHoldReasonText("");
@@ -21228,7 +21267,7 @@ function OrdersTab({
       showToast("Error: " + e.message, "error");
     }
   };
-  const releaseHold = async orderId => {
+  const releaseHold = async (orderId, partyName) => {
     try {
       await C("orders").doc(orderId).update({
         onHold: false,
@@ -21236,6 +21275,31 @@ function OrdersTab({
         releasedBy: user.email,
         releasedAt: ts()
       });
+      // Clear the customer-level marker too — HO explicitly resolving this hold means a future
+      // new order for this customer should go back to importing normally, not held.
+      if (partyName) {
+        const custKey = normalize(partyName);
+        const snap = await C("settings").doc("customerTransport").get();
+        const d = snap.exists ? snap.data() : {
+          map: {}
+        };
+        const custEntry = (d.map || {})[custKey] || {};
+        if (custEntry.onHold) {
+          await C("settings").doc("customerTransport").set({
+            ...d,
+            map: {
+              ...(d.map || {}),
+              [custKey]: {
+                ...custEntry,
+                onHold: false,
+                holdReason: null
+              }
+            }
+          }, {
+            merge: true
+          });
+        }
+      }
       showToast("Hold released ✓");
     } catch (e) {
       showToast("Error: " + e.message, "error");
@@ -25020,7 +25084,7 @@ function OrdersTab({
         cursor: "pointer"
       }
     }, "🔒 Hold"), canManageHold && order.onHold && /*#__PURE__*/React.createElement("button", {
-      onClick: () => releaseHold(order.id),
+      onClick: () => releaseHold(order.id, group.partyName),
       style: {
         background: "none",
         border: "1px solid #16653450",
@@ -25108,7 +25172,7 @@ function OrdersTab({
         fontSize: "12px"
       }
     }), /*#__PURE__*/React.createElement("button", {
-      onClick: () => holdOrder(order.id),
+      onClick: () => holdOrder(order.id, group.partyName),
       style: {
         background: "#450a0a",
         border: "1px solid #dc2626",
