@@ -22206,105 +22206,6 @@ function OrdersTab({
   }, [pendingOrders, routeFilter, deliveryFilter, holdFilter, search]);
 
   // ── Unconfirmed dispatches — all items dispatched but not yet confirmed ──
-  const todayDispatchedAll = useMemo(() => {
-    const map = {};
-    orders.forEach(o => {
-      (o.items || []).forEach(item => {
-        if (!item.dispatchConfirmed && item.lastDispatchedAt && (item.dispatchedQty || 0) > 0 && !item.stagedForTransport) {
-          const k = normalize(o.partyName) + "::" + normalize(o.route || "") + "::" + normalize(o.transport || "") + (o.siteDelivery ? "::site::" + normalize(o.siteLabel || "") : "");
-          if (!map[k]) map[k] = {
-            partyName: o.partyName,
-            route: o.route,
-            transport: o.transport,
-            isDirect: o.isDirect,
-            siteDelivery: o.siteDelivery,
-        siteLabel: o.siteLabel || "",
-            items: []
-          };
-          const vol = calcVolume(item.name, item.dispatchedQty || 0);
-          map[k].items.push({
-            name: item.name,
-            qty: item.dispatchedQty || 0,
-            vol,
-            voucherNo: o.voucherNo,
-            orderId: o.id,
-            confirmed: false,
-            canReverse: false,
-            confirmedAt: null,
-            dispatchDate: item.lastDispatchedAt
-          });
-        }
-      });
-    });
-    return Object.values(map).sort((a, b) => a.partyName.localeCompare(b.partyName));
-  }, [orders]);
-
-  // Split: unconfirmed → Today's Dispatch; confirmed (48h) → Dispatched tab
-  const todayDispatched = useMemo(() => todayDispatchedAll.map(g => ({
-    ...g,
-    items: g.items.filter(i => !i.confirmed)
-  })).filter(g => g.items.length > 0), [todayDispatchedAll]);
-
-  // Auto-clear transporter suggestion if those orders are reverted out of today's dispatch
-  useEffect(() => {
-    if (!transporterSuggest) return;
-    const stillDispatchedToday = todayDispatched.some(g => normTKey(g.transport) === normTKey(transporterSuggest.transport));
-    if (!stillDispatchedToday) setTransporterSuggest(null);
-  }, [todayDispatched]);
-  const dispatched48h = useMemo(() => {
-    const now = Date.now();
-    const WINDOW_MS = 48 * 60 * 60 * 1000; // 48h from start of dispatch date
-    const map = {};
-    orders.forEach(o => {
-      (o.items || []).forEach(item => {
-        if (!item.dispatchConfirmed) return;
-        // Use lastDispatchedAt DATE (midnight) as window start — not the confirmed timestamp
-        const dispDate = item.lastDispatchedAt; // "YYYY-MM-DD"
-        if (!dispDate) return;
-        const windowStart = new Date(dispDate + "T00:00:00").getTime();
-        if (now - windowStart > WINDOW_MS) return; // outside 48h window from dispatch date
-        const cat = item.dispatchConfirmedAt;
-        const confirmedAt = cat ? typeof cat === "string" ? new Date(cat).getTime() : cat.toMillis ? cat.toMillis() : cat.seconds ? cat.seconds * 1000 : 0 : 0;
-        const k = normalize(o.partyName) + "::" + normalize(o.route || "") + "::" + normalize(o.transport || "") + (o.siteDelivery ? "::site::" + normalize(o.siteLabel || "") : "");
-        if (!map[k]) map[k] = {
-          partyName: o.partyName,
-          route: o.route,
-          transport: o.transport,
-          isDirect: o.isDirect,
-          siteDelivery: o.siteDelivery,
-        siteLabel: o.siteLabel || "",
-          items: []
-        };
-        const vol = calcVolume(item.name, item.dispatchedQty || 0);
-        map[k].items.push({
-          name: item.name,
-          qty: item.dispatchedQty || 0,
-          vol,
-          voucherNo: o.voucherNo,
-          orderId: o.id,
-          confirmed: true,
-          canReverse: true,
-          confirmedAt,
-          dispatchDate: item.lastDispatchedAt || null
-        });
-      });
-    });
-    return Object.values(map).sort((a, b) => a.partyName.localeCompare(b.partyName));
-  }, [orders]);
-  const dispatched48hDates = [...new Set(dispatched48h.flatMap(g => g.items.map(i => i.dispatchDate || todayStr)))].sort().reverse();
-  const filteredDispatched48h = (() => {
-    let res = dispatched48h;
-    if (dispatched48hDateFilter !== "all") res = res.map(g => ({
-      ...g,
-      items: g.items.filter(i => (i.dispatchDate || "") === dispatched48hDateFilter)
-    })).filter(g => g.items.length > 0);
-    if (dispatched48hTypeFilter === "Direct") res = res.filter(g => g.isDirect);else if (dispatched48hTypeFilter === "Transport") res = res.filter(g => !g.isDirect);
-    if (search.trim()) {
-      const q = normalize(search);
-      res = res.filter(g => normalize(g.partyName).includes(q) || normalize(g.transport || "").includes(q) || normalize(g.route || "").includes(q) || g.items.some(i => normalize(i.name || "").includes(q)));
-    }
-    return res;
-  })();
   const [deliverySequence, setDeliverySequence] = useState({
     direct: {},
     transport: {}
@@ -22370,6 +22271,106 @@ function OrdersTab({
     return getTransportSeq(g.partyName, g.transport, g.siteDelivery, g.siteLabel);
   };
   const seqSortFn = (a, b) => getOrderSeq(a) - getOrderSeq(b) || (a.partyName || "").localeCompare(b.partyName || "");
+
+  const todayDispatchedAll = useMemo(() => {
+    const map = {};
+    orders.forEach(o => {
+      (o.items || []).forEach(item => {
+        if (!item.dispatchConfirmed && item.lastDispatchedAt && (item.dispatchedQty || 0) > 0 && !item.stagedForTransport) {
+          const k = normalize(o.partyName) + "::" + normalize(o.route || "") + "::" + normalize(o.transport || "") + (o.siteDelivery ? "::site::" + normalize(o.siteLabel || "") : "");
+          if (!map[k]) map[k] = {
+            partyName: o.partyName,
+            route: o.route,
+            transport: o.transport,
+            isDirect: o.isDirect,
+            siteDelivery: o.siteDelivery,
+        siteLabel: o.siteLabel || "",
+            items: []
+          };
+          const vol = calcVolume(item.name, item.dispatchedQty || 0);
+          map[k].items.push({
+            name: item.name,
+            qty: item.dispatchedQty || 0,
+            vol,
+            voucherNo: o.voucherNo,
+            orderId: o.id,
+            confirmed: false,
+            canReverse: false,
+            confirmedAt: null,
+            dispatchDate: item.lastDispatchedAt
+          });
+        }
+      });
+    });
+    return Object.values(map).sort(seqSortFn);
+  }, [orders]);
+
+  // Split: unconfirmed → Today's Dispatch; confirmed (48h) → Dispatched tab
+  const todayDispatched = useMemo(() => todayDispatchedAll.map(g => ({
+    ...g,
+    items: g.items.filter(i => !i.confirmed)
+  })).filter(g => g.items.length > 0), [todayDispatchedAll]);
+
+  // Auto-clear transporter suggestion if those orders are reverted out of today's dispatch
+  useEffect(() => {
+    if (!transporterSuggest) return;
+    const stillDispatchedToday = todayDispatched.some(g => normTKey(g.transport) === normTKey(transporterSuggest.transport));
+    if (!stillDispatchedToday) setTransporterSuggest(null);
+  }, [todayDispatched]);
+  const dispatched48h = useMemo(() => {
+    const now = Date.now();
+    const WINDOW_MS = 48 * 60 * 60 * 1000; // 48h from start of dispatch date
+    const map = {};
+    orders.forEach(o => {
+      (o.items || []).forEach(item => {
+        if (!item.dispatchConfirmed) return;
+        // Use lastDispatchedAt DATE (midnight) as window start — not the confirmed timestamp
+        const dispDate = item.lastDispatchedAt; // "YYYY-MM-DD"
+        if (!dispDate) return;
+        const windowStart = new Date(dispDate + "T00:00:00").getTime();
+        if (now - windowStart > WINDOW_MS) return; // outside 48h window from dispatch date
+        const cat = item.dispatchConfirmedAt;
+        const confirmedAt = cat ? typeof cat === "string" ? new Date(cat).getTime() : cat.toMillis ? cat.toMillis() : cat.seconds ? cat.seconds * 1000 : 0 : 0;
+        const k = normalize(o.partyName) + "::" + normalize(o.route || "") + "::" + normalize(o.transport || "") + (o.siteDelivery ? "::site::" + normalize(o.siteLabel || "") : "");
+        if (!map[k]) map[k] = {
+          partyName: o.partyName,
+          route: o.route,
+          transport: o.transport,
+          isDirect: o.isDirect,
+          siteDelivery: o.siteDelivery,
+        siteLabel: o.siteLabel || "",
+          items: []
+        };
+        const vol = calcVolume(item.name, item.dispatchedQty || 0);
+        map[k].items.push({
+          name: item.name,
+          qty: item.dispatchedQty || 0,
+          vol,
+          voucherNo: o.voucherNo,
+          orderId: o.id,
+          confirmed: true,
+          canReverse: true,
+          confirmedAt,
+          dispatchDate: item.lastDispatchedAt || null
+        });
+      });
+    });
+    return Object.values(map).sort(seqSortFn);
+  }, [orders]);
+  const dispatched48hDates = [...new Set(dispatched48h.flatMap(g => g.items.map(i => i.dispatchDate || todayStr)))].sort().reverse();
+  const filteredDispatched48h = (() => {
+    let res = dispatched48h;
+    if (dispatched48hDateFilter !== "all") res = res.map(g => ({
+      ...g,
+      items: g.items.filter(i => (i.dispatchDate || "") === dispatched48hDateFilter)
+    })).filter(g => g.items.length > 0);
+    if (dispatched48hTypeFilter === "Direct") res = res.filter(g => g.isDirect);else if (dispatched48hTypeFilter === "Transport") res = res.filter(g => !g.isDirect);
+    if (search.trim()) {
+      const q = normalize(search);
+      res = res.filter(g => normalize(g.partyName).includes(q) || normalize(g.transport || "").includes(q) || normalize(g.route || "").includes(q) || g.items.some(i => normalize(i.name || "").includes(q)));
+    }
+    return res;
+  })();
   const filteredToday = (() => {
     // Helper: order goes with transport if it's non-direct OR it appears in transport sequence
     const isTransportOrder = g => !g.isDirect || getTransportSeq(g.partyName, g.transport, g.siteDelivery, g.siteLabel) < 999;
