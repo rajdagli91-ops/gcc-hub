@@ -749,19 +749,22 @@ const labelFromPerms = perms => {
   return "Custom";
 };
 
+// Default permission set for each role — this is the single source of truth used both to
+// check permissions when a user has no custom overrides saved, and to pre-fill / offer quick
+// presets in the Users admin panel, so both stay in sync automatically.
+const ROLE_DEFAULT_PERMS = {
+  admin: ["batches_view", "batches_issue", "batches_qc", "complaints_view_all", "complaints_add", "complaints_respond", "leakage_view_all", "leakage_add", "leakage_respond", "rd_view", "rd_edit", "calc_tools", "shade_submit", "shade_approve", "bom_view", "bom_edit", "tasks_own", "tasks_assign", "stock_view", "stock_consume", "stock_manage", "testimonials", "settings_products", "settings_advanced"],
+  issuer: ["batches_view", "batches_issue", "bom_view", "bom_edit", "complaints_view_all", "leakage_view_all", "leakage_add", "tasks_own", "stock_view", "stock_consume", "settings_products", "calc_tools", "shade_approve", "enquiries_dispatch"],
+  qc: ["batches_view", "batches_qc", "rd_view", "rd_edit", "calc_tools", "shade_submit", "complaints_view_all", "complaints_respond", "tasks_own", "settings_advanced"],
+  sales: ["complaints_add", "complaints_view_all", "leakage_add", "tasks_own", "testimonials", "enquiries_update"],
+  store: ["stock_view", "stock_consume", "tasks_own", "orders_view", "orders_dispatch"],
+  ho: ["enquiries_create", "enquiries_view_all", "complaints_view_all", "leakage_view_all", "leakage_respond", "tasks_own"]
+};
 // Check if user has a specific permission (supports both old roles and new permissions)
 const userHasPerm = (roles, permissions, perm) => {
   if (!permissions || !permissions.length) {
     // Fall back to role-based check
-    const rolePermsMap = {
-      admin: ["batches_view", "batches_issue", "batches_qc", "complaints_view_all", "complaints_add", "complaints_respond", "leakage_view_all", "leakage_add", "leakage_respond", "rd_view", "rd_edit", "calc_tools", "shade_submit", "shade_approve", "bom_view", "bom_edit", "tasks_own", "tasks_assign", "stock_view", "stock_consume", "stock_manage", "testimonials", "settings_products", "settings_advanced"],
-      issuer: ["batches_view", "batches_issue", "bom_view", "bom_edit", "complaints_view_all", "leakage_view_all", "leakage_add", "tasks_own", "stock_view", "stock_consume", "settings_products", "calc_tools", "shade_approve", "enquiries_dispatch"],
-      qc: ["batches_view", "batches_qc", "rd_view", "rd_edit", "calc_tools", "shade_submit", "complaints_view_all", "complaints_respond", "tasks_own", "settings_advanced"],
-      sales: ["complaints_add", "complaints_view_all", "leakage_add", "tasks_own", "testimonials", "enquiries_update"],
-      store: ["stock_view", "stock_consume", "tasks_own", "orders_view", "orders_dispatch"],
-      ho: ["enquiries_create", "enquiries_view_all", "complaints_view_all", "leakage_view_all", "leakage_respond", "tasks_own"]
-    };
-    return (roles || []).some(r => r === "admin" || (rolePermsMap[r] || []).includes(perm));
+    return (roles || []).some(r => r === "admin" || (ROLE_DEFAULT_PERMS[r] || []).includes(perm));
   }
   if ((roles || []).includes("admin")) return true;
   return permissions.includes(perm);
@@ -12403,7 +12406,10 @@ function UsersTab({
   }, "No users yet. Create one above.") : allEmails.map(email => {
     const isHardAdmin = ADMIN_EMAILS.includes(email);
     const currentRoles = isHardAdmin ? ["admin"] : roles[email] || [];
-    const currentPerms = isHardAdmin ? [] : userPerms[email] || [];
+    // When this user has no explicitly-saved custom permissions yet, show what they actually
+    // have via their role's defaults (not a blank/empty panel) — otherwise the checkboxes looked
+    // misleadingly empty for anyone still running on role defaults, which is most users.
+    const currentPerms = isHardAdmin ? [] : userPerms[email] || [...new Set(currentRoles.flatMap(r => ROLE_DEFAULT_PERMS[r] || []))];
     const currentRole = primaryRole(currentRoles) || "—";
     const rc = ROLE_COLORS[currentRole] || "#475569";
     const name = profiles[email]?.displayName || "";
@@ -12615,21 +12621,29 @@ function UsersTab({
         flexWrap: "wrap"
       }
     }, [{
+      label: "👑 Admin",
+      color: "#f87171",
+      perms: ROLE_DEFAULT_PERMS.admin
+    }, {
       label: "📦 Issuer",
       color: "#f59e0b",
-      perms: ["batches_view", "batches_issue", "bom_view", "bom_edit", "complaints_view_all", "tasks_own", "stock_view", "stock_consume", "settings_products", "calc_tools", "shade_approve"]
+      perms: ROLE_DEFAULT_PERMS.issuer
     }, {
       label: "🔬 QC",
       color: "#22c55e",
-      perms: ["batches_view", "batches_qc", "rd_view", "rd_edit", "calc_tools", "shade_submit", "complaints_view_all", "complaints_respond", "tasks_own", "settings_advanced"]
+      perms: ROLE_DEFAULT_PERMS.qc
     }, {
       label: "💼 Sales",
       color: "#a855f7",
-      perms: ["complaints_add", "complaints_view_all", "tasks_own", "testimonials"]
+      perms: ROLE_DEFAULT_PERMS.sales
     }, {
       label: "🏪 Store",
       color: "#38bdf8",
-      perms: ["stock_view", "stock_consume", "tasks_own"]
+      perms: ROLE_DEFAULT_PERMS.store
+    }, {
+      label: "📞 HO",
+      color: "#ec4899",
+      perms: ROLE_DEFAULT_PERMS.ho
     }, {
       label: "🧪 QC + R&D",
       color: "#34d399",
