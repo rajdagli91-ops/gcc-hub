@@ -12408,8 +12408,12 @@ function UsersTab({
     const currentRoles = isHardAdmin ? ["admin"] : roles[email] || [];
     // When this user has no explicitly-saved custom permissions yet, show what they actually
     // have via their role's defaults (not a blank/empty panel) — otherwise the checkboxes looked
-    // misleadingly empty for anyone still running on role defaults, which is most users.
-    const currentPerms = isHardAdmin ? [] : userPerms[email] || [...new Set(currentRoles.flatMap(r => ROLE_DEFAULT_PERMS[r] || []))];
+    // misleadingly empty for anyone still running on role defaults, which is most users. Checking
+    // .length here (not just truthiness) matters: an empty array is still truthy in JS, and
+    // userPerms[email] is normalized to [] rather than left undefined when nothing was ever
+    // explicitly saved, so a plain "||" fallback alone would never actually trigger.
+    const savedPerms = userPerms[email];
+    const currentPerms = isHardAdmin ? [] : savedPerms && savedPerms.length > 0 ? savedPerms : [...new Set(currentRoles.flatMap(r => ROLE_DEFAULT_PERMS[r] || []))];
     const currentRole = primaryRole(currentRoles) || "—";
     const rc = ROLE_COLORS[currentRole] || "#475569";
     const name = profiles[email]?.displayName || "";
