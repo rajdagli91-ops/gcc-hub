@@ -27168,7 +27168,18 @@ function OrdersTab({
           flexWrap: "wrap",
           justifyContent: "flex-end"
         }
-      }, (isAdmin || roles.includes("issuer")) && /*#__PURE__*/React.createElement("button", {
+      }, (isAdmin || roles.includes("issuer")) && (cg.orders.some(o => o.onHold) ? /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: "10.5px",
+          fontWeight: "700",
+          color: "#fca5a5",
+          background: "#2e0a0a",
+          border: "1px solid #7f1d1d",
+          borderRadius: "5px",
+          padding: "2px 8px",
+          whiteSpace: "nowrap"
+        }
+      }, "🔒 Release hold to stage") : /*#__PURE__*/React.createElement("button", {
         onClick: async () => {
           setSaving(true);
           try {
@@ -27195,7 +27206,7 @@ function OrdersTab({
           cursor: "pointer",
           whiteSpace: "nowrap"
         }
-      }, "📦 Stage to Transport"), renderDirectHoldControls({
+      }, "📦 Stage to Transport")), renderDirectHoldControls({
         cg: {
           ...cg,
           key: cg.partyName + "::" + (cg.route || "") + "::" + (cg.transport || "") + (cg.siteDelivery ? "::site::" + normalize(cg.siteLabel || "") : "")
@@ -27209,7 +27220,18 @@ function OrdersTab({
         releaseHold,
         directHoldPicker,
         setDirectHoldPicker
-      }), canDispatch && renderCustomerDispatchButton({
+      }), canDispatch && (cg.orders.some(o => o.onHold) ? /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: "10.5px",
+          fontWeight: "700",
+          color: "#fca5a5",
+          background: "#2e0a0a",
+          border: "1px solid #7f1d1d",
+          borderRadius: "5px",
+          padding: "2px 8px",
+          whiteSpace: "nowrap"
+        }
+      }, "🔒 Release hold to dispatch") : renderCustomerDispatchButton({
         sectionKey: cg.partyName + "::" + (cg.route || "") + "::" + (cg.transport || ""),
         cg,
         prompt: customerDispatchPrompt,
@@ -27219,7 +27241,7 @@ function OrdersTab({
         nextDispatchDayOffset,
         isSaturday,
         saving
-      }))), renderDirectHoldPicker({
+      })))), renderDirectHoldPicker({
         cg: {
           ...cg,
           key: cg.partyName + "::" + (cg.route || "") + "::" + (cg.transport || "") + (cg.siteDelivery ? "::site::" + normalize(cg.siteLabel || "") : "")
