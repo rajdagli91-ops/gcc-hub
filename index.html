@@ -20901,6 +20901,47 @@ function renderCustomerDispatchButton(p) {
   ]);
 }
 
+function renderCustomersNeedingSetup(p) {
+  if (!p.customersNeedingSetup.length) return null;
+  return React.createElement("div", {
+    style: { background: "#1a0500", border: "1px solid #dc2626", borderRadius: "8px", padding: "10px 14px", marginBottom: "12px" }
+  }, [
+    React.createElement("div", {
+      key: "h",
+      style: { fontSize: "12.5px", fontWeight: "700", color: "#fca5a5", marginBottom: "6px" }
+    }, "\u26A0 " + p.customersNeedingSetup.length + " customer" + (p.customersNeedingSetup.length !== 1 ? "s" : "") + " with orders but no route/transport set up"),
+    React.createElement("div", {
+      key: "sub",
+      style: { fontSize: "11px", color: "#f87171", marginBottom: "8px" }
+    }, "Click a name to fill it into the form below, then set their route/transport."),
+    React.createElement("div", {
+      key: "list",
+      style: { display: "flex", flexWrap: "wrap", gap: "6px" }
+    }, p.customersNeedingSetup.map(function(name, i) {
+      return React.createElement("button", {
+        key: i,
+        onClick: function() {
+          var normName = p.normalize(name);
+          var existingKey = Object.keys(p.customerMap).find(function(k) { return p.normalize(p.customerMap[k].customer || "") === normName; });
+          if (existingKey) {
+            p.setEditingCustomer(existingKey);
+            p.setCustForm({
+              customer: p.customerMap[existingKey].customer,
+              transport: p.customerMap[existingKey].transport || "",
+              route: p.customerMap[existingKey].route || "",
+              isDirect: p.customerMap[existingKey].isDirect || false
+            });
+          } else {
+            p.setEditingCustomer(null);
+            p.setCustForm({ customer: name, transport: "", route: "", isDirect: false });
+          }
+        },
+        style: { background: "#2e0a0a", border: "1px solid #7f1d1d", borderRadius: "5px", padding: "3px 9px", color: "#fca5a5", fontSize: "11px", fontWeight: "600", cursor: "pointer" }
+      }, name);
+    }))
+  ]);
+}
+
 function OrdersTab({
   role,
   roles,
@@ -20915,6 +20956,25 @@ function OrdersTab({
   const canSetup = isAdmin || roles.includes("issuer") || hp("orders_import");
   const [orders, setOrders] = useState([]);
   const [customerMap, setCustomerMap] = useState({});
+  // Customers with active (not-yet-dispatched) orders but no transport/route configured yet —
+  // shown as a persistent checklist in Setup Routes, so this doesn't depend on catching the
+  // one-time import notification. Covers newly imported customers AND any customer whose setup
+  // was just deleted, since both cases leave the same "no route/transport on file" signature.
+  const customersNeedingSetup = useMemo(() => {
+    const seen = new Set();
+    const result = [];
+    orders.forEach(o => {
+      if (o.status === "Dispatched") return;
+      const key = normalize(o.partyName || "");
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      const entry = customerMap[key];
+      if (!entry || !entry.route && !entry.transport) {
+        result.push(o.partyName);
+      }
+    });
+    return result.sort((a, b) => a.localeCompare(b));
+  }, [orders, customerMap]);
   const [routes, setRoutes] = useState([]);
   const [extraTransporters, setExtraTransporters] = useState([]); // transporters added manually (e.g. via Site Delivery) not yet used by any customer
   // Normalize key for transporter comparison — strips dots, spaces, lowercases
@@ -21686,11 +21746,14 @@ function OrdersTab({
     };
     delete newMap[key];
     const routeSet = new Set(Object.values(newMap).map(c => c.route).filter(Boolean));
-    await C("settings").doc("customerTransport").set({
-      map: newMap,
+    // A merge-set with this key simply omitted from the new map object does NOT delete it —
+    // Firestore's merge only adds/updates fields present in the new data, it never removes a
+    // field just because it's absent, so the old customer would silently survive under
+    // map.<key> even though "Removed" showed. Explicitly targeting that field path with
+    // FieldValue.delete() is the only way to actually remove a specific key from a map field.
+    await C("settings").doc("customerTransport").update({
+      [`map.${key}`]: firebase.firestore.FieldValue.delete(),
       routes: Array.from(routeSet).sort()
-    }, {
-      merge: true
     });
     showToast("Removed", "error");
   };
@@ -23803,7 +23866,13 @@ function OrdersTab({
       color: "#c4b5fd",
       marginBottom: "12px"
     }
-  }, "⚙️ Customer Transport & Route Management"), seqWarning && /*#__PURE__*/React.createElement("div", {
+  }, "⚙️ Customer Transport & Route Management"), renderCustomersNeedingSetup({
+    customersNeedingSetup,
+    customerMap,
+    normalize,
+    setEditingCustomer,
+    setCustForm
+  }), seqWarning && /*#__PURE__*/React.createElement("div", {
     style: {
       background: "#1a0500",
       border: "1px solid #dc2626",
