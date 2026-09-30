@@ -20907,7 +20907,8 @@ function OrdersTab({
   user,
   showToast,
   isAdmin,
-  hp
+  hp,
+  allRoles
 }) {
   const canImport = isAdmin || roles.includes("issuer") || roles.includes("ho") || hp("orders_import");
   const canDispatch = isAdmin || roles.includes("issuer") || hp("orders_dispatch"); // HO excluded
@@ -21055,6 +21056,7 @@ function OrdersTab({
       updCount = 0;
     const alreadyDispatched = []; // vouchers that were fully dispatched — warn team
     const unknownItemsFound = {}; // local accumulator — don't use state inside async loop
+    const newCustomersFound = {}; // customers with no transport/route on file yet — same reasoning
     const importOps = [];
     for (const [key, order] of Object.entries(sanitisedMap)) {
       const existing = findExistingOrder(key, order);
@@ -21138,6 +21140,15 @@ function OrdersTab({
         // them should come in already on hold too — otherwise a held order quietly disappearing
         // from Tally (e.g. cancelled/replaced) would let a fresh order for the same customer slip
         // through unheld, even though whatever caused the hold was never actually resolved.
+        // A customer with no transport/route info on file yet means dispatch has nowhere to
+        // send this order — flag it so HO can set that up, the same way a new product gets
+        // flagged for missing pack/size info.
+        const custMasterInfo = customerMap[normalize(order.partyName)];
+        if (!custMasterInfo || !custMasterInfo.route && !custMasterInfo.transport) {
+          if (!newCustomersFound[order.partyName]) {
+            newCustomersFound[order.partyName] = true;
+          }
+        }
         const custHoldInfo = customerMap[normalize(order.partyName)];
         const inheritHold = custHoldInfo && custHoldInfo.onHold;
         importOps.push(batch => batch.set(docRef, {
@@ -21160,6 +21171,29 @@ function OrdersTab({
       setNewItemsPrompt({
         items: Object.keys(unknownItemsFound)
       });
+    }
+    // The in-screen prompt above only helps if someone is actually watching when the import
+    // runs — which won't be true for an unattended/automated import. So also notify every HO
+    // user directly, so a new customer needing transport/route setup or a new product needing
+    // pack/size setup gets caught and actioned even when nobody was at the screen at the time.
+    if (allRoles && (Object.keys(unknownItemsFound).length > 0 || Object.keys(newCustomersFound).length > 0)) {
+      const hoList = Object.keys(allRoles).filter(e => (allRoles[e] || []).includes("ho"));
+      const newItemNames = Object.keys(unknownItemsFound);
+      const newCustNames = Object.keys(newCustomersFound);
+      const parts = [];
+      if (newCustNames.length) parts.push(`${newCustNames.length} new customer(s) need transport/route set up: ${newCustNames.slice(0, 3).join(", ")}${newCustNames.length > 3 ? "…" : ""}`);
+      if (newItemNames.length) parts.push(`${newItemNames.length} new product(s) need pack/size set up: ${newItemNames.slice(0, 3).join(", ")}${newItemNames.length > 3 ? "…" : ""}`);
+      const msg = "Tally import found: " + parts.join(" — ");
+      await Promise.all(hoList.map(hoEmail => C("notifications").add({
+        type: "import_needs_setup",
+        msg,
+        newCustomers: newCustNames,
+        newItems: newItemNames,
+        assignedTo: hoEmail,
+        date: today(),
+        read: false,
+        _createdAt: ts()
+      })));
     }
     // Record when this import happened so the team can see how fresh the Pending Orders data is
     try {
@@ -39223,9 +39257,9 @@ function MainApp({
     }
   }, "No new notifications") : notifications.map(n => {
     // Support both old format (title/message/assignedTo) and new format (msg/for)
-    const heading = n.title || n.msg || (n.type === "reminder" ? "⚠ Reminder" : n.type === "complaint_assigned" ? "📋 Complaint Assigned" : n.type === "complaint_new" ? "⚠ New Complaint" : n.type === "field_visit_done" ? "✅ Field Visit Done" : n.type === "sample_dispatch" ? "📦 Sample to Dispatch" : n.type === "sample_dispatched" ? "📦 Sample Dispatched" : n.type === "enquiry_assigned" ? "📞 Enquiry Assigned" : n.type === "enquiry_new" ? "📞 New Enquiry" : n.type === "enquiry_update" ? "📞 Enquiry Updated" : n.type === "task_assigned" ? "📋 Task Assigned" : n.type === "rd_assigned" ? "🧪 R&D Assigned" : n.type === "rd_new" ? "🧪 R&D Project" : n.type === "complaint_new" ? "🔴 New Complaint" : "Notification");
+    const heading = n.title || n.msg || (n.type === "reminder" ? "⚠ Reminder" : n.type === "complaint_assigned" ? "📋 Complaint Assigned" : n.type === "complaint_new" ? "⚠ New Complaint" : n.type === "field_visit_done" ? "✅ Field Visit Done" : n.type === "sample_dispatch" ? "📦 Sample to Dispatch" : n.type === "sample_dispatched" ? "📦 Sample Dispatched" : n.type === "enquiry_assigned" ? "📞 Enquiry Assigned" : n.type === "enquiry_new" ? "📞 New Enquiry" : n.type === "enquiry_update" ? "📞 Enquiry Updated" : n.type === "task_assigned" ? "📋 Task Assigned" : n.type === "rd_assigned" ? "🧪 R&D Assigned" : n.type === "rd_new" ? "🧪 R&D Project" : n.type === "complaint_new" ? "🔴 New Complaint" : n.type === "import_needs_setup" ? "🆕 New Customer/Product Needs Setup" : "Notification");
     const sub = n.message || (n.title && n.msg ? n.msg : null) || (n.customer ? `Customer: ${n.customer}` : "");
-    const icon = n.type === "reminder" ? "⏰" : n.type === "complaint_assigned" ? "🔴" : n.type === "complaint_new" ? "🔴" : n.type === "field_visit_done" ? "✅" : n.type === "sample_dispatch" ? "📦" : n.type === "sample_dispatched" ? "📦" : n.type === "enquiry_assigned" ? "📞" : n.type === "enquiry_new" ? "📞" : n.type === "enquiry_update" ? "📞" : n.type === "task_assigned" ? "📋" : n.type === "task_reassigned" ? "📋" : n.type === "rd_assigned" ? "🧪" : n.type === "rd_new" ? "🧪" : "🔔";
+    const icon = n.type === "reminder" ? "⏰" : n.type === "complaint_assigned" ? "🔴" : n.type === "complaint_new" ? "🔴" : n.type === "field_visit_done" ? "✅" : n.type === "sample_dispatch" ? "📦" : n.type === "sample_dispatched" ? "📦" : n.type === "enquiry_assigned" ? "📞" : n.type === "enquiry_new" ? "📞" : n.type === "enquiry_update" ? "📞" : n.type === "task_assigned" ? "📋" : n.type === "task_reassigned" ? "📋" : n.type === "rd_assigned" ? "🧪" : n.type === "rd_new" ? "🧪" : n.type === "import_needs_setup" ? "🆕" : "🔔";
     const when = n.createdAt ? new Date(n.createdAt).toLocaleDateString("en-IN", {
       day: "2-digit",
       month: "short"
@@ -40160,7 +40194,8 @@ function MainApp({
     user: user,
     showToast: showToast,
     isAdmin: isAdmin,
-    hp: hp
+    hp: hp,
+    allRoles: allRoles
   })), tab === "stock" && /*#__PURE__*/React.createElement(StockTab, {
     role: role,
     roles: roles,
