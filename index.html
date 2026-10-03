@@ -26178,14 +26178,17 @@ function OrdersTab({
   }, "🖨 Print")))), (() => {
     let totalCartons = 0,
       totalLoose = 0;
+    const volTotals = {};
     filteredToday.forEach(g => g.items.forEach(i => {
       const ct = calcCartons(i.name, i.qty);
       if (ct) {
         totalCartons += ct.cartons;
         totalLoose += ct.loose;
       }
+      const v = calcVolume(i.name, i.qty);
+      if (v) volTotals[v.unit] = (volTotals[v.unit] || 0) + v.vol;
     }));
-    return (totalCartons > 0 || totalLoose > 0) && /*#__PURE__*/React.createElement("div", {
+    return (totalCartons > 0 || totalLoose > 0 || Object.keys(volTotals).length > 0) && /*#__PURE__*/React.createElement("div", {
       style: {
         background: "#060d1a",
         border: "1px solid #7c3aed40",
@@ -26215,7 +26218,14 @@ function OrdersTab({
         fontWeight: "700",
         color: "#c4b5fd"
       }
-    }, totalLoose, " loose tins"));
+    }, totalLoose, " loose tins"), Object.entries(volTotals).map(([u, v]) => /*#__PURE__*/React.createElement("span", {
+      key: u,
+      style: {
+        fontSize: "13px",
+        fontWeight: "700",
+        color: "#38bdf8"
+      }
+    }, v.toFixed(2), " ", u)));
   })(), filteredToday.length === 0 ? /*#__PURE__*/React.createElement("div", {
     style: {
       textAlign: "center",
@@ -26261,7 +26271,28 @@ function OrdersTab({
         color: "#475569",
         fontWeight: "700"
       }
-    }, "(", group.isDirect ? todayDirectGroups.length : todayTransportGroups.length, ")"), !group.isDirect && canDispatch && renderDispatchAllRouteButton({
+    }, "(", group.isDirect ? todayDirectGroups.length : todayTransportGroups.length, ")"), (() => {
+      let sCartons = 0,
+        sLoose = 0;
+      const sVol = {};
+      (group.isDirect ? todayDirectGroups : todayTransportGroups).forEach(g => g.items.forEach(i => {
+        const ct = calcCartons(i.name, i.qty);
+        if (ct) {
+          sCartons += ct.cartons;
+          sLoose += ct.loose;
+        }
+        const v = calcVolume(i.name, i.qty);
+        if (v) sVol[v.unit] = (sVol[v.unit] || 0) + v.vol;
+      }));
+      if (!sCartons && !sLoose && !Object.keys(sVol).length) return null;
+      return /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: "10.5px",
+          color: "#64748b",
+          fontWeight: "600"
+        }
+      }, [sCartons > 0 ? sCartons + " ctn" : null, sLoose > 0 ? sLoose + " loose" : null, ...Object.entries(sVol).map(([u, v]) => v.toFixed(1) + " " + u)].filter(Boolean).join(" · "));
+    })(), !group.isDirect && canDispatch && renderDispatchAllRouteButton({
       sectionKey: "transporter",
       groups: todayTransportGroups,
       prompt: dispatchAllRoutePrompt,
@@ -26292,7 +26323,30 @@ function OrdersTab({
         color: "#475569",
         fontWeight: "700"
       }
-    }, "(", routeCount, ")"), canDispatch && renderDispatchAllRouteButton({
+    }, "(", routeCount, ")"), (() => {
+      // Same bifurcation as the overall total at the top, but scoped to just this one route's
+      // groups — matching how Reports breaks totals down per route rather than one grand total.
+      let rCartons = 0,
+        rLoose = 0;
+      const rVol = {};
+      todayDirectGroups.filter(g => g.route === group.route).forEach(g => g.items.forEach(i => {
+        const ct = calcCartons(i.name, i.qty);
+        if (ct) {
+          rCartons += ct.cartons;
+          rLoose += ct.loose;
+        }
+        const v = calcVolume(i.name, i.qty);
+        if (v) rVol[v.unit] = (rVol[v.unit] || 0) + v.vol;
+      }));
+      if (!rCartons && !rLoose && !Object.keys(rVol).length) return null;
+      return /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: "10px",
+          color: "#64748b",
+          fontWeight: "600"
+        }
+      }, [rCartons > 0 ? rCartons + " ctn" : null, rLoose > 0 ? rLoose + " loose" : null, ...Object.entries(rVol).map(([u, v]) => v.toFixed(1) + " " + u)].filter(Boolean).join(" · "));
+    })(), canDispatch && renderDispatchAllRouteButton({
       sectionKey: "direct::" + group.route,
       groups: todayDirectGroups.filter(g => g.route === group.route),
       prompt: dispatchAllRoutePrompt,
