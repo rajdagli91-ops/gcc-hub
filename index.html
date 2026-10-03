@@ -20942,6 +20942,65 @@ function renderCustomersNeedingSetup(p) {
   ]);
 }
 
+function renderNeedsSetupCustomerForm(p) {
+  if (!p.custForm.customer || !p.relevantCustomer) return null;
+  return React.createElement("div", {
+    style: { background: "#0a1520", border: "1px solid #1e3a5f", borderRadius: "8px", padding: "12px 14px", marginTop: "10px" }
+  }, [
+    React.createElement("div", {
+      key: "h",
+      style: { fontSize: "11.5px", fontWeight: "700", color: "#93c5fd", marginBottom: "8px" }
+    }, (p.editingCustomer ? "\u270F\uFE0F Set up: " : "+ Set up: ") + p.custForm.customer),
+    React.createElement("div", {
+      key: "fields",
+      style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginBottom: "8px" }
+    }, [
+      React.createElement("div", { key: "route" }, [
+        React.createElement("div", { key: "l", style: { fontSize: "10px", color: "#64748b", marginBottom: "3px" } }, "ROUTE / AREA *"),
+        React.createElement("input", {
+          key: "i",
+          value: p.custForm.route,
+          onChange: e => p.setCustForm(f => ({ ...f, route: e.target.value })),
+          placeholder: "e.g. BHIWANDI",
+          style: { width: "100%", background: "#060d1a", border: "1px solid #1e293b", borderRadius: "5px", padding: "6px 8px", color: "#e2e8f0", fontSize: "12px" }
+        })
+      ]),
+      React.createElement("div", { key: "transport" }, [
+        React.createElement("div", { key: "l", style: { fontSize: "10px", color: "#64748b", marginBottom: "3px" } }, "TRANSPORT COMPANY"),
+        React.createElement("input", {
+          key: "i",
+          value: p.custForm.transport,
+          onChange: e => p.setCustForm(f => ({ ...f, transport: e.target.value })),
+          placeholder: "Select or type...",
+          disabled: p.custForm.isDirect,
+          style: { width: "100%", background: "#060d1a", border: "1px solid #1e293b", borderRadius: "5px", padding: "6px 8px", color: "#e2e8f0", fontSize: "12px", opacity: p.custForm.isDirect ? 0.5 : 1 }
+        })
+      ])
+    ]),
+    React.createElement("div", {
+      key: "actions",
+      style: { display: "flex", gap: "8px", alignItems: "center" }
+    }, [
+      React.createElement("button", {
+        key: "direct",
+        onClick: () => p.setCustForm(f => ({ ...f, isDirect: !f.isDirect })),
+        style: { background: p.custForm.isDirect ? "#052e16" : "#0a1520", border: "1px solid " + (p.custForm.isDirect ? "#166534" : "#1e293b"), borderRadius: "5px", padding: "6px 10px", color: p.custForm.isDirect ? "#4ade80" : "#64748b", fontSize: "11px", fontWeight: "700", cursor: "pointer" }
+      }, "\uD83D\uDE9A Direct"),
+      React.createElement("button", {
+        key: "save",
+        onClick: p.saveCustomer,
+        disabled: p.custSaving || !p.custForm.route.trim(),
+        style: { background: "#052e16", border: "1px solid #166534", borderRadius: "5px", padding: "6px 14px", color: "#4ade80", fontSize: "11.5px", fontWeight: "700", cursor: "pointer" }
+      }, p.custSaving ? "Saving\u2026" : (p.editingCustomer ? "\u2713 Update" : "+ Add")),
+      React.createElement("button", {
+        key: "cancel",
+        onClick: () => { p.setEditingCustomer(null); p.setCustForm({ customer: "", transport: "", route: "", isDirect: false }); },
+        style: { background: "none", border: "1px solid #334155", borderRadius: "5px", padding: "6px 10px", color: "#64748b", fontSize: "11px", cursor: "pointer" }
+      }, "Cancel")
+    ])
+  ]);
+}
+
 function OrdersTab({
   role,
   roles,
@@ -24496,6 +24555,17 @@ function OrdersTab({
     normalize,
     setEditingCustomer,
     setCustForm
+  }), renderNeedsSetupCustomerForm({
+    custForm,
+    setCustForm,
+    editingCustomer,
+    setEditingCustomer,
+    saveCustomer,
+    custSaving,
+    // custForm is shared with Setup Routes — only show this form here if it's actually
+    // currently showing one of THIS tab's own customers, not a stale edit left over from
+    // someone having been in Setup Routes earlier in the session.
+    relevantCustomer: customersNeedingSetup.some(n => normalize(n) === normalize(custForm.customer || ""))
   }), !customersNeedingSetup.length && !productsNeedingSetup.length && /*#__PURE__*/React.createElement("div", {
     style: {
       color: "#4ade80",
@@ -24524,7 +24594,31 @@ function OrdersTab({
       color: "#f87171",
       marginBottom: "8px"
     }
-  }, "Add these in Stock → Catalogue, with their pack size, so quantities and cartons calculate correctly."), /*#__PURE__*/React.createElement("div", {
+  }, "Set their pack size and tins/carton so quantities and cartons calculate correctly."), /*#__PURE__*/React.createElement("button", {
+    onClick: () => {
+      // Reuses the exact same popup the import flow shows for unknown items — no need for a
+      // separate form, this is the proven, already-working one, just triggered from here too.
+      setNewItemForms(Object.fromEntries(productsNeedingSetup.map(name => [name, {
+        size: "",
+        tpc: "",
+        packType: "single"
+      }])));
+      setNewItemsPrompt({
+        items: productsNeedingSetup
+      });
+    },
+    style: {
+      background: "#052e16",
+      border: "1px solid #166534",
+      borderRadius: "6px",
+      padding: "6px 12px",
+      color: "#4ade80",
+      fontSize: "11.5px",
+      fontWeight: "700",
+      cursor: "pointer",
+      marginBottom: "8px"
+    }
+  }, "+ Set Up Now"), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       flexWrap: "wrap",
