@@ -25103,11 +25103,12 @@ function OrdersTab({
       return /*#__PURE__*/React.createElement("button", {
         onClick: e => {
           e.stopPropagation();
+          // holdOrder applies to every one of this customer's current orders once submitted,
+          // not just the one clicked — so there's no need to expand the card and make the person
+          // go find each order individually, regardless of how many orders they have.
           setExpandedCustomer(group.partyName);
-          if (eligible.length === 1) {
-            setHoldReasonText("");
-            setHoldReasonEdit(eligible[0].id);
-          }
+          setHoldReasonText("");
+          setHoldReasonEdit(eligible[0].id);
         },
         style: {
           background: "#1a0505",
@@ -25120,7 +25121,7 @@ function OrdersTab({
           cursor: "pointer",
           whiteSpace: "nowrap"
         }
-      }, "🔒 Hold");
+      }, eligible.length > 1 ? "🔒 Hold All" : "🔒 Hold");
     })(), group.orders.some(o => o.onHold) && /*#__PURE__*/React.createElement("span", {
       style: {
         background: "#450a0a",
@@ -25132,7 +25133,24 @@ function OrdersTab({
         padding: "2px 8px",
         whiteSpace: "nowrap"
       }
-    }, "🔒 ", group.orders.filter(o => o.onHold).length, " ON HOLD"), selectedCount > 0 && /*#__PURE__*/React.createElement("span", {
+    }, "🔒 ", group.orders.filter(o => o.onHold).length, " ON HOLD"), canManageHold && group.orders.some(o => o.onHold) && /*#__PURE__*/React.createElement("button", {
+      onClick: e => {
+        e.stopPropagation();
+        const firstHeld = group.orders.find(o => o.onHold);
+        if (firstHeld) releaseHold(firstHeld.id, group.partyName);
+      },
+      style: {
+        background: "none",
+        border: "1px solid #16653450",
+        borderRadius: "5px",
+        color: "#4ade80",
+        fontSize: "10.5px",
+        fontWeight: "700",
+        padding: "2px 9px",
+        cursor: "pointer",
+        whiteSpace: "nowrap"
+      }
+    }, "🔓 Release All"), selectedCount > 0 && /*#__PURE__*/React.createElement("span", {
       style: {
         fontSize: "10px",
         color: "#4ade80",
