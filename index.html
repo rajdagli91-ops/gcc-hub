@@ -21001,6 +21001,41 @@ function renderNeedsSetupCustomerForm(p) {
   ]);
 }
 
+function renderConfirmDispatchedButton(p) {
+  var open = p.prompt === p.sectionKey;
+  if (!open) {
+    return React.createElement("button", {
+      onClick: function() { p.setPrompt(p.sectionKey); },
+      disabled: p.disabled,
+      style: { background: "#052e16", border: "1px solid #166534", borderRadius: "6px", padding: "4px 9px", color: "#4ade80", fontWeight: "700", fontSize: "11px", cursor: "pointer", whiteSpace: "nowrap" }
+    }, p.label || "\u2713 Dispatched");
+  }
+  var tomorrowDate = new Date(Date.now() + p.nextDispatchDayOffset * 86400000).toISOString().slice(0, 10);
+  var btnStyle = { background: "#1e3a5f", border: "1px solid #475569", borderRadius: "5px", padding: "4px 8px", color: "#f1f5f9", fontWeight: "700", fontSize: "10.5px", cursor: "pointer", whiteSpace: "nowrap" };
+  return React.createElement("div", {
+    style: { display: "flex", gap: "4px", alignItems: "center", background: "#0a1520", border: "1px solid #1e3a5f", borderRadius: "6px", padding: "3px 6px" }
+  }, [
+    React.createElement("span", { key: "l", style: { fontSize: "10px", color: "#93c5fd", fontWeight: "700" } }, "Dispatched on?"),
+    React.createElement("button", {
+      key: "today",
+      onClick: function() { p.setPrompt(null); p.onConfirm(p.todayStr); },
+      disabled: p.disabled,
+      style: btnStyle
+    }, "Today (" + p.todayStr.slice(5) + ")"),
+    React.createElement("button", {
+      key: "tom",
+      onClick: function() { p.setPrompt(null); p.onConfirm(tomorrowDate); },
+      disabled: p.disabled,
+      style: btnStyle
+    }, (p.isSaturday ? "Monday" : "Tomorrow") + " (" + tomorrowDate.slice(5) + ")"),
+    React.createElement("button", {
+      key: "cancel",
+      onClick: function() { p.setPrompt(null); },
+      style: { background: "none", border: "1px solid #334155", borderRadius: "5px", padding: "4px 7px", color: "#64748b", fontSize: "10.5px", cursor: "pointer" }
+    }, "\u2715")
+  ]);
+}
+
 function OrdersTab({
   role,
   roles,
@@ -21624,6 +21659,7 @@ function OrdersTab({
   const [newItemForms, setNewItemForms] = useState({});
   const [confirmingDispatch, setConfirmingDispatch] = useState(null);
   const [dispatchAllRoutePrompt, setDispatchAllRoutePrompt] = useState(null); // which section's Today/Tomorrow popup is open, in Dispatch Today
+  const [confirmDatePrompt, setConfirmDatePrompt] = useState(null); // which customer card's "Dispatched on?" picker is open, in Dispatch Today
   const [customerDispatchPrompt, setCustomerDispatchPrompt] = useState(null); // which customer's Today/Tomorrow popup is open, in Direct Prep
   const runCustomerDirectDispatch = async (cg, chosenDateStr) => {
     setSaving(true);
@@ -26129,20 +26165,17 @@ function OrdersTab({
   }, [...new Set(todayDispatched.filter(g => g.isDirect).map(g => g.route).filter(Boolean))].sort().map(r => /*#__PURE__*/React.createElement("option", {
     key: "d_" + r,
     value: "direct:" + r
-  }, "🚚 ", r))))), filteredToday.length > 0 && /*#__PURE__*/React.createElement(React.Fragment, null, filteredToday.some(g => g.items.some(i => !i.confirmed)) && canDispatch && /*#__PURE__*/React.createElement("button", {
-    onClick: confirmAllDispatches,
+  }, "🚚 ", r))))), filteredToday.length > 0 && /*#__PURE__*/React.createElement(React.Fragment, null, filteredToday.some(g => g.items.some(i => !i.confirmed)) && canDispatch && renderConfirmDispatchedButton({
+    sectionKey: "__all__",
+    label: saving ? "…" : "✓ Confirm All Dispatched",
+    prompt: confirmDatePrompt,
+    setPrompt: setConfirmDatePrompt,
+    onConfirm: dateStr => confirmAllDispatches(filteredToday, dateStr),
     disabled: saving,
-    style: {
-      background: "#052e16",
-      border: "1px solid #166534",
-      borderRadius: "7px",
-      padding: "6px 12px",
-      color: "#4ade80",
-      fontWeight: "700",
-      fontSize: "12px",
-      cursor: "pointer"
-    }
-  }, saving ? "…" : "✓ Confirm All Dispatched"), /*#__PURE__*/React.createElement("button", {
+    todayStr,
+    nextDispatchDayOffset,
+    isSaturday
+  }), /*#__PURE__*/React.createElement("button", {
     onClick: () => {
       let toPrint = filteredToday;
       let label = "All Routes";
@@ -26424,21 +26457,16 @@ function OrdersTab({
         borderRadius: "99px",
         padding: "2px 8px"
       }
-    }, pendingConfirm.length, " awaiting confirm"), pendingConfirm.length > 0 && canDispatch && /*#__PURE__*/React.createElement("button", {
-      onClick: () => finaliseDispatch(group.partyName, pendingConfirm),
+    }, pendingConfirm.length, " awaiting confirm"), pendingConfirm.length > 0 && canDispatch && renderConfirmDispatchedButton({
+      sectionKey: group.partyName + "::" + (group.route || "") + "::" + (group.transport || "") + (group.siteDelivery ? "::site::" + normalize(group.siteLabel || "") : ""),
+      prompt: confirmDatePrompt,
+      setPrompt: setConfirmDatePrompt,
+      onConfirm: dateStr => finaliseDispatch(group.partyName, pendingConfirm, dateStr),
       disabled: confirmingDispatch === group.partyName,
-      style: {
-        background: "#052e16",
-        border: "1px solid #166534",
-        borderRadius: "6px",
-        padding: "4px 9px",
-        color: "#4ade80",
-        fontWeight: "700",
-        fontSize: "11px",
-        cursor: "pointer",
-        whiteSpace: "nowrap"
-      }
-    }, confirmingDispatch === group.partyName ? "…" : "✓ Dispatched"), pendingConfirm.length > 0 && canDispatch && !group.isDirect && /*#__PURE__*/React.createElement("button", {
+      todayStr,
+      nextDispatchDayOffset,
+      isSaturday
+    }), pendingConfirm.length > 0 && canDispatch && !group.isDirect && /*#__PURE__*/React.createElement("button", {
       onClick: () => revertWholeOrder(group, true),
       disabled: !!reverting,
       style: {
@@ -27089,7 +27117,68 @@ function OrdersTab({
       hour: "2-digit",
       minute: "2-digit"
     }) : ""))))));
-    return sections.map((section, si) => /*#__PURE__*/React.createElement("div", {
+    // Kg / litre (plus cartons and loose tins) totals, so each route can be read straight off
+    // the screen here instead of having to open Reports to get the same bifurcation.
+    const totalsOf = groups => {
+      let cartons = 0,
+        loose = 0;
+      const vol = {};
+      groups.forEach(g => g.items.forEach(i => {
+        const ct = calcCartons(i.name, i.qty);
+        if (ct) {
+          cartons += ct.cartons;
+          loose += ct.loose;
+        }
+        const v = calcVolume(i.name, i.qty);
+        if (v) vol[v.unit] = (vol[v.unit] || 0) + v.vol;
+      }));
+      return {
+        cartons,
+        loose,
+        vol
+      };
+    };
+    const totalsParts = t => [...Object.entries(t.vol).map(([u, v]) => v.toFixed(1) + " " + u), t.cartons > 0 ? t.cartons + " ctn" : null, t.loose > 0 ? t.loose + " loose" : null].filter(Boolean);
+    const grandTotals = totalsOf(filteredDispatched48h);
+    const grandParts = totalsParts(grandTotals);
+    return /*#__PURE__*/React.createElement(React.Fragment, null, grandParts.length > 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        background: "#060d1a",
+        border: "1px solid #3b82f640",
+        borderRadius: "8px",
+        padding: "8px 14px",
+        marginBottom: "10px",
+        display: "flex",
+        gap: "16px",
+        flexWrap: "wrap",
+        alignItems: "center"
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: "11.5px",
+        color: "#64748b",
+        fontWeight: "700"
+      }
+    }, "Total:"), Object.entries(grandTotals.vol).map(([u, v]) => /*#__PURE__*/React.createElement("span", {
+      key: u,
+      style: {
+        fontSize: "13px",
+        fontWeight: "700",
+        color: "#38bdf8"
+      }
+    }, v.toFixed(2), " ", u)), grandTotals.cartons > 0 && /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: "13px",
+        fontWeight: "700",
+        color: "#a78bfa"
+      }
+    }, grandTotals.cartons, " cartons"), grandTotals.loose > 0 && /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: "13px",
+        fontWeight: "700",
+        color: "#c4b5fd"
+      }
+    }, grandTotals.loose, " loose tins")), sections.map((section, si) => /*#__PURE__*/React.createElement("div", {
       key: section.label
     }, /*#__PURE__*/React.createElement("div", {
       style: {
@@ -27113,7 +27202,16 @@ function OrdersTab({
         color: "#475569",
         fontWeight: "700"
       }
-    }, "(", section.groups.length, ")")), section.groups.map((group, gi) => renderCard(group, gi))));
+    }, "(", section.groups.length, ")"), (() => {
+      const parts = totalsParts(totalsOf(section.groups));
+      return parts.length > 0 && /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: "11.5px",
+          color: "#38bdf8",
+          fontWeight: "700"
+        }
+      }, parts.join(" · "));
+    })()), section.groups.map((group, gi) => renderCard(group, gi)))));
   })()), subTab === "direct_prep" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
