@@ -3529,12 +3529,55 @@ const fileToBase64 = async (file, userEmail, folder, onProgress) => {
     const originalSize = file.size,
       finalSize = uploadFile.size || file.size;
     const path = `complaint_media/${folder || "misc"}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9_.-]/g, "_")}${uploadFile !== file ? ".webm" : ""}`;
+    // Firebase quietly retries a stuck upload for up to 10 minutes before reporting any error,
+    // which looks like a freeze at 0% with no message. Shorten that, and add a watchdog so a
+    // stalled start fails with a readable explanation instead of hanging.
+    try {
+      storage.setMaxUploadRetryTime(30000);
+    } catch (e) {}
     const ref = storage.ref(path);
     const task = ref.put(uploadFile, {
       contentType: uploadFile.type || file.type
     });
+    const friendlyUploadError = err => {
+      const code = err && err.code || "";
+      if (code === "storage/unauthorized") return new Error("Video upload was refused by Firebase Storage rules (storage/unauthorized). The Storage security rules need to allow signed-in users to write to complaint_media/.");
+      if (code === "storage/retry-limit-exceeded") return new Error("Video upload kept failing and gave up (storage/retry-limit-exceeded). This usually means Firebase Storage isn't set up or enabled for this project, or the network is blocking it.");
+      if (code === "storage/bucket-not-found" || code === "storage/project-not-found") return new Error("Firebase Storage bucket not found (" + code + "). Storage may not be set up for this project yet.");
+      if (code === "storage/quota-exceeded") return new Error("Firebase Storage quota exceeded (storage/quota-exceeded).");
+      return new Error("Video upload failed" + (code ? " (" + code + ")" : "") + ": " + (err && err.message || "unknown error"));
+    };
     await new Promise((res, rej) => {
-      task.on("state_changed", snap => onProgress && onProgress("uploading", Math.round(snap.bytesTransferred / snap.totalBytes * 100)), rej, res);
+      let gotBytes = false;
+      let done = false;
+      const startedAt = Date.now();
+      const watchdog = setInterval(() => {
+        if (done) {
+          clearInterval(watchdog);
+          return;
+        }
+        if (!gotBytes && Date.now() - startedAt > 40000) {
+          done = true;
+          clearInterval(watchdog);
+          try {
+            task.cancel();
+          } catch (e) {}
+          rej(new Error("Video upload never started (no data sent in 40 seconds). Firebase Storage is not accepting the upload — most likely Storage isn't set up/enabled for this project, its security rules are blocking it, or the connection is being blocked. Check Firebase Console → Storage."));
+        }
+      }, 2000);
+      task.on("state_changed", snap => {
+        if (snap.bytesTransferred > 0) gotBytes = true;
+        onProgress && onProgress("uploading", Math.round(snap.bytesTransferred / snap.totalBytes * 100));
+      }, err => {
+        if (done) return;
+        done = true;
+        clearInterval(watchdog);
+        rej(friendlyUploadError(err));
+      }, () => {
+        done = true;
+        clearInterval(watchdog);
+        res();
+      });
     });
     const url = await task.snapshot.ref.getDownloadURL();
     return {
@@ -4321,6 +4364,76 @@ function LeakageCard({
     }
   }, "🗑")));
 }
+// Lets HO/admin add more photos or videos to an existing complaint or leakage case at any time,
+// WITHOUT going through a status update. FileAttachment is given an empty list on purpose — that
+// way it shows only the "add" button (no delete buttons on existing evidence) and hands back just
+// the newly uploaded files, which get appended to the case with arrayUnion. arrayUnion only adds
+// to the attachments list and changes nothing else on the case, so it can't overwrite anything
+// else someone edited at the same moment.
+function AddMoreAttachments({
+  collectionName,
+  docId,
+  existingCount,
+  maxTotal,
+  showToast,
+  user
+}) {
+  const [saving, setSaving] = useState(false);
+  const remaining = maxTotal - existingCount;
+  const handleNew = async newFiles => {
+    if (!newFiles || !newFiles.length) return;
+    setSaving(true);
+    try {
+      await C(collectionName).doc(docId).update({
+        attachments: firebase.firestore.FieldValue.arrayUnion(...newFiles),
+        lastAttachmentAddedBy: user.email,
+        lastAttachmentAddedAt: today()
+      });
+      showToast(`${newFiles.length} file${newFiles.length !== 1 ? "s" : ""} added ✓`);
+    } catch (e) {
+      showToast("Couldn't save the file to this case: " + (e.message || e), "error");
+    }
+    setSaving(false);
+  };
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: "10px"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: "10px",
+      fontWeight: "700",
+      color: "#475569",
+      textTransform: "uppercase",
+      letterSpacing: "0.09em",
+      marginBottom: "6px"
+    }
+  }, "➕ Add more photos / videos", /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontWeight: "500",
+      textTransform: "none",
+      letterSpacing: "0",
+      marginLeft: "6px",
+      color: "#334155"
+    }
+  }, "— saved straight to this case, status is not changed")), remaining <= 0 ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: "11px",
+      color: "#64748b"
+    }
+  }, "Attachment limit reached (", maxTotal, " files).") : /*#__PURE__*/React.createElement(FileAttachment, {
+    folder: `${collectionName}/${docId}`,
+    existingFiles: [],
+    onFilesChange: handleNew,
+    maxFiles: remaining
+  }), saving && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: "11px",
+      color: "#93c5fd",
+      marginTop: "4px"
+    }
+  }, "Saving to case…"));
+}
 function LeakageWorkspace({
   leakage,
   role,
@@ -4767,7 +4880,14 @@ function LeakageWorkspace({
     onFilesChange: () => {},
     readOnly: true,
     maxFiles: 8
-  }))), live.adminDecision && /*#__PURE__*/React.createElement("div", {
+  })), (isAdmin || (roles || []).includes("ho")) && /*#__PURE__*/React.createElement(AddMoreAttachments, {
+    collectionName: "leakage_reports",
+    docId: live.id,
+    existingCount: (live.attachments || []).length,
+    maxTotal: 8,
+    showToast,
+    user
+  })), live.adminDecision && /*#__PURE__*/React.createElement("div", {
     style: {
       background: "#0b1220",
       border: "1px solid #1e293b",
@@ -5627,7 +5747,14 @@ function ComplaintWorkspace({
     existingFiles: live.attachments || [],
     onFilesChange: () => {},
     readOnly: true
-  }))), currentRound > 1 && /*#__PURE__*/React.createElement("div", {
+  })), (isAdmin || (roles || []).includes("ho")) && /*#__PURE__*/React.createElement(AddMoreAttachments, {
+    collectionName: "complaints",
+    docId: live.id,
+    existingCount: (live.attachments || []).length,
+    maxTotal: 8,
+    showToast,
+    user
+  })), currentRound > 1 && /*#__PURE__*/React.createElement("div", {
     style: {
       background: "#0b1220",
       border: "1px solid #f59e0b30",
@@ -21329,7 +21456,7 @@ function OrdersTab({
             unknownItemsFound[i.name] = {
               size: guessedSize,
               tpc: "",
-              packType: guessedPack
+              packType: guessedPack === "2-pack" ? "Two Pack" : "Single Pack"
             };
           }
         });
@@ -22629,6 +22756,21 @@ function OrdersTab({
   };
   const seqSortFn = (a, b) => getOrderSeq(a) - getOrderSeq(b) || (a.partyName || "").localeCompare(b.partyName || "");
 
+  // Effective route for a DIRECT order in reports: a customer with no recognised route of their
+  // own that has been pulled into another route's Direct Prep sequence is reported under THAT
+  // route, so Direct Prep and the dispatch lists/reports always agree.
+  const effectiveRoute = o => {
+    if (!o || !o.isDirect) return o ? o.route : "";
+    const hasReal = o.route && directAreas.some(a => normRoute(a) === normRoute(o.route));
+    if (hasReal) return o.route;
+    const np = normalize(o.partyName || "");
+    const dirSeq = deliverySequence.direct || {};
+    for (const a of directAreas) {
+      const m = dirSeq[normalize(a)];
+      if (m && m[np]) return a;
+    }
+    return o.route;
+  };
   const todayDispatchedAll = useMemo(() => {
     const map = {};
     orders.forEach(o => {
@@ -22637,7 +22779,7 @@ function OrdersTab({
           const k = normalize(o.partyName) + "::" + normalize(o.route || "") + "::" + normalize(o.transport || "") + (o.siteDelivery ? "::site::" + normalize(o.siteLabel || "") : "");
           if (!map[k]) map[k] = {
             partyName: o.partyName,
-            route: o.route,
+            route: effectiveRoute(o),
             transport: o.transport,
             isDirect: o.isDirect,
             siteDelivery: o.siteDelivery,
@@ -22660,7 +22802,7 @@ function OrdersTab({
       });
     });
     return Object.values(map).sort(seqSortFn);
-  }, [orders]);
+  }, [orders, deliverySequence, directAreas]);
 
   // Split: unconfirmed → Today's Dispatch; confirmed (48h) → Dispatched tab
   const todayDispatched = useMemo(() => todayDispatchedAll.map(g => ({
@@ -22691,7 +22833,7 @@ function OrdersTab({
         const k = normalize(o.partyName) + "::" + normalize(o.route || "") + "::" + normalize(o.transport || "") + (o.siteDelivery ? "::site::" + normalize(o.siteLabel || "") : "");
         if (!map[k]) map[k] = {
           partyName: o.partyName,
-          route: o.route,
+          route: effectiveRoute(o),
           transport: o.transport,
           isDirect: o.isDirect,
           siteDelivery: o.siteDelivery,
@@ -22713,7 +22855,7 @@ function OrdersTab({
       });
     });
     return Object.values(map).sort(seqSortFn);
-  }, [orders]);
+  }, [orders, deliverySequence, directAreas]);
   const dispatched48hDates = [...new Set(dispatched48h.flatMap(g => g.items.map(i => i.dispatchDate || todayStr)))].sort().reverse();
   const filteredDispatched48h = (() => {
     let res = dispatched48h;
@@ -23669,7 +23811,9 @@ function OrdersTab({
     const f = newItemForms[name] || {
       size: "",
       tpc: "",
-      packType: "single"
+      packType: "Single Pack",
+      unit: "L",
+      category: "Paint (Single)"
     };
     const update = patch => setNewItemForms(prev => ({
       ...prev,
@@ -23732,13 +23876,39 @@ function OrdersTab({
       }),
       placeholder: "e.g. 4"
     })), /*#__PURE__*/React.createElement(Field, {
+      label: "Unit"
+    }, /*#__PURE__*/React.createElement("select", {
+      style: {
+        ...inp,
+        width: "70px"
+      },
+      value: f.unit || "L",
+      onChange: e => update({
+        unit: e.target.value
+      })
+    }, ["L", "Kg", "mL", "g"].map(u => /*#__PURE__*/React.createElement("option", {
+      key: u
+    }, u)))), /*#__PURE__*/React.createElement(Field, {
+      label: "Category"
+    }, /*#__PURE__*/React.createElement("select", {
+      style: {
+        ...inp,
+        width: "140px"
+      },
+      value: f.category || "Paint (Single)",
+      onChange: e => update({
+        category: e.target.value
+      })
+    }, ["Paint (Single)", "Paint (Two Pack)", "Thinner", "KPF", "Car Patch", "VEE-Plast", "NC Putty"].map(c => /*#__PURE__*/React.createElement("option", {
+      key: c
+    }, c)))), /*#__PURE__*/React.createElement(Field, {
       label: "Pack Type"
     }, /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
         gap: "4px"
       }
-    }, [["single", "Single"], ["2-pack", "2-Pack"]].map(([v, l]) => /*#__PURE__*/React.createElement("button", {
+    }, [["Single Pack", "Single"], ["Two Pack", "Two Pack"]].map(([v, l]) => /*#__PURE__*/React.createElement("button", {
       key: v,
       onClick: () => update({
         packType: v
@@ -23784,10 +23954,10 @@ function OrdersTab({
           await C("fg_products").add({
             name,
             size: parseFloat(f.size) || 0,
-            unit: "L",
+            unit: f.unit || "L",
             tinsPerCarton: parseInt(f.tpc) || 0,
-            packType: f.packType || "single",
-            category: "Imported from Order",
+            packType: f.packType || "Single Pack",
+            category: f.category || "Paint (Single)",
             importedAt: today(),
             addedBy: user.email,
             _createdAt: ts()
@@ -24637,7 +24807,9 @@ function OrdersTab({
       setNewItemForms(Object.fromEntries(productsNeedingSetup.map(name => [name, {
         size: "",
         tpc: "",
-        packType: "single"
+        packType: "Single Pack",
+        unit: "L",
+        category: "Paint (Single)"
       }])));
       setNewItemsPrompt({
         items: productsNeedingSetup
@@ -25440,7 +25612,21 @@ function OrdersTab({
         color: order.status === "Partial" ? "#93c5fd" : "#fcd34d",
         fontSize: "10px"
       }
-    }, order.status), order.siteDelivery && /*#__PURE__*/React.createElement("span", {
+    }, order.status), (() => {
+      const dispatchedAny = (order.items || []).some(i => (i.dispatchedQty || 0) > 0 || i.status === "Dispatched");
+      const isPartial = order.status === "Partial" || dispatchedAny;
+      return /*#__PURE__*/React.createElement("span", {
+        style: {
+          background: isPartial ? "#431407" : "#052e16",
+          border: `1px solid ${isPartial ? "#ea580c" : "#16a34a"}`,
+          borderRadius: "5px",
+          padding: "0px 7px",
+          color: isPartial ? "#fdba74" : "#86efac",
+          fontSize: "10px",
+          fontWeight: "800"
+        }
+      }, isPartial ? "◐ PARTIALLY DISPATCHED" : "🆕 NEW ORDER");
+    })(), order.siteDelivery && /*#__PURE__*/React.createElement("span", {
       style: {
         background: "#3b0764",
         border: "1px solid #7c3aed",
@@ -25492,7 +25678,38 @@ function OrdersTab({
         fontWeight: "600",
         cursor: "pointer"
       }
-    }, "🔓 Release Hold"), canManageSiteDelivery && /*#__PURE__*/React.createElement("button", {
+    }, "🔓 Release Hold"), (() => {
+      if (order.onHold || !(canDispatch || isAdmin || roles.includes("issuer"))) return null;
+      const inTSeq = group.isDirect && getTransportSeq(group.partyName, group.transport, group.siteDelivery, group.siteLabel) < 999;
+      if (group.isDirect && !inTSeq) return null;
+      const open = (order.items || []).map((item, idx) => ({
+        item,
+        idx
+      })).filter(x => x.item.balanceQty > 0 && x.item.status !== "Dispatched");
+      if (!open.length) return null;
+      const toStage = open.filter(x => !x.item.stagedForTransport);
+      const allStaged = toStage.length === 0;
+      return /*#__PURE__*/React.createElement("button", {
+        onClick: () => allStaged ? stageItemsForTransport(open.map(x => ({
+          orderId: order.id,
+          itemIdx: x.idx
+        })), false) : stageItemsForTransport(toStage.map(x => ({
+          orderId: order.id,
+          itemIdx: x.idx
+        })), true, group.transport || group.route, false),
+        disabled: stagingSaving,
+        style: {
+          background: "none",
+          border: "1px solid #7c3aed80",
+          borderRadius: "5px",
+          padding: "1px 8px",
+          color: "#c4b5fd",
+          fontSize: "10px",
+          fontWeight: "600",
+          cursor: "pointer"
+        }
+      }, allStaged ? "✓ Staged — Unstage this order" : "📦 Stage this order");
+    })(), canManageSiteDelivery && /*#__PURE__*/React.createElement("button", {
       onClick: () => {
         if (siteDeliveryEdit === order.id) {
           setSiteDeliveryEdit(null);
@@ -30539,7 +30756,8 @@ function FGStockTab({
       }
     }, /*#__PURE__*/React.createElement("button", {
       onClick: () => setEditProduct({
-        ...p
+        ...p,
+        packType: /two|2/i.test(p.packType || "") ? "Two Pack" : "Single Pack"
       }),
       style: {
         background: "none",
