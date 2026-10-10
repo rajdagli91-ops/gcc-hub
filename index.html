@@ -21348,9 +21348,13 @@ function OrdersTab({
     // (by exact key OR by the normalized fallback above) — this is what decides whether an order
     // still in "Pending"/"Partial" should be auto-closed, not just a raw key-string comparison.
     const matchedExistingIds = new Set();
+    const importedByExistingId = {};
     Object.entries(sanitisedMap).forEach(([key, order]) => {
       const m = findExistingOrder(key, order);
-      if (m) matchedExistingIds.add(m.id);
+      if (m) {
+        matchedExistingIds.add(m.id);
+        importedByExistingId[m.id] = order;
+      }
     });
     const pendingInDB = importOrders.filter(o => o.status === "Pending" || o.status === "Partial");
     // An order sitting in Dispatch Today (items already dispatched but not yet confirmed by the
@@ -21361,11 +21365,17 @@ function OrdersTab({
     // suggest the order was cancelled rather than completed, and would mean these dispatched
     // goods never show up in Dispatched (48h) or any dispatch report at all.
     const unconfirmedByParty = {};
+    const autoConfirmedKeys = new Set();
     importOrders.forEach(o => {
-      if (matchedExistingIds.has(o.id)) return; // voucher still present in this import — leave alone
+      // The voucher can still be in Tally with OTHER items pending while the items the team has
+      // already dispatched are gone from it (invoiced). Those specific items are just as
+      // finished as a whole voucher that vanished, so they're handled too.
+      const stillInTally = importedByExistingId[o.id];
       (o.items || []).forEach(item => {
+        if (stillInTally && (stillInTally.items || []).some(ni => normalize(ni.name) === normalize(item.name))) return;
         if (!item.dispatchConfirmed && item.lastDispatchedAt && (item.dispatchedQty || 0) > 0) {
           unconfirmedByParty[o.partyName + "||" + (item.lastDispatchedAt || "")] = unconfirmedByParty[o.partyName + "||" + (item.lastDispatchedAt || "")] || [];
+          autoConfirmedKeys.add(o.id + "::" + normalize(item.name));
           unconfirmedByParty[o.partyName + "||" + (item.lastDispatchedAt || "")].push({
             orderId: o.id,
             name: item.name,
@@ -21451,6 +21461,17 @@ function OrdersTab({
             lastDispatchedBy: prev.lastDispatchedBy || null
           };
         });
+        // Items the team already dispatched but that are no longer in Tally's list for this voucher
+        // (invoiced) must stay on the order — replacing the item list with only what's in the
+        // import would silently erase them from Dispatch Today / Dispatched (48h) and the reports.
+        const keptDispatched = (existing.items || []).filter(pi => !order.items.some(ni => normalize(ni.name) === normalize(pi.name)) && (pi.status === "Dispatched" || autoConfirmedKeys.has(existing.id + "::" + normalize(pi.name)))).map(pi => autoConfirmedKeys.has(existing.id + "::" + normalize(pi.name)) ? {
+          ...pi,
+          status: "Dispatched",
+          balanceQty: 0,
+          dispatchConfirmed: true,
+          dispatchConfirmedAt: new Date().toISOString()
+        } : pi);
+        mergedItems.push(...keptDispatched);
         const allDone = mergedItems.every(i => i.status === "Dispatched");
         const anyDone = mergedItems.some(i => i.status === "Dispatched" || i.status === "Partial");
         importOps.push(batch => batch.update(docRef, {
