@@ -25615,6 +25615,7 @@ function OrdersTab({
     }, order.status), (() => {
       const dispatchedAny = (order.items || []).some(i => (i.dispatchedQty || 0) > 0 || i.status === "Dispatched");
       const isPartial = order.status === "Partial" || dispatchedAny;
+      if (!isPartial) return null;
       return /*#__PURE__*/React.createElement("span", {
         style: {
           background: isPartial ? "#431407" : "#052e16",
