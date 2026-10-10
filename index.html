@@ -73,6 +73,9 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 window._auth=firebase.auth();
 window._db=firebase.firestore();
+// Keep a local copy of the data in the browser so the app opens from cache instantly and only
+// downloads what changed — instead of re-downloading every order on every open.
+try { window._db.enablePersistence({ synchronizeTabs: true }).catch(function(){}); } catch (e) {}
 window._storage=firebase.storage();
 window._firebaseConfig=firebaseConfig;
 
@@ -22802,7 +22805,7 @@ function OrdersTab({
       });
     });
     return Object.values(map).sort(seqSortFn);
-  }, [orders, deliverySequence, directAreas]);
+  }, [orders, deliverySequence, directAreas, fgProducts]);
 
   // Split: unconfirmed → Today's Dispatch; confirmed (48h) → Dispatched tab
   const todayDispatched = useMemo(() => todayDispatchedAll.map(g => ({
@@ -22855,7 +22858,7 @@ function OrdersTab({
       });
     });
     return Object.values(map).sort(seqSortFn);
-  }, [orders, deliverySequence, directAreas]);
+  }, [orders, deliverySequence, directAreas, fgProducts]);
   const dispatched48hDates = [...new Set(dispatched48h.flatMap(g => g.items.map(i => i.dispatchDate || todayStr)))].sort().reverse();
   const filteredDispatched48h = (() => {
     let res = dispatched48h;
