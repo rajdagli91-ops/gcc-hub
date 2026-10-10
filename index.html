@@ -21297,6 +21297,18 @@ function OrdersTab({
     // not the many minutes a person browsing the app would naturally take before importing).
     // Fetching this one document directly, fresh, right before using it removes that race
     // condition entirely rather than trusting whatever React state happens to hold yet.
+    // Same race as above, but worse: if the order list hasn't finished loading (or is a moment
+    // stale), the import cannot see which orders exist, so it wouldn't close or auto-confirm
+    // anything — e.g. a dispatched order left in Dispatch Today would just stay there. Read the
+    // current orders fresh from the database instead of trusting React state.
+    let importOrders = orders;
+    try {
+      const freshOrdersSnap = await C("orders").get();
+      importOrders = freshOrdersSnap.docs.map(d => ({
+        id: d.id,
+        ...d.data()
+      }));
+    } catch (e) {}
     let freshCustomerMap = customerMap;
     try {
       const freshCustSnap = await C("settings").doc("customerTransport").get();
@@ -21325,12 +21337,12 @@ function OrdersTab({
     // stops a still-valid order from being wrongly marked Pre-closed just because its exact key
     // happened to come out slightly different this time.
     const findExistingOrder = (key, order) => {
-      const byId = orders.find(o => o.id === key);
+      const byId = importOrders.find(o => o.id === key);
       if (byId) return byId;
       const wantCust = normalize(order.partyName || "");
       const wantVoucher = normalize(order.voucherNo || "");
       if (!wantVoucher) return null;
-      return orders.find(o => (o.status === "Pending" || o.status === "Partial") && normalize(o.partyName || "") === wantCust && normalize(o.voucherNo || "") === wantVoucher) || null;
+      return importOrders.find(o => (o.status === "Pending" || o.status === "Partial") && normalize(o.partyName || "") === wantCust && normalize(o.voucherNo || "") === wantVoucher) || null;
     };
     // Build the set of existing order IDs that are genuinely matched by something in this import
     // (by exact key OR by the normalized fallback above) — this is what decides whether an order
@@ -21340,7 +21352,7 @@ function OrdersTab({
       const m = findExistingOrder(key, order);
       if (m) matchedExistingIds.add(m.id);
     });
-    const pendingInDB = orders.filter(o => o.status === "Pending" || o.status === "Partial");
+    const pendingInDB = importOrders.filter(o => o.status === "Pending" || o.status === "Partial");
     // An order sitting in Dispatch Today (items already dispatched but not yet confirmed by the
     // team) can be in ANY order status — including "Dispatched" if every item on it was already
     // sent, which pendingInDB above does not cover. If Tally no longer shows this voucher at all
@@ -21349,14 +21361,15 @@ function OrdersTab({
     // suggest the order was cancelled rather than completed, and would mean these dispatched
     // goods never show up in Dispatched (48h) or any dispatch report at all.
     const unconfirmedByParty = {};
-    orders.forEach(o => {
+    importOrders.forEach(o => {
       if (matchedExistingIds.has(o.id)) return; // voucher still present in this import — leave alone
       (o.items || []).forEach(item => {
         if (!item.dispatchConfirmed && item.lastDispatchedAt && (item.dispatchedQty || 0) > 0) {
-          if (!unconfirmedByParty[o.partyName]) unconfirmedByParty[o.partyName] = [];
-          unconfirmedByParty[o.partyName].push({
+          unconfirmedByParty[o.partyName + "||" + (item.lastDispatchedAt || "")] = unconfirmedByParty[o.partyName + "||" + (item.lastDispatchedAt || "")] || [];
+          unconfirmedByParty[o.partyName + "||" + (item.lastDispatchedAt || "")].push({
             orderId: o.id,
-            name: item.name
+            name: item.name,
+            qty: item.dispatchedQty || 0
           });
         }
       });
@@ -21364,8 +21377,11 @@ function OrdersTab({
     const autoConfirmEntries = Object.entries(unconfirmedByParty);
     if (autoConfirmEntries.length > 0) {
       const autoConfirmDateStr = dispatchDateStr || todayStr;
-      for (const [partyName, items] of autoConfirmEntries) {
-        await finaliseDispatch(partyName, items, autoConfirmDateStr);
+      for (const [pk, items] of autoConfirmEntries) {
+        const [partyName, itemDate] = pk.split("||");
+        // Record the dispatch on the day it actually went out (the day the team entered it),
+        // not the day the import happened to run.
+        await finaliseDispatch(partyName, items, itemDate || autoConfirmDateStr);
       }
       showToast(`Auto-confirmed ${autoConfirmEntries.length} customer(s)' dispatches no longer in Tally ✓`);
     }
