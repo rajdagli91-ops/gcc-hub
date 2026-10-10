@@ -1694,6 +1694,20 @@ const notify = async (emails, {
   await batch.commit();
 };
 const C = name => db.collection(name);
+// Pick the catalogue product for an order line: an exact name match always wins; otherwise the
+// LONGEST catalogue name contained in the line (so "THINNER (1 L)" never gets matched to some
+// shorter/looser entry just because it happens to come first in the list).
+function bestFgMatch(list, name) {
+  const n = normalize(name || "");
+  let best = null, bestLen = -1;
+  for (const p of (list || [])) {
+    const pn = normalize(p.name || "");
+    if (!pn) continue;
+    if (pn === n) return p;
+    if (n.includes(pn) && pn.length > bestLen) { best = p; bestLen = pn.length; }
+  }
+  return best;
+}
 
 // ══════════════════════════════════════════════════════════
 // BASE UI COMPONENTS
@@ -19259,7 +19273,7 @@ function printPrepSummary(opts) {
     return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   }
   function cartonsFor(name, qty) {
-    const prod = fgProducts.find(p => normalize(p.name) === normalize(name) || normalize(name).includes(normalize(p.name)));
+    const prod = bestFgMatch(fgProducts, name);
     if (!prod || !prod.tinsPerCarton) return "";
     const cartons = Math.floor(qty / prod.tinsPerCarton);
     const loose = qty % prod.tinsPerCarton;
@@ -19357,13 +19371,12 @@ function printDispatchList(groups, routeLabel, dateStr, fgProds) {
   function calcVol(name, qty) {
     if (!fgProds || !fgProds.length) return null;
     var n = name.toLowerCase().trim();
-    var prod = null;
+    var prod = null, bestLen = -1;
     for (var i = 0; i < fgProds.length; i++) {
       var pn = (fgProds[i].name || '').toLowerCase().trim();
-      if (pn === n || pn.indexOf(n) !== -1 || n.indexOf(pn) !== -1) {
-        prod = fgProds[i];
-        break;
-      }
+      if (!pn) continue;
+      if (pn === n) { prod = fgProds[i]; break; }
+      if (n.indexOf(pn) !== -1 && pn.length > bestLen) { prod = fgProds[i]; bestLen = pn.length; }
     }
     if (!prod || !prod.size) return null;
     return (qty * prod.size).toFixed(2) + ' ' + (prod.unit || 'L');
@@ -19371,13 +19384,12 @@ function printDispatchList(groups, routeLabel, dateStr, fgProds) {
   function calcCtn(name, qty) {
     if (!fgProds || !fgProds.length) return '';
     var n = name.toLowerCase().trim();
-    var prod = null;
+    var prod = null, bestLen = -1;
     for (var i = 0; i < fgProds.length; i++) {
       var pn = (fgProds[i].name || '').toLowerCase().trim();
-      if (pn === n || pn.indexOf(n) !== -1 || n.indexOf(pn) !== -1) {
-        prod = fgProds[i];
-        break;
-      }
+      if (!pn) continue;
+      if (pn === n) { prod = fgProds[i]; break; }
+      if (n.indexOf(pn) !== -1 && pn.length > bestLen) { prod = fgProds[i]; bestLen = pn.length; }
     }
     if (!prod || !prod.tinsPerCarton) return '';
     var tpc = prod.tinsPerCarton;
@@ -22232,7 +22244,7 @@ function OrdersTab({
 
   // ── Calculate total volume (L or KG) from FG catalogue ──
   const calcVolume = (itemName, qty) => {
-    const prod = fgProducts.find(p => normalize(p.name) === normalize(itemName) || normalize(itemName).includes(normalize(p.name)));
+    const prod = bestFgMatch(fgProducts, itemName);
     if (!prod || !prod.size) return null;
     return {
       vol: parseFloat((qty * prod.size).toFixed(2)),
@@ -22240,7 +22252,7 @@ function OrdersTab({
     };
   };
   const calcCartons = (itemName, qty) => {
-    const prod = fgProducts.find(p => normalize(p.name) === normalize(itemName) || normalize(itemName).includes(normalize(p.name)));
+    const prod = bestFgMatch(fgProducts, itemName);
     if (!prod || !prod.tinsPerCarton) return null;
     const cartons = Math.floor(qty / prod.tinsPerCarton);
     const loose = qty % prod.tinsPerCarton;
@@ -30155,7 +30167,7 @@ function FGStockTab({
         if (!name || name.toLowerCase().includes("total") || name.toLowerCase().includes("grand")) continue;
         const qty = parseFloat(String(row[1] || row[2] || "0").replace(/[^\d.-]/g, "")) || 0;
         if (qty <= 0) continue;
-        const prod = fgProducts.find(p => normalize(p.name) === normalize(name) || normalize(name).includes(normalize(p.name)));
+        const prod = bestFgMatch(fgProducts, name);
         if (!prod) {
           notFound.push(name);
           continue;
