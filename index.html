@@ -24636,7 +24636,7 @@ function OrdersTab({
     },
     value: customerSearch,
     onChange: e => setCustomerSearch(e.target.value),
-    placeholder: `Search ${Object.keys(customerMap).length} customers…`
+    placeholder: `Search ${Object.keys(customerMap).length} customers by name, transport or route…`
   })), /*#__PURE__*/React.createElement("div", {
     style: {
       maxHeight: "340px",
@@ -24659,7 +24659,7 @@ function OrdersTab({
       position: "sticky",
       top: 0
     }
-  }, /*#__PURE__*/React.createElement("span", null, "Customer"), /*#__PURE__*/React.createElement("span", null, "Transport"), /*#__PURE__*/React.createElement("span", null, "Route"), /*#__PURE__*/React.createElement("span", null)), Object.entries(customerMap).filter(([k, v]) => !customerSearch.trim() || normalize(v.customer).includes(normalize(customerSearch)) || normalize(v.route).includes(normalize(customerSearch))).map(([key, entry], i) => /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("span", null, "Customer"), /*#__PURE__*/React.createElement("span", null, "Transport"), /*#__PURE__*/React.createElement("span", null, "Route"), /*#__PURE__*/React.createElement("span", null)), Object.entries(customerMap).filter(([k, v]) => !customerSearch.trim() || normalize(v.customer).includes(normalize(customerSearch)) || normalize(v.route).includes(normalize(customerSearch)) || normalize(v.transport).includes(normalize(customerSearch))).map(([key, entry], i) => /*#__PURE__*/React.createElement("div", {
     key: key,
     style: {
       display: "grid",
