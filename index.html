@@ -21886,22 +21886,74 @@ function OrdersTab({
   const [dispatchRouteFilter, setDispatchRouteFilter] = useState("All");
   const [dispatchDeliveryFilter, setDispatchDeliveryFilter] = useState("All");
   useEffect(() => {
-    const u1 = C("orders").orderBy("orderDate", "asc").onSnapshot(s => {
+    // Load only what the screens actually need — open orders (Pending/Partial), anything touched
+    // in the last 14 days (covers Dispatch Today and Dispatched 48h) and the most recent
+    // Pre-closed — instead of every order ever recorded. The Tally import reads the full set
+    // fresh itself (see _doImport), so it still sees old dispatched orders. If any of these
+    // queries fails (e.g. an index problem) we fall back to loading everything, as before.
+    const toDocs = s => s.docs.map(d => applySiteOverride({
+      id: d.id,
+      ...d.data()
+    }));
+    const parts = {
+      A: [],
+      B: [],
+      C: []
+    };
+    const loadedPart = {
+      A: false,
+      B: false,
+      C: false
+    };
+    let fellBack = false,
+      fullUnsub = null;
+    const subs = [];
+    const publish = () => {
+      if (fellBack || !(loadedPart.A && loadedPart.B && loadedPart.C)) return;
+      const m = new Map();
+      [...parts.A, ...parts.B, ...parts.C].forEach(o => m.set(o.id, o));
+      setOrders(Array.from(m.values()).sort((a, b) => String(a.orderDate || "").localeCompare(String(b.orderDate || ""))));
       if (!window.__ordersLoadMs) window.__ordersLoadMs = Math.round(performance.now());
-      setOrders(s.docs.map(d => applySiteOverride({
-        id: d.id,
-        ...d.data()
-      })));
       setLoading(false);
-    }, () => {
-      C("orders").onSnapshot(s => {
-        setOrders(s.docs.map(d => applySiteOverride({
-          id: d.id,
-          ...d.data()
-        })));
+    };
+    const fallbackToAll = () => {
+      if (fellBack) return;
+      fellBack = true;
+      subs.forEach(u => {
+        try {
+          u();
+        } catch (e) {}
+      });
+      fullUnsub = C("orders").onSnapshot(s => {
+        setOrders(toDocs(s));
+        if (!window.__ordersLoadMs) window.__ordersLoadMs = Math.round(performance.now());
         setLoading(false);
       });
-    });
+    };
+    const recentCutoff = firebase.firestore.Timestamp.fromMillis(Date.now() - 14 * 24 * 60 * 60 * 1000);
+    subs.push(C("orders").where("status", "in", ["Pending", "Partial"]).onSnapshot(s => {
+      parts.A = toDocs(s);
+      loadedPart.A = true;
+      publish();
+    }, fallbackToAll));
+    subs.push(C("orders").where("updatedAt", ">=", recentCutoff).onSnapshot(s => {
+      parts.B = toDocs(s);
+      loadedPart.B = true;
+      publish();
+    }, fallbackToAll));
+    subs.push(C("orders").orderBy("preClosedAt", "desc").limit(80).onSnapshot(s => {
+      parts.C = toDocs(s);
+      loadedPart.C = true;
+      publish();
+    }, fallbackToAll));
+    const u1 = () => {
+      subs.forEach(u => {
+        try {
+          u();
+        } catch (e) {}
+      });
+      if (fullUnsub) fullUnsub();
+    };
     const u2 = C("settings").doc("customerTransport").onSnapshot(snap => {
       if (snap.exists) {
         const d = snap.data();
@@ -23712,7 +23764,7 @@ function OrdersTab({
       fontFamily: "monospace"
     },
     title: "Diagnostic: total orders the app is holding in memory"
-  }, orders.length, " orders loaded", window.__ordersLoadMs ? " in " + (window.__ordersLoadMs / 1000).toFixed(1) + "s" : "")), /*#__PURE__*/React.createElement("div", {
+  }, orders.length, " orders loaded (open + recent)", window.__ordersLoadMs ? " in " + (window.__ordersLoadMs / 1000).toFixed(1) + "s" : "")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: "6px",
@@ -23746,7 +23798,7 @@ function OrdersTab({
     }
   })), isAdmin && orders.length > 0 && /*#__PURE__*/React.createElement("button", {
     onClick: async () => {
-      if (!confirm(`Delete all ${orders.length} orders? This cannot be undone.`)) return;
+      if (!confirm(`Delete ALL orders, including old history not shown on screen? This cannot be undone.`)) return;
       const snap = await C("orders").get();
       const batches = [];
       let batch = firebase.firestore().batch();
@@ -23761,7 +23813,7 @@ function OrdersTab({
       });
       batches.push(batch);
       await Promise.all(batches.map(b => b.commit()));
-      showToast(`All ${orders.length} orders cleared ✓`);
+      showToast(`All ${snap.size} orders cleared ✓`);
     },
     style: {
       background: "#2e0a0a",
@@ -24649,7 +24701,7 @@ function OrdersTab({
     },
     value: customerSearch,
     onChange: e => setCustomerSearch(e.target.value),
-    placeholder: `Search ${Object.keys(customerMap).length} customers by name, transport or route…`
+    placeholder: `Search ${Object.keys(customerMap).length} customers by name, transport or route… (first 80 shown — search for the rest)`
   })), /*#__PURE__*/React.createElement("div", {
     style: {
       maxHeight: "340px",
@@ -24672,7 +24724,7 @@ function OrdersTab({
       position: "sticky",
       top: 0
     }
-  }, /*#__PURE__*/React.createElement("span", null, "Customer"), /*#__PURE__*/React.createElement("span", null, "Transport"), /*#__PURE__*/React.createElement("span", null, "Route"), /*#__PURE__*/React.createElement("span", null)), Object.entries(customerMap).filter(([k, v]) => !customerSearch.trim() || normalize(v.customer).includes(normalize(customerSearch)) || normalize(v.route).includes(normalize(customerSearch)) || normalize(v.transport).includes(normalize(customerSearch))).map(([key, entry], i) => /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("span", null, "Customer"), /*#__PURE__*/React.createElement("span", null, "Transport"), /*#__PURE__*/React.createElement("span", null, "Route"), /*#__PURE__*/React.createElement("span", null)), Object.entries(customerMap).filter(([k, v]) => !customerSearch.trim() || normalize(v.customer).includes(normalize(customerSearch)) || normalize(v.route).includes(normalize(customerSearch)) || normalize(v.transport).includes(normalize(customerSearch))).slice(0, customerSearch.trim() ? 500 : 80).map(([key, entry], i) => /*#__PURE__*/React.createElement("div", {
     key: key,
     style: {
       display: "grid",
