@@ -21887,6 +21887,7 @@ function OrdersTab({
   const [dispatchDeliveryFilter, setDispatchDeliveryFilter] = useState("All");
   useEffect(() => {
     const u1 = C("orders").orderBy("orderDate", "asc").onSnapshot(s => {
+      if (!window.__ordersLoadMs) window.__ordersLoadMs = Math.round(performance.now());
       setOrders(s.docs.map(d => applySiteOverride({
         id: d.id,
         ...d.data()
@@ -23129,6 +23130,9 @@ function OrdersTab({
       };
       const isHeaderText = s => {
         const t = s.toLowerCase().trim();
+        // A purely numeric "name" is never a real customer/transporter — it's a stray serial
+        // number or a row where the name cell was blank (it was being saved as a transporter).
+        if (/^\d+(\.\d+)?$/.test(t)) return true;
         return t === "" || t === "#" || t === "name" || t === "customer" || t === "transporter" || t === "s.no" || t === "sno" || t === "sr.no" || t === "seq" || t === "sequence" || t === "customer name" || t === "transporter name" || t === "name (transporter / customer)";
       };
       // A customer can appear multiple times in the same sequence sheet — once for their
@@ -23699,7 +23703,16 @@ function OrdersTab({
       fontFamily: "'DM Serif Display',serif",
       color: "#f1f5f9"
     }
-  }, "🛒 Order Management"), /*#__PURE__*/React.createElement("div", {
+  }, "🛒 Order Management", /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: "10px",
+      fontWeight: "400",
+      color: "#475569",
+      marginLeft: "10px",
+      fontFamily: "monospace"
+    },
+    title: "Diagnostic: total orders the app is holding in memory"
+  }, orders.length, " orders loaded", window.__ordersLoadMs ? " in " + (window.__ordersLoadMs / 1000).toFixed(1) + "s" : "")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: "6px",
