@@ -22760,7 +22760,7 @@ function OrdersTab({
       if (!entry) return null;
       if (isSite) {
         const sites = entry.sites || {};
-        const labelKey = normalize(siteLabel || "");
+        const labelKey = normalize(siteLabel || "") || "_default";
         if (sites[labelKey]) return sites[labelKey].seq;
         const siteValues = Object.values(sites);
         if (siteValues.length === 1) return siteValues[0].seq;
@@ -22785,7 +22785,7 @@ function OrdersTab({
     if (entry) {
       if (isSite) {
         const sites = entry.sites || {};
-        const labelKey = normalize(siteLabel || "");
+        const labelKey = normalize(siteLabel || "") || "_default";
         if (sites[labelKey]) return sites[labelKey].seq;
         const siteValues = Object.values(sites);
         if (siteValues.length === 1) return siteValues[0].seq;
@@ -23180,7 +23180,7 @@ function OrdersTab({
           if (!seqMap[key]) seqMap[key] = {};
           if (isSite) {
             if (!seqMap[key].sites) seqMap[key].sites = {};
-            seqMap[key].sites[normalize(siteLabel)] = {
+            seqMap[key].sites[normalize(siteLabel) || "_default"] = {
               name: base,
               seq,
               siteLabel
@@ -23232,7 +23232,7 @@ function OrdersTab({
             if (!entries[key]) entries[key] = {};
             if (isSite) {
               if (!entries[key].sites) entries[key].sites = {};
-              entries[key].sites[normalize(siteLabel)] = {
+              entries[key].sites[normalize(siteLabel) || "_default"] = {
                 name: base,
                 seq,
                 siteLabel
