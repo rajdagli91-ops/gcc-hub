@@ -21178,6 +21178,218 @@ function renderConfirmDispatchedButton(p) {
   ]);
 }
 
+// Reads the rows of a Tally "Sales Orders (Due Only)" sheet into {voucherNo: order}. One shared
+// reader is used by the Import AND by "Verify against Tally", so both always agree on what a file says.
+function VerifyTallyModal({
+  result,
+  onClose
+}) {
+  const h = React.createElement;
+  const bad = result.rows.length;
+  return h("div", {
+    style: {
+      position: "fixed",
+      inset: 0,
+      background: "#000000cc",
+      zIndex: 9999,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: "12px"
+    },
+    onClick: onClose
+  }, h("div", {
+    onClick: e => e.stopPropagation(),
+    style: {
+      background: "#0b1220",
+      border: `1px solid ${bad ? "#dc2626" : "#166534"}`,
+      borderRadius: "12px",
+      maxWidth: "980px",
+      width: "100%",
+      maxHeight: "88vh",
+      overflow: "auto",
+      padding: "16px"
+    }
+  }, h("div", {
+    style: {
+      fontSize: "15px",
+      fontWeight: "800",
+      color: bad ? "#fca5a5" : "#4ade80",
+      marginBottom: "6px"
+    }
+  }, bad ? `⚠ ${bad} difference${bad !== 1 ? "s" : ""} found between the Tally file and the system` : "✓ The system matches the Tally file"), h("div", {
+    style: {
+      fontSize: "12px",
+      color: "#94a3b8",
+      marginBottom: "10px"
+    }
+  }, result.sharedVouchers && result.sharedVouchers.length > 0 && h("div", {
+    style: {
+      color: "#fca5a5",
+      marginBottom: "6px"
+    }
+  }, `⚠ Same order number used for different customers in Tally: ${result.sharedVouchers.join(", ")}`), `File: ${result.fileOrders} orders · ${result.fileItems} items. Matching items: ${result.okItems}. Items already dispatched in the app are not compared (their balance legitimately differs until Tally invoices them).`), result.mergedRows.length > 0 && h("div", {
+    style: {
+      background: "#1a1000",
+      border: "1px solid #92400e",
+      borderRadius: "8px",
+      padding: "8px 10px",
+      marginBottom: "10px",
+      fontSize: "11.5px",
+      color: "#fcd34d"
+    }
+  }, `⚠ ${result.mergedRows.length} product row(s) appear on 2+ lines of the same order in the Tally file; the import ADDS them together (this is the usual reason a quantity shows double): `, result.mergedRows.slice(0, 12).map(m => m.voucherNo + " · " + m.item + " (+" + m.qty + ")").join("  |  ")), bad > 0 && h("table", {
+    style: {
+      width: "100%",
+      borderCollapse: "collapse",
+      fontSize: "11.5px",
+      color: "#e2e8f0"
+    }
+  }, h("thead", null, h("tr", null, ["Order", "Customer", "Product", "Tally", "System", "Issue"].map(c => h("th", {
+    key: c,
+    style: {
+      textAlign: "left",
+      padding: "4px 6px",
+      borderBottom: "1px solid #1e293b",
+      color: "#64748b"
+    }
+  }, c)))), h("tbody", null, result.rows.slice(0, 300).map((r, i) => h("tr", {
+    key: i
+  }, [r.voucher, r.party, r.item, r.tally, r.system, r.issue].map((c, k) => h("td", {
+    key: k,
+    style: {
+      padding: "4px 6px",
+      borderBottom: "1px solid #111a2b",
+      color: k === 5 ? "#fca5a5" : undefined,
+      fontWeight: k === 3 || k === 4 ? "700" : undefined
+    }
+  }, String(c))))))), result.notInFile.length > 0 && h("div", {
+    style: {
+      marginTop: "10px",
+      fontSize: "11.5px",
+      color: "#fbbf24"
+    }
+  }, `Open in the system but NOT in this Tally file (${result.notInFile.length}): `, result.notInFile.slice(0, 15).join("  |  ")), h("div", {
+    style: {
+      display: "flex",
+      gap: "8px",
+      marginTop: "12px"
+    }
+  }, h("button", {
+    onClick: onClose,
+    style: {
+      background: "#1e293b",
+      border: "none",
+      borderRadius: "7px",
+      padding: "7px 16px",
+      color: "#e2e8f0",
+      fontWeight: "700",
+      cursor: "pointer"
+    }
+  }, "Close"))));
+}
+function parseSalesOrderRows(raw, custMap) {
+  const orderMap = {};
+  const mergedRows = []; // same product on 2+ rows of one voucher (summed) — surfaced for verification
+      // Find where the data actually starts instead of assuming row 14 — if Tally's report header
+      // ever gains or loses a line, a fixed start row would silently skip the first orders (or
+      // read headings as data).
+      let dataStart = 14;
+      for (let h = 0; h < Math.min(raw.length, 40); h++) {
+        const hr = raw[h];
+        if (hr && normalize(String(hr[2] || "")) === "partysname" && normalize(String(hr[1] || "")) === "order") {
+          dataStart = h + 2;
+          break;
+        }
+      }
+      let skippedNonPositive = 0;
+  // Tally can hand the SAME order number to two different customers (e.g. numbering clash). Keying
+  // orders by number alone would merge both customers' products into one order — doubling
+  // quantities and adding items that belong to someone else. Where a number is shared, each
+  // customer gets their own order.
+  const partiesByVoucher = {};
+  for (let i = dataStart; i < raw.length; i++) {
+    const r0 = raw[i];
+    if (!r0) continue;
+    const on0 = String(r0[1] || "").trim(),
+      pt0 = String(r0[2] || "").trim();
+    if (!on0 || !pt0 || pt0.toLowerCase().includes("total")) continue;
+    (partiesByVoucher[on0] = partiesByVoucher[on0] || new Set()).add(normalize(pt0));
+  }
+  const sharedVouchers = [];
+  Object.entries(partiesByVoucher).forEach(([k, v]) => {
+    if (v.size > 1) sharedVouchers.push(k);
+  });
+      for (let i = dataStart; i < raw.length; i++) {
+        const row = raw[i];
+        if (!row) continue;
+        const dateRaw = row[0],
+          orderNo = String(row[1] || "").trim(),
+          party = String(row[2] || "").trim(),
+          item = String(row[3] || "").trim();
+        const balanceQty = parseFloat(row[5]) || 0;
+        if (!orderNo || !party || !item) continue;
+        if (balanceQty <= 0) {
+          skippedNonPositive++;
+          continue;
+        }
+        if (party.toLowerCase().includes("total")) continue;
+        let dateStr = "";
+        if (dateRaw instanceof Date) dateStr = dateRaw.toISOString().slice(0, 10);else if (dateRaw && String(dateRaw).includes("-")) dateStr = String(dateRaw).slice(0, 10);else if (typeof dateRaw === "number") {
+          try {
+            const d = new Date((dateRaw - 25569) * 86400000);
+            dateStr = d.toISOString().slice(0, 10);
+          } catch (e) {}
+        }
+        const cInfo = (custMap || {})[normalize(party)] || null;
+        // An order is identified by its number AND its customer — never by the number alone.
+        const okey = orderNo + " | " + normalize(party);
+        if (!orderMap[okey]) {
+          orderMap[okey] = {
+            voucherNo: orderNo,
+            partyName: party,
+            orderDate: dateStr,
+            route: cInfo?.route || "Unknown",
+            transport: cInfo?.transport || "Unknown",
+            isDirect: cInfo?.isDirect || false,
+            items: [],
+            status: "Pending"
+          };
+        }
+        // Tally's export can sometimes list the same product on two separate rows within one
+        // voucher (e.g. split across different batch/godown allocations internally) — merge them
+        // into a single line item by summing quantities, rather than creating a duplicate-looking
+        // second row for what is really one product on the order.
+        const existingItem = orderMap[okey].items.find(it => normalize(it.name) === normalize(item));
+        if (existingItem) {
+          existingItem.balanceQty += balanceQty;
+          existingItem.rowsMerged = (existingItem.rowsMerged || 1) + 1;
+          mergedRows.push({
+            voucherNo: orderNo,
+            item,
+            qty: balanceQty
+          });
+          existingItem.value += parseFloat(row[8]) || 0;
+        } else {
+          orderMap[okey].items.push({
+            name: item,
+            balanceQty,
+            rate: parseFloat(row[6]) || 0,
+            discount: parseFloat(row[7]) || 0,
+            value: parseFloat(row[8]) || 0,
+            dueOn: String(row[9] || "").slice(0, 10),
+            dispatchedQty: 0,
+            status: "Pending"
+          });
+        }
+      }
+  return {
+    orderMap,
+    skippedNonPositive,
+    mergedRows,
+    sharedVouchers
+  };
+}
 function OrdersTab({
   role,
   roles,
@@ -21248,6 +21460,8 @@ function OrdersTab({
   })();
   const [loading, setLoading] = useState(true);
   const [parsing, setParsing] = useState(false);
+  const [verifyResult, setVerifyResult] = useState(null);
+  const [verifying, setVerifying] = useState(false);
   const [transportParsing, setTransportParsing] = useState(false);
   const [subTab, setSubTab] = useState("pending"); // "pending"|"direct_prep"|"transport_prep"|"dispatched"|"reports"|"setup"
   const [viewMode, setViewMode] = useState("customer"); // "customer"|"product"|"transporter"
@@ -21339,6 +21553,10 @@ function OrdersTab({
     const findExistingOrder = (key, order) => {
       const byId = importOrders.find(o => o.id === key);
       if (byId) return byId;
+      // Orders imported before customer was part of the identity are stored under the plain
+      // number — still the same order if the customer is the same, whatever its status.
+      const legacy = importOrders.find(o => o.id === sanitise(order.voucherNo || "") && normalize(o.partyName || "") === normalize(order.partyName || ""));
+      if (legacy) return legacy;
       const wantCust = normalize(order.partyName || "");
       const wantVoucher = normalize(order.voucherNo || "");
       if (!wantVoucher) return null;
@@ -21429,7 +21647,8 @@ function OrdersTab({
       const docRef = C("orders").doc(existing ? existing.id : key);
       if (existing) {
         // ── Guard: if order is already fully dispatched, do NOT reset it ──
-        if (existing.status === "Dispatched") {
+        const hasNewItems = order.items.some(ni => !(existing.items || []).some(pi => normalize(pi.name) === normalize(ni.name)));
+        if (existing.status === "Dispatched" && !hasNewItems) {
           alreadyDispatched.push(order.voucherNo || key);
           // Update metadata only — preserve all dispatch state
           importOps.push(batch => batch.update(docRef, {
@@ -22171,6 +22390,104 @@ function OrdersTab({
   // ── Sanitise voucher number for Firestore doc ID ──
   const sanitise = k => k.replace(/\//g, "-").replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_\-.]/g, "").slice(0, 400);
 
+  // ── Verify a Tally file against what is actually in the system (read-only — changes nothing) ──
+  const verifyAgainstTally = async file => {
+    setVerifying(true);
+    try {
+      await loadXLSX();
+      const XLSX = window.XLSX;
+      const buf = await new Promise(r => {
+        const fr = new FileReader();
+        fr.onload = e => r(e.target.result);
+        fr.readAsArrayBuffer(file);
+      });
+      const wb = XLSX.read(buf, {
+        type: "array"
+      });
+      const raw = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {
+        header: 1,
+        defval: null
+      });
+      const parsed = parseSalesOrderRows(raw, {});
+      const snap = await C("orders").get();
+      const sys = snap.docs.map(d => ({
+        id: d.id,
+        ...d.data()
+      }));
+      const byId = {};
+      sys.forEach(o => {
+        byId[o.id] = o;
+      });
+      const rows = [];
+      let okItems = 0,
+        fileItems = 0;
+      for (const [rawKey, fo] of Object.entries(parsed.orderMap)) {
+        const so = byId[sanitise(rawKey)] || sys.find(o => o.id === sanitise(fo.voucherNo || "") && normalize(o.partyName || "") === normalize(fo.partyName)) || sys.find(o => (o.status === "Pending" || o.status === "Partial") && normalize(o.voucherNo || "") === normalize(rawKey) && normalize(o.partyName || "") === normalize(fo.partyName));
+        if (!so) {
+          rows.push({
+            voucher: rawKey,
+            party: fo.partyName,
+            item: "(whole order)",
+            tally: fo.items.length + " items",
+            system: "not in system",
+            issue: "Order missing"
+          });
+          fileItems += fo.items.length;
+          continue;
+        }
+        fo.items.forEach(fi => {
+          fileItems++;
+          const si = (so.items || []).find(x => normalize(x.name) === normalize(fi.name));
+          if (!si) {
+            rows.push({
+              voucher: rawKey,
+              party: fo.partyName,
+              item: fi.name,
+              tally: fi.balanceQty,
+              system: "—",
+              issue: "Item missing in system"
+            });
+          } else if ((si.dispatchedQty || 0) > 0 || si.status === "Dispatched") {
+            okItems++; // dispatched/partly dispatched in the app: balance legitimately differs until Tally invoices
+          } else if (Math.abs((si.balanceQty || 0) - fi.balanceQty) > 0.0001) {
+            rows.push({
+              voucher: rawKey,
+              party: fo.partyName,
+              item: fi.name,
+              tally: fi.balanceQty + (fi.rowsMerged ? " (" + fi.rowsMerged + " rows added together)" : ""),
+              system: si.balanceQty,
+              issue: "Quantity differs"
+            });
+          } else okItems++;
+        });
+        (so.items || []).forEach(si => {
+          if ((si.dispatchedQty || 0) > 0 || si.status === "Dispatched" || !(si.balanceQty > 0)) return;
+          if (!fo.items.some(fi => normalize(fi.name) === normalize(si.name))) rows.push({
+            voucher: rawKey,
+            party: fo.partyName,
+            item: si.name,
+            tally: "—",
+            system: si.balanceQty,
+            issue: "In system, not in Tally file"
+          });
+        });
+      }
+      const notInFile = sys.filter(o => (o.status === "Pending" || o.status === "Partial") && !Object.values(parsed.orderMap).some(fo => normalize(fo.voucherNo || "") === normalize(o.voucherNo || o.id) && normalize(fo.partyName) === normalize(o.partyName || "")));
+      setVerifyResult({
+        fileOrders: Object.keys(parsed.orderMap).length,
+        fileItems,
+        okItems,
+        rows,
+        mergedRows: parsed.mergedRows,
+        sharedVouchers: parsed.sharedVouchers,
+        notInFile: notInFile.map(o => (o.voucherNo || o.id) + " — " + o.partyName)
+      });
+    } catch (e) {
+      showToast("Verify error: " + e.message, "error");
+    }
+    setVerifying(false);
+  };
+
   // ── Import Tally Sales Orders ──
   const importOrders = async file => {
     setParsing(true);
@@ -22192,57 +22509,26 @@ function OrdersTab({
       });
       // Headers row 11, data from row 14
       // Col: 0=Date 1=OrderNo 2=PartyName 3=Item 4=OrderedQty 5=BalanceQty 6=Rate 7=Disc 8=Value 9=DueOn
-      const orderMap = {};
-      for (let i = 14; i < raw.length; i++) {
-        const row = raw[i];
-        if (!row) continue;
-        const dateRaw = row[0],
-          orderNo = String(row[1] || "").trim(),
-          party = String(row[2] || "").trim(),
-          item = String(row[3] || "").trim();
-        const balanceQty = parseFloat(row[5]) || 0;
-        if (!orderNo || !party || !item || balanceQty <= 0) continue;
-        if (party.toLowerCase().includes("total")) continue;
-        let dateStr = "";
-        if (dateRaw instanceof Date) dateStr = dateRaw.toISOString().slice(0, 10);else if (dateRaw && String(dateRaw).includes("-")) dateStr = String(dateRaw).slice(0, 10);else if (typeof dateRaw === "number") {
-          try {
-            const d = new Date((dateRaw - 25569) * 86400000);
-            dateStr = d.toISOString().slice(0, 10);
-          } catch (e) {}
+      // customerMap (React state) may not have loaded yet right after a page load — read the
+      // customer list fresh so an unattended import never treats every customer as "Unknown".
+      let importCustMap = customerMap;
+      try {
+        const cs = await C("settings").doc("customerTransport").get();
+        if (cs.exists) importCustMap = cs.data().map || {};
+      } catch (e) {}
+      const parsed = parseSalesOrderRows(raw, importCustMap);
+      const orderMap = parsed.orderMap;
+      const skippedNonPositive = parsed.skippedNonPositive;
+      {
+        const fileItems = Object.values(orderMap).reduce((a, o) => a + o.items.length, 0);
+        const fileUnits = Object.values(orderMap).reduce((a, o) => a + o.items.reduce((b, it) => b + it.balanceQty, 0), 0);
+        if (parsed.sharedVouchers.length) {
+          setTimeout(() => showToast(`⚠ Tally has used the SAME order number for different customers: ${parsed.sharedVouchers.slice(0, 4).join(", ")}${parsed.sharedVouchers.length > 4 ? " …" : ""}. They were imported as separate orders — please fix the numbering in Tally.`, "error"), 400);
         }
-        const cInfo = customerMap[normalize(party)] || null;
-        if (!orderMap[orderNo]) {
-          orderMap[orderNo] = {
-            voucherNo: orderNo,
-            partyName: party,
-            orderDate: dateStr,
-            route: cInfo?.route || "Unknown",
-            transport: cInfo?.transport || "Unknown",
-            isDirect: cInfo?.isDirect || false,
-            items: [],
-            status: "Pending"
-          };
+        if (parsed.mergedRows.length) {
+          setTimeout(() => showToast(`⚠ ${parsed.mergedRows.length} product row(s) appear TWICE inside the same order in this Tally file and were added together — e.g. ${parsed.mergedRows.slice(0, 3).map(m => m.voucherNo + " / " + m.item).join(", ")}. Use "Verify vs Tally" to check.`, "error"), 800);
         }
-        // Tally's export can sometimes list the same product on two separate rows within one
-        // voucher (e.g. split across different batch/godown allocations internally) — merge them
-        // into a single line item by summing quantities, rather than creating a duplicate-looking
-        // second row for what is really one product on the order.
-        const existingItem = orderMap[orderNo].items.find(it => normalize(it.name) === normalize(item));
-        if (existingItem) {
-          existingItem.balanceQty += balanceQty;
-          existingItem.value += parseFloat(row[8]) || 0;
-        } else {
-          orderMap[orderNo].items.push({
-            name: item,
-            balanceQty,
-            rate: parseFloat(row[6]) || 0,
-            discount: parseFloat(row[7]) || 0,
-            value: parseFloat(row[8]) || 0,
-            dueOn: String(row[9] || "").slice(0, 10),
-            dispatchedQty: 0,
-            status: "Pending"
-          });
-        }
+        showToast(`Read from file: ${Object.keys(orderMap).length} orders · ${fileItems} items · ${fileUnits.toLocaleString("en-IN")} units pending (${skippedNonPositive} zero/over-delivered rows skipped)`);
       }
       const sanitisedMap = {};
       for (const [rawKey, order] of Object.entries(orderMap)) {
@@ -23764,13 +24050,43 @@ function OrdersTab({
       fontFamily: "monospace"
     },
     title: "Diagnostic: total orders the app is holding in memory"
-  }, orders.length, " orders loaded (open + recent)", window.__ordersLoadMs ? " in " + (window.__ordersLoadMs / 1000).toFixed(1) + "s" : "")), /*#__PURE__*/React.createElement("div", {
+  }, orders.length, " orders loaded (open + recent)", window.__ordersLoadMs ? " in " + (window.__ordersLoadMs / 1000).toFixed(1) + "s" : "")), verifyResult && /*#__PURE__*/React.createElement(VerifyTallyModal, {
+    result: verifyResult,
+    onClose: () => setVerifyResult(null)
+  }), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: "6px",
       flexWrap: "wrap"
     }
   }, canImport && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("button", {
+    onClick: () => document.getElementById("orders-verify").click(),
+    disabled: verifying,
+    title: "Compare a Tally Sales Orders file with what is in the system — changes nothing",
+    style: {
+      background: "#0c1a2e",
+      border: "1px solid #1d4ed8",
+      borderRadius: "7px",
+      padding: "6px 12px",
+      color: "#93c5fd",
+      fontWeight: "700",
+      fontSize: "12px",
+      cursor: "pointer"
+    }
+  }, verifying ? "Checking…" : "🔍 Verify vs Tally"), /*#__PURE__*/React.createElement("input", {
+    id: "orders-verify",
+    type: "file",
+    accept: ".xlsx,.xls",
+    style: {
+      display: "none"
+    },
+    onChange: async e => {
+      if (e.target.files[0]) {
+        await verifyAgainstTally(e.target.files[0]);
+        e.target.value = "";
+      }
+    }
+  }), /*#__PURE__*/React.createElement("button", {
     onClick: () => document.getElementById("orders-import").click(),
     disabled: parsing,
     style: {
