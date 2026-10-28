@@ -22305,24 +22305,27 @@ function OrdersTab({
       }, {
         merge: true
       });
-      // Backfill any pending orders for this customer that still show Unknown
+      // Keep every OPEN order of this customer in step with the new route / transport / delivery
+      // type — not only ones that showed "Unknown" — so a change in Setup Routes is reflected in
+      // Pending, Direct Prep, Transport Prep and Dispatch Today straight away, with no re-import.
+      // (Fully dispatched orders are history and are left alone.)
       const snap = await C("orders").where("status", "in", ["Pending", "Partial"]).get();
-      const batch = firebase.firestore().batch();
-      let backfilled = 0;
-      snap.docs.forEach(doc => {
+      const toUpdate = snap.docs.filter(doc => {
         const d = doc.data();
-        if (normalize(d.partyName) === key && (d.route === "Unknown" || d.transport === "Unknown" || !d.route)) {
-          batch.update(doc.ref, {
-            route: newEntry.route,
-            transport: newEntry.transport,
-            isDirect: newEntry.isDirect
-          });
-          backfilled++;
-        }
+        return normalize(d.partyName) === key && ((d.route || "") !== newEntry.route || (d.transport || "") !== newEntry.transport || !!d.isDirect !== !!newEntry.isDirect);
       });
-      if (backfilled > 0) {
+      for (let i = 0; i < toUpdate.length; i += 400) {
+        const batch = firebase.firestore().batch();
+        toUpdate.slice(i, i + 400).forEach(doc => batch.update(doc.ref, {
+          route: newEntry.route,
+          transport: newEntry.transport,
+          isDirect: newEntry.isDirect
+        }));
         await batch.commit();
-        showToast(`${editingCustomer ? "Updated" : "Added"} customer + ${backfilled} pending order${backfilled !== 1 ? "s" : ""} updated ✓`);
+      }
+      const backfilled = toUpdate.length;
+      if (backfilled > 0) {
+        showToast(`${editingCustomer ? "Updated" : "Added"} customer + ${backfilled} open order${backfilled !== 1 ? "s" : ""} updated to the new route/transport ✓`);
       } else showToast(editingCustomer ? "Customer updated ✓" : "Customer added ✓");
 
       // Check if new customer/transporter is missing from delivery sequence — nudge to update
