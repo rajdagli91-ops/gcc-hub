@@ -28496,18 +28496,21 @@ function OrdersTab({
           padding: "2px 8px",
           whiteSpace: "nowrap"
         }
-      }, "🔒 Release hold to dispatch") : renderCustomerDispatchButton({
-        sectionKey: cg.partyName + "::" + (cg.route || "") + "::" + (cg.transport || ""),
-        cg,
-        label: "🚚 Dispatch ready (" + items.filter(x => isItemReady(x.orderId, x.itemIdx, x)).length + "/" + items.length + ")",
-        prompt: customerDispatchPrompt,
-        setPrompt: setCustomerDispatchPrompt,
-        onConfirm: runCustomerDirectDispatch,
-        todayStr,
-        nextDispatchDayOffset,
-        isSaturday,
-        saving
-      })))), renderDirectHoldPicker({
+      }, "🔒 Release hold to dispatch") : /*#__PURE__*/React.createElement("button", {
+        onClick: () => runCustomerDirectDispatch(cg, todayStr),
+        disabled: saving,
+        style: {
+          background: "#052e16",
+          border: "1px solid #166534",
+          borderRadius: "5px",
+          padding: "2px 9px",
+          color: "#4ade80",
+          fontSize: "11px",
+          fontWeight: "700",
+          cursor: "pointer",
+          whiteSpace: "nowrap"
+        }
+      }, "🚚 Dispatch ready (" + items.filter(x => isItemReady(x.orderId, x.itemIdx, x)).length + "/" + items.length + ")")))), renderDirectHoldPicker({
         cg: {
           ...cg,
           key: cg.partyName + "::" + (cg.route || "") + "::" + (cg.transport || "") + (cg.siteDelivery ? "::site::" + normalize(cg.siteLabel || "") : "")
@@ -28685,7 +28688,7 @@ function OrdersTab({
         padding: "10px 0"
       }
     }, /*#__PURE__*/React.createElement("button", {
-      onClick: () => setBulkDispatchDatePrompt(true),
+      onClick: () => runBulkDispatchAll(todayStr, sorted),
       disabled: saving,
       style: {
         width: "100%",
