@@ -21674,6 +21674,9 @@ function OrdersTab({
             stagedForTransport: prev.stagedForTransport || false,
             stagedAt: prev.stagedAt || null,
             stagedBy: prev.stagedBy || null,
+            prepReady: prev.prepReady || false,
+            prepReadyBy: prev.prepReadyBy || null,
+            prepReadyAt: prev.prepReadyAt || null,
             dispatchConfirmed: prev.dispatchConfirmed || false,
             dispatchConfirmedAt: prev.dispatchConfirmedAt || null,
             lastDispatchedAt: prev.lastDispatchedAt || null,
@@ -22061,6 +22064,7 @@ function OrdersTab({
   const [customerDispatchPrompt, setCustomerDispatchPrompt] = useState(null); // which customer's Today/Tomorrow popup is open, in Direct Prep
   const runCustomerDirectDispatch = async (cg, chosenDateStr) => {
     setSaving(true);
+    let skippedNone = 0;
     try {
       for (const o of cg.orders) {
         if (o.onHold) continue; // skip orders HO has put on hold — never dispatch these
@@ -22069,6 +22073,7 @@ function OrdersTab({
         const data = doc.data();
         const updatedItems = (data.items || []).map((item, idx) => {
           if (item.balanceQty <= 0 || item.status === "Dispatched") return item;
+          if (!item.prepReady) return item; // only products the store has ticked as ready move on
           const fk = o.id + "__" + idx;
           const override = directQtyOverrides[fk];
           if (override === "0" || override === 0) return item;
@@ -22082,10 +22087,14 @@ function OrdersTab({
             status: newBalance <= 0 ? "Dispatched" : "Partial",
             lastDispatchedAt: chosenDateStr,
             lastDispatchedBy: user.email,
+            prepReady: false,
+            prepReadyBy: null,
+            prepReadyAt: null,
             dispatchConfirmed: false,
             dispatchConfirmedAt: null
           };
         });
+        if (updatedItems.every((it, i) => it === (data.items || [])[i])) { skippedNone++; continue; }
         const allDone = updatedItems.every(i => i.balanceQty <= 0 || i.status === "Dispatched");
         await C("orders").doc(o.id).update({
           items: updatedItems.map(cleanItem),
@@ -22093,7 +22102,8 @@ function OrdersTab({
           updatedAt: ts()
         });
       }
-      showToast(`${cg.partyName} dispatched ✓`);
+      if (skippedNone >= cg.orders.filter(o => !o.onHold).length) showToast("Nothing ticked as ready — tick the products that are ready first", "error");
+      else showToast(`${cg.partyName} — ready products moved to Dispatch Today ✓`);
       setPrintRouteFilter("All");
     } catch (e) {
       showToast("Error: " + e.message, "error");
@@ -23345,10 +23355,61 @@ function OrdersTab({
   const [directPrepArea, setDirectPrepArea] = useState("All");
   const [directPrepView, setDirectPrepView] = useState("customer"); // "customer"|"product"|"route" — Preparation Summary grouping
   const [directQtyOverrides, setDirectQtyOverrides] = useState({});
+  // "Ready" ticks set by the store person while preparing an order. Saved on the item itself
+  // (prepReady) so every device sees them and they survive a refresh; readyOv makes a tick
+  // show instantly while the save is in flight.
+  const [readyOv, setReadyOv] = useState({});
+  const isItemReady = (orderId, itemIdx, item) => {
+    const v = readyOv[orderId + "__" + itemIdx];
+    return v !== undefined ? v : !!(item && item.prepReady);
+  };
+  const setItemsReady = async (list, ready) => {
+    if (!list.length) return;
+    setReadyOv(f => {
+      const n = {
+        ...f
+      };
+      list.forEach(x => {
+        n[x.orderId + "__" + x.itemIdx] = ready;
+      });
+      return n;
+    });
+    try {
+      const byOrder = {};
+      list.forEach(x => {
+        (byOrder[x.orderId] = byOrder[x.orderId] || []).push(x.itemIdx);
+      });
+      for (const [orderId, idxs] of Object.entries(byOrder)) {
+        const d = await C("orders").doc(orderId).get();
+        if (!d.exists) continue;
+        const its = (d.data().items || []).map((it, i) => idxs.includes(i) ? {
+          ...it,
+          prepReady: ready,
+          prepReadyBy: ready ? user.email : null,
+          prepReadyAt: ready ? new Date().toISOString() : null
+        } : it);
+        await C("orders").doc(orderId).update({
+          items: san(its)
+        });
+      }
+    } catch (e) {
+      showToast("Could not save tick: " + e.message, "error");
+    }
+    setReadyOv(f => {
+      const n = {
+        ...f
+      };
+      list.forEach(x => {
+        delete n[x.orderId + "__" + x.itemIdx];
+      });
+      return n;
+    });
+  };
   const [bulkDispatchDatePrompt, setBulkDispatchDatePrompt] = useState(false); // shows the Today/Tomorrow picker before "Dispatch All [Route]" actually runs
   const runBulkDispatchAll = async (chosenDateStr, sortedList) => {
     setBulkDispatchDatePrompt(false);
     setSaving(true);
+    let movedAny = false;
     try {
       for (const cg of sortedList) {
         for (const o of cg.orders) {
@@ -23358,6 +23419,7 @@ function OrdersTab({
           if (data.onHold) continue; // skip orders HO has put on hold — never dispatch these in bulk
           const updatedItems = (data.items || []).map((item, idx) => {
             if (item.balanceQty <= 0 || item.status === "Dispatched") return item;
+            if (!item.prepReady) return item; // only ticked-ready products move on
             const fk = o.id + "__" + idx;
             const override = directQtyOverrides[fk];
             if (override === "0" || override === 0) return item;
@@ -23371,10 +23433,15 @@ function OrdersTab({
               status: newBalance <= 0 ? "Dispatched" : "Partial",
               lastDispatchedAt: chosenDateStr,
               lastDispatchedBy: user.email,
+              prepReady: false,
+              prepReadyBy: null,
+              prepReadyAt: null,
               dispatchConfirmed: false,
               dispatchConfirmedAt: null
             };
           });
+          if (updatedItems.every((it, i) => it === (data.items || [])[i])) continue;
+          movedAny = true;
           const allDone = updatedItems.every(i => i.balanceQty <= 0 || i.status === "Dispatched");
           await C("orders").doc(o.id).update({
             items: updatedItems.map(cleanItem),
@@ -23383,7 +23450,8 @@ function OrdersTab({
           });
         }
       }
-      showToast(`All ${directPrepArea === "All" ? "direct" : directPrepArea} orders dispatched for ${chosenDateStr} ✓`);
+      if (!movedAny) showToast("Nothing ticked as ready — tick the products that are ready first", "error");
+      else showToast(`Ready ${directPrepArea === "All" ? "direct" : directPrepArea} products dispatched for ${chosenDateStr} ✓`);
       setPrintRouteFilter("All");
     } catch (e) {
       showToast("Error: " + e.message, "error");
@@ -23821,6 +23889,7 @@ function OrdersTab({
       itemIdx: (o.items || []).indexOf(item),
       stagedBy: item.stagedBy,
       stagedAt: item.stagedAt,
+      prepReady: !!item.prepReady,
       isDirect: o.isDirect
     }));
   });
@@ -23838,15 +23907,19 @@ function OrdersTab({
     stagedForTransport: item.stagedForTransport || false,
     stagedAt: item.stagedAt || null,
     stagedBy: item.stagedBy || null,
-    stagedQty: item.stagedQty || null
+    stagedQty: item.stagedQty || null,
+    prepReady: item.prepReady || false,
+    prepReadyBy: item.prepReadyBy || null,
+    prepReadyAt: item.prepReadyAt || null
   });
   const moveStagedToDispatch = async () => {
     setSaving(true);
     try {
       // Get staged order IDs from live state
-      const stagedOrderIds = [...new Set(stagedTransportItems.map(i => i.orderId))];
+      const readyStaged = stagedTransportItems.filter(i => isItemReady(i.orderId, i.itemIdx, i));
+      const stagedOrderIds = [...new Set(readyStaged.map(i => i.orderId))];
       if (stagedOrderIds.length === 0) {
-        showToast("No staged items to move", "error");
+        showToast("Nothing ticked as ready — tick the products that are ready first", "error");
         setSaving(false);
         return;
       }
@@ -23855,8 +23928,10 @@ function OrdersTab({
         const doc = await C("orders").doc(orderId).get();
         if (!doc.exists) continue;
         const data = doc.data();
+        const readySet = new Set(readyStaged.filter(i => i.orderId === orderId).map(i => i.itemIdx));
         const updatedItems = (data.items || []).map(item => {
           if (!item.stagedForTransport || item.status === "Dispatched") return item;
+          if (!readySet.has((data.items || []).indexOf(item))) return item; // not ticked ready — stays staged
           const balQty = parseFloat(item.balanceQty) || 0;
           if (balQty <= 0) return {
             ...item,
@@ -23879,6 +23954,9 @@ function OrdersTab({
             lastDispatchedBy: user.email,
             stagedForTransport: false,
             stagedAt: null,
+            prepReady: false,
+            prepReadyBy: null,
+            prepReadyAt: null,
             dispatchConfirmed: false,
             dispatchConfirmedAt: null
           };
@@ -28334,7 +28412,28 @@ function OrdersTab({
           flexWrap: "wrap",
           justifyContent: "flex-end"
         }
-      }, (isAdmin || roles.includes("issuer")) && (cg.orders.some(o => o.onHold) ? /*#__PURE__*/React.createElement("span", {
+      }, (() => {
+        const tickable = items.filter(x => !(directQtyOverrides[x.orderId + "__" + x.itemIdx] === "0") && !(cg.orders.find(o => o.id === x.orderId) || {}).onHold);
+        const rc = tickable.filter(x => isItemReady(x.orderId, x.itemIdx, x)).length;
+        const allOn = tickable.length > 0 && rc === tickable.length;
+        return tickable.length > 0 ? /*#__PURE__*/React.createElement("button", {
+          onClick: () => setItemsReady(tickable.map(x => ({
+            orderId: x.orderId,
+            itemIdx: x.itemIdx
+          })), !allOn),
+          style: {
+            background: allOn ? "#052e16" : "#0b1220",
+            border: `1px solid ${allOn ? "#166534" : "#334155"}`,
+            borderRadius: "5px",
+            padding: "2px 9px",
+            color: allOn ? "#4ade80" : "#94a3b8",
+            fontSize: "11px",
+            fontWeight: "700",
+            cursor: "pointer",
+            whiteSpace: "nowrap"
+          }
+        }, allOn ? "☑ All ready" : "☐ Tick all", " (", rc, "/", tickable.length, ")") : null;
+      })(), (isAdmin || roles.includes("issuer")) && (cg.orders.some(o => o.onHold) ? /*#__PURE__*/React.createElement("span", {
         style: {
           fontSize: "10.5px",
           fontWeight: "700",
@@ -28400,6 +28499,7 @@ function OrdersTab({
       }, "🔒 Release hold to dispatch") : renderCustomerDispatchButton({
         sectionKey: cg.partyName + "::" + (cg.route || "") + "::" + (cg.transport || ""),
         cg,
+        label: "🚚 Dispatch ready (" + items.filter(x => isItemReady(x.orderId, x.itemIdx, x)).length + "/" + items.length + ")",
         prompt: customerDispatchPrompt,
         setPrompt: setCustomerDispatchPrompt,
         onConfirm: runCustomerDirectDispatch,
@@ -28475,7 +28575,7 @@ function OrdersTab({
             cursor: "pointer",
             whiteSpace: "nowrap"
           }
-        }, "🚚 Dispatch this order"))) : null;
+        }, "🚚 Dispatch ready (", items.filter(x => x.orderId === item.orderId && isItemReady(x.orderId, x.itemIdx, x)).length, "/", items.filter(x => x.orderId === item.orderId).length, ")"))) : null;
         const rowEl = /*#__PURE__*/React.createElement("div", {
           key: ii,
           style: {
@@ -28489,9 +28589,25 @@ function OrdersTab({
             background: removed ? "#0f0505" : ii % 2 === 0 ? "transparent" : "#060d1a",
             opacity: removed ? 0.5 : 1
           }
-        }, /*#__PURE__*/React.createElement("span", {
+        }, /*#__PURE__*/React.createElement("input", {
+          type: "checkbox",
+          checked: isItemReady(item.orderId, item.itemIdx, item),
+          disabled: removed || !!(orderObj && orderObj.onHold),
+          onChange: e => setItemsReady([{
+            orderId: item.orderId,
+            itemIdx: item.itemIdx
+          }], e.target.checked),
+          title: "Tick when this product is ready",
           style: {
-            color: removed ? "#475569" : "#94a3b8",
+            width: "17px",
+            height: "17px",
+            accentColor: "#22c55e",
+            cursor: "pointer",
+            flexShrink: 0
+          }
+        }), /*#__PURE__*/React.createElement("span", {
+          style: {
+            color: removed ? "#475569" : isItemReady(item.orderId, item.itemIdx, item) ? "#4ade80" : "#94a3b8",
             flex: 1,
             overflow: "hidden",
             textOverflow: "ellipsis",
@@ -29417,16 +29533,22 @@ function OrdersTab({
       onClick: async () => {
         setSaving(true);
         try {
-          const orderIds = [...new Set(cg.items.map(i => i.orderId))];
+          const readyIdx = cg.items.filter(i => isItemReady(i.orderId, i.itemIdx, i));
+          if (!readyIdx.length) {
+            showToast("Nothing ticked as ready — tick the products that are ready first", "error");
+            setSaving(false);
+            return;
+          }
+          const orderIds = [...new Set(readyIdx.map(i => i.orderId))];
           for (const orderId of orderIds) {
             const doc = await C("orders").doc(orderId).get();
             if (!doc.exists) continue;
             const data = doc.data();
-            // Match staged items by name — always clear stagedForTransport on dispatch
-            const stagedNames = new Set(cg.items.filter(i => i.orderId === orderId).map(i => normalize(i.name)));
-            const updatedItems = (data.items || []).map(item => {
+            // Only the ticked-ready products move; the rest stay staged for later
+            const readyKeys = new Set(readyIdx.filter(i => i.orderId === orderId).map(i => i.itemIdx));
+            const updatedItems = (data.items || []).map((item, itemPos) => {
               if (!item.stagedForTransport || item.status === "Dispatched") return item;
-              if (!stagedNames.has(normalize(item.name))) return item;
+              if (!readyKeys.has(itemPos)) return item;
               const balQty = parseFloat(item.balanceQty) || 0;
               if (balQty <= 0) return {
                 ...item,
@@ -29448,6 +29570,9 @@ function OrdersTab({
                 lastDispatchedBy: user.email,
                 stagedForTransport: false,
                 stagedAt: null,
+                prepReady: false,
+                prepReadyBy: null,
+                prepReadyAt: null,
                 dispatchConfirmed: false,
                 dispatchConfirmedAt: null
               };
@@ -29460,7 +29585,7 @@ function OrdersTab({
               updatedAt: ts()
             });
           }
-          showToast(`${cg.partyName} moved to Dispatch Today ✓`);
+          showToast(`${cg.partyName} — ready products moved to Dispatch Today ✓`);
           setPrintRouteFilter("All");
           setDispatchRouteFilter("All");
           setDispatchDeliveryFilter("All");
@@ -29481,7 +29606,7 @@ function OrdersTab({
         cursor: "pointer",
         whiteSpace: "nowrap"
       }
-    }, "🚚 Move to Dispatch"), /*#__PURE__*/React.createElement("button", {
+    }, "🚚 Dispatch ready (", cg.items.filter(i => isItemReady(i.orderId, i.itemIdx, i)).length, "/", cg.items.length, ")"), /*#__PURE__*/React.createElement("button", {
       onClick: () => stageItemsForTransport(cg.items, false),
       disabled: stagingSaving,
       style: {
@@ -29509,14 +29634,29 @@ function OrdersTab({
           gap: "6px",
           background: "#12083a"
         }
-      }, /*#__PURE__*/React.createElement("div", {
+      }, /*#__PURE__*/React.createElement("input", {
+        type: "checkbox",
+        checked: isItemReady(item.orderId, item.itemIdx, item),
+        onChange: e => setItemsReady([{
+          orderId: item.orderId,
+          itemIdx: item.itemIdx
+        }], e.target.checked),
+        title: "Tick when this product is ready",
+        style: {
+          width: "17px",
+          height: "17px",
+          accentColor: "#22c55e",
+          cursor: "pointer",
+          flexShrink: 0
+        }
+      }), /*#__PURE__*/React.createElement("div", {
         style: {
           flex: 1,
           overflow: "hidden",
           textOverflow: "ellipsis",
           whiteSpace: "nowrap",
           fontSize: "11.5px",
-          color: "#c4b5fd"
+          color: isItemReady(item.orderId, item.itemIdx, item) ? "#4ade80" : "#c4b5fd"
         }
       }, item.name), /*#__PURE__*/React.createElement("div", {
         style: {
