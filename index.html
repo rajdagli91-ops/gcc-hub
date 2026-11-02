@@ -26595,7 +26595,13 @@ function OrdersTab({
       style: {
         textAlign: "center"
       }
-    }, canDispatch ? "Dispatch" : "")), (order.items || []).filter(i => !i.stagedForTransport || i.status === "Dispatched").map((item, idx) => {
+    }, canDispatch ? "Dispatch" : "")), (order.items || []).map((it, origIdx) => ({
+      it,
+      origIdx
+    })).filter(x => !x.it.stagedForTransport && x.it.status !== "Dispatched" && (parseFloat(x.it.balanceQty) || 0) > 0).map(({
+      it: item,
+      origIdx: idx
+    }) => {
       const formKey = order.id + "__" + idx;
       const df = dispatchForm[formKey] || {};
       const bal = item.balanceQty || 0;
