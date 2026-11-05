@@ -28540,7 +28540,7 @@ function OrdersTab({
         const editQty = directQtyOverrides[fk];
         const removed = editQty === "0" || editQty === 0;
         const multiOrder = new Set(items.map(x => x.orderId)).size > 1;
-        const startsOrder = multiOrder && (ii === 0 || items[ii - 1].orderId !== item.orderId);
+        const startsOrder = ii === 0 || items[ii - 1].orderId !== item.orderId;
         const orderObj = cg.orders.find(o => o.id === item.orderId);
         const orderHeader = startsOrder ? /*#__PURE__*/React.createElement("div", {
           key: "oh" + item.orderId,
@@ -28561,7 +28561,7 @@ function OrdersTab({
             fontWeight: "700",
             color: "#93c5fd"
           }
-        }, "📄 ", item.voucherNo, item.orderDate ? " · " + item.orderDate : "", " · ", items.filter(x => x.orderId === item.orderId).length, " item", items.filter(x => x.orderId === item.orderId).length !== 1 ? "s" : ""), canDispatch && (orderObj && orderObj.onHold ? /*#__PURE__*/React.createElement("span", {
+        }, "📄 ", item.voucherNo, item.orderDate ? " · " + item.orderDate : "", " · ", items.filter(x => x.orderId === item.orderId).length, " item", items.filter(x => x.orderId === item.orderId).length !== 1 ? "s" : ""), canDispatch && multiOrder && (orderObj && orderObj.onHold ? /*#__PURE__*/React.createElement("span", {
           style: {
             fontSize: "10.5px",
             fontWeight: "700",
@@ -28660,21 +28660,7 @@ function OrdersTab({
             color: "#f59e0b",
             whiteSpace: "nowrap"
           }
-        }, "of ", item.balanceQty), !multiOrder && item.voucherNo && /*#__PURE__*/React.createElement("span", {
-          style: {
-            fontSize: "10px",
-            color: "#475569",
-            background: "#0b1220",
-            border: "1px solid #1e293b",
-            borderRadius: "4px",
-            padding: "1px 5px"
-          }
-        }, item.voucherNo), !multiOrder && item.orderDate && /*#__PURE__*/React.createElement("span", {
-          style: {
-            fontSize: "10px",
-            color: "#334155"
-          }
-        }, item.orderDate), /*#__PURE__*/React.createElement("button", {
+        }, "of ", item.balanceQty), /*#__PURE__*/React.createElement("button", {
           onClick: () => setDirectQtyOverrides(f => ({
             ...f,
             [fk]: removed ? "" : "0"
@@ -29649,11 +29635,17 @@ function OrdersTab({
         fontWeight: "700",
         cursor: "pointer"
       }
-    }, "✕"))), cg.items.map((item, ii) => {
+    }, "✕"))), (() => {
+      const first = {};
+      cg.items.forEach((it, i) => {
+        if (first[it.orderId] === undefined) first[it.orderId] = i;
+      });
+      return [...cg.items].sort((a, b) => first[a.orderId] - first[b.orderId]);
+    })().map((item, ii, arr) => {
       const fk = item.orderId + "__" + item.itemIdx;
       const editQty = stagedQtyOverrides[fk];
       const dispQty = editQty !== undefined ? parseFloat(editQty) || 0 : item.qty;
-      return /*#__PURE__*/React.createElement("div", {
+      const rowEl = /*#__PURE__*/React.createElement("div", {
         key: ii,
         style: {
           display: "flex",
@@ -29712,21 +29704,7 @@ function OrdersTab({
             padding: "1px 5px"
           }
         }, ct.cartons > 0 ? ct.cartons + " ctn" : "", ct.loose > 0 ? (ct.cartons > 0 ? " + " : "") + ct.loose + " loose" : "") : null;
-      })(), item.voucherNo && /*#__PURE__*/React.createElement("span", {
-        style: {
-          fontSize: "10px",
-          color: "#475569",
-          background: "#0b1220",
-          border: "1px solid #1e293b",
-          borderRadius: "4px",
-          padding: "1px 5px"
-        }
-      }, item.voucherNo), item.orderDate && /*#__PURE__*/React.createElement("span", {
-        style: {
-          fontSize: "10px",
-          color: "#334155"
-        }
-      }, item.orderDate)), /*#__PURE__*/React.createElement("div", {
+      })()), /*#__PURE__*/React.createElement("div", {
         style: {
           display: "flex",
           gap: "5px",
@@ -29772,6 +29750,20 @@ function OrdersTab({
           cursor: "pointer"
         }
       }, "✕"));
+      const orderHdr = ii === 0 || arr[ii - 1].orderId !== item.orderId ? /*#__PURE__*/React.createElement("div", {
+        key: "oh" + ii,
+        style: {
+          padding: "6px 12px",
+          background: "#0a1628",
+          borderTop: "1px solid #1e293b",
+          fontSize: "11px",
+          fontWeight: "700",
+          color: "#93c5fd"
+        }
+      }, "📄 ", item.voucherNo, item.orderDate ? " · " + item.orderDate : "", " · ", arr.filter(x => x.orderId === item.orderId).length, " item", arr.filter(x => x.orderId === item.orderId).length !== 1 ? "s" : "") : null;
+      return orderHdr ? /*#__PURE__*/React.createElement(React.Fragment, {
+        key: "f" + ii
+      }, orderHdr, rowEl) : rowEl;
     })));
   })()), /*#__PURE__*/React.createElement("div", null, (() => {
     const volTotals = {};
