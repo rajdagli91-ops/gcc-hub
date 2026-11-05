@@ -28618,9 +28618,9 @@ function OrdersTab({
           style: {
             color: removed ? "#475569" : isItemReady(item.orderId, item.itemIdx, item) ? "#4ade80" : "#94a3b8",
             flex: 1,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
+            whiteSpace: "normal",
+            overflowWrap: "anywhere",
+            minWidth: 0,
             textDecoration: removed ? "line-through" : "none"
           }
         }, item.name), /*#__PURE__*/React.createElement("div", {
@@ -28927,9 +28927,9 @@ function OrdersTab({
             style: {
               color: "#94a3b8",
               flex: 1,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap"
+              whiteSpace: "normal",
+              overflowWrap: "anywhere",
+              minWidth: 0
             }
           }, it.name), /*#__PURE__*/React.createElement("div", {
             style: {
@@ -28991,9 +28991,9 @@ function OrdersTab({
             fontWeight: "700",
             color: "#f1f5f9",
             flex: 1,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap"
+            whiteSpace: "normal",
+            overflowWrap: "anywhere",
+            minWidth: 0
           }
         }, p.name), /*#__PURE__*/React.createElement("div", {
           style: {
@@ -29115,9 +29115,9 @@ function OrdersTab({
         style: {
           color: "#64748b",
           flex: 1,
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap"
+          whiteSpace: "normal",
+          overflowWrap: "anywhere",
+          minWidth: 0
         }
       }, it.partyName, " · ", it.name), (() => {
         const ct = calcCartons(it.name, it.qty);
@@ -29515,9 +29515,9 @@ function OrdersTab({
         fontSize: "12px",
         fontWeight: "700",
         color: "#f1f5f9",
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-        whiteSpace: "nowrap"
+        whiteSpace: "normal",
+        overflowWrap: "anywhere",
+        minWidth: 0
       }
     }, Object.keys(deliverySequence.transport || {}).length > 0 && getTransportSeq(cg.partyName, cg.transport, cg.siteDelivery, cg.siteLabel) < 999 && /*#__PURE__*/React.createElement("span", {
       style: {
@@ -29661,9 +29661,9 @@ function OrdersTab({
       }), /*#__PURE__*/React.createElement("div", {
         style: {
           flex: 1,
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
+          whiteSpace: "normal",
+          overflowWrap: "anywhere",
+          minWidth: 0,
           fontSize: "11.5px",
           color: isItemReady(item.orderId, item.itemIdx, item) ? "#4ade80" : "#c4b5fd"
         }
@@ -29874,9 +29874,9 @@ function OrdersTab({
             style: {
               color: "#94a3b8",
               flex: 1,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap"
+              whiteSpace: "normal",
+              overflowWrap: "anywhere",
+              minWidth: 0
             }
           }, it.name), /*#__PURE__*/React.createElement("div", {
             style: {
@@ -29939,9 +29939,9 @@ function OrdersTab({
             fontWeight: "700",
             color: "#f1f5f9",
             flex: 1,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap"
+            whiteSpace: "normal",
+            overflowWrap: "anywhere",
+            minWidth: 0
           }
         }, p.name), /*#__PURE__*/React.createElement("div", {
           style: {
@@ -30064,9 +30064,9 @@ function OrdersTab({
       style: {
         color: "#64748b",
         flex: 1,
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-        whiteSpace: "nowrap"
+        whiteSpace: "normal",
+        overflowWrap: "anywhere",
+        minWidth: 0
       }
     }, it.partyName, " · ", it.name), (() => {
       const ct = calcCartons(it.name, it.qty);
