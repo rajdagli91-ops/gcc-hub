@@ -28596,7 +28596,8 @@ function OrdersTab({
             gap: "6px",
             fontSize: "11.5px",
             background: removed ? "#0f0505" : ii % 2 === 0 ? "transparent" : "#060d1a",
-            opacity: removed ? 0.5 : 1
+            opacity: removed ? 0.5 : 1,
+            flexWrap: "wrap"
           }
         }, /*#__PURE__*/React.createElement("input", {
           type: "checkbox",
@@ -28617,10 +28618,14 @@ function OrdersTab({
         }), /*#__PURE__*/React.createElement("span", {
           style: {
             color: removed ? "#475569" : isItemReady(item.orderId, item.itemIdx, item) ? "#4ade80" : "#94a3b8",
-            flex: 1,
+            flex: "1 1 150px",
             whiteSpace: "normal",
-            overflowWrap: "anywhere",
+            overflowWrap: "break-word",
             minWidth: 0,
+            overflow: "hidden",
+            display: "-webkit-box",
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: "vertical",
             textDecoration: removed ? "line-through" : "none"
           }
         }, item.name), /*#__PURE__*/React.createElement("div", {
@@ -28655,7 +28660,7 @@ function OrdersTab({
             color: "#f59e0b",
             whiteSpace: "nowrap"
           }
-        }, "of ", item.balanceQty), item.voucherNo && /*#__PURE__*/React.createElement("span", {
+        }, "of ", item.balanceQty), !multiOrder && item.voucherNo && /*#__PURE__*/React.createElement("span", {
           style: {
             fontSize: "10px",
             color: "#475569",
@@ -28664,7 +28669,7 @@ function OrdersTab({
             borderRadius: "4px",
             padding: "1px 5px"
           }
-        }, item.voucherNo), item.orderDate && /*#__PURE__*/React.createElement("span", {
+        }, item.voucherNo), !multiOrder && item.orderDate && /*#__PURE__*/React.createElement("span", {
           style: {
             fontSize: "10px",
             color: "#334155"
@@ -28928,8 +28933,12 @@ function OrdersTab({
               color: "#94a3b8",
               flex: 1,
               whiteSpace: "normal",
-              overflowWrap: "anywhere",
-              minWidth: 0
+              overflowWrap: "break-word",
+              minWidth: 0,
+              overflow: "hidden",
+              display: "-webkit-box",
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: "vertical"
             }
           }, it.name), /*#__PURE__*/React.createElement("div", {
             style: {
@@ -28992,8 +29001,12 @@ function OrdersTab({
             color: "#f1f5f9",
             flex: 1,
             whiteSpace: "normal",
-            overflowWrap: "anywhere",
-            minWidth: 0
+            overflowWrap: "break-word",
+            minWidth: 0,
+            overflow: "hidden",
+            display: "-webkit-box",
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: "vertical"
           }
         }, p.name), /*#__PURE__*/React.createElement("div", {
           style: {
@@ -29116,8 +29129,12 @@ function OrdersTab({
           color: "#64748b",
           flex: 1,
           whiteSpace: "normal",
-          overflowWrap: "anywhere",
-          minWidth: 0
+          overflowWrap: "break-word",
+          minWidth: 0,
+          overflow: "hidden",
+          display: "-webkit-box",
+          WebkitLineClamp: 2,
+          WebkitBoxOrient: "vertical"
         }
       }, it.partyName, " · ", it.name), (() => {
         const ct = calcCartons(it.name, it.qty);
@@ -29516,8 +29533,12 @@ function OrdersTab({
         fontWeight: "700",
         color: "#f1f5f9",
         whiteSpace: "normal",
-        overflowWrap: "anywhere",
-        minWidth: 0
+        overflowWrap: "break-word",
+        minWidth: 0,
+        overflow: "hidden",
+        display: "-webkit-box",
+        WebkitLineClamp: 2,
+        WebkitBoxOrient: "vertical"
       }
     }, Object.keys(deliverySequence.transport || {}).length > 0 && getTransportSeq(cg.partyName, cg.transport, cg.siteDelivery, cg.siteLabel) < 999 && /*#__PURE__*/React.createElement("span", {
       style: {
@@ -29641,6 +29662,7 @@ function OrdersTab({
           padding: "5px 12px",
           borderTop: "1px solid #0f172a",
           gap: "6px",
+          flexWrap: "wrap",
           background: "#12083a"
         }
       }, /*#__PURE__*/React.createElement("input", {
@@ -29660,10 +29682,14 @@ function OrdersTab({
         }
       }), /*#__PURE__*/React.createElement("div", {
         style: {
-          flex: 1,
+          flex: "1 1 150px",
           whiteSpace: "normal",
-          overflowWrap: "anywhere",
+          overflowWrap: "break-word",
           minWidth: 0,
+          overflow: "hidden",
+          display: "-webkit-box",
+          WebkitLineClamp: 2,
+          WebkitBoxOrient: "vertical",
           fontSize: "11.5px",
           color: isItemReady(item.orderId, item.itemIdx, item) ? "#4ade80" : "#c4b5fd"
         }
@@ -29875,8 +29901,12 @@ function OrdersTab({
               color: "#94a3b8",
               flex: 1,
               whiteSpace: "normal",
-              overflowWrap: "anywhere",
-              minWidth: 0
+              overflowWrap: "break-word",
+              minWidth: 0,
+              overflow: "hidden",
+              display: "-webkit-box",
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: "vertical"
             }
           }, it.name), /*#__PURE__*/React.createElement("div", {
             style: {
@@ -29940,8 +29970,12 @@ function OrdersTab({
             color: "#f1f5f9",
             flex: 1,
             whiteSpace: "normal",
-            overflowWrap: "anywhere",
-            minWidth: 0
+            overflowWrap: "break-word",
+            minWidth: 0,
+            overflow: "hidden",
+            display: "-webkit-box",
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: "vertical"
           }
         }, p.name), /*#__PURE__*/React.createElement("div", {
           style: {
@@ -30065,8 +30099,12 @@ function OrdersTab({
         color: "#64748b",
         flex: 1,
         whiteSpace: "normal",
-        overflowWrap: "anywhere",
-        minWidth: 0
+        overflowWrap: "break-word",
+        minWidth: 0,
+        overflow: "hidden",
+        display: "-webkit-box",
+        WebkitLineClamp: 2,
+        WebkitBoxOrient: "vertical"
       }
     }, it.partyName, " · ", it.name), (() => {
       const ct = calcCartons(it.name, it.qty);
