@@ -21696,8 +21696,16 @@ function OrdersTab({
         mergedItems.push(...keptDispatched);
         const allDone = mergedItems.every(i => i.status === "Dispatched");
         const anyDone = mergedItems.some(i => i.status === "Dispatched" || i.status === "Partial");
+        // A "ready" tick belongs to a product that is still on this order. If Tally no longer lists
+        // the product (it has gone out and been invoiced), drop its tick too, so it can't reappear
+        // pre-ticked if the same product is ordered again later.
+        const staleReady = {};
+        Object.keys(existing.prepReadyMap || {}).forEach(k => {
+          if (!mergedItems.some(i => "k_" + normalize(i.name) === k)) staleReady["prepReadyMap." + k] = firebase.firestore.FieldValue.delete();
+        });
         importOps.push(batch => batch.update(docRef, {
           ...order,
+          ...staleReady,
           items: san(mergedItems),
           status: allDone ? "Dispatched" : anyDone ? "Partial" : "Pending",
           lastImportedAt: ts(),
@@ -22073,7 +22081,7 @@ function OrdersTab({
         const data = doc.data();
         const updatedItems = (data.items || []).map((item, idx) => {
           if (item.balanceQty <= 0 || item.status === "Dispatched") return item;
-          if (!item.prepReady) return item; // only products the store has ticked as ready move on
+          if (!isRdyInDoc(data, item)) return item; // only products the store has ticked as ready move on
           const fk = o.id + "__" + idx;
           const override = directQtyOverrides[fk];
           if (override === "0" || override === 0) return item;
@@ -22099,7 +22107,8 @@ function OrdersTab({
         await C("orders").doc(o.id).update({
           items: updatedItems.map(cleanItem),
           status: allDone ? "Dispatched" : "Partial",
-          updatedAt: ts()
+          updatedAt: ts(),
+          ...readyClears(data.items, updatedItems)
         });
       }
       if (skippedNone >= cg.orders.filter(o => !o.onHold).length) showToast("Nothing ticked as ready — tick the products that are ready first", "error");
@@ -23363,6 +23372,19 @@ function OrdersTab({
     const v = readyOv[orderId + "__" + itemIdx];
     return v !== undefined ? v : !!(item && item.prepReady);
   };
+  // Ready ticks live in their own map on the order (prepReadyMap, keyed by product name) and are
+  // written with a field-level update — no read-modify-write of the items list. That way a Tally
+  // import (which rewrites the items list) can never wipe a tick, and a tick can never overwrite
+  // freshly imported quantities, even when both happen at the same moment.
+  const rdyKey = name => "k_" + normalize(name || "");
+  const isRdyInDoc = (data, item) => !!(data && data.prepReadyMap && data.prepReadyMap[rdyKey(item.name)]);
+  const readyClears = (before, after) => {
+    const out = {};
+    (after || []).forEach((it, i) => {
+      if (it !== (before || [])[i]) out["prepReadyMap." + rdyKey(it.name)] = firebase.firestore.FieldValue.delete();
+    });
+    return out;
+  };
   const setItemsReady = async (list, ready) => {
     if (!list.length) return;
     setReadyOv(f => {
@@ -23377,20 +23399,17 @@ function OrdersTab({
     try {
       const byOrder = {};
       list.forEach(x => {
-        (byOrder[x.orderId] = byOrder[x.orderId] || []).push(x.itemIdx);
+        (byOrder[x.orderId] = byOrder[x.orderId] || []).push(x);
       });
-      for (const [orderId, idxs] of Object.entries(byOrder)) {
-        const d = await C("orders").doc(orderId).get();
-        if (!d.exists) continue;
-        const its = (d.data().items || []).map((it, i) => idxs.includes(i) ? {
-          ...it,
-          prepReady: ready,
-          prepReadyBy: ready ? user.email : null,
-          prepReadyAt: ready ? new Date().toISOString() : null
-        } : it);
-        await C("orders").doc(orderId).update({
-          items: san(its)
+      for (const [orderId, xs] of Object.entries(byOrder)) {
+        const upd = {};
+        xs.forEach(x => {
+          upd["prepReadyMap." + rdyKey(x.name)] = ready ? {
+            by: user.email,
+            at: new Date().toISOString()
+          } : firebase.firestore.FieldValue.delete();
         });
+        await C("orders").doc(orderId).update(upd);
       }
     } catch (e) {
       showToast("Could not save tick: " + e.message, "error");
@@ -23419,7 +23438,7 @@ function OrdersTab({
           if (data.onHold) continue; // skip orders HO has put on hold — never dispatch these in bulk
           const updatedItems = (data.items || []).map((item, idx) => {
             if (item.balanceQty <= 0 || item.status === "Dispatched") return item;
-            if (!item.prepReady) return item; // only ticked-ready products move on
+            if (!isRdyInDoc(data, item)) return item; // only ticked-ready products move on
             const fk = o.id + "__" + idx;
             const override = directQtyOverrides[fk];
             if (override === "0" || override === 0) return item;
@@ -23446,7 +23465,8 @@ function OrdersTab({
           await C("orders").doc(o.id).update({
             items: updatedItems.map(cleanItem),
             status: allDone ? "Dispatched" : "Partial",
-            updatedAt: ts()
+            updatedAt: ts(),
+            ...readyClears(data.items, updatedItems)
           });
         }
       }
@@ -23889,7 +23909,7 @@ function OrdersTab({
       itemIdx: (o.items || []).indexOf(item),
       stagedBy: item.stagedBy,
       stagedAt: item.stagedAt,
-      prepReady: !!item.prepReady,
+      prepReady: !!(o.prepReadyMap && o.prepReadyMap[rdyKey(item.name)]),
       isDirect: o.isDirect
     }));
   });
@@ -23966,7 +23986,8 @@ function OrdersTab({
         await C("orders").doc(orderId).update({
           items: updatedItems.map(cleanItem),
           status: allDone ? "Dispatched" : anyDispatched ? "Partial" : "Pending",
-          updatedAt: ts()
+          updatedAt: ts(),
+          ...readyClears(data.items, updatedItems)
         });
       }
       showToast(`${stagedOrderIds.length} order${stagedOrderIds.length !== 1 ? "s" : ""} moved to Dispatch Today ✓`);
@@ -24131,7 +24152,7 @@ function OrdersTab({
       fontFamily: "monospace"
     },
     title: "Diagnostic: total orders the app is holding in memory"
-  }, orders.length, " orders loaded (open + recent)", window.__ordersLoadMs ? " in " + (window.__ordersLoadMs / 1000).toFixed(1) + "s" : "", " · build 06Nov-A")), verifyResult && /*#__PURE__*/React.createElement(VerifyTallyModal, {
+  }, orders.length, " orders loaded (open + recent)", window.__ordersLoadMs ? " in " + (window.__ordersLoadMs / 1000).toFixed(1) + "s" : "", " · build 14Nov-A")), verifyResult && /*#__PURE__*/React.createElement(VerifyTallyModal, {
     result: verifyResult,
     onClose: () => setVerifyResult(null)
   }), /*#__PURE__*/React.createElement("div", {
@@ -28347,7 +28368,8 @@ function OrdersTab({
         orderId: o.id,
         itemIdx: x.idx,
         voucherNo: o.voucherNo,
-        orderDate: o.orderDate || ""
+        orderDate: o.orderDate || "",
+        prepReady: !!(o.prepReadyMap && o.prepReadyMap[rdyKey(x.item.name)])
       })));
       if (!items.length) return null;
       return /*#__PURE__*/React.createElement("div", {
@@ -28425,7 +28447,8 @@ function OrdersTab({
         return tickable.length > 0 ? /*#__PURE__*/React.createElement("button", {
           onClick: () => setItemsReady(tickable.map(x => ({
             orderId: x.orderId,
-            itemIdx: x.itemIdx
+            itemIdx: x.itemIdx,
+            name: x.name
           })), !allOn),
           style: {
             background: allOn ? "#052e16" : "#0b1220",
@@ -28605,7 +28628,8 @@ function OrdersTab({
           disabled: removed || !!(orderObj && orderObj.onHold),
           onChange: e => setItemsReady([{
             orderId: item.orderId,
-            itemIdx: item.itemIdx
+            itemIdx: item.itemIdx,
+            name: item.name
           }], e.target.checked),
           title: "Tick when this product is ready",
           style: {
@@ -29598,7 +29622,8 @@ function OrdersTab({
             await C("orders").doc(orderId).update({
               items: updatedItems.map(cleanItem),
               status: allDone ? "Dispatched" : anyDispatched ? "Partial" : "Pending",
-              updatedAt: ts()
+              updatedAt: ts(),
+              ...readyClears(data.items, updatedItems)
             });
           }
           showToast(`${cg.partyName} — ready products moved to Dispatch Today ✓`);
@@ -29662,7 +29687,8 @@ function OrdersTab({
         checked: isItemReady(item.orderId, item.itemIdx, item),
         onChange: e => setItemsReady([{
           orderId: item.orderId,
-          itemIdx: item.itemIdx
+          itemIdx: item.itemIdx,
+          name: item.name
         }], e.target.checked),
         title: "Tick when this product is ready",
         style: {
