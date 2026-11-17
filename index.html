@@ -21703,6 +21703,9 @@ function OrdersTab({
         Object.keys(existing.prepReadyMap || {}).forEach(k => {
           if (!mergedItems.some(i => "k_" + normalize(i.name) === k)) staleReady["prepReadyMap." + k] = firebase.firestore.FieldValue.delete();
         });
+        Object.keys(existing.prepSkipMap || {}).forEach(k => {
+          if (!mergedItems.some(i => "k_" + normalize(i.name) === k)) staleReady["prepSkipMap." + k] = firebase.firestore.FieldValue.delete();
+        });
         importOps.push(batch => batch.update(docRef, {
           ...order,
           ...staleReady,
@@ -22081,7 +22084,7 @@ function OrdersTab({
         const data = doc.data();
         const updatedItems = (data.items || []).map((item, idx) => {
           if (item.balanceQty <= 0 || item.status === "Dispatched") return item;
-          if (!isRdyInDoc(data, item)) return item; // only products the store has ticked as ready move on
+          if (!isRdyInDoc(data, item) || isSkippedInDoc(data, item)) return item; // only ticked-ready, not-crossed products move on
           const fk = o.id + "__" + idx;
           const override = directQtyOverrides[fk];
           if (override === "0" || override === 0) return item;
@@ -23385,6 +23388,72 @@ function OrdersTab({
     });
     return out;
   };
+  // ✕ "leave this product out" is saved on the order too (prepSkipMap), so a crossed product stays
+  // crossed after a refresh and on every device.
+  const [skipOv, setSkipOv] = useState({});
+  const isItemSkipped = (orderId, itemIdx, item) => {
+    const v = skipOv[orderId + "__" + itemIdx];
+    return v !== undefined ? v : !!(item && item.prepSkip);
+  };
+  const isSkippedInDoc = (data, item) => !!(data && data.prepSkipMap && data.prepSkipMap[rdyKey(item.name)]);
+  const setItemsSkipped = async (list, skipped) => {
+    if (!list.length) return;
+    setSkipOv(f => {
+      const n = {
+        ...f
+      };
+      list.forEach(x => {
+        n[x.orderId + "__" + x.itemIdx] = skipped;
+      });
+      return n;
+    });
+    if (skipped) setReadyOv(f => {
+      const n = {
+        ...f
+      };
+      list.forEach(x => {
+        n[x.orderId + "__" + x.itemIdx] = false;
+      });
+      return n;
+    });
+    try {
+      const byOrder = {};
+      list.forEach(x => {
+        (byOrder[x.orderId] = byOrder[x.orderId] || []).push(x);
+      });
+      for (const [orderId, xs] of Object.entries(byOrder)) {
+        const upd = {};
+        xs.forEach(x => {
+          upd["prepSkipMap." + rdyKey(x.name)] = skipped ? {
+            by: user.email,
+            at: new Date().toISOString()
+          } : firebase.firestore.FieldValue.delete();
+          if (skipped) upd["prepReadyMap." + rdyKey(x.name)] = firebase.firestore.FieldValue.delete();
+        });
+        await C("orders").doc(orderId).update(upd);
+      }
+    } catch (e) {
+      showToast("Could not save: " + e.message, "error");
+    }
+    setSkipOv(f => {
+      const n = {
+        ...f
+      };
+      list.forEach(x => {
+        delete n[x.orderId + "__" + x.itemIdx];
+      });
+      return n;
+    });
+    if (skipped) setReadyOv(f => {
+      const n = {
+        ...f
+      };
+      list.forEach(x => {
+        delete n[x.orderId + "__" + x.itemIdx];
+      });
+      return n;
+    });
+  };
   const setItemsReady = async (list, ready) => {
     if (!list.length) return;
     setReadyOv(f => {
@@ -23438,7 +23507,7 @@ function OrdersTab({
           if (data.onHold) continue; // skip orders HO has put on hold — never dispatch these in bulk
           const updatedItems = (data.items || []).map((item, idx) => {
             if (item.balanceQty <= 0 || item.status === "Dispatched") return item;
-            if (!isRdyInDoc(data, item)) return item; // only ticked-ready products move on
+            if (!isRdyInDoc(data, item) || isSkippedInDoc(data, item)) return item; // only ticked-ready, not-crossed products move on
             const fk = o.id + "__" + idx;
             const override = directQtyOverrides[fk];
             if (override === "0" || override === 0) return item;
@@ -24152,7 +24221,7 @@ function OrdersTab({
       fontFamily: "monospace"
     },
     title: "Diagnostic: total orders the app is holding in memory"
-  }, orders.length, " orders loaded (open + recent)", window.__ordersLoadMs ? " in " + (window.__ordersLoadMs / 1000).toFixed(1) + "s" : "", " · build 14Nov-A")), verifyResult && /*#__PURE__*/React.createElement(VerifyTallyModal, {
+  }, orders.length, " orders loaded (open + recent)", window.__ordersLoadMs ? " in " + (window.__ordersLoadMs / 1000).toFixed(1) + "s" : "", " · build 17Nov-A")), verifyResult && /*#__PURE__*/React.createElement(VerifyTallyModal, {
     result: verifyResult,
     onClose: () => setVerifyResult(null)
   }), /*#__PURE__*/React.createElement("div", {
@@ -28369,7 +28438,8 @@ function OrdersTab({
         itemIdx: x.idx,
         voucherNo: o.voucherNo,
         orderDate: o.orderDate || "",
-        prepReady: !!(o.prepReadyMap && o.prepReadyMap[rdyKey(x.item.name)])
+        prepReady: !!(o.prepReadyMap && o.prepReadyMap[rdyKey(x.item.name)]),
+        prepSkip: !!(o.prepSkipMap && o.prepSkipMap[rdyKey(x.item.name)])
       })));
       if (!items.length) return null;
       return /*#__PURE__*/React.createElement("div", {
@@ -28441,7 +28511,7 @@ function OrdersTab({
           justifyContent: "flex-end"
         }
       }, (() => {
-        const tickable = items.filter(x => !(directQtyOverrides[x.orderId + "__" + x.itemIdx] === "0") && !(cg.orders.find(o => o.id === x.orderId) || {}).onHold);
+        const tickable = items.filter(x => !isItemSkipped(x.orderId, x.itemIdx, x) && !(cg.orders.find(o => o.id === x.orderId) || {}).onHold);
         const rc = tickable.filter(x => isItemReady(x.orderId, x.itemIdx, x)).length;
         const allOn = tickable.length > 0 && rc === tickable.length;
         return tickable.length > 0 ? /*#__PURE__*/React.createElement("button", {
@@ -28539,7 +28609,7 @@ function OrdersTab({
           cursor: "pointer",
           whiteSpace: "nowrap"
         }
-      }, "🚚 Dispatch ready (" + items.filter(x => isItemReady(x.orderId, x.itemIdx, x)).length + "/" + items.length + ")")))), renderDirectHoldPicker({
+      }, "🚚 Dispatch ready (" + items.filter(x => isItemReady(x.orderId, x.itemIdx, x)).length + "/" + items.filter(x => !isItemSkipped(x.orderId, x.itemIdx, x)).length + ")")))), renderDirectHoldPicker({
         cg: {
           ...cg,
           key: cg.partyName + "::" + (cg.route || "") + "::" + (cg.transport || "") + (cg.siteDelivery ? "::site::" + normalize(cg.siteLabel || "") : "")
@@ -28561,7 +28631,7 @@ function OrdersTab({
       }), items.map((item, ii) => {
         const fk = item.orderId + "__" + item.itemIdx;
         const editQty = directQtyOverrides[fk];
-        const removed = editQty === "0" || editQty === 0;
+        const removed = isItemSkipped(item.orderId, item.itemIdx, item);
         const multiOrder = new Set(items.map(x => x.orderId)).size > 1;
         const startsOrder = ii === 0 || items[ii - 1].orderId !== item.orderId;
         const orderObj = cg.orders.find(o => o.id === item.orderId);
@@ -28607,7 +28677,7 @@ function OrdersTab({
             cursor: "pointer",
             whiteSpace: "nowrap"
           }
-        }, "🚚 Dispatch ready (", items.filter(x => x.orderId === item.orderId && isItemReady(x.orderId, x.itemIdx, x)).length, "/", items.filter(x => x.orderId === item.orderId).length, ")"))) : null;
+        }, "🚚 Dispatch ready (", items.filter(x => x.orderId === item.orderId && isItemReady(x.orderId, x.itemIdx, x)).length, "/", items.filter(x => x.orderId === item.orderId && !isItemSkipped(x.orderId, x.itemIdx, x)).length, ")"))) : null;
         const rowEl = /*#__PURE__*/React.createElement("div", {
           key: ii,
           style: {
@@ -28685,10 +28755,20 @@ function OrdersTab({
             whiteSpace: "nowrap"
           }
         }, "of ", item.balanceQty), /*#__PURE__*/React.createElement("button", {
-          onClick: () => setDirectQtyOverrides(f => ({
-            ...f,
-            [fk]: removed ? "" : "0"
-          })),
+          onClick: () => {
+            setDirectQtyOverrides(f => {
+              const n = {
+                ...f
+              };
+              delete n[fk];
+              return n;
+            });
+            setItemsSkipped([{
+              orderId: item.orderId,
+              itemIdx: item.itemIdx,
+              name: item.name
+            }], !removed);
+          },
           title: removed ? "Restore item" : "Remove item",
           style: {
             background: removed ? "#052e16" : "#2e0a0a",
