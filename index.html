@@ -20973,18 +20973,48 @@ function renderSequenceSitesPicker(p) {
   ]);
 }
 
+// ── Dispatch report day ──
+// Dispatch is recorded against a report day. Up to 3:00 pm India time the team is asked whether a
+// dispatch belongs to today or the next working day. From 3:00 pm onward no question is asked: the
+// invoices raised after the cut-off belong to the NEXT working day's report (Monday-Saturday are
+// working days, so Saturday evening and Sunday go to Monday).
+var DISPATCH_CUTOFF_HOUR = 15;
+function getISTClock() {
+  var parts = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23" }).formatToParts(new Date());
+  var g = function(t) { return parts.filter(function(x) { return x.type === t; })[0].value; };
+  return { dateStr: g("year") + "-" + g("month") + "-" + g("day"), hour: parseInt(g("hour"), 10) };
+}
+function nextWorkingDayStr(dateStr) {
+  var d = new Date(dateStr + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + 1);
+  if (d.getUTCDay() === 0) d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+function dispatchReportDay() {
+  var c = getISTClock();
+  if (c.hour >= DISPATCH_CUTOFF_HOUR) return { afterCutoff: true, dateStr: nextWorkingDayStr(c.dateStr), todayStr: c.dateStr };
+  return { afterCutoff: false, dateStr: c.dateStr, todayStr: c.dateStr };
+}
+function dispatchHint() {
+  var d = dispatchReportDay();
+  if (!d.afterCutoff) return "";
+  var dt = new Date(d.dateStr + "T00:00:00Z");
+  var days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], mons = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return " \u2192 " + days[dt.getUTCDay()] + " " + dt.getUTCDate() + " " + mons[dt.getUTCMonth()];
+}
+
 function renderDispatchAllRouteButton(p) {
   var hasUnconfirmed = p.groups.some(function(g) { return g.items.some(function(i) { return !i.confirmed; }); });
   if (!hasUnconfirmed) return null;
   var open = p.prompt === p.sectionKey;
   if (!open) {
     return React.createElement("button", {
-      onClick: function() { p.setPrompt(p.sectionKey); },
+      onClick: function() { var d = dispatchReportDay(); if (d.afterCutoff) p.onConfirm(p.groups, d.dateStr); else p.setPrompt(p.sectionKey); },
       disabled: p.saving,
       style: { background: "#052e16", border: "1px solid #166534", borderRadius: "6px", padding: "3px 10px", color: "#4ade80", fontWeight: "700", fontSize: "10.5px", cursor: "pointer" }
-    }, "\u2713 Dispatch All");
+    }, "\u2713 Dispatch All" + dispatchHint());
   }
-  var tomorrowDate = new Date(Date.now() + p.nextDispatchDayOffset * 86400000).toISOString().slice(0, 10);
+  var tomorrowDate = nextWorkingDayStr(getISTClock().dateStr);
   return React.createElement("div", {
     style: { display: "flex", gap: "5px", alignItems: "center", background: "#0a1520", border: "1px solid #1e3a5f", borderRadius: "6px", padding: "4px 6px" }
   }, [
@@ -21013,12 +21043,12 @@ function renderCustomerDispatchButton(p) {
   var open = p.prompt === p.sectionKey;
   if (!open) {
     return React.createElement("button", {
-      onClick: function() { p.setPrompt(p.sectionKey); },
+      onClick: function() { var d = dispatchReportDay(); if (d.afterCutoff) p.onConfirm(p.cg, d.dateStr); else p.setPrompt(p.sectionKey); },
       disabled: p.saving,
       style: { background: "#052e16", border: "1px solid #166534", borderRadius: "5px", padding: "2px 9px", color: "#4ade80", fontSize: "11px", fontWeight: "700", cursor: "pointer", whiteSpace: "nowrap" }
-    }, p.label || "\uD83D\uDE9A Dispatch");
+    }, (p.label || "\uD83D\uDE9A Dispatch") + dispatchHint());
   }
-  var tomorrowDate = new Date(Date.now() + p.nextDispatchDayOffset * 86400000).toISOString().slice(0, 10);
+  var tomorrowDate = nextWorkingDayStr(getISTClock().dateStr);
   return React.createElement("div", {
     style: { display: "flex", gap: "4px", alignItems: "center", background: "#0a1520", border: "1px solid #1e3a5f", borderRadius: "5px", padding: "3px 5px" }
   }, [
@@ -21147,12 +21177,12 @@ function renderConfirmDispatchedButton(p) {
   var open = p.prompt === p.sectionKey;
   if (!open) {
     return React.createElement("button", {
-      onClick: function() { p.setPrompt(p.sectionKey); },
+      onClick: function() { var d = dispatchReportDay(); if (d.afterCutoff) p.onConfirm(d.dateStr); else p.setPrompt(p.sectionKey); },
       disabled: p.disabled,
       style: { background: "#052e16", border: "1px solid #166534", borderRadius: "6px", padding: "4px 9px", color: "#4ade80", fontWeight: "700", fontSize: "11px", cursor: "pointer", whiteSpace: "nowrap" }
-    }, p.label || "\u2713 Dispatched");
+    }, (p.label || "\u2713 Dispatched") + dispatchHint());
   }
-  var tomorrowDate = new Date(Date.now() + p.nextDispatchDayOffset * 86400000).toISOString().slice(0, 10);
+  var tomorrowDate = nextWorkingDayStr(getISTClock().dateStr);
   var btnStyle = { background: "#1e3a5f", border: "1px solid #475569", borderRadius: "5px", padding: "4px 8px", color: "#f1f5f9", fontWeight: "700", fontSize: "10.5px", cursor: "pointer", whiteSpace: "nowrap" };
   return React.createElement("div", {
     style: { display: "flex", gap: "4px", alignItems: "center", background: "#0a1520", border: "1px solid #1e3a5f", borderRadius: "6px", padding: "3px 6px" }
@@ -21609,7 +21639,12 @@ function OrdersTab({
         const [partyName, itemDate] = pk.split("||");
         // Record the dispatch on the day it actually went out (the day the team entered it),
         // not the day the import happened to run.
-        await finaliseDispatch(partyName, items, itemDate || autoConfirmDateStr);
+        // After the 3 pm cut-off the invoices raised belong to the next working day's report; an item
+        // that was moved to Dispatch Today on an earlier day keeps the day it was moved.
+        const rd = dispatchReportDay();
+        const baseDate = itemDate || autoConfirmDateStr;
+        const useDate = rd.afterCutoff && baseDate >= rd.todayStr ? baseDate > rd.dateStr ? baseDate : rd.dateStr : baseDate;
+        await finaliseDispatch(partyName, items, useDate);
       }
       showToast(`Auto-confirmed ${autoConfirmEntries.length} customer(s)' dispatches no longer in Tally ✓`);
     }
@@ -22669,7 +22704,7 @@ function OrdersTab({
   const [reverseSaving, setReverseSaving] = useState(false);
   const [dispatched48hDateFilter, setDispatched48hDateFilter] = useState("all");
   const [dispatched48hTypeFilter, setDispatched48hTypeFilter] = useState("All"); // All/Direct/Transport
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = getISTClock().dateStr;
   const [dispatchDateChoice, setDispatchDateChoice] = useState("today");
   // Sunday is a non-working day (no dispatch, no invoicing) — so on Saturday, the "next dispatch
   // day" is Monday (+2 days), not Sunday (+1 day). Every other day, "next" is simply tomorrow.
@@ -24221,7 +24256,7 @@ function OrdersTab({
       fontFamily: "monospace"
     },
     title: "Diagnostic: total orders the app is holding in memory"
-  }, orders.length, " orders loaded (open + recent)", window.__ordersLoadMs ? " in " + (window.__ordersLoadMs / 1000).toFixed(1) + "s" : "", " · build 17Nov-A")), verifyResult && /*#__PURE__*/React.createElement(VerifyTallyModal, {
+  }, orders.length, " orders loaded (open + recent)", window.__ordersLoadMs ? " in " + (window.__ordersLoadMs / 1000).toFixed(1) + "s" : "", " · build 18Nov-A")), verifyResult && /*#__PURE__*/React.createElement(VerifyTallyModal, {
     result: verifyResult,
     onClose: () => setVerifyResult(null)
   }), /*#__PURE__*/React.createElement("div", {
