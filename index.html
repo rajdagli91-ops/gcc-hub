@@ -19989,7 +19989,7 @@ function DispatchHistoryReport({
       fontWeight: "700",
       color: "#f1f5f9"
     }
-  }, rev.partyName), /*#__PURE__*/React.createElement("div", {
+  }, rev.partyName, rev.returned ? "  ↩ RETURNED (dispatched " + rev.originalDate + ")" : ""), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: "10.5px",
       color: "#475569",
@@ -21708,6 +21708,40 @@ function OrdersTab({
         autoInvoiced: true
       });
     };
+    // ── Reappeared in Tally after being dispatched ──
+    // If a product the app shows as dispatched is listed in Tally again with its balance NOT reduced
+    // by an invoice, the dispatch did not really happen: either the invoice was cancelled (team
+    // cancelled, or the delivery came back undelivered and its invoice was cancelled — or an older
+    // pending list was uploaded by mistake and the app wrongly treated products as invoiced. Whenever
+    // that happens, however long ago it was dispatched, the dispatch is reversed and removed from the
+    // report so everything returns to how Tally says it is.
+    const RETURN_WINDOW_MS = 12 * 60 * 60 * 1000; // under 12h = dispatch cancelled; 12h or more = material returned
+    const reportReversals = []; // {partyName, voucherNo, date, name, qty, returned}
+    const reversalFor = (ex, ord) => {
+      const out = {};
+      (ex.items || []).forEach(pi => {
+        if (!((parseFloat(pi.dispatchedQty) || 0) > 0) || !pi.dispatchConfirmed) return;
+        const ni = (ord.items || []).find(n => normalize(n.name) === normalize(pi.name));
+        if (!ni) return;
+        const ordered = parseFloat(ni.orderedQty) || 0;
+        if (!(ordered > 0)) return;
+        const expected = (parseFloat(pi.invoicedBase) || 0) + (parseFloat(pi.dispatchedQty) || 0);
+        const invoicedInTally = ordered - (parseFloat(ni.balanceQty) || 0);
+        const shortfall = expected - invoicedInTally;
+        if (shortfall <= 0.000001) return;
+        // Within 12 hours of the dispatch it is treated as cancelled / never having happened (removed from the
+        // report). From 12 hours on the material really did leave and has come back: the product
+        // returns to pending and the report keeps the dispatch, marked as returned. Products the app
+        // itself guessed as dispatched (🧾 / confirmed by an upload) are always simply undone.
+        const cMs = msOf(pi.dispatchConfirmedAt);
+        const guessed = pi.autoInvoiced || pi.confirmedByImport;
+        out[normalize(pi.name)] = {
+          qty: Math.min(Math.round(shortfall * 1000) / 1000, parseFloat(pi.dispatchedQty) || 0),
+          returned: !guessed && !(cMs > 0 && nowMs - cMs <= RETURN_WINDOW_MS)
+        };
+      });
+      return out;
+    };
     let closedCount = 0;
     const closeOps = [];
     const toCloseAll = pendingInDB.filter(dbOrder => !matchedExistingIds.has(dbOrder.id));
@@ -21761,7 +21795,8 @@ function OrdersTab({
       if (existing) {
         // ── Guard: if order is already fully dispatched, do NOT reset it ──
         const hasNewItems = order.items.some(ni => !(existing.items || []).some(pi => normalize(pi.name) === normalize(ni.name)));
-        if (existing.status === "Dispatched" && !hasNewItems) {
+        const reversalMap = reversalFor(existing, order);
+        if (existing.status === "Dispatched" && !hasNewItems && Object.keys(reversalMap).length === 0) {
           alreadyDispatched.push(order.voucherNo || key);
           // Update metadata only — preserve all dispatch state
           importOps.push(batch => batch.update(docRef, {
@@ -21782,6 +21817,42 @@ function OrdersTab({
             firstSeenAt: new Date().toISOString()
           };
           // If this specific item is already dispatched, keep its current state entirely
+          const rev = reversalMap[normalize(ni.name)];
+          if (rev) {
+            reportReversals.push({
+              partyName: existing.partyName,
+              voucherNo: existing.voucherNo,
+              date: prev.lastDispatchedAt,
+              name: prev.name,
+              qty: prev.confirmedByImport ? parseFloat(prev.dispatchedQty) || 0 : rev.qty,
+              returned: !!rev.returned
+            });
+            if (prev.confirmedByImport) {
+              // The upload had confirmed this wrongly — put it back where it was (Dispatch Today, waiting).
+              return {
+                ...prev,
+                orderedQty: ni.orderedQty,
+                balanceQty: prev.status === "Dispatched" ? prev.balanceQty : ni.balanceQty,
+                dispatchConfirmed: false,
+                dispatchConfirmedAt: null,
+                confirmedByImport: false
+              };
+            }
+            const left = Math.max(0, (parseFloat(prev.dispatchedQty) || 0) - rev.qty);
+            return {
+              ...ni,
+              dispatchedQty: left,
+              status: left > 0 ? "Partial" : "Pending",
+              invoicedBase: prev.invoicedBase || 0,
+              firstSeenAt: new Date().toISOString(),
+              autoInvoiced: false,
+              stagedForTransport: false,
+              dispatchConfirmed: left > 0 ? true : false,
+              dispatchConfirmedAt: left > 0 ? prev.dispatchConfirmedAt || null : null,
+              lastDispatchedAt: left > 0 ? prev.lastDispatchedAt || null : null,
+              lastDispatchedBy: left > 0 ? prev.lastDispatchedBy || null : null
+            };
+          }
           if (prev.status === "Dispatched") return prev;
           const ackKey = existing.id + "::" + normalize(ni.name);
           const justConfirmed = autoConfirmedKeys.has(ackKey);
@@ -21798,6 +21869,7 @@ function OrdersTab({
             prepReadyAt: prev.prepReadyAt || null,
             firstSeenAt: prev.firstSeenAt || null,
             invoicedBase: prev.invoicedBase || 0,
+            confirmedByImport: justConfirmed ? true : prev.confirmedByImport || false,
             ...(autoReturnedQty[ackKey] ? {
               firstSeenAt: new Date().toISOString() // back in pending — treat as freshly seen
             } : {}),
@@ -21815,7 +21887,8 @@ function OrdersTab({
           status: "Dispatched",
           balanceQty: 0,
           dispatchConfirmed: true,
-          dispatchConfirmedAt: new Date().toISOString()
+          dispatchConfirmedAt: new Date().toISOString(),
+          confirmedByImport: true
         } : pi);
         mergedItems.push(...keptDispatched);
         // Products that vanished from a voucher that is still in Tally but were first seen only hours
@@ -21912,6 +21985,59 @@ function OrdersTab({
       }
     }
     await commitInBatches(importOps);
+    if (reportReversals.length > 0) {
+      try {
+        const byDate = {};
+        reportReversals.forEach(r => {
+          if (r.date) (byDate[r.date] = byDate[r.date] || []).push(r);
+        });
+        for (const [date, list] of Object.entries(byDate)) {
+          const rid = "report_" + date;
+          const rdoc = await C("dispatch_reports").doc(rid).get();
+          if (!rdoc.exists) continue;
+          const ex = rdoc.data();
+          const entries = (ex.entries || []).map(e => {
+            const mine = list.filter(r => !r.returned && normalize(r.partyName) === normalize(e.partyName));
+            if (!mine.length) return e;
+            const its = (e.items || []).map(it => {
+              const r = mine.find(m => normalize(m.name) === normalize(it.name) && (!m.voucherNo || !it.voucherNo || m.voucherNo === it.voucherNo));
+              if (!r) return it;
+              const q = (parseFloat(it.qty) || 0) - r.qty;
+              return q > 0.000001 ? {
+                ...it,
+                qty: q,
+                vol: calcVolume(it.name, q)
+              } : null;
+            }).filter(Boolean);
+            return its.length ? {
+              ...e,
+              items: its
+            } : null;
+          }).filter(Boolean);
+          await C("dispatch_reports").doc(rid).update({
+            entries,
+            reversals: [...(ex.reversals || []), ...list.map(r => ({
+              partyName: r.partyName,
+              items: [{
+                name: r.name,
+                qty: r.qty,
+                voucherNo: r.voucherNo
+              }],
+              reversedAt: new Date().toISOString(),
+              reversedBy: r.returned ? "auto: returned — listed again in Tally" : "auto: reappeared in Tally pending list",
+              ...(r.returned ? {
+                returned: true,
+                originalDate: date
+              } : {})
+            }))],
+            updatedAt: new Date().toISOString()
+          });
+        }
+      } catch (e) {/* best-effort — the orders themselves are already corrected */}
+      const nRet = reportReversals.filter(r => r.returned).length;
+      const nUndone = reportReversals.length - nRet;
+      showToast(`↩ ${nRet ? nRet + " product(s) came back (marked Returned in the report)" : ""}${nRet && nUndone ? " · " : ""}${nUndone ? nUndone + " dispatch(es) undone and removed from the report" : ""}`);
+    }
     const invoicedParties = Object.entries(invoicedForReport);
     if (invoicedParties.length > 0) {
       for (const [partyName, its] of invoicedParties) {
@@ -24182,7 +24308,8 @@ function OrdersTab({
     firstSeenAt: item.firstSeenAt || null,
     autoInvoiced: item.autoInvoiced || false,
     invoicedBase: item.invoicedBase || 0,
-    orderedQty: item.orderedQty || 0
+    orderedQty: item.orderedQty || 0,
+    confirmedByImport: item.confirmedByImport || false
   });
   const moveStagedToDispatch = async () => {
     setSaving(true);
@@ -24404,7 +24531,7 @@ function OrdersTab({
       fontFamily: "monospace"
     },
     title: "Diagnostic: total orders the app is holding in memory"
-  }, orders.length, " orders loaded (open + recent)", window.__ordersLoadMs ? " in " + (window.__ordersLoadMs / 1000).toFixed(1) + "s" : "", " · build 21Nov-D")), verifyResult && /*#__PURE__*/React.createElement(VerifyTallyModal, {
+  }, orders.length, " orders loaded (open + recent)", window.__ordersLoadMs ? " in " + (window.__ordersLoadMs / 1000).toFixed(1) + "s" : "", " · build 21Nov-G")), verifyResult && /*#__PURE__*/React.createElement(VerifyTallyModal, {
     result: verifyResult,
     onClose: () => setVerifyResult(null)
   }), /*#__PURE__*/React.createElement("div", {
