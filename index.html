@@ -19513,8 +19513,29 @@ function DispatchHistoryReport({
     }
     setLoading(false);
   };
+  // Live: a change made anywhere (report-day move, reversal, an upload) shows up without reloading.
   useEffect(() => {
-    if (mode === "single") loadSingle(reportDate);else loadRange();
+    setLoading(true);
+    const fail = e => {
+      showToast("Error: " + e.message, "error");
+      setLoading(false);
+    };
+    if (mode === "single") {
+      return C("dispatch_reports").doc("report_" + reportDate).onSnapshot(doc => {
+        setReport(doc.exists ? {
+          id: doc.id,
+          ...doc.data()
+        } : null);
+        setLoading(false);
+      }, fail);
+    }
+    return C("dispatch_reports").where("date", ">=", fromDate).where("date", "<=", toDate).orderBy("date", "desc").onSnapshot(snap => {
+      setReports(snap.docs.map(d => ({
+        id: d.id,
+        ...d.data()
+      })));
+      setLoading(false);
+    }, fail);
   }, [mode, reportDate, fromDate, toDate]);
   const isDirectEntry = e => !e.transport || ["DIRECT", "direct", "Direct"].includes(e.transport);
   // Segregate a list of report entries into: one section per distinct Direct route that has
@@ -19563,6 +19584,7 @@ function DispatchHistoryReport({
   // Filter helpers
   const filterEntry = e => {
     if (transportFilter === "All") return true;
+    if (transportFilter === "__transport__") return !isDirectEntry(e);
     if (transportFilter === "__direct__") {
       if (!isDirectEntry(e)) return false;
       if (directRouteFilter !== "All" && e.route !== directRouteFilter) return false;
@@ -19612,7 +19634,7 @@ function DispatchHistoryReport({
     const totals = calcTotals(entriesToPrint);
     let h = '<!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{font-family:Arial,sans-serif;font-size:9pt;margin:0;padding:6pt}@page{size:A4 portrait;margin:8mm}table{border-collapse:collapse;width:100%;margin-bottom:6pt}td,th{padding:2pt 5pt;border:1px solid #000}th{background:#e8e8e8;font-weight:700}.sec{font-weight:700;font-size:9.5pt;border-bottom:1.5px solid #000;padding-bottom:2pt;margin:5pt 0 3pt}</style></head><body>';
     const dateLabel = mode === "single" ? reportDate : `${fromDate} to ${toDate}`;
-    const filterLabel = transportFilter === "All" ? "" : transportFilter === "__direct__" ? " · Direct" + (directRouteFilter !== "All" ? " — " + directRouteFilter : " (all routes)") : " · " + transportFilter;
+    const filterLabel = transportFilter === "All" ? "" : transportFilter === "__transport__" ? " · All Transporters" : transportFilter === "__direct__" ? " · Direct" + (directRouteFilter !== "All" ? " — " + directRouteFilter : " (all routes)") : " · " + transportFilter;
     h += `<div style="display:flex;justify-content:space-between;border-bottom:2px solid #000;margin-bottom:4pt;padding-bottom:3pt"><b style="font-size:12pt">VEEBEE — DISPATCH REPORT</b><span>${dateLabel}${filterLabel}</span></div>`;
     h += `<div style="margin-bottom:4pt;font-size:9pt"><b>Total Qty: ${totals.qty}</b>${Object.entries(totals.vols).map(([u, v]) => " | " + v.toFixed(2) + " " + u).join("")}</div>`;
     // Same segregation as the on-screen view: one table per Direct route, plus one combined
@@ -19739,7 +19761,9 @@ function DispatchHistoryReport({
     }
   }, /*#__PURE__*/React.createElement("option", {
     value: "All"
-  }, "All (Transport + Direct)"), allTrans.length > 0 && /*#__PURE__*/React.createElement("optgroup", {
+  }, "All (Transport + Direct)"), /*#__PURE__*/React.createElement("option", {
+    value: "__transport__"
+  }, "🏢 All Transporters"), allTrans.length > 0 && /*#__PURE__*/React.createElement("optgroup", {
     label: "🏢 Transporter"
   }, allTrans.map(t => /*#__PURE__*/React.createElement("option", {
     key: t,
@@ -21648,7 +21672,8 @@ function OrdersTab({
           unconfirmedByParty[o.partyName + "||" + (item.lastDispatchedAt || "")].push({
             orderId: o.id,
             name: item.name,
-            qty: qtyOut
+            qty: qtyOut,
+            voucherNo: o.voucherNo || ""
           });
           autoConfirmQty[o.id + "::" + normalize(item.name)] = qtyOut;
         }
@@ -23236,7 +23261,43 @@ function OrdersTab({
   const changeReportDay = async (group, newDate) => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(newDate)) return showToast("Use the date format YYYY-MM-DD", "error");
     const items = group.items.filter(i => i.canReverse && (i.dispatchDate || "") !== newDate);
-    if (!items.length) return showToast("Already on that report day", "error");
+    if (!items.length) {
+      // Everything is already on that day. If an old report still lists these products, offer to clean it.
+      setReverseSaving(true);
+      try {
+        const names = group.items.filter(i => i.canReverse).map(i => normalize(i.name));
+        const snap = await C("dispatch_reports").where("date", ">=", new Date(Date.now() - 12 * 86400000).toISOString().slice(0, 10)).where("date", "<=", new Date(Date.now() + 12 * 86400000).toISOString().slice(0, 10)).orderBy("date", "desc").get();
+        const hits = [];
+        snap.docs.forEach(d => {
+          const rep = d.data();
+          if ((rep.date || d.id.replace("report_", "")) === newDate) return;
+          let n = 0;
+          (rep.entries || []).forEach(e => {
+            if (normalize(e.partyName) === normalize(group.partyName)) (e.items || []).forEach(it => { if (names.includes(normalize(it.name))) n++; });
+          });
+          if (n) hits.push({ id: d.id, rep, n });
+        });
+        if (!hits.length) showToast("Already on that report day — no leftover entries in other reports", "error");
+        else if (confirm(`${group.partyName} is already on ${newDate}, but still listed in: ` + hits.map(h => h.id.replace("report_", "") + " (" + h.n + " line" + (h.n > 1 ? "s" : "") + ")").join(", ") + `.\nRemove those leftover lines?`)) {
+          for (const h of hits) {
+            const entries = (h.rep.entries || []).map(e => {
+              if (normalize(e.partyName) !== normalize(group.partyName)) return e;
+              const its = (e.items || []).filter(it => !names.includes(normalize(it.name)));
+              if (!its.length) return null;
+              const v = {};
+              its.forEach(it => { if (it.vol) v[it.vol.unit] = (v[it.vol.unit] || 0) + (parseFloat(it.vol.vol) || 0); });
+              return { ...e, items: its, volTotals: v };
+            }).filter(Boolean);
+            await C("dispatch_reports").doc(h.id).update({ entries, updatedAt: new Date().toISOString() });
+          }
+          showToast(`${group.partyName} — leftover report lines removed ✓`);
+        }
+      } catch (e) {
+        showToast("Error: " + e.message, "error");
+      }
+      setReverseSaving(false);
+      return;
+    }
     setReverseSaving(true);
     try {
       const moved = []; // {name, qty, voucherNo, orderDate, oldDate}
@@ -23275,7 +23336,7 @@ function OrdersTab({
         const entries = (rep.entries || []).map(e => {
           if (normalize(e.partyName) !== normalize(group.partyName)) return e;
           const its = (e.items || []).map(it => {
-            const m = moved.find(x => x.oldDate === oldDate && normalize(x.name) === normalize(it.name) && (x.voucherNo || "") === (it.voucherNo || ""));
+            const m = moved.find(x => x.oldDate === oldDate && normalize(x.name) === normalize(it.name) && (!it.voucherNo || (x.voucherNo || "") === it.voucherNo));
             if (!m) return it;
             const q = Math.max(0, (parseFloat(it.qty) || 0) - m.qty);
             return q > 0 ? { ...it, qty: q, vol: calcVolume(it.name, q) } : null;
@@ -23297,7 +23358,7 @@ function OrdersTab({
         if (prev) {
           const mi = (prev.items || []).map(it => ({ ...it }));
           newItems.forEach(ni => {
-            const h = mi.find(it => normalize(it.name) === normalize(ni.name) && (it.voucherNo || "") === (ni.voucherNo || ""));
+            const h = mi.find(it => normalize(it.name) === normalize(ni.name) && (!it.voucherNo || it.voucherNo === (ni.voucherNo || "")));
             if (h) { h.qty = (parseFloat(h.qty) || 0) + ni.qty; h.vol = calcVolume(h.name, h.qty); } else mi.push(ni);
           });
           merged = { ...prev, items: mi, volTotals: recalcVol(mi) };
@@ -24619,7 +24680,7 @@ function OrdersTab({
       fontFamily: "monospace"
     },
     title: "Diagnostic: total orders the app is holding in memory"
-  }, orders.length, " orders loaded (open + recent)", window.__ordersLoadMs ? " in " + (window.__ordersLoadMs / 1000).toFixed(1) + "s" : "", " · build 21Nov-K")), verifyResult && /*#__PURE__*/React.createElement(VerifyTallyModal, {
+  }, orders.length, " orders loaded (open + recent)", window.__ordersLoadMs ? " in " + (window.__ordersLoadMs / 1000).toFixed(1) + "s" : "", " · build 21Nov-M")), verifyResult && /*#__PURE__*/React.createElement(VerifyTallyModal, {
     result: verifyResult,
     onClose: () => setVerifyResult(null)
   }), /*#__PURE__*/React.createElement("div", {
