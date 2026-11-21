@@ -21665,8 +21665,9 @@ function OrdersTab({
         // After the 2 pm cut-off the invoices raised belong to the next working day's report; an item
         // that was moved to Dispatch Today on an earlier day keeps the day it was moved.
         const rd = dispatchReportDay();
-        const baseDate = itemDate || autoConfirmDateStr;
-        const useDate = rd.afterCutoff && baseDate >= rd.todayStr ? baseDate > rd.dateStr ? baseDate : rd.dateStr : baseDate;
+        // The report day follows the moment of this upload only: before the cut-off it is today,
+        // from the cut-off on it is the next working day — whichever day the item was moved on.
+        const useDate = rd.afterCutoff ? rd.dateStr : rd.todayStr;
         items.forEach(i => {
           autoConfirmDate[i.orderId + "::" + normalize(i.name)] = useDate;
         });
@@ -21892,6 +21893,8 @@ function OrdersTab({
           balanceQty: 0,
           dispatchConfirmed: true,
           dispatchConfirmedAt: new Date().toISOString(),
+          // keep the same report day the dispatch report was written for (after 2 pm = next working day)
+          lastDispatchedAt: autoConfirmDate[existing.id + "::" + normalize(pi.name)] || pi.lastDispatchedAt || null,
           confirmedByImport: true
         } : pi);
         mergedItems.push(...keptDispatched);
@@ -24535,7 +24538,7 @@ function OrdersTab({
       fontFamily: "monospace"
     },
     title: "Diagnostic: total orders the app is holding in memory"
-  }, orders.length, " orders loaded (open + recent)", window.__ordersLoadMs ? " in " + (window.__ordersLoadMs / 1000).toFixed(1) + "s" : "", " · build 21Nov-H")), verifyResult && /*#__PURE__*/React.createElement(VerifyTallyModal, {
+  }, orders.length, " orders loaded (open + recent)", window.__ordersLoadMs ? " in " + (window.__ordersLoadMs / 1000).toFixed(1) + "s" : "", " · build 21Nov-J")), verifyResult && /*#__PURE__*/React.createElement(VerifyTallyModal, {
     result: verifyResult,
     onClose: () => setVerifyResult(null)
   }), /*#__PURE__*/React.createElement("div", {
