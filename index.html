@@ -23232,6 +23232,87 @@ function OrdersTab({
     setReverseSaving(false);
   };
 
+  // ── Admin: move a customer's dispatched products (and their report entries) to another report day ──
+  const changeReportDay = async (group, newDate) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(newDate)) return showToast("Use the date format YYYY-MM-DD", "error");
+    const items = group.items.filter(i => i.canReverse && (i.dispatchDate || "") !== newDate);
+    if (!items.length) return showToast("Already on that report day", "error");
+    setReverseSaving(true);
+    try {
+      const moved = []; // {name, qty, voucherNo, orderDate, oldDate}
+      const orderIds = [...new Set(items.map(i => i.orderId))];
+      for (const orderId of orderIds) {
+        const ref = C("orders").doc(orderId);
+        const snap = await ref.get();
+        if (!snap.exists) continue;
+        const data = snap.data();
+        const upd = (data.items || []).map(it => {
+          const hit = items.find(x => x.orderId === orderId && normalize(x.name) === normalize(it.name));
+          if (!hit || !it.dispatchConfirmed) return it;
+          moved.push({
+            name: it.name,
+            qty: parseFloat(it.dispatchedQty) || 0,
+            voucherNo: data.voucherNo || "",
+            orderDate: data.orderDate || "",
+            oldDate: it.lastDispatchedAt || ""
+          });
+          return { ...it, lastDispatchedAt: newDate };
+        });
+        await ref.update({ items: san(upd), updatedAt: ts() });
+      }
+      const nowIso = new Date().toISOString();
+      const recalcVol = its => {
+        const v = {};
+        its.forEach(it => { if (it.vol) v[it.vol.unit] = (v[it.vol.unit] || 0) + (parseFloat(it.vol.vol) || 0); });
+        return v;
+      };
+      // take the products out of the old report day(s)
+      for (const oldDate of [...new Set(moved.map(m => m.oldDate).filter(Boolean))]) {
+        const rid = "report_" + oldDate;
+        const rd = await C("dispatch_reports").doc(rid).get();
+        if (!rd.exists) continue;
+        const rep = rd.data();
+        const entries = (rep.entries || []).map(e => {
+          if (normalize(e.partyName) !== normalize(group.partyName)) return e;
+          const its = (e.items || []).map(it => {
+            const m = moved.find(x => x.oldDate === oldDate && normalize(x.name) === normalize(it.name) && (x.voucherNo || "") === (it.voucherNo || ""));
+            if (!m) return it;
+            const q = Math.max(0, (parseFloat(it.qty) || 0) - m.qty);
+            return q > 0 ? { ...it, qty: q, vol: calcVolume(it.name, q) } : null;
+          }).filter(Boolean);
+          return its.length ? { ...e, items: its, volTotals: recalcVol(its) } : null;
+        }).filter(Boolean);
+        await C("dispatch_reports").doc(rid).update({ entries, updatedAt: nowIso });
+      }
+      // put them on the new report day
+      const first = orderIds.length ? orders.find(o => o.id === orderIds[0]) : null;
+      const newItems = moved.map(m => ({ name: m.name, qty: m.qty, vol: calcVolume(m.name, m.qty), voucherNo: m.voucherNo, orderDate: m.orderDate }));
+      const nid = "report_" + newDate;
+      const nd = await C("dispatch_reports").doc(nid).get();
+      const baseEntry = { partyName: group.partyName, route: first?.route || group.route || "", transport: first?.transport || group.transport || "", isDirect: !!group.isDirect, items: newItems, confirmedAt: nowIso, volTotals: recalcVol(newItems) };
+      if (nd.exists) {
+        const rep = nd.data();
+        const prev = (rep.entries || []).find(e => normalize(e.partyName) === normalize(group.partyName));
+        let merged = baseEntry;
+        if (prev) {
+          const mi = (prev.items || []).map(it => ({ ...it }));
+          newItems.forEach(ni => {
+            const h = mi.find(it => normalize(it.name) === normalize(ni.name) && (it.voucherNo || "") === (ni.voucherNo || ""));
+            if (h) { h.qty = (parseFloat(h.qty) || 0) + ni.qty; h.vol = calcVolume(h.name, h.qty); } else mi.push(ni);
+          });
+          merged = { ...prev, items: mi, volTotals: recalcVol(mi) };
+        }
+        await C("dispatch_reports").doc(nid).update({ entries: [...(rep.entries || []).filter(e => normalize(e.partyName) !== normalize(group.partyName)), merged], updatedAt: nowIso });
+      } else {
+        await C("dispatch_reports").doc(nid).set({ date: newDate, entries: [baseEntry], createdAt: nowIso, updatedAt: nowIso, createdBy: user.email });
+      }
+      showToast(`${group.partyName} — moved to the ${newDate} report ✓`);
+    } catch (e) {
+      showToast("Error: " + e.message, "error");
+    }
+    setReverseSaving(false);
+  };
+
   // ── Confirm ALL unconfirmed customers in today's dispatch ──
   const confirmAllDispatches = async (groupsToConfirm, explicitDateStr) => {
     const scope = groupsToConfirm || filteredToday;
@@ -24538,7 +24619,7 @@ function OrdersTab({
       fontFamily: "monospace"
     },
     title: "Diagnostic: total orders the app is holding in memory"
-  }, orders.length, " orders loaded (open + recent)", window.__ordersLoadMs ? " in " + (window.__ordersLoadMs / 1000).toFixed(1) + "s" : "", " · build 21Nov-J")), verifyResult && /*#__PURE__*/React.createElement(VerifyTallyModal, {
+  }, orders.length, " orders loaded (open + recent)", window.__ordersLoadMs ? " in " + (window.__ordersLoadMs / 1000).toFixed(1) + "s" : "", " · build 21Nov-K")), verifyResult && /*#__PURE__*/React.createElement(VerifyTallyModal, {
     result: verifyResult,
     onClose: () => setVerifyResult(null)
   }), /*#__PURE__*/React.createElement("div", {
@@ -28202,7 +28283,24 @@ function OrdersTab({
         fontSize: "11px",
         cursor: "pointer"
       }
-    }, "↩ Reverse All")))), /*#__PURE__*/React.createElement("div", {
+    }, "↩ Reverse All"), isAdmin && /*#__PURE__*/React.createElement("button", {
+      onClick: () => {
+        const cur = group.items[0]?.dispatchDate || "";
+        const d = window.prompt(`Move ${group.partyName} to which report day? (YYYY-MM-DD)\nNow: ${cur}`, nextWorkingDayStr(getISTClock().dateStr));
+        if (d) changeReportDay(group, d.trim());
+      },
+      disabled: reverseSaving,
+      style: {
+        background: "#0c1a2e",
+        border: "1px solid #1d4ed8",
+        borderRadius: "6px",
+        padding: "3px 9px",
+        color: "#93c5fd",
+        fontWeight: "700",
+        fontSize: "11px",
+        cursor: "pointer"
+      }
+    }, "📅 Report day")))), /*#__PURE__*/React.createElement("div", {
       style: {
         background: "#060d1a",
         borderTop: "1px solid #0f172a"
