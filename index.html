@@ -21358,6 +21358,7 @@ function parseSalesOrderRows(raw, custMap) {
           party = String(row[2] || "").trim(),
           item = String(row[3] || "").trim();
         const balanceQty = parseFloat(row[5]) || 0;
+        const orderedQty = parseFloat(row[4]) || 0;
         if (!orderNo || !party || !item) continue;
         if (balanceQty <= 0) {
           skippedNonPositive++;
@@ -21393,6 +21394,7 @@ function parseSalesOrderRows(raw, custMap) {
         const existingItem = orderMap[okey].items.find(it => normalize(it.name) === normalize(item));
         if (existingItem) {
           existingItem.balanceQty += balanceQty;
+          existingItem.orderedQty = (existingItem.orderedQty || 0) + orderedQty;
           existingItem.rowsMerged = (existingItem.rowsMerged || 1) + 1;
           mergedRows.push({
             voucherNo: orderNo,
@@ -21404,6 +21406,7 @@ function parseSalesOrderRows(raw, custMap) {
           orderMap[okey].items.push({
             name: item,
             balanceQty,
+            orderedQty,
             rate: parseFloat(row[6]) || 0,
             discount: parseFloat(row[7]) || 0,
             value: parseFloat(row[8]) || 0,
@@ -21614,25 +21617,45 @@ function OrdersTab({
     // goods never show up in Dispatched (48h) or any dispatch report at all.
     const unconfirmedByParty = {};
     const autoConfirmedKeys = new Set();
+    const autoConfirmQty = {}; // "orderId::product" -> quantity confirmed as dispatched
+    const autoReturnedQty = {}; // "orderId::product" -> quantity sent back to pending (not invoiced)
     importOrders.forEach(o => {
       // The voucher can still be in Tally with OTHER items pending while the items the team has
       // already dispatched are gone from it (invoiced). Those specific items are just as
       // finished as a whole voucher that vanished, so they're handled too.
       const stillInTally = importedByExistingId[o.id];
       (o.items || []).forEach(item => {
-        if (stillInTally && (stillInTally.items || []).some(ni => normalize(ni.name) === normalize(item.name))) return;
+        let qtyOut = item.dispatchedQty || 0; // quantity that really went out (invoiced)
+        const tallyItem = stillInTally && (stillInTally.items || []).find(ni => normalize(ni.name) === normalize(item.name));
+        if (tallyItem) {
+          // The product is still on the voucher, but Tally may show its balance already reduced by
+          // the invoice for what the team dispatched (ordered 3, balance 1 → 2 invoiced). When the
+          // quantity invoiced in Tally covers everything the app dispatched, that dispatch is done.
+          const ordered = parseFloat(tallyItem.orderedQty) || 0;
+          const invoicedInTally = ordered - (parseFloat(tallyItem.balanceQty) || 0);
+          const expected = (parseFloat(item.invoicedBase) || 0) + (parseFloat(item.dispatchedQty) || 0);
+          // Part of what the app dispatched may not be invoiced (ordered 3, all 3 moved to Dispatch
+          // Today, but only 2 invoiced → balance 1). Only the invoiced part counts as dispatched; the
+          // rest goes back to pending. Nothing invoiced yet = leave it waiting in Dispatch Today.
+          const shortfall = Math.max(0, expected - invoicedInTally);
+          qtyOut = Math.round(((parseFloat(item.dispatchedQty) || 0) - shortfall) * 1000) / 1000;
+          if (!(ordered > 0) || qtyOut <= 0.000001) return;
+          if (shortfall > 0.000001) autoReturnedQty[o.id + "::" + normalize(item.name)] = Math.round(shortfall * 1000) / 1000;
+        }
         if (!item.dispatchConfirmed && item.lastDispatchedAt && (item.dispatchedQty || 0) > 0) {
           unconfirmedByParty[o.partyName + "||" + (item.lastDispatchedAt || "")] = unconfirmedByParty[o.partyName + "||" + (item.lastDispatchedAt || "")] || [];
           autoConfirmedKeys.add(o.id + "::" + normalize(item.name));
           unconfirmedByParty[o.partyName + "||" + (item.lastDispatchedAt || "")].push({
             orderId: o.id,
             name: item.name,
-            qty: item.dispatchedQty || 0
+            qty: qtyOut
           });
+          autoConfirmQty[o.id + "::" + normalize(item.name)] = qtyOut;
         }
       });
     });
     const autoConfirmEntries = Object.entries(unconfirmedByParty);
+    const autoConfirmDate = {}; // "orderId::product" -> report day used
     if (autoConfirmEntries.length > 0) {
       const autoConfirmDateStr = dispatchDateStr || todayStr;
       for (const [pk, items] of autoConfirmEntries) {
@@ -21644,6 +21667,9 @@ function OrdersTab({
         const rd = dispatchReportDay();
         const baseDate = itemDate || autoConfirmDateStr;
         const useDate = rd.afterCutoff && baseDate >= rd.todayStr ? baseDate > rd.dateStr ? baseDate : rd.dateStr : baseDate;
+        items.forEach(i => {
+          autoConfirmDate[i.orderId + "::" + normalize(i.name)] = useDate;
+        });
         await finaliseDispatch(partyName, items, useDate);
       }
       showToast(`Auto-confirmed ${autoConfirmEntries.length} customer(s)' dispatches no longer in Tally ✓`);
@@ -21752,14 +21778,17 @@ function OrdersTab({
           const prev = (existing.items || []).find(p => normalize(p.name) === normalize(ni.name));
           if (!prev) return {
             ...ni,
+            invoicedBase: Math.max(0, (ni.orderedQty || 0) - (ni.balanceQty || 0)),
             firstSeenAt: new Date().toISOString()
           };
           // If this specific item is already dispatched, keep its current state entirely
           if (prev.status === "Dispatched") return prev;
+          const ackKey = existing.id + "::" + normalize(ni.name);
+          const justConfirmed = autoConfirmedKeys.has(ackKey);
           // If partially dispatched, preserve dispatched qty; update balance from Tally
           return {
             ...ni,
-            dispatchedQty: prev.dispatchedQty || 0,
+            dispatchedQty: justConfirmed && autoConfirmQty[ackKey] !== undefined ? autoConfirmQty[ackKey] : prev.dispatchedQty || 0,
             status: prev.status || "Pending",
             stagedForTransport: prev.stagedForTransport || false,
             stagedAt: prev.stagedAt || null,
@@ -21768,9 +21797,13 @@ function OrdersTab({
             prepReadyBy: prev.prepReadyBy || null,
             prepReadyAt: prev.prepReadyAt || null,
             firstSeenAt: prev.firstSeenAt || null,
-            dispatchConfirmed: prev.dispatchConfirmed || false,
-            dispatchConfirmedAt: prev.dispatchConfirmedAt || null,
-            lastDispatchedAt: prev.lastDispatchedAt || null,
+            invoicedBase: prev.invoicedBase || 0,
+            ...(autoReturnedQty[ackKey] ? {
+              firstSeenAt: new Date().toISOString() // back in pending — treat as freshly seen
+            } : {}),
+            dispatchConfirmed: justConfirmed ? true : prev.dispatchConfirmed || false,
+            dispatchConfirmedAt: justConfirmed ? new Date().toISOString() : prev.dispatchConfirmedAt || null,
+            lastDispatchedAt: justConfirmed ? autoConfirmDate[ackKey] || prev.lastDispatchedAt || null : prev.lastDispatchedAt || null,
             lastDispatchedBy: prev.lastDispatchedBy || null
           };
         });
@@ -21863,6 +21896,10 @@ function OrdersTab({
         const inheritHold = custHoldInfo && custHoldInfo.onHold;
         importOps.push(batch => batch.set(docRef, {
           ...order,
+          items: (order.items || []).map(i => ({
+            ...i,
+            invoicedBase: Math.max(0, (i.orderedQty || 0) - (i.balanceQty || 0))
+          })),
           importedBy: user.email,
           importedAt: ts(),
           lastImportedAt: ts(),
@@ -24143,7 +24180,9 @@ function OrdersTab({
     prepReadyBy: item.prepReadyBy || null,
     prepReadyAt: item.prepReadyAt || null,
     firstSeenAt: item.firstSeenAt || null,
-    autoInvoiced: item.autoInvoiced || false
+    autoInvoiced: item.autoInvoiced || false,
+    invoicedBase: item.invoicedBase || 0,
+    orderedQty: item.orderedQty || 0
   });
   const moveStagedToDispatch = async () => {
     setSaving(true);
@@ -24365,7 +24404,7 @@ function OrdersTab({
       fontFamily: "monospace"
     },
     title: "Diagnostic: total orders the app is holding in memory"
-  }, orders.length, " orders loaded (open + recent)", window.__ordersLoadMs ? " in " + (window.__ordersLoadMs / 1000).toFixed(1) + "s" : "", " · build 21Nov-B")), verifyResult && /*#__PURE__*/React.createElement(VerifyTallyModal, {
+  }, orders.length, " orders loaded (open + recent)", window.__ordersLoadMs ? " in " + (window.__ordersLoadMs / 1000).toFixed(1) + "s" : "", " · build 21Nov-D")), verifyResult && /*#__PURE__*/React.createElement(VerifyTallyModal, {
     result: verifyResult,
     onClose: () => setVerifyResult(null)
   }), /*#__PURE__*/React.createElement("div", {
