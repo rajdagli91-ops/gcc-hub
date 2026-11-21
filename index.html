@@ -19934,7 +19934,7 @@ function DispatchHistoryReport({
       textOverflow: "ellipsis",
       whiteSpace: "nowrap"
     }
-  }, item.name), /*#__PURE__*/React.createElement("span", {
+  }, item.name, item.autoInvoiced ? " 🧾" : ""), /*#__PURE__*/React.createElement("span", {
     style: {
       color: "#fcd34d",
       fontWeight: "600",
@@ -20017,7 +20017,7 @@ function DispatchHistoryReport({
       textOverflow: "ellipsis",
       whiteSpace: "nowrap"
     }
-  }, item.name), /*#__PURE__*/React.createElement("span", {
+  }, item.name, item.autoInvoiced ? " 🧾" : ""), /*#__PURE__*/React.createElement("span", {
     style: {
       color: "#f87171",
       fontWeight: "600",
@@ -20974,11 +20974,11 @@ function renderSequenceSitesPicker(p) {
 }
 
 // ── Dispatch report day ──
-// Dispatch is recorded against a report day. Up to 3:00 pm India time the team is asked whether a
-// dispatch belongs to today or the next working day. From 3:00 pm onward no question is asked: the
-// invoices raised after the cut-off belong to the NEXT working day's report (Monday-Saturday are
+// Dispatch is recorded against a report day. Up to 2:00 pm India time the team is asked whether a
+// dispatch belongs to today or the next working day. From 2:00 pm onward no question is asked: the
+// invoices raised after the 2 pm cut-off belong to the NEXT working day's report (Monday-Saturday are
 // working days, so Saturday evening and Sunday go to Monday).
-var DISPATCH_CUTOFF_HOUR = 15;
+var DISPATCH_CUTOFF_HOUR = 14;
 function getISTClock() {
   var parts = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23" }).formatToParts(new Date());
   var g = function(t) { return parts.filter(function(x) { return x.type === t; })[0].value; };
@@ -21639,7 +21639,7 @@ function OrdersTab({
         const [partyName, itemDate] = pk.split("||");
         // Record the dispatch on the day it actually went out (the day the team entered it),
         // not the day the import happened to run.
-        // After the 3 pm cut-off the invoices raised belong to the next working day's report; an item
+        // After the 2 pm cut-off the invoices raised belong to the next working day's report; an item
         // that was moved to Dispatch Today on an earlier day keeps the day it was moved.
         const rd = dispatchReportDay();
         const baseDate = itemDate || autoConfirmDateStr;
@@ -21648,9 +21648,61 @@ function OrdersTab({
       }
       showToast(`Auto-confirmed ${autoConfirmEntries.length} customer(s)' dispatches no longer in Tally ✓`);
     }
+    // ── Invoiced straight in Tally ──
+    // Late orders are often invoiced without first being moved to Dispatch Today. If an order (or a
+    // product on it) was first uploaded only a few hours ago and has now vanished from Tally's pending
+    // list, it was almost certainly invoiced and sent, not cancelled — so it goes into the dispatch
+    // report instead of being thrown away as "Pre-closed". Anything older than the window is still
+    // treated as closed by HO, as before.
+    const INVOICED_WINDOW_MS = 3 * 60 * 60 * 1000;
+    const nowMs = Date.now();
+    const msOf = t => t && t.toMillis ? t.toMillis() : t && t.seconds ? t.seconds * 1000 : typeof t === "string" ? Date.parse(t) || 0 : 0;
+    const seenMs = (o, item) => msOf(item.firstSeenAt) || msOf(o.importedAt);
+    const isFreshOpenItem = (o, item) => item.status !== "Dispatched" && !item.dispatchConfirmed && (parseFloat(item.balanceQty) || 0) > 0 && seenMs(o, item) > 0 && nowMs - seenMs(o, item) <= INVOICED_WINDOW_MS;
+    const reportDay = dispatchReportDay();
+    const markInvoiced = item => ({
+      ...item,
+      status: "Dispatched",
+      dispatchedQty: (item.dispatchedQty || 0) + (parseFloat(item.balanceQty) || 0),
+      balanceQty: 0,
+      lastDispatchedAt: reportDay.dateStr,
+      lastDispatchedBy: "auto: invoiced in Tally",
+      dispatchConfirmed: false,
+      dispatchConfirmedAt: null,
+      stagedForTransport: false,
+      autoInvoiced: true
+    });
+    const invoicedForReport = {}; // party -> [{orderId, name, qty, voucherNo, autoInvoiced}]
+    const addInvoicedForReport = (o, item) => {
+      (invoicedForReport[o.partyName] = invoicedForReport[o.partyName] || []).push({
+        orderId: o.id,
+        name: item.name,
+        qty: parseFloat(item.balanceQty) || 0,
+        voucherNo: o.voucherNo,
+        autoInvoiced: true
+      });
+    };
     let closedCount = 0;
     const closeOps = [];
-    const toClose = pendingInDB.filter(dbOrder => !matchedExistingIds.has(dbOrder.id));
+    const toCloseAll = pendingInDB.filter(dbOrder => !matchedExistingIds.has(dbOrder.id));
+    // A whole voucher that is gone: if EVERY open product on it is fresh, it was invoiced.
+    const toInvoice = toCloseAll.filter(o => {
+      const open = (o.items || []).filter(i => i.status !== "Dispatched" && (parseFloat(i.balanceQty) || 0) > 0);
+      return open.length > 0 && open.every(i => isFreshOpenItem(o, i));
+    });
+    const toClose = toCloseAll.filter(o => !toInvoice.includes(o));
+    for (const o of toInvoice) {
+      const newItems = (o.items || []).map(i => {
+        if (!isFreshOpenItem(o, i)) return i;
+        addInvoicedForReport(o, i);
+        return markInvoiced(i);
+      });
+      closeOps.push(batch => batch.update(C("orders").doc(o.id), {
+        items: san(newItems),
+        status: "Dispatched",
+        updatedAt: ts()
+      }));
+    }
     // Second safety layer: even with some valid rows, a partial parsing failure (wrong sheet,
     // truncated export, etc.) could still wipe out a large chunk of genuinely-pending orders.
     // If this import is about to close an unusually large share of what's currently pending,
@@ -21698,7 +21750,10 @@ function OrdersTab({
         // For Partial orders — preserve dispatched items, only update balance on pending items
         const mergedItems = order.items.map(ni => {
           const prev = (existing.items || []).find(p => normalize(p.name) === normalize(ni.name));
-          if (!prev) return ni;
+          if (!prev) return {
+            ...ni,
+            firstSeenAt: new Date().toISOString()
+          };
           // If this specific item is already dispatched, keep its current state entirely
           if (prev.status === "Dispatched") return prev;
           // If partially dispatched, preserve dispatched qty; update balance from Tally
@@ -21712,6 +21767,7 @@ function OrdersTab({
             prepReady: prev.prepReady || false,
             prepReadyBy: prev.prepReadyBy || null,
             prepReadyAt: prev.prepReadyAt || null,
+            firstSeenAt: prev.firstSeenAt || null,
             dispatchConfirmed: prev.dispatchConfirmed || false,
             dispatchConfirmedAt: prev.dispatchConfirmedAt || null,
             lastDispatchedAt: prev.lastDispatchedAt || null,
@@ -21729,6 +21785,15 @@ function OrdersTab({
           dispatchConfirmedAt: new Date().toISOString()
         } : pi);
         mergedItems.push(...keptDispatched);
+        // Products that vanished from a voucher that is still in Tally but were first seen only hours
+        // ago were invoiced directly — keep them as dispatched and report them.
+        (existing.items || []).forEach(pi => {
+          if (order.items.some(ni => normalize(ni.name) === normalize(pi.name))) return;
+          if (autoConfirmedKeys.has(existing.id + "::" + normalize(pi.name))) return;
+          if (!isFreshOpenItem(existing, pi)) return;
+          addInvoicedForReport(existing, pi);
+          mergedItems.push(markInvoiced(pi));
+        });
         const allDone = mergedItems.every(i => i.status === "Dispatched");
         const anyDone = mergedItems.some(i => i.status === "Dispatched" || i.status === "Partial");
         // A "ready" tick belongs to a product that is still on this order. If Tally no longer lists
@@ -21810,6 +21875,14 @@ function OrdersTab({
       }
     }
     await commitInBatches(importOps);
+    const invoicedParties = Object.entries(invoicedForReport);
+    if (invoicedParties.length > 0) {
+      for (const [partyName, its] of invoicedParties) {
+        await finaliseDispatch(partyName, its, reportDay.dateStr);
+      }
+      const nItems = invoicedParties.reduce((n, [, its]) => n + its.length, 0);
+      showToast(`🧾 ${nItems} product(s) for ${invoicedParties.length} customer(s) were invoiced in Tally without Dispatch Today — added to the dispatch report for ${reportDay.dateStr} ✓`);
+    }
     // Trigger prompt for new items — set both states at once
     if (Object.keys(unknownItemsFound).length > 0) {
       setNewItemForms(unknownItemsFound); // pre-filled with guessed values
@@ -23023,10 +23096,12 @@ function OrdersTab({
     try {
       const orderIds = [...new Set(items.map(i => i.orderId))];
       const confirmedAt = new Date().toISOString();
+      const freshById = {};
       for (const orderId of orderIds) {
         const orderDoc = await C("orders").doc(orderId).get();
         if (!orderDoc.exists) continue;
         const data = orderDoc.data();
+        freshById[orderId] = data;
         const updatedItems = (data.items || []).map(item => {
           const matched = items.find(i => i.orderId === orderId && normalize(i.name) === normalize(item.name));
           return matched ? {
@@ -23053,20 +23128,25 @@ function OrdersTab({
           volTotals[v.unit] = (volTotals[v.unit] || 0) + v.vol;
         }
       });
-      const sampleOrder = orders.find(o => items.some(i => i.orderId === o.id));
+      // Route / transport come from the freshly read order (the React list can be stale or empty
+      // right after an upload), falling back to the list only if the read found nothing.
+      const sampleOrder = freshById[items[0] && items[0].orderId] || orders.find(o => items.some(i => i.orderId === o.id));
       const entry = {
         partyName,
         route: sampleOrder?.route || "",
         transport: sampleOrder?.transport || "",
         isDirect: sampleOrder?.isDirect || false,
         items: items.map(i => {
-          const ord = orders.find(o => o.id === i.orderId);
+          const ord = freshById[i.orderId] || orders.find(o => o.id === i.orderId);
           return {
             name: i.name,
             qty: i.qty,
             vol: calcVolume(i.name, i.qty),
             voucherNo: i.voucherNo,
-            orderDate: ord?.orderDate || ""
+            orderDate: ord?.orderDate || "",
+            ...(i.autoInvoiced ? {
+              autoInvoiced: true
+            } : {})
           };
         }),
         confirmedAt,
@@ -23074,7 +23154,34 @@ function OrdersTab({
       };
       if (reportDoc.exists) {
         const existing = reportDoc.data();
-        const entries = [...(existing.entries || []).filter(e => e.partyName !== partyName), entry];
+        // The same customer can be confirmed more than once on a report day (a second batch, or an
+        // upload confirming what the team had not). Merge into the customer's existing entry — the old
+        // code replaced it and silently dropped the earlier batch from the report.
+        const prevEntry = (existing.entries || []).find(e => normalize(e.partyName) === normalize(partyName));
+        let mergedEntry = entry;
+        if (prevEntry) {
+          const mItems = (prevEntry.items || []).map(it => ({
+            ...it
+          }));
+          entry.items.forEach(ni => {
+            const hit = mItems.find(it => normalize(it.name) === normalize(ni.name) && (it.voucherNo || "") === (ni.voucherNo || ""));
+            if (hit) {
+              hit.qty = (parseFloat(hit.qty) || 0) + (parseFloat(ni.qty) || 0);
+              hit.vol = calcVolume(hit.name, hit.qty);
+            } else mItems.push(ni);
+          });
+          const mVol = {};
+          mItems.forEach(it => {
+            if (it.vol) mVol[it.vol.unit] = (mVol[it.vol.unit] || 0) + (parseFloat(it.vol.vol) || 0);
+          });
+          mergedEntry = {
+            ...prevEntry,
+            ...entry,
+            items: mItems,
+            volTotals: mVol
+          };
+        }
+        const entries = [...(existing.entries || []).filter(e => normalize(e.partyName) !== normalize(partyName)), mergedEntry];
         await C("dispatch_reports").doc(reportId).update({
           entries,
           updatedAt: confirmedAt
@@ -24034,7 +24141,9 @@ function OrdersTab({
     stagedQty: item.stagedQty || null,
     prepReady: item.prepReady || false,
     prepReadyBy: item.prepReadyBy || null,
-    prepReadyAt: item.prepReadyAt || null
+    prepReadyAt: item.prepReadyAt || null,
+    firstSeenAt: item.firstSeenAt || null,
+    autoInvoiced: item.autoInvoiced || false
   });
   const moveStagedToDispatch = async () => {
     setSaving(true);
@@ -24256,7 +24365,7 @@ function OrdersTab({
       fontFamily: "monospace"
     },
     title: "Diagnostic: total orders the app is holding in memory"
-  }, orders.length, " orders loaded (open + recent)", window.__ordersLoadMs ? " in " + (window.__ordersLoadMs / 1000).toFixed(1) + "s" : "", " · build 18Nov-A")), verifyResult && /*#__PURE__*/React.createElement(VerifyTallyModal, {
+  }, orders.length, " orders loaded (open + recent)", window.__ordersLoadMs ? " in " + (window.__ordersLoadMs / 1000).toFixed(1) + "s" : "", " · build 21Nov-B")), verifyResult && /*#__PURE__*/React.createElement(VerifyTallyModal, {
     result: verifyResult,
     onClose: () => setVerifyResult(null)
   }), /*#__PURE__*/React.createElement("div", {
