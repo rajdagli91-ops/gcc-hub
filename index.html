@@ -21683,8 +21683,12 @@ function OrdersTab({
     const INVOICED_WINDOW_MS = 3 * 60 * 60 * 1000;
     const nowMs = Date.now();
     const msOf = t => t && t.toMillis ? t.toMillis() : t && t.seconds ? t.seconds * 1000 : typeof t === "string" ? Date.parse(t) || 0 : 0;
-    const seenMs = (o, item) => msOf(item.firstSeenAt) || msOf(o.importedAt);
-    const isFreshOpenItem = (o, item) => item.status !== "Dispatched" && !item.dispatchConfirmed && (parseFloat(item.balanceQty) || 0) > 0 && seenMs(o, item) > 0 && nowMs - seenMs(o, item) <= INVOICED_WINDOW_MS;
+    // Only a product on an order dated TODAY (IST) and first seen in the last 3 hours counts as
+    // "invoiced straight in Tally". Older orders — or old ones re-added by a stale list — are
+    // simply Pre-closed. No firstSeenAt = old record = never treated as fresh.
+    const todayIST = getISTClock().dateStr;
+    const seenMs = (o, item) => msOf(item.firstSeenAt);
+    const isFreshOpenItem = (o, item) => String(o.orderDate || "").slice(0, 10) === todayIST && item.status !== "Dispatched" && !item.dispatchConfirmed && (parseFloat(item.balanceQty) || 0) > 0 && seenMs(o, item) > 0 && nowMs - seenMs(o, item) <= INVOICED_WINDOW_MS;
     const reportDay = dispatchReportDay();
     const markInvoiced = item => ({
       ...item,
@@ -24531,7 +24535,7 @@ function OrdersTab({
       fontFamily: "monospace"
     },
     title: "Diagnostic: total orders the app is holding in memory"
-  }, orders.length, " orders loaded (open + recent)", window.__ordersLoadMs ? " in " + (window.__ordersLoadMs / 1000).toFixed(1) + "s" : "", " · build 21Nov-G")), verifyResult && /*#__PURE__*/React.createElement(VerifyTallyModal, {
+  }, orders.length, " orders loaded (open + recent)", window.__ordersLoadMs ? " in " + (window.__ordersLoadMs / 1000).toFixed(1) + "s" : "", " · build 21Nov-H")), verifyResult && /*#__PURE__*/React.createElement(VerifyTallyModal, {
     result: verifyResult,
     onClose: () => setVerifyResult(null)
   }), /*#__PURE__*/React.createElement("div", {
