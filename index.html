@@ -24690,7 +24690,7 @@ function OrdersTab({
       fontFamily: "monospace"
     },
     title: "Diagnostic: total orders the app is holding in memory"
-  }, orders.length, " orders loaded (open + recent)", window.__ordersLoadMs ? " in " + (window.__ordersLoadMs / 1000).toFixed(1) + "s" : "", " · build 27Nov-C")), verifyResult && /*#__PURE__*/React.createElement(VerifyTallyModal, {
+  }, orders.length, " orders loaded (open + recent)", window.__ordersLoadMs ? " in " + (window.__ordersLoadMs / 1000).toFixed(1) + "s" : "", " · build 27Nov-D")), verifyResult && /*#__PURE__*/React.createElement(VerifyTallyModal, {
     result: verifyResult,
     onClose: () => setVerifyResult(null)
   }), /*#__PURE__*/React.createElement("div", {
@@ -30926,11 +30926,16 @@ function ToManufactureTab({
     return Object.values(m).sort((a, b) => sortBy === "alpha" ? a.key.localeCompare(b.key) : sortBy === "qtyAsc" ? volOf(a) - volOf(b) || a.key.localeCompare(b.key) : volOf(b) - volOf(a) || a.key.localeCompare(b.key));
   })();
   const fmt = n => Math.round(n * 100) / 100;
-  const asText = () => "TO MANUFACTURE — " + new Date().toLocaleDateString("en-IN") + "\n" + toMake.map(x => x.name + "  →  make " + fmt(x.short) + "  (pending " + fmt(x.need) + ", stock " + fmt(x.stock) + ")").join("\n");
+  const line = x => x.name + "  →  make " + fmt(x.short) + "  (pending " + fmt(x.need) + ", stock " + fmt(x.stock) + ")";
+  const volText = g => Object.keys(g.vol).length ? Object.entries(g.vol).map(([u, v]) => fmt(v) + " " + u).join(" · ") : fmt(g.short);
+  // The printed / copied list follows what is on screen: search, sort order and grouping
+  const asText = () => "TO MANUFACTURE — " + new Date().toLocaleDateString("en-IN") + "\n" + (groupOn ? groupedList.map(g => "\n" + g.key + "  [" + volText(g) + "]\n" + g.items.map(x => "  " + line(x)).join("\n")).join("\n") : shown.map(line).join("\n"));
   const printIt = () => {
     const w = window.open("", "_blank");
     if (!w) return;
-    w.document.write("<html><head><title>To Manufacture</title><style>body{font-family:Arial;padding:16px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #888;padding:5px 8px;font-size:13px}th{background:#eee;text-align:left}</style></head><body><h3>To Manufacture — " + new Date().toLocaleDateString("en-IN") + "</h3><p style='font-size:12px'>Stock as of upload: " + (snap && snap.uploadedAt ? new Date(snap.uploadedAt).toLocaleString("en-IN") : "") + "</p><table><tr><th>Product</th><th>Pending orders</th><th>Stock</th><th>Make</th></tr>" + toMake.map(x => "<tr><td>" + x.name + "</td><td>" + fmt(x.need) + "</td><td>" + fmt(x.stock) + "</td><td><b>" + fmt(x.short) + "</b></td></tr>").join("") + "</table></body></html>");
+    const row = x => "<tr><td>" + (groupOn ? "&nbsp;&nbsp;" : "") + x.name + "</td><td>" + fmt(x.need) + "</td><td>" + fmt(x.stock) + "</td><td><b>" + fmt(x.short) + "</b></td></tr>";
+    const body = groupOn ? groupedList.map(g => "<tr style='background:#dde7f5'><td colspan='3'><b>" + g.key + "</b> (" + g.items.length + " size" + (g.items.length > 1 ? "s" : "") + ")</td><td><b>" + volText(g) + "</b></td></tr>" + g.items.map(row).join("")).join("") : shown.map(row).join("");
+    w.document.write("<html><head><title>To Manufacture</title><style>body{font-family:Arial;padding:16px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #888;padding:5px 8px;font-size:13px}th{background:#eee;text-align:left}</style></head><body><h3>To Manufacture — " + new Date().toLocaleDateString("en-IN") + (groupOn ? " (grouped)" : "") + "</h3><p style='font-size:12px'>Stock as of upload: " + (snap && snap.uploadedAt ? new Date(snap.uploadedAt).toLocaleString("en-IN") : "") + "</p><table><tr><th>Product</th><th>Pending orders</th><th>In stock</th><th>Make</th></tr>" + body + "</table></body></html>");
     w.document.close();
     w.print();
   };
