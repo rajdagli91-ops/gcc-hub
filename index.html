@@ -24690,7 +24690,7 @@ function OrdersTab({
       fontFamily: "monospace"
     },
     title: "Diagnostic: total orders the app is holding in memory"
-  }, orders.length, " orders loaded (open + recent)", window.__ordersLoadMs ? " in " + (window.__ordersLoadMs / 1000).toFixed(1) + "s" : "", " · build 27Nov-B")), verifyResult && /*#__PURE__*/React.createElement(VerifyTallyModal, {
+  }, orders.length, " orders loaded (open + recent)", window.__ordersLoadMs ? " in " + (window.__ordersLoadMs / 1000).toFixed(1) + "s" : "", " · build 27Nov-C")), verifyResult && /*#__PURE__*/React.createElement(VerifyTallyModal, {
     result: verifyResult,
     onClose: () => setVerifyResult(null)
   }), /*#__PURE__*/React.createElement("div", {
@@ -30747,7 +30747,8 @@ function ToManufactureTab({
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState({});
   const [q, setQ] = useState("");
-  const [sortBy, setSortBy] = useState("qty"); // "qty" = biggest shortfall first, "alpha" = A–Z
+  const [sortBy, setSortBy] = useState("qty"); // "qty" = biggest shortfall first, "qtyAsc" = smallest first, "alpha" = A–Z
+  const [groupOn, setGroupOn] = useState(false); // group the sizes of one product together
   useEffect(() => {
     const u1 = C("tally_stock").doc("latest").onSnapshot(d => setSnap(d.exists ? d.data() : null), () => setSnap(null));
     const u2 = C("orders").where("status", "in", ["Pending", "Partial"]).onSnapshot(s => setOrders(s.docs.map(d => ({
@@ -30899,13 +30900,31 @@ function ToManufactureTab({
       pack: packOf(d.name)
     });
   });
-  const toMake = list.filter(x => x.short > 0.0001).sort((a, b) => sortBy === "qty" ? b.short - a.short || a.name.localeCompare(b.name) : a.name.localeCompare(b.name));
+  const toMake = list.filter(x => x.short > 0.0001).sort((a, b) => sortBy === "qty" ? b.short - a.short || a.name.localeCompare(b.name) : sortBy === "qtyAsc" ? a.short - b.short || a.name.localeCompare(b.name) : a.name.localeCompare(b.name));
   const covered = list.filter(x => x.short <= 0.0001).length;
   const totals = {};
   toMake.forEach(x => {
     if (x.pack) totals[x.pack.unit] = (totals[x.pack.unit] || 0) + x.pack.v * x.short;
   });
   const shown = toMake.filter(x => !q.trim() || nrm(x.name).includes(nrm(q)));
+  // Product family = the name without its pack size, e.g. "SYN BUS GREEN (POP) 4 L" → "SYN BUS GREEN (POP)"
+  const familyOf = name => String(name || "").replace(/[\s(]*\(?\s*\d+(?:\.\d+)?\s*(?:ltr|lt|l|kg|k|gm|g|ml)\s*\)?\s*$/i, "").replace(/[\s(]+$/, "").replace(/\s+/g, " ").trim() || name;
+  const groupedList = (() => {
+    const m = {};
+    shown.forEach(x => {
+      const f = familyOf(x.name);
+      (m[f] = m[f] || {
+        key: f,
+        items: [],
+        short: 0,
+        vol: {}
+      }).items.push(x);
+      m[f].short += x.short;
+      if (x.pack) m[f].vol[x.pack.unit] = (m[f].vol[x.pack.unit] || 0) + x.pack.v * x.short;
+    });
+    const volOf = g => Object.values(g.vol).reduce((a, b) => a + b, 0);
+    return Object.values(m).sort((a, b) => sortBy === "alpha" ? a.key.localeCompare(b.key) : sortBy === "qtyAsc" ? volOf(a) - volOf(b) || a.key.localeCompare(b.key) : volOf(b) - volOf(a) || a.key.localeCompare(b.key));
+  })();
   const fmt = n => Math.round(n * 100) / 100;
   const asText = () => "TO MANUFACTURE — " + new Date().toLocaleDateString("en-IN") + "\n" + toMake.map(x => x.name + "  →  make " + fmt(x.short) + "  (pending " + fmt(x.need) + ", stock " + fmt(x.stock) + ")").join("\n");
   const printIt = () => {
@@ -31016,7 +31035,7 @@ function ToManufactureTab({
       color: "#e2e8f0",
       fontSize: "12px"
     }
-  }), [["qty", "↓ Quantity"], ["alpha", "A–Z"]].map(([k, l]) => h("button", {
+  }), [["qty", "↓ Most first"], ["qtyAsc", "↑ Least first"], ["alpha", "A–Z"]].map(([k, l]) => h("button", {
     key: k,
     onClick: () => setSortBy(k),
     style: {
@@ -31026,6 +31045,14 @@ function ToManufactureTab({
       color: sortBy === k ? "#93c5fd" : "#94a3b8"
     }
   }, l)), h("button", {
+    onClick: () => setGroupOn(!groupOn),
+    style: {
+      ...btn,
+      background: groupOn ? "#14532d" : "#1e293b",
+      border: "1px solid " + (groupOn ? "#16a34a" : "#334155"),
+      color: groupOn ? "#86efac" : "#94a3b8"
+    }
+  }, groupOn ? "☑ Grouped" : "☐ Group sizes"), h("button", {
     style: btn,
     onClick: () => {
       navigator.clipboard.writeText(asText());
@@ -31040,7 +31067,39 @@ function ToManufactureTab({
       color: "#4ade80",
       fontWeight: "700"
     }
-  }, "✅ Stock covers every pending order — nothing to manufacture."), shown.map(x => {
+  }, "✅ Stock covers every pending order — nothing to manufacture."), (groupOn ? groupedList : [{
+    key: "",
+    items: shown
+  }]).map(g => h(React.Fragment, {
+    key: g.key || "all"
+  }, groupOn && h("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "baseline",
+      margin: "14px 2px 6px",
+      paddingBottom: "4px",
+      borderBottom: "1px solid #334155"
+    }
+  }, h("span", {
+    style: {
+      fontSize: "13px",
+      fontWeight: "800",
+      color: "#93c5fd"
+    }
+  }, g.key, " ", h("span", {
+    style: {
+      color: "#64748b",
+      fontWeight: "600",
+      fontSize: "11px"
+    }
+  }, "· ", g.items.length, " size", g.items.length > 1 ? "s" : "")), h("span", {
+    style: {
+      fontSize: "12px",
+      fontWeight: "800",
+      color: "#fbbf24"
+    }
+  }, Object.keys(g.vol).length ? Object.entries(g.vol).map(([u, v]) => fmt(v) + " " + u).join(" · ") : fmt(g.short))), g.items.map(x => {
     const isOpen = !!open[x.name];
     return h("div", {
       key: x.name,
@@ -31114,7 +31173,7 @@ function ToManufactureTab({
         color: "#e2e8f0"
       }
     }, fmt(w.qty))))));
-  }), snap && unmatched.length > 0 && h("details", {
+  }))), snap && unmatched.length > 0 && h("details", {
     style: {
       ...card,
       marginTop: "12px"
