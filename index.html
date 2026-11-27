@@ -24690,7 +24690,7 @@ function OrdersTab({
       fontFamily: "monospace"
     },
     title: "Diagnostic: total orders the app is holding in memory"
-  }, orders.length, " orders loaded (open + recent)", window.__ordersLoadMs ? " in " + (window.__ordersLoadMs / 1000).toFixed(1) + "s" : "", " · build 24Nov-A")), verifyResult && /*#__PURE__*/React.createElement(VerifyTallyModal, {
+  }, orders.length, " orders loaded (open + recent)", window.__ordersLoadMs ? " in " + (window.__ordersLoadMs / 1000).toFixed(1) + "s" : "", " · build 27Nov-A")), verifyResult && /*#__PURE__*/React.createElement(VerifyTallyModal, {
     result: verifyResult,
     onClose: () => setVerifyResult(null)
   }), /*#__PURE__*/React.createElement("div", {
@@ -30731,6 +30731,401 @@ function OrdersTab({
     showToast: showToast
   }));
 }
+// ═══════════════════════════════════════════════════════
+// TO MANUFACTURE — pending orders vs Tally closing stock (finished goods)
+// Stock comes from a manual upload of Tally's Godown/Stock Summary Excel export.
+// ═══════════════════════════════════════════════════════
+function ToManufactureTab({
+  user,
+  showToast,
+  canManage
+}) {
+  const h = React.createElement;
+  const nrm = s => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const [snap, setSnap] = useState(undefined); // undefined = loading, null = none uploaded yet
+  const [orders, setOrders] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [open, setOpen] = useState({});
+  const [q, setQ] = useState("");
+  useEffect(() => {
+    const u1 = C("tally_stock").doc("latest").onSnapshot(d => setSnap(d.exists ? d.data() : null), () => setSnap(null));
+    const u2 = C("orders").where("status", "in", ["Pending", "Partial"]).onSnapshot(s => setOrders(s.docs.map(d => ({
+      id: d.id,
+      ...d.data()
+    }))), () => {});
+    return () => {
+      u1();
+      u2();
+    };
+  }, []);
+  // pack size → litres / kg for totals, read from the product name e.g. "(20 L)", "4 L", "0.5L", "1 KG"
+  const packOf = name => {
+    const m = String(name || "").match(/(\d+(?:\.\d+)?)\s*(ltr|lt|l|kg|k|gm|g|ml)\b/i);
+    if (!m) return null;
+    const n = parseFloat(m[1]);
+    const u = m[2].toLowerCase();
+    if (u === "ml") return {
+      v: n / 1000,
+      unit: "L"
+    };
+    if (u === "gm" || u === "g") return {
+      v: n / 1000,
+      unit: "Kg"
+    };
+    if (u === "kg" || u === "k") return {
+      v: n,
+      unit: "Kg"
+    };
+    return {
+      v: n,
+      unit: "L"
+    };
+  };
+  const upload = async file => {
+    if (!file) return;
+    setBusy(true);
+    try {
+      await loadXLSX();
+      const wb = window.XLSX.read(await file.arrayBuffer(), {
+        type: "array"
+      });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = window.XLSX.utils.sheet_to_json(ws, {
+        header: 1,
+        defval: null,
+        raw: true
+      });
+      // find the "Quantity" column of the closing balance
+      let qtyCol = -1,
+        start = 0,
+        period = "";
+      for (let i = 0; i < Math.min(rows.length, 40); i++) {
+        const r = rows[i] || [];
+        if (/\d{4}|\d{1,2}-[A-Za-z]{3}-\d{2}/.test(String(r[0] || "")) && / to /.test(String(r[0] || ""))) period = String(r[0]);
+        const c = r.findIndex(x => String(x || "").trim().toLowerCase() === "quantity");
+        if (c >= 0 && qtyCol < 0) {
+          qtyCol = c;
+          start = i + 1;
+        }
+      }
+      if (qtyCol < 0) throw new Error("Could not find the Quantity column — upload Tally's Stock / Godown Summary export");
+      const items = [];
+      const seen = new Set();
+      for (let i = start; i < rows.length; i++) {
+        const r = rows[i] || [];
+        const name = String(r[0] == null ? "" : r[0]).replace(/[\r\n]+/g, " ").trim();
+        if (!name || /^grand total$/i.test(name)) continue;
+        let v = r[qtyCol];
+        if (typeof v === "string") v = parseFloat(v.replace(/,/g, ""));
+        const qty = typeof v === "number" && !isNaN(v) ? v : 0;
+        const key = nrm(name);
+        if (!key || seen.has(key) && qty === 0) continue;
+        if (seen.has(key)) {
+          const prev = items.find(x => x.k === key);
+          if (prev && prev.q === 0) prev.q = qty;
+          continue;
+        }
+        seen.add(key);
+        items.push({
+          k: key,
+          n: name,
+          q: qty
+        });
+      }
+      if (items.length < 20) throw new Error("Only " + items.length + " stock rows found — is this the right file?");
+      await C("tally_stock").doc("latest").set({
+        items,
+        count: items.length,
+        period,
+        fileName: file.name,
+        uploadedAt: new Date().toISOString(),
+        uploadedBy: user.email
+      });
+      showToast("Stock uploaded — " + items.length + " items read ✓");
+    } catch (e) {
+      showToast("Error: " + e.message, "error");
+    }
+    setBusy(false);
+  };
+
+  // ── demand from every open order ──
+  const demand = {};
+  orders.forEach(o => {
+    (o.items || []).forEach(it => {
+      const bal = it.status !== "Dispatched" ? parseFloat(it.balanceQty) || 0 : 0;
+      // dispatched in the app but not yet invoiced (Dispatch Today) is still in Tally's stock
+      const inDisp = !it.dispatchConfirmed && (parseFloat(it.dispatchedQty) || 0) > 0 && it.lastDispatchedAt ? parseFloat(it.dispatchedQty) || 0 : 0;
+      if (bal <= 0 && inDisp <= 0) return;
+      const k = nrm(it.name);
+      if (!demand[k]) demand[k] = {
+        name: it.name,
+        pending: 0,
+        inDisp: 0,
+        who: []
+      };
+      demand[k].pending += bal;
+      demand[k].inDisp += inDisp;
+      if (bal > 0) demand[k].who.push({
+        party: o.partyName,
+        voucher: o.voucherNo,
+        qty: bal,
+        hold: !!o.onHold
+      });
+    });
+  });
+  const stockMap = {};
+  (snap && snap.items || []).forEach(x => {
+    stockMap[x.k] = x;
+  });
+  const list = [];
+  const unmatched = [];
+  Object.entries(demand).forEach(([k, d]) => {
+    const st = stockMap[k];
+    if (!st) {
+      unmatched.push(d);
+      return;
+    }
+    const need = d.pending + d.inDisp;
+    // A negative closing stock in Tally is a posting lag, not real stock — count it as zero
+    const stockQty = Math.max(0, st.q);
+    const short = need - stockQty;
+    list.push({
+      ...d,
+      stock: stockQty,
+      negInTally: st.q < 0,
+      need,
+      short,
+      pack: packOf(d.name)
+    });
+  });
+  const toMake = list.filter(x => x.short > 0.0001).sort((a, b) => a.name.localeCompare(b.name));
+  const covered = list.filter(x => x.short <= 0.0001).length;
+  const totals = {};
+  toMake.forEach(x => {
+    if (x.pack) totals[x.pack.unit] = (totals[x.pack.unit] || 0) + x.pack.v * x.short;
+  });
+  const shown = toMake.filter(x => !q.trim() || nrm(x.name).includes(nrm(q)));
+  const fmt = n => Math.round(n * 100) / 100;
+  const asText = () => "TO MANUFACTURE — " + new Date().toLocaleDateString("en-IN") + "\n" + toMake.map(x => x.name + "  →  make " + fmt(x.short) + "  (pending " + fmt(x.need) + ", stock " + fmt(x.stock) + ")").join("\n");
+  const printIt = () => {
+    const w = window.open("", "_blank");
+    if (!w) return;
+    w.document.write("<html><head><title>To Manufacture</title><style>body{font-family:Arial;padding:16px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #888;padding:5px 8px;font-size:13px}th{background:#eee;text-align:left}</style></head><body><h3>To Manufacture — " + new Date().toLocaleDateString("en-IN") + "</h3><p style='font-size:12px'>Stock as of upload: " + (snap && snap.uploadedAt ? new Date(snap.uploadedAt).toLocaleString("en-IN") : "") + "</p><table><tr><th>Product</th><th>Pending orders</th><th>Stock</th><th>Make</th></tr>" + toMake.map(x => "<tr><td>" + x.name + "</td><td>" + fmt(x.need) + "</td><td>" + fmt(x.stock) + "</td><td><b>" + fmt(x.short) + "</b></td></tr>").join("") + "</table></body></html>");
+    w.document.close();
+    w.print();
+  };
+  const card = {
+    background: "#0b1220",
+    border: "1px solid #1e293b",
+    borderRadius: "10px",
+    padding: "12px 14px",
+    marginBottom: "10px"
+  };
+  const btn = {
+    background: "#1e293b",
+    border: "1px solid #334155",
+    borderRadius: "7px",
+    padding: "6px 12px",
+    color: "#e2e8f0",
+    fontSize: "12px",
+    fontWeight: "700",
+    cursor: "pointer"
+  };
+  return h("div", null, h("div", {
+    style: {
+      ...card,
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      gap: "10px",
+      flexWrap: "wrap"
+    }
+  }, h("div", null, h("div", {
+    style: {
+      fontSize: "15px",
+      fontWeight: "800",
+      color: "#f1f5f9"
+    }
+  }, "🏭 To Manufacture"), h("div", {
+    style: {
+      fontSize: "11px",
+      color: "#64748b",
+      marginTop: "3px"
+    }
+  }, snap === undefined ? "Loading…" : snap === null ? "No stock uploaded yet — upload Tally's Stock Summary (Excel)" : "Stock from " + new Date(snap.uploadedAt).toLocaleString("en-IN") + " · " + (snap.period || "") + " · " + snap.count + " items · by " + String(snap.uploadedBy || "").split("@")[0])), canManage && h("label", {
+    style: {
+      ...btn,
+      background: "#14532d",
+      border: "1px solid #16a34a",
+      opacity: busy ? 0.6 : 1
+    }
+  }, busy ? "Reading…" : "⬆ Upload Tally Stock", h("input", {
+    type: "file",
+    accept: ".xlsx,.xls",
+    disabled: busy,
+    style: {
+      display: "none"
+    },
+    onChange: e => {
+      upload(e.target.files[0]);
+      e.target.value = "";
+    }
+  }))), snap && h("div", {
+    style: {
+      display: "flex",
+      gap: "8px",
+      flexWrap: "wrap",
+      marginBottom: "10px"
+    }
+  }, [["🏭 To make", toMake.length + " products", "#f87171"], ["📏 Total", Object.keys(totals).length ? Object.entries(totals).map(([u, v]) => fmt(v) + " " + u).join(" · ") : "—", "#fbbf24"], ["✅ Covered by stock", covered + " products", "#4ade80"], ["❓ Not in stock file", unmatched.length + " products", "#94a3b8"]].map(([l, v, c]) => h("div", {
+    key: l,
+    style: {
+      ...card,
+      marginBottom: 0,
+      flex: "1 1 150px"
+    }
+  }, h("div", {
+    style: {
+      fontSize: "10px",
+      color: "#64748b"
+    }
+  }, l), h("div", {
+    style: {
+      fontSize: "15px",
+      fontWeight: "800",
+      color: c
+    }
+  }, v)))), snap && toMake.length > 0 && h("div", {
+    style: {
+      display: "flex",
+      gap: "8px",
+      marginBottom: "10px",
+      flexWrap: "wrap"
+    }
+  }, h("input", {
+    value: q,
+    onChange: e => setQ(e.target.value),
+    placeholder: "🔍 Search product…",
+    style: {
+      flex: "1 1 200px",
+      background: "#080d18",
+      border: "1px solid #1e293b",
+      borderRadius: "7px",
+      padding: "6px 10px",
+      color: "#e2e8f0",
+      fontSize: "12px"
+    }
+  }), h("button", {
+    style: btn,
+    onClick: () => {
+      navigator.clipboard.writeText(asText());
+      showToast("Production list copied ✓");
+    }
+  }, "📋 Copy"), h("button", {
+    style: btn,
+    onClick: printIt
+  }, "🖨 Print")), snap && toMake.length === 0 && h("div", {
+    style: {
+      ...card,
+      color: "#4ade80",
+      fontWeight: "700"
+    }
+  }, "✅ Stock covers every pending order — nothing to manufacture."), shown.map(x => {
+    const isOpen = !!open[x.name];
+    return h("div", {
+      key: x.name,
+      style: {
+        ...card,
+        borderLeft: "3px solid #ef4444",
+        padding: "9px 12px",
+        marginBottom: "6px"
+      }
+    }, h("div", {
+      onClick: () => setOpen({
+        ...open,
+        [x.name]: !isOpen
+      }),
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        gap: "10px",
+        cursor: "pointer",
+        flexWrap: "wrap"
+      }
+    }, h("div", {
+      style: {
+        minWidth: 0,
+        flex: "1 1 220px"
+      }
+    }, h("div", {
+      style: {
+        fontSize: "13px",
+        fontWeight: "700",
+        color: "#f1f5f9"
+      }
+    }, x.name), h("div", {
+      style: {
+        fontSize: "11px",
+        color: "#64748b"
+      }
+    }, "Orders need ", fmt(x.need), x.inDisp > 0 ? " (incl. " + fmt(x.inDisp) + " in Dispatch Today)" : "", " · Stock ", fmt(x.stock), x.negInTally ? " (negative in Tally)" : "")), h("div", {
+      style: {
+        textAlign: "right"
+      }
+    }, h("div", {
+      style: {
+        fontSize: "18px",
+        fontWeight: "900",
+        color: "#f87171"
+      }
+    }, "Make ", fmt(x.short)), x.pack && h("div", {
+      style: {
+        fontSize: "10px",
+        color: "#fbbf24"
+      }
+    }, fmt(x.pack.v * x.short), " ", x.pack.unit))), isOpen && h("div", {
+      style: {
+        marginTop: "7px",
+        borderTop: "1px solid #1e293b",
+        paddingTop: "6px"
+      }
+    }, x.who.map((w, i) => h("div", {
+      key: i,
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        fontSize: "11px",
+        color: "#94a3b8",
+        padding: "2px 0"
+      }
+    }, h("span", null, w.party, " · ", w.voucher, w.hold ? " · 🔒 on hold" : ""), h("b", {
+      style: {
+        color: "#e2e8f0"
+      }
+    }, fmt(w.qty))))));
+  }), snap && unmatched.length > 0 && h("details", {
+    style: {
+      ...card,
+      marginTop: "12px"
+    }
+  }, h("summary", {
+    style: {
+      cursor: "pointer",
+      fontSize: "12px",
+      fontWeight: "700",
+      color: "#94a3b8"
+    }
+  }, "❓ ", unmatched.length, " pending products are not in the stock file (name differs, or not stocked in Tally)"), unmatched.map(x => h("div", {
+    key: x.name,
+    style: {
+      fontSize: "11px",
+      color: "#94a3b8",
+      padding: "2px 0"
+    }
+  }, x.name, " — pending ", fmt(x.pending + x.inDisp)))));
+}
+
 function StockTab({
   role,
   roles,
@@ -30753,7 +31148,7 @@ function StockTab({
       borderBottom: "1px solid #1e293b",
       flexWrap: "wrap"
     }
-  }, [["rm", "🧪 RM Stock"], ["fg", "📦 FG Stock"]].map(([k, l]) => /*#__PURE__*/React.createElement("button", {
+  }, [["rm", "🧪 RM Stock"], ["fg", "📦 FG Stock"], ["make", "🏭 To Manufacture"]].map(([k, l]) => /*#__PURE__*/React.createElement("button", {
     key: k,
     onClick: () => setSub(k),
     style: {
@@ -30780,6 +31175,10 @@ function StockTab({
     user: user,
     showToast: showToast,
     sysUnits: sysUnits,
+    canManage: canManage
+  }), sub === "make" && /*#__PURE__*/React.createElement(ToManufactureTab, {
+    user: user,
+    showToast: showToast,
     canManage: canManage
   }));
 }
