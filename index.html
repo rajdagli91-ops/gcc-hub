@@ -24690,7 +24690,7 @@ function OrdersTab({
       fontFamily: "monospace"
     },
     title: "Diagnostic: total orders the app is holding in memory"
-  }, orders.length, " orders loaded (open + recent)", window.__ordersLoadMs ? " in " + (window.__ordersLoadMs / 1000).toFixed(1) + "s" : "", " · build 27Nov-A")), verifyResult && /*#__PURE__*/React.createElement(VerifyTallyModal, {
+  }, orders.length, " orders loaded (open + recent)", window.__ordersLoadMs ? " in " + (window.__ordersLoadMs / 1000).toFixed(1) + "s" : "", " · build 27Nov-B")), verifyResult && /*#__PURE__*/React.createElement(VerifyTallyModal, {
     result: verifyResult,
     onClose: () => setVerifyResult(null)
   }), /*#__PURE__*/React.createElement("div", {
@@ -30747,6 +30747,7 @@ function ToManufactureTab({
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState({});
   const [q, setQ] = useState("");
+  const [sortBy, setSortBy] = useState("qty"); // "qty" = biggest shortfall first, "alpha" = A–Z
   useEffect(() => {
     const u1 = C("tally_stock").doc("latest").onSnapshot(d => setSnap(d.exists ? d.data() : null), () => setSnap(null));
     const u2 = C("orders").where("status", "in", ["Pending", "Partial"]).onSnapshot(s => setOrders(s.docs.map(d => ({
@@ -30898,7 +30899,7 @@ function ToManufactureTab({
       pack: packOf(d.name)
     });
   });
-  const toMake = list.filter(x => x.short > 0.0001).sort((a, b) => a.name.localeCompare(b.name));
+  const toMake = list.filter(x => x.short > 0.0001).sort((a, b) => sortBy === "qty" ? b.short - a.short || a.name.localeCompare(b.name) : a.name.localeCompare(b.name));
   const covered = list.filter(x => x.short <= 0.0001).length;
   const totals = {};
   toMake.forEach(x => {
@@ -31015,7 +31016,16 @@ function ToManufactureTab({
       color: "#e2e8f0",
       fontSize: "12px"
     }
-  }), h("button", {
+  }), [["qty", "↓ Quantity"], ["alpha", "A–Z"]].map(([k, l]) => h("button", {
+    key: k,
+    onClick: () => setSortBy(k),
+    style: {
+      ...btn,
+      background: sortBy === k ? "#1e3a5f" : "#1e293b",
+      border: "1px solid " + (sortBy === k ? "#3b82f6" : "#334155"),
+      color: sortBy === k ? "#93c5fd" : "#94a3b8"
+    }
+  }, l)), h("button", {
     style: btn,
     onClick: () => {
       navigator.clipboard.writeText(asText());
@@ -31069,7 +31079,7 @@ function ToManufactureTab({
         fontSize: "11px",
         color: "#64748b"
       }
-    }, "Orders need ", fmt(x.need), x.inDisp > 0 ? " (incl. " + fmt(x.inDisp) + " in Dispatch Today)" : "", " · Stock ", fmt(x.stock), x.negInTally ? " (negative in Tally)" : "")), h("div", {
+    }, "Pending orders ", fmt(x.need), x.inDisp > 0 ? " (incl. " + fmt(x.inDisp) + " in Dispatch Today)" : "", " · In stock ", fmt(x.stock), x.negInTally ? " (negative in Tally)" : "")), h("div", {
       style: {
         textAlign: "right"
       }
