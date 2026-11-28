@@ -24690,7 +24690,7 @@ function OrdersTab({
       fontFamily: "monospace"
     },
     title: "Diagnostic: total orders the app is holding in memory"
-  }, orders.length, " orders loaded (open + recent)", window.__ordersLoadMs ? " in " + (window.__ordersLoadMs / 1000).toFixed(1) + "s" : "", " · build 27Nov-E")), verifyResult && /*#__PURE__*/React.createElement(VerifyTallyModal, {
+  }, orders.length, " orders loaded (open + recent)", window.__ordersLoadMs ? " in " + (window.__ordersLoadMs / 1000).toFixed(1) + "s" : "", " · build 28Nov-A")), verifyResult && /*#__PURE__*/React.createElement(VerifyTallyModal, {
     result: verifyResult,
     onClose: () => setVerifyResult(null)
   }), /*#__PURE__*/React.createElement("div", {
@@ -30750,7 +30750,28 @@ function ToManufactureTab({
   const [q, setQ] = useState("");
   const [sortBy, setSortBy] = useState("qty"); // "qty" = biggest shortfall first, "qtyAsc" = smallest first, "alpha" = A–Z
   const [groupOn, setGroupOn] = useState(false); // group the sizes of one product together
+  // Products made only to order (thinners, car patch, putty…) — hidden from the manufacture list. Words are matched against the product name and its Tally stock group.
+  const DEFAULT_EXCL = ["thinner", "carpatch", "vplast", "polysterputty"];
+  const [exclWords, setExclWords] = useState(DEFAULT_EXCL);
+  const [showExcl, setShowExcl] = useState(false);
+  const [inclExcl, setInclExcl] = useState(false); // temporarily bring the excluded products back into the list
+  const [exclInput, setExclInput] = useState("");
+  const saveExcl = async words => {
+    setExclWords(words);
+    try {
+      await C("tally_stock").doc("exclude").set({
+        words,
+        by: user.email,
+        at: new Date().toISOString()
+      });
+    } catch (e) {
+      showToast("Error: " + e.message, "error");
+    }
+  };
   useEffect(() => {
+    const u4 = C("tally_stock").doc("exclude").onSnapshot(d => {
+      if (d.exists && Array.isArray(d.data().words)) setExclWords(d.data().words);
+    }, () => {});
     const u1 = C("tally_stock").doc("latest").onSnapshot(d => setSnap(d.exists ? d.data() : null), () => setSnap(null));
     const u3 = C("tally_stock").doc("lastRun").onSnapshot(d => setLastRun(d.exists ? d.data() : null), () => {});
     const u2 = C("orders").where("status", "in", ["Pending", "Partial"]).onSnapshot(s => setOrders(s.docs.map(d => ({
@@ -30761,6 +30782,7 @@ function ToManufactureTab({
       u1();
       u2();
       u3();
+      u4();
     };
   }, []);
   const staleHrs = snap && snap.uploadedAt ? (Date.now() - new Date(snap.uploadedAt).getTime()) / 3600000 : 0;
@@ -30886,8 +30908,17 @@ function ToManufactureTab({
   });
   const list = [];
   const unmatched = [];
+  const isExcluded = (name, grp) => {
+    const hay = nrm(name) + " " + nrm(grp);
+    return !inclExcl && exclWords.some(w => nrm(w) && hay.includes(nrm(w)));
+  };
+  let excludedCount = 0;
   Object.entries(demand).forEach(([k, d]) => {
     const st = stockMap[k];
+    if (isExcluded(d.name, st && st.g)) {
+      excludedCount++;
+      return;
+    }
     if (!st) {
       unmatched.push(d);
       return;
@@ -31080,7 +31111,89 @@ function ToManufactureTab({
   }, "📋 Copy"), h("button", {
     style: btn,
     onClick: printIt
-  }, "🖨 Print")), snap && toMake.length === 0 && h("div", {
+  }, "🖨 Print"), h("button", {
+    style: {
+      ...btn,
+      background: showExcl ? "#7f1d1d" : "#1e293b",
+      border: "1px solid " + (showExcl ? "#ef4444" : "#334155"),
+      color: showExcl ? "#fca5a5" : "#94a3b8"
+    },
+    onClick: () => setShowExcl(!showExcl)
+  }, "🚫 Excluded (", exclWords.length, ")"), h("button", {
+    style: {
+      ...btn,
+      background: inclExcl ? "#14532d" : "#1e293b",
+      border: "1px solid " + (inclExcl ? "#16a34a" : "#334155"),
+      color: inclExcl ? "#86efac" : "#94a3b8"
+    },
+    onClick: () => setInclExcl(!inclExcl)
+  }, inclExcl ? "☑ Including excluded" : "☐ Include excluded")), showExcl && h("div", {
+    style: {
+      ...card,
+      border: "1px solid #7f1d1d"
+    }
+  }, h("div", {
+    style: {
+      fontSize: "12px",
+      color: "#94a3b8",
+      marginBottom: "8px"
+    }
+  }, "Made only to order — products whose name or Tally stock group contains any of these words are left off this list (", excludedCount, " hidden right now). Orders still show everywhere else."), h("div", {
+    style: {
+      display: "flex",
+      flexWrap: "wrap",
+      gap: "6px",
+      marginBottom: "8px"
+    }
+  }, exclWords.map(w => h("span", {
+    key: w,
+    style: {
+      background: "#1e293b",
+      border: "1px solid #475569",
+      borderRadius: "14px",
+      padding: "3px 10px",
+      fontSize: "12px",
+      color: "#e2e8f0"
+    }
+  }, w, canManage && h("span", {
+    onClick: () => saveExcl(exclWords.filter(x => x !== w)),
+    style: {
+      marginLeft: "8px",
+      cursor: "pointer",
+      color: "#f87171"
+    }
+  }, "✕")))), canManage ? h("div", {
+    style: {
+      display: "flex",
+      gap: "6px"
+    }
+  }, h("input", {
+    value: exclInput,
+    onChange: e => setExclInput(e.target.value),
+    placeholder: "Add a word, e.g. putty",
+    style: {
+      flex: 1,
+      padding: "7px 10px",
+      borderRadius: "8px",
+      border: "1px solid #334155",
+      background: "#0f172a",
+      color: "#e2e8f0",
+      fontSize: "13px"
+    }
+  }), h("button", {
+    style: btn,
+    onClick: () => {
+      const w = exclInput.trim().toLowerCase();
+      if (!w || exclWords.includes(w)) return;
+      saveExcl([...exclWords, w]);
+      setExclInput("");
+    }
+  }, "Add")) : h("div", {
+    style: {
+      fontSize: "11px",
+      color: "#64748b"
+    }
+  }, "Only managers can change this list.")), snap && toMake.length === 0 && h("div", {
     style: {
       ...card,
       color: "#4ade80",
